@@ -152,3 +152,6 @@ var AUTH = (function() {
     getUser: getUser
   };
 })();
+
+// Auto-initialize on load
+AUTH.init();
