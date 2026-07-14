@@ -1,8 +1,8 @@
 // ── Supabase Client ──
 // IMPORTANTE: Reemplazar con las credenciales de tu proyecto Supabase
 // Dashboard → Settings → API → URL y anon/public key
-var SUPABASE_URL = 'https://mbtyrnjbgiepyhpyzdhu.supabase.co';
-var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idHlybmpiZ2llcHlocHl6ZGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNDU3MTUsImV4cCI6MjA5NzgyMTcxNX0.W3qQL5389erMeRSsxx0_NEP-hflrow42MBG_wYB0vBY';
+var SUPABASE_URL = 'https://opghwfuxrvjpbuxeykxn.supabase.co';
+var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wZ2h3ZnV4cnZqcGJ1eGV5a3huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTI5MTMsImV4cCI6MjA5OTYyODkxM30.MLncpAN3CNhynabvfCLrdGM1ymjGFx7xMtpLdGklQlI';
 var _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function _addRow(arr) {
