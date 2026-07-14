@@ -14,50 +14,54 @@ var AUTH = (function() {
   async function _init() {
     var isLoginPage = location.pathname.endsWith('login.html');
 
-    var { data } = await _sb.auth.getSession();
+    try {
+      var { data } = await _sb.auth.getSession();
 
-    if (!data.session) {
-      if (!isLoginPage) {
-        location.replace('login.html');
+      if (!data.session) {
+        if (!isLoginPage) {
+          location.replace('login.html');
+          return new Promise(function() {});
+        }
+        return;
+      }
+
+      _user = data.session.user;
+
+      var res = await _sb.from('usuarios')
+        .select('*')
+        .eq('id', _user.id)
+        .eq('activo', true)
+        .single();
+
+      if (res.error || !res.data) {
+        await _sb.auth.signOut();
+        if (!isLoginPage) {
+          location.replace('login.html');
+          return new Promise(function() {});
+        }
+        return;
+      }
+
+      _profile = res.data;
+
+      var ueRes = await _sb.from('usuario_empresas')
+        .select('empresa_sigla, empresas(nombre_completo)')
+        .eq('usuario_id', _user.id);
+
+      _companies = (ueRes.data || []).map(function(r) {
+        return { sigla: r.empresa_sigla, nombre: r.empresas.nombre_completo };
+      });
+
+      if (isLoginPage) {
+        location.replace('index.html');
         return new Promise(function() {});
       }
-      return;
+
+      _renderAuthUI();
+      _setupAuthListener();
+    } finally {
+      if (typeof _authResolve === 'function') _authResolve();
     }
-
-    _user = data.session.user;
-
-    var res = await _sb.from('usuarios')
-      .select('*')
-      .eq('id', _user.id)
-      .eq('activo', true)
-      .single();
-
-    if (res.error || !res.data) {
-      await _sb.auth.signOut();
-      if (!isLoginPage) {
-        location.replace('login.html');
-        return new Promise(function() {});
-      }
-      return;
-    }
-
-    _profile = res.data;
-
-    var ueRes = await _sb.from('usuario_empresas')
-      .select('empresa_sigla, empresas(nombre_completo)')
-      .eq('usuario_id', _user.id);
-
-    _companies = (ueRes.data || []).map(function(r) {
-      return { sigla: r.empresa_sigla, nombre: r.empresas.nombre_completo };
-    });
-
-    if (isLoginPage) {
-      location.replace('index.html');
-      return new Promise(function() {});
-    }
-
-    _renderAuthUI();
-    _setupAuthListener();
   }
 
   function _renderAuthUI() {

@@ -6,7 +6,10 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 var _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ── Auth guard: all modules must await this before loading data ──
-var _authReady = (typeof AUTH !== 'undefined') ? AUTH.init() : Promise.resolve();
+// AUTH is defined in auth.js which loads after shared.js,
+// so we use a deferred promise that AUTH.init() will resolve.
+var _authResolve;
+var _authReady = new Promise(function(resolve) { _authResolve = resolve; });
 
 // ── Empresas centralizadas (elimina duplicados en módulos) ──
 var EMPRESAS_HOLDING = [
