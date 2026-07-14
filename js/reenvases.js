@@ -156,6 +156,7 @@ var RE_COLS = [
 // ── Load data ──
 
 async function loadReenvases() {
+  await _authReady;
   var loadZone = document.getElementById('load-zone');
   var main = document.getElementById('main');
   var loadErr = document.getElementById('load-error');

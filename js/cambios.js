@@ -27,6 +27,7 @@ function getSiglaClassCam(n) { var s = getSiglaCam(n); return SIGLA_CLS_CAM.inde
 
 // ── Load ──
 async function loadCambios() {
+  await _authReady;
   setSyncStatus('syncing', 'Cargando cambios...');
   try {
     var data = await apiGet('getCambios');

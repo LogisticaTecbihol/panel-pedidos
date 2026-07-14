@@ -152,6 +152,7 @@ var groupedMu = [];
 // ── Load data ──
 
 async function loadMuestras() {
+  await _authReady;
   var loadZone = document.getElementById('load-zone');
   var main = document.getElementById('main');
   var loadErr = document.getElementById('load-error');

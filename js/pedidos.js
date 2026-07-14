@@ -85,6 +85,7 @@ var detailWorkingLines = [];
 
 // ── Load from API ──
 async function loadFromAPI() {
+  await _authReady;
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Iniciar sesión — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔐</text></svg>">
+<title>Iniciar sesión – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css">
+</head>
+<body>
+
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-icon">📦</div>
+      <h1>Sistema de Gestión Logística</h1>
+      <p>Holding de empresas</p>
+    </div>
+    <form id="login-form" onsubmit="doLogin(event)">
+      <div class="login-field">
+        <label for="login-email">Correo electrónico</label>
+        <input type="email" id="login-email" required placeholder="usuario@empresa.com" autocomplete="email">
+      </div>
+      <div class="login-field">
+        <label for="login-pass">Contraseña</label>
+        <input type="password" id="login-pass" required placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div id="login-error" class="login-error"></div>
+      <button type="submit" class="btn-login" id="btn-login">Iniciar sesión</button>
+    </form>
+    <div class="login-footer">
+      <a href="#" onclick="doReset(event)">¿Olvidaste tu contraseña?</a>
+    </div>
+    <div id="reset-msg" class="reset-msg"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js"></script>
+<script src="js/auth.js"></script>
+<script>
+async function doLogin(e) {
+  e.preventDefault();
+  var btn = document.getElementById('btn-login');
+  var errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Ingresando...';
+
+  var email = document.getElementById('login-email').value.trim();
+  var pass = document.getElementById('login-pass').value;
+
+  var res = await _sb.auth.signInWithPassword({ email: email, password: pass });
+
+  if (res.error) {
+    errEl.textContent = res.error.message === 'Invalid login credentials'
+      ? 'Correo o contraseña incorrectos'
+      : res.error.message;
+    btn.disabled = false;
+    btn.textContent = 'Iniciar sesión';
+    return;
+  }
+
+  location.replace('index.html');
+}
+
+async function doReset(e) {
+  e.preventDefault();
+  var email = document.getElementById('login-email').value.trim();
+  var msgEl = document.getElementById('reset-msg');
+  if (!email) {
+    msgEl.textContent = 'Ingresa tu correo electrónico primero';
+    msgEl.className = 'reset-msg error';
+    return;
+  }
+  var res = await _sb.auth.resetPasswordForEmail(email, {
+    redirectTo: location.origin + location.pathname.replace('login.html', 'index.html')
+  });
+  if (res.error) {
+    msgEl.textContent = res.error.message;
+    msgEl.className = 'reset-msg error';
+  } else {
+    msgEl.textContent = 'Se envió un enlace de recuperación a ' + email;
+    msgEl.className = 'reset-msg success';
+  }
+}
+</script>
+</body>
+</html>

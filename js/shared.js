@@ -5,6 +5,27 @@ var SUPABASE_URL = 'https://opghwfuxrvjpbuxeykxn.supabase.co';
 var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wZ2h3ZnV4cnZqcGJ1eGV5a3huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTI5MTMsImV4cCI6MjA5OTYyODkxM30.MLncpAN3CNhynabvfCLrdGM1ymjGFx7xMtpLdGklQlI';
 var _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ── Auth guard: all modules must await this before loading data ──
+var _authReady = (typeof AUTH !== 'undefined') ? AUTH.init() : Promise.resolve();
+
+// ── Empresas centralizadas (elimina duplicados en módulos) ──
+var EMPRESAS_HOLDING = [
+  { value: 'PARCELAR DE COLOMBIA SAS', sigla: 'PARCELAR' },
+  { value: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS', sigla: 'GREEN' },
+  { value: 'SOLUCIONES INTEGRALES RESO SAS', sigla: 'RESO' },
+  { value: 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS', sigla: 'IASO' },
+  { value: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS', sigla: 'IAS' },
+];
+
+var SIGLAS = {};
+EMPRESAS_HOLDING.forEach(function(e) { SIGLAS[e.value] = e.sigla; });
+SIGLAS['INSUMOS AGROPECUARIOS DE LA SABANA SAS '] = 'IAS';
+
+function getSigla(n) { return SIGLAS[(n||'').trim()] || n || '—'; }
+
+var SIGLA_CLASSES = ['PARCELAR','GREEN','RESO','IASO','IAS'];
+function getSiglaClass(n) { var s = getSigla(n); return SIGLA_CLASSES.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
+
 function _addRow(arr) {
   return arr.map(function(r) { r.__row = r.id; return r; });
 }
