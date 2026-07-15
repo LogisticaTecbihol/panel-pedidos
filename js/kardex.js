@@ -837,6 +837,56 @@ async function confirmDeleteKx() {
   }
 }
 
+// ── Carga masiva saldo inicial GREEN ──
+var SALDOS_GREEN = [
+  ['AKAR GREEN X 250 ML', '', 146],
+  ['AKAR GREEN X 500 ML', '', 119],
+  ['AKAR GREEN X BIDON 20 LITROS', '', 1],
+  ['AKAR GREEN X LITRO', '', 142],
+  ['BORCAMAG X BIDON 20LITROS', '', 4],
+  ['BORCAMAG X GALON', '', 1],
+  ['BORCAMAG X LITRO', '', 311],
+  ['GREEN 40F X 250 ML', '', 124],
+  ['GREEN 40F X 500 ML', '', 60],
+  ['GREEN 40F X GALON', '', 12],
+  ['GREEN 40F X LITRO', '', 28],
+  ['GREEN AMINO X 100 ML', '', 65],
+  ['GREEN AMINO X BIDON 20 LITROS', '', 3],
+  ['GREEN AMINO X GALON', '', 32],
+  ['GREEN AMINO X LITRO', '', 238],
+  ['GREEN CA-L CANECA X 10 LITROS', '', 6],
+  ['GREEN CA-L CANECA X 20 LITROS', '', 1],
+  ['GREEN CA-L X GALON', '', 24],
+  ['GREEN CA-L X LITRO', '', 443],
+  ['GREEN CORRECTOR X 100 ML', '', 16],
+  ['GREEN CORRECTOR X 250 ML', '', 81],
+  ['GREEN CORRECTOR X BIDON 20 LITROS', '', 6],
+  ['GREEN CORRECTOR X BIDON 30 LITROS', '', 1],
+  ['GREEN CORRECTOR X LITRO', '', 23],
+  ['GREEN CU-ILL X BIDON 20 LITROS', '', 4],
+  ['GREEN CU-ILL X GALON', '', 20],
+  ['GREEN CU-ILL X 250 ML', '', 7],
+  ['GREEN DEFENSER-TECH X 250 ML', '', 11],
+  ['GREEN DEFENSER-TECH X LITRO', '', 55],
+  ['GREEN FOS X BIDON 20 LITROS', '', 1],
+  ['GREEN MOLUS KILL X LITRO', '', 262],
+  ['GREEN MOLUS-KILL X 250 ML', '', 111],
+  ['GREEN MOLUS-KILL X 500 ML', '', 128],
+  ['GREEN MOLUS-KILL X BIDON 16 LITROS', '', 1],
+  ['GREEN MOLUS-KILL X GALON', '', 8],
+  ['GREEN VAX X 100 ML', '', 73],
+  ['GREEN VAX X LITRO', '', 277],
+  ['GREEN YODO X 250 ML', '', 308],
+  ['JABOLAN EXPORTACION X GALON', '', 14],
+  ['JABOLAN EXPORTACION X LITRO', '', 10],
+  ['JABOTAN EXPORTACION X LITRO', '', 82],
+  ['NEMOCAP X BIDON 20 LITROS', '', 3],
+  ['PEGASSO TOP X 100 ML', '', 47],
+  ['PEGASSO TOP X 250 ML', '', 200],
+  ['PEGASSO TOP X BIDON 20 LITROS', '', 2],
+  ['PEGASSO TOP X GALON', '', 7],
+];
+
 // ── Carga masiva saldo inicial PARCELAR ──
 var SALDOS_PARCELAR = [
   ['AFINADOR CAB X BIDON 20 LITROS', '', 6],
@@ -929,18 +979,23 @@ var SALDOS_PARCELAR = [
   ['YODO X 250 ML', '', 118]
 ];
 
-function openCargaMasivaModal() {
-  var total = SALDOS_PARCELAR.reduce(function(s, r) { return s + r[2]; }, 0);
-  document.getElementById('cm-count').textContent = SALDOS_PARCELAR.length;
+var cargaMasivaActiva = null;
+
+function openCargaMasivaModal(dataset) {
+  var datos = dataset === 'GREEN' ? SALDOS_GREEN : SALDOS_PARCELAR;
+  var empresaDefault = dataset === 'GREEN' ? 'GREEN AGROSOLUCIONES DE COLOMBIA SAS' : 'PARCELAR DE COLOMBIA SAS';
+  cargaMasivaActiva = datos;
+  var total = datos.reduce(function(s, r) { return s + r[2]; }, 0);
+  document.getElementById('cm-count').textContent = datos.length;
   document.getElementById('cm-total').textContent = total.toLocaleString('es-CO');
-  document.getElementById('cm-fecha').value = today();
-  document.getElementById('cm-empresa').value = document.getElementById('f-empresa').value || '';
+  document.getElementById('cm-fecha').value = '2026-07-01';
+  document.getElementById('cm-empresa').value = empresaDefault;
   document.getElementById('btn-cm-confirm').disabled = false;
-  document.getElementById('btn-cm-confirm').textContent = '✓ Cargar ' + SALDOS_PARCELAR.length + ' productos';
+  document.getElementById('btn-cm-confirm').textContent = '✓ Cargar ' + datos.length + ' productos';
   document.getElementById('cm-progress').style.display = 'none';
 
   var tbody = document.getElementById('cm-preview');
-  tbody.innerHTML = SALDOS_PARCELAR.map(function(r, i) {
+  tbody.innerHTML = datos.map(function(r, i) {
     return '<tr><td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
       '<td style="font-size:0.82rem;font-weight:600">' + r[0] + '</td>' +
       '<td style="text-align:right;font-weight:700;color:#27ae60">' + r[2].toLocaleString('es-CO') + '</td></tr>';
@@ -959,6 +1014,7 @@ async function ejecutarCargaMasiva() {
   var fecha = document.getElementById('cm-fecha').value;
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha de corte', '#e74c3c'); return; }
+  var datos = cargaMasivaActiva || SALDOS_PARCELAR;
 
   var btn = document.getElementById('btn-cm-confirm');
   btn.disabled = true;
@@ -967,12 +1023,12 @@ async function ejecutarCargaMasiva() {
   progress.style.display = 'block';
 
   var BATCH = 20;
-  var total = SALDOS_PARCELAR.length;
+  var total = datos.length;
   var loaded = 0;
   var errors = [];
 
   for (var i = 0; i < total; i += BATCH) {
-    var batch = SALDOS_PARCELAR.slice(i, i + BATCH);
+    var batch = datos.slice(i, i + BATCH);
     var lineas = batch.map(function(r) {
       return { Producto: r[0], Presentacion: r[1], Cantidad: r[2] };
     });
