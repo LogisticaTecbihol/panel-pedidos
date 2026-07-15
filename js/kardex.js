@@ -106,24 +106,55 @@ async function loadKardex() {
 function buildMovimientos() {
   kxMovimientos = [];
 
-  // Pedidos — entregas (SALIDA)
+  // Pedidos — entregas (SALIDA), desglosadas por entrega individual
   kxPedidos.forEach(function(p) {
     var cantE = Number(p.Cant_Entregada) || 0;
     if (cantE <= 0) return;
     var est2 = (p.Estado_2 || '').trim();
     if (est2 === 'Anulado') return;
-    kxMovimientos.push({
-      fecha: p.Fecha_Ult_Entrega || p.Fecha_Pedido || '',
-      tipo: 'Salida',
-      modulo: 'Pedidos',
-      remision: (p.Remisiones || '').split(',').map(function(s) { return s.split('|')[0].trim(); }).filter(Boolean).join(', '),
-      referencia: 'Orden ' + (p.Consecutivo || '') + ' — ' + (p.Cliente || ''),
-      empresa: p.Nombre_Empresa || '',
-      producto: p.Producto || '',
-      presentacion: p.Presentacion || '',
-      cantidad: cantE,
-      _ajusteId: null
-    });
+    var ref = 'Orden ' + (p.Consecutivo || '') + ' — ' + (p.Cliente || '');
+    var empresa = p.Nombre_Empresa || '';
+    var producto = p.Producto || '';
+    var presentacion = p.Presentacion || '';
+    var remStr = (p.Remisiones || '').trim();
+    var hasStructured = remStr && remStr.indexOf('|') >= 0;
+
+    if (hasStructured) {
+      remStr.split(',').forEach(function(seg) {
+        seg = seg.trim();
+        if (!seg) return;
+        var parts = seg.split('|');
+        var rem = parts[0] || '';
+        var cant = Number(parts[1]) || 0;
+        var fecha = parts[2] || p.Fecha_Ult_Entrega || p.Fecha_Pedido || '';
+        if (cant <= 0) return;
+        kxMovimientos.push({
+          fecha: fecha,
+          tipo: 'Salida',
+          modulo: 'Pedidos',
+          remision: rem,
+          referencia: ref,
+          empresa: empresa,
+          producto: producto,
+          presentacion: presentacion,
+          cantidad: cant,
+          _ajusteId: null
+        });
+      });
+    } else {
+      kxMovimientos.push({
+        fecha: p.Fecha_Ult_Entrega || p.Fecha_Pedido || '',
+        tipo: 'Salida',
+        modulo: 'Pedidos',
+        remision: remStr,
+        referencia: ref,
+        empresa: empresa,
+        producto: producto,
+        presentacion: presentacion,
+        cantidad: cantE,
+        _ajusteId: null
+      });
+    }
   });
 
   // Ingresos — ENTRADA para destino siempre; SALIDA para origen solo si NO es Cachipay
