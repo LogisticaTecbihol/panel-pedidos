@@ -491,7 +491,7 @@ function openDetail(idx) {
         '<td class="money"><span class="pend-tag ' + (pendiente > 0 ? 'pend' : 'ok') + '" id="md-pend-' + i + '">' + pendiente + '</span></td>' +
         '<td><span class="badge ' + badgeL + '">' + estL + '</span>' +
           (l.Remisiones ? '<div style="font-size:0.7rem;color:#4a5568;margin-top:3px">📄 ' + l.Remisiones + '</div>' : '') +
-          (l.Fecha_Ult_Entrega ? '<div style="font-size:0.68rem;color:#718096">📅 ' + fmtDate(l.Fecha_Ult_Entrega) + '</div>' : '') +
+          '<div style="margin-top:3px"><input class="ef md-fecha-ent" data-i="' + i + '" type="date" value="' + (l.Fecha_Ult_Entrega ? toDateInput(l.Fecha_Ult_Entrega) : '') + '" style="font-size:0.68rem;width:120px;padding:2px 4px"></div>' +
         '</td>' +
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right" oninput="updateDetailLine(' + i + ')"></td>' +
         '<td class="money" style="font-size:0.78rem" id="md-vtot-' + i + '">' + fmtMoney(l.Valor_Total) + '</td>' +
@@ -602,6 +602,14 @@ async function guardarTodo() {
     l.Cant_Pendiente = Math.max(0, l.Cantidad - l.Cant_Entregada);
   });
   if (entregadaExcedida) { showToast('Se corrigieron cantidades entregadas que superaban las pedidas', '#e74c3c'); return; }
+
+  var fechasEnt = [].slice.call(document.querySelectorAll('.md-fecha-ent'));
+  fechasEnt.forEach(function(inp) {
+    var i = Number(inp.dataset.i);
+    if (detailWorkingLines[i] && inp.value) {
+      detailWorkingLines[i].Fecha_Ult_Entrega = inp.value;
+    }
+  });
 
   var fecha = document.getElementById('m-fecha').value;
   var rem = document.getElementById('m-remision').value.trim();
