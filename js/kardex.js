@@ -1097,11 +1097,46 @@ var SALDOS_RESO = [
   ['YODO X 250 ML', '', 21]
 ];
 
+var SALDOS_IAS = [
+  ['ACTIVE FUNBAC X 100 ML', '', 50],
+  ['ACTIVE FUNBAC X 250 ML', '', 20],
+  ['ACTIVE FUNBAC X LITRO', '', 105],
+  ['AGROHUMICOL X GALON', '', 18],
+  ['AGROHUMICOL X BIDON 20 LITROS', '', 2],
+  ['AGROHUMICOL X LITRO', '', 103],
+  ['AGROTECK HUMUS X GALON', '', 3],
+  ['AGROTECK X LITRO', '', 12],
+  ['AJO AJI ORTIGA X BIDON 20 LITROS', '', 3],
+  ['AJO AJI ORTIGA X 500 ML', '', 34],
+  ['AJO AJI ORTIGA X LITRO', '', 203],
+  ['AJO AJI ORTIGA X GALON', '', 28],
+  ['AJO AJI ORTIGA X 100 ML', '', 97],
+  ['AJO AJI ORTIGA X 250 ML', '', 86],
+  ['CALIMAN X LITRO', '', 3],
+  ['COOL PLANT X KILO', '', 1],
+  ['GREEN FUNGY-BAC X GALON', '', 4],
+  ['GREEN FUNGY-BAC X 250 ML', '', 309],
+  ['GREEN FUNGY-BAC X BIDON 20 LITROS', '', 1],
+  ['GREEN FUNGY-BAC X 100 ML', '', 100],
+  ['NITRATO DE ZINC X BIDON 20 LITROS', '', 2],
+  ['NITRATO DE ZINC X GALON', '', 4],
+  ['NITRATO DE ZINC X LITRO', '', 97],
+  ['NUTRI ROOTS X LITRO', '', 201],
+  ['SOILTREATES - N X GALON', '', 1],
+  ['URSUDOL X BLT 25 KILOS', '', 5],
+  ['URSUDOL X 200 GR', '', 3],
+  ['URSUDOL X KILOS', '', 50],
+  ['URTI ALIL X 20L', '', 8],
+  ['VASTAGO 9-13-28 PRODUCCION X 25 KILOS', '', 4],
+  ['VASTAGO 9-13-28 PRODUCCION X KILO', '', 82],
+  ['VASTAGO X 200GR', '', 17],
+];
+
 var cargaMasivaActiva = null;
 
 function openCargaMasivaModal(dataset) {
-  var datos = dataset === 'GREEN' ? SALDOS_GREEN : dataset === 'RESO' ? SALDOS_RESO : SALDOS_PARCELAR;
-  var empresaDefault = dataset === 'GREEN' ? 'GREEN AGROSOLUCIONES DE COLOMBIA SAS' : dataset === 'RESO' ? 'SOLUCIONES INTEGRALES RESO SAS' : 'PARCELAR DE COLOMBIA SAS';
+  var datos = dataset === 'GREEN' ? SALDOS_GREEN : dataset === 'RESO' ? SALDOS_RESO : dataset === 'IAS' ? SALDOS_IAS : SALDOS_PARCELAR;
+  var empresaDefault = dataset === 'GREEN' ? 'GREEN AGROSOLUCIONES DE COLOMBIA SAS' : dataset === 'RESO' ? 'SOLUCIONES INTEGRALES RESO SAS' : dataset === 'IAS' ? 'INSUMOS AGROPECUARIOS DE LA SABANA SAS' : 'PARCELAR DE COLOMBIA SAS';
   cargaMasivaActiva = datos;
   var total = datos.reduce(function(s, r) { return s + r[2]; }, 0);
   document.getElementById('cm-count').textContent = datos.length;
