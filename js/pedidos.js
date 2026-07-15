@@ -458,14 +458,18 @@ function openDetail(idx) {
   document.getElementById('btn-confirmar').disabled = false;
   document.getElementById('btn-confirmar').textContent = '✓ Guardar cambios';
 
-  detailWorkingLines = lines.map(function(l) { return Object.assign({}, l); });
+  detailWorkingLines = lines.map(function(l) {
+    var copy = Object.assign({}, l);
+    copy._entregas = parseEntregas(l.Remisiones, Number(l.Cant_Entregada) || 0, l.Fecha_Ult_Entrega);
+    return copy;
+  });
 
   var tbody = document.getElementById('m-lines');
   if (!lines.length) {
     tbody.innerHTML = '<tr><td colspan="11"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
   } else {
     var orderHasDeliveries = lines.some(function(l) { return (Number(l.Cant_Entregada)||0) > 0; });
-    tbody.innerHTML = lines.map(function(l, i) {
+    tbody.innerHTML = detailWorkingLines.map(function(l, i) {
       var pedida = Number(l.Cantidad)||0;
       var entregada = Number(l.Cant_Entregada)||0;
       var pendiente = Math.max(0, pedida - entregada);
@@ -487,11 +491,10 @@ function openDetail(idx) {
         '<td><input class="ef md-pres" data-i="' + i + '" type="text" value="' + presEsc + '" style="width:90px"></td>' +
         '<td style="text-align:center">' + (esBonif ? '<span style="background:#d5f5e3;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:700">Sí</span>' : '<span style="color:#718096;font-size:0.75rem">No</span>') + '</td>' +
         '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right" oninput="updateDetailLine(' + i + ')"></td>' +
-        '<td><input class="ef md-ent" data-i="' + i + '" type="number" min="0" max="' + pedida + '" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700" oninput="updateDetailLine(' + i + ')"></td>' +
+        '<td><input class="ef md-ent" data-i="' + i + '" type="number" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700;background:#f0fff4" readonly tabindex="-1"></td>' +
         '<td class="money"><span class="pend-tag ' + (pendiente > 0 ? 'pend' : 'ok') + '" id="md-pend-' + i + '">' + pendiente + '</span></td>' +
-        '<td><span class="badge ' + badgeL + '">' + estL + '</span>' +
-          (l.Remisiones ? '<div style="font-size:0.7rem;color:#4a5568;margin-top:3px">📄 ' + l.Remisiones + '</div>' : '') +
-          '<div style="margin-top:3px"><input class="ef md-fecha-ent" data-i="' + i + '" type="date" value="' + (l.Fecha_Ult_Entrega ? toDateInput(l.Fecha_Ult_Entrega) : '') + '" style="font-size:0.68rem;width:120px;padding:2px 4px"></div>' +
+        '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + estL + '</span>' +
+          '<div class="entregas-wrap" data-i="' + i + '">' + renderEntregasHTML(i, l._entregas || []) + '</div>' +
         '</td>' +
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right" oninput="updateDetailLine(' + i + ')"></td>' +
         '<td class="money" style="font-size:0.78rem" id="md-vtot-' + i + '">' + fmtMoney(l.Valor_Total) + '</td>' +
@@ -576,6 +579,97 @@ function updateDetailTotal() {
   document.getElementById('m-total').textContent = fmtMoney(total);
 }
 
+function parseEntregas(remStr, cantTotal, fechaUlt) {
+  if (!remStr || !remStr.trim()) {
+    if (cantTotal > 0) return [{ remision: '', cantidad: cantTotal, fecha: fechaUlt ? toDateInput(fechaUlt) : '' }];
+    return [];
+  }
+  var parts = remStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  var hasStructured = parts.some(function(p) { return p.indexOf('|') >= 0; });
+  if (hasStructured) {
+    return parts.map(function(p) {
+      var segs = p.split('|');
+      return { remision: segs[0] || '', cantidad: Number(segs[1]) || 0, fecha: segs[2] || '' };
+    });
+  }
+  if (cantTotal > 0) {
+    return [{ remision: remStr, cantidad: cantTotal, fecha: fechaUlt ? toDateInput(fechaUlt) : '' }];
+  }
+  return [];
+}
+
+function formatEntregas(entries) {
+  var valid = entries.filter(function(e) { return (e.cantidad > 0) || e.remision; });
+  if (!valid.length) return '';
+  return valid.map(function(e) {
+    return (e.remision || '') + '|' + (e.cantidad || 0) + '|' + (e.fecha || '');
+  }).join(',');
+}
+
+function renderEntregasHTML(lineIdx, entregas) {
+  if (!entregas.length) {
+    return '<button onclick="addEntrega(' + lineIdx + ')" style="background:none;border:1px dashed #a0aec0;color:#718096;padding:1px 6px;border-radius:4px;cursor:pointer;font-size:0.68rem;margin-top:3px">+ Entrega</button>';
+  }
+  var html = '<div style="font-size:0.62rem;color:#a0aec0;display:flex;gap:3px;margin-top:4px;padding-left:2px"><span style="width:50px;text-align:right">Cant</span><span style="width:60px">Remisión</span><span style="width:115px">Fecha</span></div>';
+  html += entregas.map(function(e, ei) {
+    return '<div style="display:flex;gap:3px;align-items:center;margin-top:2px">' +
+      '<input class="ef ent-cant" data-i="' + lineIdx + '" data-e="' + ei + '" type="number" min="0" value="' + (e.cantidad || '') + '" style="width:50px;font-size:0.72rem;text-align:right;padding:2px 4px" placeholder="0" oninput="syncEntregaTotal(' + lineIdx + ')">' +
+      '<input class="ef ent-rem" data-i="' + lineIdx + '" data-e="' + ei + '" type="text" value="' + ((e.remision || '').replace(/"/g, '&quot;')) + '" style="width:60px;font-size:0.72rem;padding:2px 4px" placeholder="Rem">' +
+      '<input class="ef ent-fecha" data-i="' + lineIdx + '" data-e="' + ei + '" type="date" value="' + (e.fecha || '') + '" style="font-size:0.68rem;padding:2px 3px;width:115px">' +
+      '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:0.8rem;padding:2px" title="Eliminar entrega">✕</button>' +
+    '</div>';
+  }).join('');
+  html += '<button onclick="addEntrega(' + lineIdx + ')" style="background:none;border:1px dashed #a0aec0;color:#718096;padding:1px 6px;border-radius:4px;cursor:pointer;font-size:0.68rem;margin-top:3px">+ Entrega</button>';
+  return html;
+}
+
+function renderEntregasUI(lineIdx) {
+  var wrap = document.querySelector('.entregas-wrap[data-i="' + lineIdx + '"]');
+  if (!wrap) return;
+  wrap.innerHTML = renderEntregasHTML(lineIdx, detailWorkingLines[lineIdx]._entregas || []);
+}
+
+function readEntregasFromUI(lineIdx) {
+  var entregas = detailWorkingLines[lineIdx] && detailWorkingLines[lineIdx]._entregas;
+  if (!entregas) return;
+  document.querySelectorAll('.ent-cant[data-i="' + lineIdx + '"]').forEach(function(inp) {
+    var ei = Number(inp.dataset.e);
+    if (entregas[ei]) entregas[ei].cantidad = Number(inp.value) || 0;
+  });
+  document.querySelectorAll('.ent-rem[data-i="' + lineIdx + '"]').forEach(function(inp) {
+    var ei = Number(inp.dataset.e);
+    if (entregas[ei]) entregas[ei].remision = inp.value.trim();
+  });
+  document.querySelectorAll('.ent-fecha[data-i="' + lineIdx + '"]').forEach(function(inp) {
+    var ei = Number(inp.dataset.e);
+    if (entregas[ei]) entregas[ei].fecha = inp.value;
+  });
+}
+
+function syncEntregaTotal(lineIdx) {
+  readEntregasFromUI(lineIdx);
+  var entregas = detailWorkingLines[lineIdx]._entregas || [];
+  var total = entregas.reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
+  var entInput = document.querySelector('.md-ent[data-i="' + lineIdx + '"]');
+  if (entInput) entInput.value = total;
+  detailWorkingLines[lineIdx].Cant_Entregada = total;
+  updateDetailLine(lineIdx);
+}
+
+function addEntrega(lineIdx) {
+  if (!detailWorkingLines[lineIdx]) return;
+  if (!detailWorkingLines[lineIdx]._entregas) detailWorkingLines[lineIdx]._entregas = [];
+  detailWorkingLines[lineIdx]._entregas.push({ remision: '', cantidad: 0, fecha: '' });
+  renderEntregasUI(lineIdx);
+}
+
+function removeEntrega(lineIdx, entIdx) {
+  if (!detailWorkingLines[lineIdx] || !detailWorkingLines[lineIdx]._entregas) return;
+  detailWorkingLines[lineIdx]._entregas.splice(entIdx, 1);
+  renderEntregasUI(lineIdx);
+  syncEntregaTotal(lineIdx);
+}
+
 // ── Save all changes (edits + deliveries) ──
 async function guardarTodo() {
   if (activeIdx === null) return;
@@ -585,30 +679,13 @@ async function guardarTodo() {
   var press = [].slice.call(document.querySelectorAll('.md-pres'));
   var cants = [].slice.call(document.querySelectorAll('.md-cant'));
   var vunis = [].slice.call(document.querySelectorAll('.md-vuni'));
-  var ents  = [].slice.call(document.querySelectorAll('.md-ent'));
-  var entregadaExcedida = false;
   detailWorkingLines.forEach(function(l, i) {
     l.Producto = prods[i] ? prods[i].value.trim() : l.Producto;
     l.Presentacion = press[i] ? press[i].value.trim() : l.Presentacion;
     l.Cantidad = Number(cants[i] && cants[i].value) || 0;
     l.Valor_Unitario = Number(vunis[i] && vunis[i].value) || 0;
-    l.Cant_Entregada = Number(ents[i] && ents[i].value) || 0;
-    if (l.Cant_Entregada > l.Cantidad) {
-      l.Cant_Entregada = l.Cantidad;
-      if (ents[i]) { ents[i].value = l.Cantidad; ents[i].classList.add('error'); }
-      entregadaExcedida = true;
-    }
     l.Valor_Total = l.Cantidad * l.Valor_Unitario;
-    l.Cant_Pendiente = Math.max(0, l.Cantidad - l.Cant_Entregada);
-  });
-  if (entregadaExcedida) { showToast('Se corrigieron cantidades entregadas que superaban las pedidas', '#e74c3c'); return; }
-
-  var fechasEnt = [].slice.call(document.querySelectorAll('.md-fecha-ent'));
-  fechasEnt.forEach(function(inp) {
-    var i = Number(inp.dataset.i);
-    if (detailWorkingLines[i] && inp.value) {
-      detailWorkingLines[i].Fecha_Ult_Entrega = inp.value;
-    }
+    readEntregasFromUI(i);
   });
 
   var fecha = document.getElementById('m-fecha').value;
@@ -620,7 +697,9 @@ async function guardarTodo() {
     inp.classList.remove('error');
     var cant = Number(inp.value) || 0;
     if (cant > 0) {
-      var pendiente = Math.max(0, (Number(detailWorkingLines[i] && detailWorkingLines[i].Cantidad)||0) - (Number(detailWorkingLines[i] && detailWorkingLines[i].Cant_Entregada)||0));
+      var dl = detailWorkingLines[i];
+      var currentTotal = (dl && dl._entregas || []).reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
+      var pendiente = Math.max(0, (Number(dl && dl.Cantidad) || 0) - currentTotal);
       if (cant > pendiente) { inp.classList.add('error'); hasError = true; return; }
       entregas.push({ row: Number(inp.dataset.row), cantidad: cant, fecha: fecha, remision: rem, _idx: i });
     }
@@ -632,22 +711,23 @@ async function guardarTodo() {
   entregas.forEach(function(ent) {
     var dl = detailWorkingLines[ent._idx];
     if (dl) {
-      dl.Cant_Entregada = (Number(dl.Cant_Entregada) || 0) + (Number(ent.cantidad) || 0);
-      dl.Cant_Pendiente = Math.max(0, (Number(dl.Cantidad) || 0) - dl.Cant_Entregada);
-      if (ent.remision) {
-        var prevRem = (dl.Remisiones || '').trim();
-        dl.Remisiones = prevRem ? prevRem + ', ' + ent.remision : ent.remision;
-      }
-      if (ent.fecha) dl.Fecha_Ult_Entrega = ent.fecha;
+      if (!dl._entregas) dl._entregas = [];
+      dl._entregas.push({ remision: ent.remision, cantidad: ent.cantidad, fecha: ent.fecha });
     }
   });
 
-  var fechaEntrega = document.getElementById('m-fecha').value || new Date().toISOString().slice(0, 10);
+  var entregadaExcedida = false;
   detailWorkingLines.forEach(function(l) {
-    if ((Number(l.Cant_Entregada) || 0) > 0 && !(l.Fecha_Ult_Entrega || '').trim()) {
-      l.Fecha_Ult_Entrega = fechaEntrega;
-    }
+    var entries = l._entregas || [];
+    l.Cant_Entregada = entries.reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
+    l.Remisiones = formatEntregas(entries);
+    var maxDate = '';
+    entries.forEach(function(e) { if (e.fecha && e.fecha > maxDate) maxDate = e.fecha; });
+    if (maxDate) l.Fecha_Ult_Entrega = maxDate;
+    l.Cant_Pendiente = Math.max(0, (Number(l.Cantidad) || 0) - l.Cant_Entregada);
+    if (l.Cant_Entregada > l.Cantidad) entregadaExcedida = true;
   });
+  if (entregadaExcedida) { showToast('La cantidad total de entregas supera la pedida', '#e74c3c'); return; }
 
   var anyDelivery = detailWorkingLines.some(function(l) { return (Number(l.Cant_Entregada)||0) > 0; });
   detailWorkingLines.forEach(function(l) {
@@ -697,7 +777,7 @@ async function guardarTodo() {
     var editResult = await apiPost({
       action: 'editarPedido',
       header: hdr,
-      lineas: detailWorkingLines,
+      lineas: detailWorkingLines.map(function(l) { var c = Object.assign({}, l); delete c._entregas; return c; }),
       deleteRows: []
     });
     if (!editResult.ok) throw new Error(editResult.error || 'Error al guardar edición');
@@ -708,6 +788,9 @@ async function guardarTodo() {
         var upd = {};
         if (dl.Estado_Entrega) upd.Estado_Entrega = dl.Estado_Entrega;
         if (dl.Fecha_Ult_Entrega) upd.Fecha_Ult_Entrega = dl.Fecha_Ult_Entrega;
+        upd.Remisiones = dl.Remisiones || null;
+        upd.Cant_Entregada = dl.Cant_Entregada || 0;
+        upd.Cant_Pendiente = dl.Cant_Pendiente || 0;
         if (obs) upd.Observaciones = obs;
         var pedida = Number(dl.Cantidad) || 0;
         var entregada = Number(dl.Cant_Entregada) || 0;

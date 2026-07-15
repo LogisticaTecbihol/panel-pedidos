@@ -116,7 +116,7 @@ function buildMovimientos() {
       fecha: p.Fecha_Ult_Entrega || p.Fecha_Pedido || '',
       tipo: 'Salida',
       modulo: 'Pedidos',
-      remision: p.Remisiones || '',
+      remision: (p.Remisiones || '').split(',').map(function(s) { return s.split('|')[0].trim(); }).filter(Boolean).join(', '),
       referencia: 'Orden ' + (p.Consecutivo || '') + ' — ' + (p.Cliente || ''),
       empresa: p.Nombre_Empresa || '',
       producto: p.Producto || '',
