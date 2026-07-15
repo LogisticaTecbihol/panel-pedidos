@@ -351,6 +351,36 @@ function buildMovimientos() {
       _ajusteId: a.__row || a.id || null
     });
   });
+
+  // Ajustes NC — reflejar en Kardex General
+  // Ingreso_NC = producto sale de bodega buena → SALIDA
+  // Salida_NC con Retorno_conforme = producto regresa a bodega buena → ENTRADA
+  ncAjustes.forEach(function(a) {
+    var cant = Number(a.Cantidad) || 0;
+    if (cant <= 0) return;
+    var tipo = a.Tipo || '';
+    var motivo = a.Motivo || '';
+    var esTipo;
+    if (tipo === 'Ingreso_NC') {
+      esTipo = 'Salida';
+    } else if (tipo === 'Salida_NC' && motivo === 'Retorno_conforme') {
+      esTipo = 'Entrada';
+    } else {
+      return;
+    }
+    kxMovimientos.push({
+      fecha: a.Fecha || '',
+      tipo: esTipo,
+      modulo: 'Bodega NC',
+      remision: a.Remision || '',
+      referencia: (NC_MOTIVO_LABELS[motivo] || motivo) + (a.Observaciones ? ' — ' + a.Observaciones : ''),
+      empresa: a.Empresa || '',
+      producto: a.Producto || '',
+      presentacion: a.Presentacion || '',
+      cantidad: cant,
+      _ajusteId: null
+    });
+  });
 }
 
 // ── Filters ──
@@ -500,7 +530,8 @@ function renderKardexTable() {
     'Muestras': '#f39c12',
     'Producción': '#d35400',
     'Saldo Inicial': '#1a5276',
-    'Ajuste': '#0e6655'
+    'Ajuste': '#0e6655',
+    'Bodega NC': '#e67e22'
   };
 
   tbody.innerHTML = kxFiltered.map(function(m, i) {
