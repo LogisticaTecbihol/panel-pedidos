@@ -1010,11 +1010,65 @@ var SALDOS_PARCELAR = [
   ['YODO X 250 ML', '', 118]
 ];
 
+var SALDOS_RESO = [
+  ['ALGESIL X LT', '', 66],
+  ['ALTOSAN BIZIN X LT', '', 144],
+  ['COPFOR', '', 60],
+  ['KERBEUS X LT', '', 60],
+  ['MIMOX ZN', '', 93],
+  ['ROTIP', '', 42],
+  ['ARACK GREEN X 20 LITROS', '', 3],
+  ['ARACK GREEN X 250 ML', '', 70],
+  ['ARACK GREEN X GALON', '', 8],
+  ['ARACK GREEN X LITRO', '', 275],
+  ['BA-BOR-ZINC X 250 ML', '', 61],
+  ['BA-BOR-ZINC X 500 ML', '', 56],
+  ['BA-BOR-ZINC X GALON', '', 4],
+  ['BA-BOR-ZINC X LITRO', '', 11],
+  ['BACTERFIN X LITRO', '', 4],
+  ['BLUE TECH X 5KL', '', 8],
+  ['CALCI-TECH X LITRO', '', 13],
+  ['CALCI-TECH X 250 ML', '', 1],
+  ['CALCI-TECH X BIDON 20 LITROS', '', 4],
+  ['CALIMAN X BIDON 20 LITROS', '', 26],
+  ['CALIMAN X CANECA 10 LITROS', '', 22],
+  ['CALIMAN X GALON', '', 26],
+  ['CALIMAN X LITRO', '', 173],
+  ['CLEAN-TECH X 5 KL', '', 3],
+  ['ESPECIAL GROW GREEN DS X 250 ML', '', 42],
+  ['GROW GREEN SP X LITRO', '', 23],
+  ['GENIUS-TECH X 250 ML', '', 1],
+  ['GEON3 X LITRO', '', 12],
+  ['GREEN 50 DBF X LITRO', '', 2],
+  ['GREEN 50 DBF X 250 ML', '', 9],
+  ['GROW GREEN X 250 ML', '', 22],
+  ['GROW GREEN X GALON', '', 16],
+  ['JABOTAN X LITRO', '', 6],
+  ['KAITOSOL X 100 ML', '', 84],
+  ['KAITOSOL X 250 ML', '', 168],
+  ['KAITOSOL X LITRO', '', 52],
+  ['KAITOSOL X BIDON 20 LITROS', '', 1],
+  ['MEKA TECH X 250 ML', '', 14],
+  ['MEKA TECH X LITRO', '', 55],
+  ['NEEM GREEN X 250 ML', '', 38],
+  ['NEEM GREEN X LITRO', '', 8],
+  ['NEMOCAP X LITRO', '', 5],
+  ['NITRO-TECH X 250 ML', '', 8],
+  ['NITRO-TECH X GALON 5 LITROS', '', 8],
+  ['NITRO-TECH X LITRO', '', 42],
+  ['PROTO TECH X 250 ML', '', 6],
+  ['PROTO TECH X GALON 5 LITROS', '', 4],
+  ['PROTO TECH X LITRO', '', 14],
+  ['THYME GREEN X 250 ML', '', 8],
+  ['THYME GREEN X LITRO', '', 349],
+  ['YODO X 250 ML', '', 21]
+];
+
 var cargaMasivaActiva = null;
 
 function openCargaMasivaModal(dataset) {
-  var datos = dataset === 'GREEN' ? SALDOS_GREEN : SALDOS_PARCELAR;
-  var empresaDefault = dataset === 'GREEN' ? 'GREEN AGROSOLUCIONES DE COLOMBIA SAS' : 'PARCELAR DE COLOMBIA SAS';
+  var datos = dataset === 'GREEN' ? SALDOS_GREEN : dataset === 'RESO' ? SALDOS_RESO : SALDOS_PARCELAR;
+  var empresaDefault = dataset === 'GREEN' ? 'GREEN AGROSOLUCIONES DE COLOMBIA SAS' : dataset === 'RESO' ? 'SOLUCIONES INTEGRALES RESO SAS' : 'PARCELAR DE COLOMBIA SAS';
   cargaMasivaActiva = datos;
   var total = datos.reduce(function(s, r) { return s + r[2]; }, 0);
   document.getElementById('cm-count').textContent = datos.length;
