@@ -195,17 +195,19 @@ function buildMovimientos() {
     }
   });
 
-  // Devoluciones — ENTRADA (producto regresa)
+  // Devoluciones — ENTRADA si va a Productos Buenos, SALIDA si va a No Conforme
   kxDevoluciones.forEach(function(d) {
     var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
     if (cant <= 0) return;
     var estado = (d.Estado || '').toLowerCase();
     if (estado === 'anulado') return;
+    var bodegaIng = (d.Bodega_Ingreso || '').trim();
+    var esNC = bodegaIng === 'Producto No Conforme';
     kxMovimientos.push({
       fecha: d.Fecha_Devolucion || d.Fecha || '',
-      tipo: 'Entrada',
+      tipo: esNC ? 'Salida' : 'Entrada',
       modulo: 'Devoluciones',
-      remision: d.Remision || '',
+      remision: d.Remision || d.Remision_Ingreso || '',
       referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
       empresa: d.Empresa || '',
       producto: d.Producto || '',
@@ -1203,6 +1205,28 @@ function buildNCMovimientos() {
     });
   });
 
+  // Devoluciones a Bodega No Conforme
+  kxDevoluciones.forEach(function(d) {
+    var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
+    if (cant <= 0) return;
+    var estado = (d.Estado || '').toLowerCase();
+    if (estado === 'anulado') return;
+    var bodegaIng = (d.Bodega_Ingreso || '').trim();
+    if (bodegaIng !== 'Producto No Conforme') return;
+    ncMovimientos.push({
+      fecha: d.Fecha_Devolucion || d.Fecha || '',
+      tipo: 'Entrada',
+      motivo: 'Devolucion_NC',
+      remision: d.Remision || d.Remision_Ingreso || '',
+      referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
+      empresa: d.Empresa || '',
+      producto: d.Producto || '',
+      presentacion: d.Presentacion || '',
+      cantidad: cant,
+      _ajusteId: null
+    });
+  });
+
   ncAjustes.forEach(function(a) {
     var cant = Number(a.Cantidad) || 0;
     if (cant <= 0) return;
@@ -1366,6 +1390,7 @@ var NC_MOTIVO_LABELS = {
   'Reacondicionamiento': 'Reacondicionamiento',
   'Retorno_conforme': 'Retorno conforme',
   'Produccion_NC': 'Salida Producción',
+  'Devolucion_NC': 'Devolución',
   'Otro': 'Otro'
 };
 
@@ -1382,6 +1407,7 @@ var NC_MOTIVO_COLORS = {
   'Reacondicionamiento': '#27ae60',
   'Retorno_conforme': '#0e6655',
   'Produccion_NC': '#d35400',
+  'Devolucion_NC': '#e67e22',
   'Otro': '#718096'
 };
 
