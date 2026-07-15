@@ -147,8 +147,8 @@ function buildMovimientos() {
         _ajusteId: null
       });
     }
-    // SALIDA origen — se omite para ingresos desde Cachipay
-    if (ing.Empresa_Origen && !esCachipay) {
+    // SALIDA origen — se omite para ingresos desde Cachipay o misma empresa
+    if (ing.Empresa_Origen && !esCachipay && ing.Empresa_Origen !== ing.Empresa_Destino) {
       kxMovimientos.push({
         fecha: ing.Fecha || '',
         tipo: 'Salida',
