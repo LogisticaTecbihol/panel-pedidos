@@ -180,49 +180,24 @@ function buildReport() {
     return true;
   });
 
-  // Aggregate by product + presentacion
-  var map = {};
+  // Build line-by-line detail
   var ordenesSet = {};
   var clientesSet = {};
-  filtered.forEach(function(p) {
-    var prodLimpio = limpiarProducto(String(p.Producto || '')).toUpperCase().trim();
-    var pres = String(p.Presentacion || '').toUpperCase().trim();
-    var key = prodLimpio + '||' + pres;
-    if (!map[key]) {
-      map[key] = {
-        producto: prodLimpio,
-        presentacion: pres,
-        pendiente: 0,
-        pedida: 0,
-        entregada: 0,
-        ordenes: 0,
-        empresas: {},
-        clientes: {},
-        _ordenKeys: {}
-      };
-    }
-    var row = map[key];
-    row.pendiente += Number(p.Cant_Pendiente) || 0;
-    row.pedida += Number(p.Cantidad) || 0;
-    row.entregada += Number(p.Cant_Entregada) || 0;
-    var empSigla = getSigla(p.Nombre_Empresa);
-    row.empresas[empSigla] = (row.empresas[empSigla] || 0) + (Number(p.Cant_Pendiente) || 0);
-    var cli = (p.Cliente || '').trim();
-    if (cli) {
-      if (!row.clientes[cli]) row.clientes[cli] = { pendiente: 0, fechas: {} };
-      row.clientes[cli].pendiente += (Number(p.Cant_Pendiente) || 0);
-      var fp = (p.Fecha_Pedido || '').trim();
-      if (fp) row.clientes[cli].fechas[fp] = true;
-    }
+  var productosSet = {};
+  aggregated = filtered.map(function(p) {
     var ordKey = (p.Nombre_Empresa || '') + '||' + p.Consecutivo;
-    if (!row._ordenKeys[ordKey]) { row._ordenKeys[ordKey] = true; row.ordenes++; }
     ordenesSet[ordKey] = true;
     clientesSet[p.Cliente || ''] = true;
-  });
-
-  aggregated = Object.values(map).map(function(r) {
-    r.numClientes = Object.keys(r.clientes).length;
-    return r;
+    productosSet[limpiarProducto(String(p.Producto || '')).toUpperCase().trim()] = true;
+    return {
+      empresa: p.Nombre_Empresa || '',
+      producto: limpiarProducto(String(p.Producto || '')).toUpperCase().trim(),
+      presentacion: String(p.Presentacion || '').toUpperCase().trim(),
+      pendiente: Number(p.Cant_Pendiente) || 0,
+      cliente: (p.Cliente || '').trim(),
+      fecha: p.Fecha_Pedido || '',
+      consecutivo: p.Consecutivo || ''
+    };
   });
 
   if (fTxt) {
@@ -232,7 +207,7 @@ function buildReport() {
   }
 
   // Stats
-  document.getElementById('st-productos').textContent = aggregated.length;
+  document.getElementById('st-productos').textContent = Object.keys(productosSet).length;
   document.getElementById('st-unidades').textContent = aggregated.reduce(function(s, r) { return s + r.pendiente; }, 0).toLocaleString('es-CO');
   document.getElementById('st-ordenes').textContent = Object.keys(ordenesSet).length;
   document.getElementById('st-clientes').textContent = Object.keys(clientesSet).filter(Boolean).length;
@@ -247,7 +222,7 @@ function toggleRptSort(col) {
     rptSort.dir = rptSort.dir === 'asc' ? 'desc' : 'asc';
   } else {
     rptSort.col = col;
-    rptSort.dir = col === 'producto' || col === 'presentacion' ? 'asc' : 'desc';
+    rptSort.dir = col === 'producto' || col === 'presentacion' || col === 'cliente' || col === 'empresa' ? 'asc' : 'desc';
   }
   renderRptTable();
 }
@@ -259,11 +234,10 @@ function sortedAggregated() {
     var va, vb;
     if (col === 'producto') { va = a.producto; vb = b.producto; }
     else if (col === 'presentacion') { va = a.presentacion; vb = b.presentacion; }
-    else if (col === 'pedida') { va = a.pedida; vb = b.pedida; }
-    else if (col === 'entregada') { va = a.entregada; vb = b.entregada; }
     else if (col === 'pendiente') { va = a.pendiente; vb = b.pendiente; }
-    else if (col === 'ordenes') { va = a.ordenes; vb = b.ordenes; }
-    else if (col === 'numClientes') { va = a.numClientes; vb = b.numClientes; }
+    else if (col === 'cliente') { va = a.cliente; vb = b.cliente; }
+    else if (col === 'fecha') { va = +(new Date(a.fecha||0)); vb = +(new Date(b.fecha||0)); }
+    else if (col === 'empresa') { va = getSigla(a.empresa); vb = getSigla(b.empresa); }
     else { va = a.pendiente; vb = b.pendiente; }
     var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
     return dir === 'asc' ? cmp : -cmp;
@@ -273,48 +247,37 @@ function sortedAggregated() {
 // ── Render ──
 function renderRptTable() {
   var cols = [
+    { id: 'empresa', label: 'Empresa' },
     { id: 'producto', label: 'Producto' },
+    { id: 'presentacion', label: 'Presentación' },
     { id: 'pendiente', label: 'Pendiente' },
-    { id: 'numClientes', label: 'Clientes' },
-    { id: null, label: 'Empresas' },
-    { id: null, label: 'Detalle Clientes' },
+    { id: 'cliente', label: 'Cliente' },
+    { id: 'fecha', label: 'Fecha Pedido' },
   ];
 
   document.getElementById('rpt-head').innerHTML = cols.map(function(c) {
-    if (!c.id) return '<th>' + c.label + '</th>';
     var cls = rptSort.col === c.id ? (rptSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
     return '<th class="' + cls + '" onclick="toggleRptSort(\'' + c.id + '\')">' + c.label + '</th>';
   }).join('');
 
-  document.getElementById('rpt-count').textContent = '(' + aggregated.length + ' productos)';
+  document.getElementById('rpt-count').textContent = '(' + aggregated.length + ' líneas)';
 
   var rows = sortedAggregated();
   var tbody = document.getElementById('rpt-body');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="empty-msg">No hay productos pendientes con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-msg">No hay productos pendientes con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
   tbody.innerHTML = rows.map(function(r) {
-    var empTags = Object.keys(r.empresas).sort().map(function(emp) {
-      return '<span class="badge-emp" style="background:#ebf5fb;color:#1a5276;margin-right:3px">' + emp + ': ' + r.empresas[emp] + '</span>';
-    }).join(' ');
-
-    var cliKeys = Object.keys(r.clientes).sort();
-    var cliTags = cliKeys.map(function(cli) {
-      var info = r.clientes[cli];
-      var fechas = Object.keys(info.fechas).sort();
-      var fechaStr = fechas.length ? ' · ' + fechas.map(function(f) { return fmtDate(f); }).join(', ') : '';
-      return '<span class="badge-emp" style="background:#fef9e7;color:#7d6608;margin-right:3px;margin-bottom:2px;display:inline-block">' + cli + ': ' + info.pendiente + fechaStr + '</span>';
-    }).join(' ');
-
     return '<tr>' +
+      '<td><span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + getSigla(r.empresa) + '</span></td>' +
       '<td style="font-weight:700">' + (r.producto || '—') + '</td>' +
+      '<td>' + (r.presentacion || '—') + '</td>' +
       '<td class="money" style="color:#e74c3c;font-weight:700;font-size:0.95rem">' + r.pendiente.toLocaleString('es-CO') + '</td>' +
-      '<td class="center">' + cliKeys.length + '</td>' +
-      '<td>' + empTags + '</td>' +
-      '<td style="max-width:300px">' + cliTags + '</td>' +
+      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + r.cliente + '">' + (r.cliente || '—') + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.fecha) + '</td>' +
     '</tr>';
   }).join('');
 }
@@ -325,27 +288,22 @@ function exportExcel() {
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
   var data = rows.map(function(r) {
-    var cliDetail = Object.keys(r.clientes).sort().map(function(c) {
-      var info = r.clientes[c];
-      var fechas = Object.keys(info.fechas).sort();
-      return c + ': ' + info.pendiente + (fechas.length ? ' (' + fechas.join(', ') + ')' : '');
-    }).join('; ');
-    var empDetail = Object.keys(r.empresas).sort().map(function(e) { return e + ': ' + r.empresas[e]; }).join('; ');
     return {
+      'Empresa': getSigla(r.empresa),
       'Producto': r.producto || '',
+      'Presentación': r.presentacion || '',
       'Pendiente': r.pendiente,
-      'Clientes': r.numClientes,
-      'Empresas': empDetail,
-      'Detalle Clientes': cliDetail
+      'Cliente': r.cliente || '',
+      'Fecha Pedido': r.fecha ? fmtDate(r.fecha) : ''
     };
   });
 
   var ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{ wch: 40 }, { wch: 12 }, { wch: 10 }, { wch: 30 }, { wch: 50 }];
+  ws['!cols'] = [{ wch: 12 }, { wch: 40 }, { wch: 20 }, { wch: 12 }, { wch: 35 }, { wch: 14 }];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pendientes');
   XLSX.writeFile(wb, 'pendientes_' + today() + '.xlsx');
-  showToast('Excel exportado: ' + rows.length + ' productos');
+  showToast('Excel exportado: ' + rows.length + ' líneas');
 }
 
 // ── Tabs ──
