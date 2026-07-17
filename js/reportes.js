@@ -208,7 +208,12 @@ function buildReport() {
     var empSigla = getSigla(p.Nombre_Empresa);
     row.empresas[empSigla] = (row.empresas[empSigla] || 0) + (Number(p.Cant_Pendiente) || 0);
     var cli = (p.Cliente || '').trim();
-    if (cli) row.clientes[cli] = (row.clientes[cli] || 0) + (Number(p.Cant_Pendiente) || 0);
+    if (cli) {
+      if (!row.clientes[cli]) row.clientes[cli] = { pendiente: 0, fechas: {} };
+      row.clientes[cli].pendiente += (Number(p.Cant_Pendiente) || 0);
+      var fp = (p.Fecha_Pedido || '').trim();
+      if (fp) row.clientes[cli].fechas[fp] = true;
+    }
     var ordKey = (p.Nombre_Empresa || '') + '||' + p.Consecutivo;
     if (!row._ordenKeys[ordKey]) { row._ordenKeys[ordKey] = true; row.ordenes++; }
     ordenesSet[ordKey] = true;
@@ -298,7 +303,10 @@ function renderRptTable() {
 
     var cliKeys = Object.keys(r.clientes).sort();
     var cliTags = cliKeys.map(function(cli) {
-      return '<span class="badge-emp" style="background:#fef9e7;color:#7d6608;margin-right:3px;margin-bottom:2px;display:inline-block">' + cli + ': ' + r.clientes[cli] + '</span>';
+      var info = r.clientes[cli];
+      var fechas = Object.keys(info.fechas).sort();
+      var fechaStr = fechas.length ? ' · ' + fechas.map(function(f) { return fmtDate(f); }).join(', ') : '';
+      return '<span class="badge-emp" style="background:#fef9e7;color:#7d6608;margin-right:3px;margin-bottom:2px;display:inline-block">' + cli + ': ' + info.pendiente + fechaStr + '</span>';
     }).join(' ');
 
     return '<tr>' +
@@ -317,7 +325,11 @@ function exportExcel() {
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
   var data = rows.map(function(r) {
-    var cliDetail = Object.keys(r.clientes).sort().map(function(c) { return c + ': ' + r.clientes[c]; }).join('; ');
+    var cliDetail = Object.keys(r.clientes).sort().map(function(c) {
+      var info = r.clientes[c];
+      var fechas = Object.keys(info.fechas).sort();
+      return c + ': ' + info.pendiente + (fechas.length ? ' (' + fechas.join(', ') + ')' : '');
+    }).join('; ');
     var empDetail = Object.keys(r.empresas).sort().map(function(e) { return e + ': ' + r.empresas[e]; }).join('; ');
     return {
       'Producto': r.producto || '',
