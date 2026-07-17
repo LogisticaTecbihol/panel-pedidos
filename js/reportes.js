@@ -159,7 +159,7 @@ function buildReport() {
   var ordersWithDeliveries = {};
   pedidos.forEach(function(p) {
     if ((Number(p.Cant_Entregada) || 0) > 0) {
-      ordersWithDeliveries[(p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '')] = true;
+      ordersWithDeliveries[(p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '') + '||' + (p.Cliente || '')] = true;
     }
   });
 
@@ -167,7 +167,7 @@ function buildReport() {
   var filtered = pedidos.filter(function(p) {
     var rawEst = (p.Estado_Entrega || '').trim();
     var est = norm(rawEst || 'Recibido');
-    var ordKey = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
+    var ordKey = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '') + '||' + (p.Cliente || '');
     var effectiveEst = (est === 'recibido' && ordersWithDeliveries[ordKey]) ? 'parcial' : est;
     if (effectiveEst !== 'parcial') return false;
     var pend = Number(p.Cant_Pendiente) || 0;
