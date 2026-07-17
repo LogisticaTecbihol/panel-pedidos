@@ -588,9 +588,10 @@ function parseEntregas(remStr, cantTotal, fechaUlt) {
   var parts = remStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
   var hasStructured = parts.some(function(p) { return p.indexOf('|') >= 0; });
   if (hasStructured) {
+    var fallbackFecha = fechaUlt ? toDateInput(fechaUlt) : '';
     return parts.map(function(p) {
       var segs = p.split('|');
-      return { remision: segs[0] || '', cantidad: Number(segs[1]) || 0, fecha: segs[2] || '' };
+      return { remision: segs[0] || '', cantidad: Number(segs[1]) || 0, fecha: segs[2] || fallbackFecha };
     });
   }
   if (cantTotal > 0) {
