@@ -2012,6 +2012,7 @@ function renderDetalle() {
         else if (col === 'pendiente') { va = Number(a.Cant_Pendiente)||0; vb = Number(b.Cant_Pendiente)||0; }
         else if (col === 'estado') { va = (a.Estado_Entrega||'Recibido'); vb = (b.Estado_Entrega||'Recibido'); }
         else if (col === 'estado2') { va = (a.Estado_2||'Abierto'); vb = (b.Estado_2||'Abierto'); }
+        else if (col === 'fecha') { va = +(new Date(a.Fecha_Pedido||0)); vb = +(new Date(b.Fecha_Pedido||0)); }
         else { va = ''; vb = ''; }
         var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
         if (cmp !== 0) return dir === 'asc' ? cmp : -cmp;
@@ -2026,6 +2027,7 @@ function renderDetalle() {
     { id: 'empresa', label: 'Empresa' },
     { id: 'cliente', label: 'Cliente' },
     { id: 'consecutivo', label: 'Consecutivo' },
+    { id: 'fecha', label: 'Fecha Pedido' },
     { id: 'producto', label: 'Producto' },
     { id: 'presentacion', label: 'Presentación' },
     { id: 'cantidad', label: 'Cant. Pedida' },
@@ -2043,7 +2045,7 @@ function renderDetalle() {
 
   var tbody = document.getElementById('det-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty">No hay líneas con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty">No hay líneas con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
@@ -2051,11 +2053,12 @@ function renderDetalle() {
     var est = (p.Estado_Entrega || 'Recibido').trim();
     var est2 = (p.Estado_2 || 'Abierto').trim();
     var badgeEst = norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : 'b-ent';
-    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Cerrado' ? 'b-cerrado' : 'b-anulado';
+    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
     return '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClass(p.Nombre_Empresa) + '">' + getSigla(p.Nombre_Empresa) + '</span></td>' +
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (p.Cliente||'') + '">' + (p.Cliente||'—') + '</td>' +
       '<td style="text-align:center;font-weight:700">' + (p.Consecutivo||'') + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(p.Fecha_Pedido) + '</td>' +
       '<td style="font-weight:600">' + (p.Producto||'—') + '</td>' +
       '<td>' + (p.Presentacion||'—') + '</td>' +
       '<td class="money">' + (Number(p.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
@@ -2087,12 +2090,13 @@ function exportDetalleCSV() {
 
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var lines = ['Empresa,Cliente,Consecutivo,Producto,Presentacion,Cant_Pedida,Pendiente,Estado,Estado_2'];
+  var lines = ['Empresa,Cliente,Consecutivo,Fecha_Pedido,Producto,Presentacion,Cant_Pedida,Pendiente,Estado,Estado_2'];
   rows.forEach(function(p) {
     lines.push([
       '"' + getSigla(p.Nombre_Empresa) + '"',
       '"' + (p.Cliente||'').replace(/"/g,'""') + '"',
       '"' + (p.Consecutivo||'') + '"',
+      '"' + fmtDate(p.Fecha_Pedido) + '"',
       '"' + (p.Producto||'').replace(/"/g,'""') + '"',
       '"' + (p.Presentacion||'').replace(/"/g,'""') + '"',
       Number(p.Cantidad)||0,
