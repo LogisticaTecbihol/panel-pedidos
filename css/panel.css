@@ -126,9 +126,10 @@ tbody td { padding: 9px 12px; vertical-align: middle; }
 .b-rec  { background: #fef3cd; color: #b7791f; }
 .b-par  { background: #bee3f8; color: #2c5282; }
 .b-ent  { background: #c6f6d5; color: #276749; }
-.b-abierto  { background: #e8f5e9; color: #2e7d32; }
-.b-cerrado  { background: #e3f2fd; color: #1565c0; }
-.b-anulado  { background: #fce4ec; color: #c62828; }
+.b-abierto   { background: #e8f5e9; color: #2e7d32; }
+.b-cerrado   { background: #e3f2fd; color: #1565c0; }
+.b-anulado   { background: #fce4ec; color: #c62828; }
+.b-bloqueado { background: #fff3e0; color: #e65100; }
 
 /* ── ACTION BUTTONS ── */
 .btn-ver {

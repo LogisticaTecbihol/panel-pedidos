@@ -216,6 +216,7 @@ function buildEntregas(ped) {
   Object.values(ordMap).forEach(function(o) {
     if (o.est2 === 'Anulado') { anulados++; return; }
     if (o.est2 === 'Cerrado') { cerrados++; return; }
+    if (o.est2 === 'Bloqueado por cartera') { anulados++; return; }
     if (o.estado === 'Entregado') entregados++;
     else if (o.estado === 'Parcial') parciales++;
     else recibidos++;
@@ -297,7 +298,7 @@ function buildTopProductos(ped) {
   var map = {};
   ped.forEach(function(p) {
     var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 === 'Anulado' || est2 === 'Cerrado') return;
+    if (est2 === 'Anulado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera') return;
     var pend = Number(p.Cant_Pendiente) || 0;
     if (pend <= 0) return;
     var prod = (p.Producto || '').toUpperCase().trim();

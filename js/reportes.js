@@ -173,7 +173,7 @@ function buildReport() {
     var pend = Number(p.Cant_Pendiente) || 0;
     if (pend <= 0) return false;
     var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 === 'Anulado' || est2 === 'Cerrado') return false;
+    if (est2 === 'Anulado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera') return false;
     if (fEmp && p.Nombre_Empresa !== fEmp) return false;
     if (fCom && p.Comercial !== fCom) return false;
     if (fCli && (p.Cliente || '').trim() !== fCli) return false;

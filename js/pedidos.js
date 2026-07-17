@@ -242,6 +242,7 @@ function derivedEstado2(lines) {
   if (!lines.length) return 'Abierto';
   var vals = lines.map(function(l) { return (l.Estado_2 || 'Abierto').trim(); });
   if (vals.indexOf('Anulado') >= 0) return 'Anulado';
+  if (vals.indexOf('Bloqueado por cartera') >= 0) return 'Bloqueado por cartera';
   var allCerrado = vals.every(function(v) { return v === 'Cerrado'; });
   return allCerrado ? 'Cerrado' : 'Abierto';
 }
@@ -399,7 +400,7 @@ function renderTable() {
     var est2 = derivedEstado2(lines);
     var pct = derivedPct(lines);
     var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : 'b-ent';
-    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Cerrado' ? 'b-cerrado' : 'b-anulado';
+    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
     var done = est === 'Entregado';
     var idx = consecs.indexOf(c);
     return '<tr>' +

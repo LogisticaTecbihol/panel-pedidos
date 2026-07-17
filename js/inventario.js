@@ -74,7 +74,7 @@ function computeComprometido() {
     var entregada = Number(p.Cant_Entregada) || 0;
     var pendiente = Math.max(0, pedida - entregada);
     var estado2 = (p.Estado_2 || '').toLowerCase();
-    if (estado2 === 'cerrado' || estado2 === 'anulado') return;
+    if (estado2 === 'cerrado' || estado2 === 'anulado' || estado2 === 'bloqueado por cartera') return;
     if (!comp[prod]) comp[prod] = 0;
     comp[prod] += pendiente;
   });
