@@ -607,20 +607,29 @@ function formatEntregas(entries) {
 }
 
 function renderEntregasHTML(lineIdx, entregas) {
-  if (!entregas.length) {
-    return '<button onclick="addEntrega(' + lineIdx + ')" style="background:none;border:1px dashed #a0aec0;color:#718096;padding:1px 6px;border-radius:4px;cursor:pointer;font-size:0.68rem;margin-top:3px">+ Entrega</button>';
-  }
-  var html = '<div style="font-size:0.62rem;color:#a0aec0;display:flex;gap:3px;margin-top:4px;padding-left:2px"><span style="width:50px;text-align:right">Cant</span><span style="width:60px">Remisión</span><span style="width:115px">Fecha</span></div>';
+  if (!entregas.length) return '';
+  var html = '';
   html += entregas.map(function(e, ei) {
-    return '<div style="display:flex;gap:3px;align-items:center;margin-top:2px">' +
-      '<input class="ef ent-cant" data-i="' + lineIdx + '" data-e="' + ei + '" type="number" min="0" value="' + (e.cantidad || '') + '" style="width:50px;font-size:0.72rem;text-align:right;padding:2px 4px" placeholder="0" oninput="syncEntregaTotal(' + lineIdx + ')">' +
-      '<input class="ef ent-rem" data-i="' + lineIdx + '" data-e="' + ei + '" type="text" value="' + ((e.remision || '').replace(/"/g, '&quot;')) + '" style="width:60px;font-size:0.72rem;padding:2px 4px" placeholder="Rem">' +
-      '<input class="ef ent-fecha" data-i="' + lineIdx + '" data-e="' + ei + '" type="date" value="' + (e.fecha || '') + '" style="font-size:0.68rem;padding:2px 3px;width:115px">' +
-      '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:0.8rem;padding:2px" title="Eliminar entrega">✕</button>' +
+    var fechaFmt = e.fecha ? formatDateShort(e.fecha) : '';
+    var remTxt = e.remision || '';
+    var cantTxt = e.cantidad || 0;
+    var parts = [];
+    if (cantTxt) parts.push('<strong>' + cantTxt + '</strong> ud');
+    if (remTxt) parts.push('Rem: ' + remTxt.replace(/</g,'&lt;'));
+    if (fechaFmt) parts.push(fechaFmt);
+    return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:#f7fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0">' +
+      '<span style="flex:1">' + parts.join(' · ') + '</span>' +
+      '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>' +
     '</div>';
   }).join('');
-  html += '<button onclick="addEntrega(' + lineIdx + ')" style="background:none;border:1px dashed #a0aec0;color:#718096;padding:1px 6px;border-radius:4px;cursor:pointer;font-size:0.68rem;margin-top:3px">+ Entrega</button>';
   return html;
+}
+
+function formatDateShort(dateStr) {
+  if (!dateStr) return '';
+  var parts = dateStr.split('-');
+  if (parts.length === 3) return parts[2] + '/' + parts[1] + '/' + parts[0];
+  return dateStr;
 }
 
 function renderEntregasUI(lineIdx) {
@@ -629,38 +638,13 @@ function renderEntregasUI(lineIdx) {
   wrap.innerHTML = renderEntregasHTML(lineIdx, detailWorkingLines[lineIdx]._entregas || []);
 }
 
-function readEntregasFromUI(lineIdx) {
-  var entregas = detailWorkingLines[lineIdx] && detailWorkingLines[lineIdx]._entregas;
-  if (!entregas) return;
-  document.querySelectorAll('.ent-cant[data-i="' + lineIdx + '"]').forEach(function(inp) {
-    var ei = Number(inp.dataset.e);
-    if (entregas[ei]) entregas[ei].cantidad = Number(inp.value) || 0;
-  });
-  document.querySelectorAll('.ent-rem[data-i="' + lineIdx + '"]').forEach(function(inp) {
-    var ei = Number(inp.dataset.e);
-    if (entregas[ei]) entregas[ei].remision = inp.value.trim();
-  });
-  document.querySelectorAll('.ent-fecha[data-i="' + lineIdx + '"]').forEach(function(inp) {
-    var ei = Number(inp.dataset.e);
-    if (entregas[ei]) entregas[ei].fecha = inp.value;
-  });
-}
-
 function syncEntregaTotal(lineIdx) {
-  readEntregasFromUI(lineIdx);
   var entregas = detailWorkingLines[lineIdx]._entregas || [];
   var total = entregas.reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
   var entInput = document.querySelector('.md-ent[data-i="' + lineIdx + '"]');
   if (entInput) entInput.value = total;
   detailWorkingLines[lineIdx].Cant_Entregada = total;
   updateDetailLine(lineIdx);
-}
-
-function addEntrega(lineIdx) {
-  if (!detailWorkingLines[lineIdx]) return;
-  if (!detailWorkingLines[lineIdx]._entregas) detailWorkingLines[lineIdx]._entregas = [];
-  detailWorkingLines[lineIdx]._entregas.push({ remision: '', cantidad: 0, fecha: '' });
-  renderEntregasUI(lineIdx);
 }
 
 function removeEntrega(lineIdx, entIdx) {
@@ -685,7 +669,6 @@ async function guardarTodo() {
     l.Cantidad = Number(cants[i] && cants[i].value) || 0;
     l.Valor_Unitario = Number(vunis[i] && vunis[i].value) || 0;
     l.Valor_Total = l.Cantidad * l.Valor_Unitario;
-    readEntregasFromUI(i);
   });
 
   var fecha = document.getElementById('m-fecha').value;
