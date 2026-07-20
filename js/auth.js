@@ -76,10 +76,10 @@ var AUTH = (function() {
     el.style.display = 'flex';
 
     document.querySelectorAll('.auth-edit-only').forEach(function(e) {
-      e.style.display = canEdit() ? '' : 'none';
+      e.style.display = canEdit() ? (e.dataset.display || 'inline-block') : 'none';
     });
     document.querySelectorAll('.auth-admin-only').forEach(function(e) {
-      e.style.display = canManageUsers() ? '' : 'none';
+      e.style.display = canManageUsers() ? (e.dataset.display || 'inline-block') : 'none';
     });
 
     var navUsuarios = document.getElementById('nav-usuarios');
