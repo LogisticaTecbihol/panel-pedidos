@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "local-server",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8080"],
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\npx.cmd",
+      "runtimeArgs": ["serve", "-l", "8080", "--no-clipboard"],
       "port": 8080
     }
   ]

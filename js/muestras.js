@@ -9,6 +9,7 @@ var muLines = [{ producto: '', presentacion: '', cantidad: 0 }];
 var productosCache = null;
 var muProdACs = [];
 var muEditProdAC = null;
+var muGeoAC = null;
 
 // ── Autocomplete engine ──
 
@@ -397,7 +398,8 @@ function viewMuestra(id) {
     field('Empresa', EMPRESAS_SIGLA[r.Empresa] || r.Empresa) +
     field('Fecha Solicitud', fmtDate(r.Fecha_Solicitud)) +
     field('Responsable', r.Responsable) +
-    field('Municipio / Vereda', r.Municipio) +
+    field('Departamento', r.Departamento) +
+    field('Municipio', r.Municipio) +
     field('Tipo de Cultivo', r.Tipo_Cultivo) +
     field('Solicitante', r.Solicitante) +
     field('Quien Autoriza', r.Autoriza) +
@@ -467,7 +469,7 @@ async function saveEntregas() {
         action: 'editarMuestra', row: u.id,
         Empresa: row.Empresa, Consecutivo: row.Consecutivo,
         Fecha_Solicitud: row.Fecha_Solicitud, Fecha_Despacho: fechaDespacho || row.Fecha_Despacho,
-        Responsable: row.Responsable, Municipio: row.Municipio,
+        Responsable: row.Responsable, Departamento: row.Departamento, Municipio: row.Municipio,
         Tipo_Cultivo: row.Tipo_Cultivo, Fecha_Aplicacion: row.Fecha_Aplicacion,
         Fecha_Seguimiento: row.Fecha_Seguimiento, Remision: remision,
         Solicitante: row.Solicitante, Autoriza: row.Autoriza,
@@ -547,6 +549,7 @@ async function openNewMuestra() {
   document.getElementById('mu-fecha-solicitud').value = today();
   document.getElementById('mu-fecha-despacho').value = '';
   document.getElementById('mu-responsable').value = '';
+  document.getElementById('mu-departamento').value = '';
   document.getElementById('mu-municipio').value = '';
   document.getElementById('mu-tipo-cultivo').value = '';
   document.getElementById('mu-fecha-aplicacion').value = '';
@@ -564,6 +567,8 @@ async function openNewMuestra() {
   muLines = [{ producto: '', presentacion: '', cantidad: 0 }];
   renderMuLines();
   document.getElementById('mu-overlay').classList.add('show');
+  if (muGeoAC) { if (muGeoAC.deptAC) muGeoAC.deptAC.destroy(); if (muGeoAC.muniAC) muGeoAC.muniAC.destroy(); muGeoAC = null; }
+  muGeoAC = setupGeoAutocomplete(document.getElementById('mu-departamento'), document.getElementById('mu-municipio'));
   await loadProductosCache();
   setupMuProdAutocomplete();
 }
@@ -582,6 +587,7 @@ async function editMuestra(id) {
   document.getElementById('mu-fecha-solicitud').value = toDateInput(r.Fecha_Solicitud);
   document.getElementById('mu-fecha-despacho').value = toDateInput(r.Fecha_Despacho);
   document.getElementById('mu-responsable').value = r.Responsable || '';
+  document.getElementById('mu-departamento').value = r.Departamento || '';
   document.getElementById('mu-municipio').value = r.Municipio || '';
   document.getElementById('mu-tipo-cultivo').value = r.Tipo_Cultivo || '';
   document.getElementById('mu-fecha-aplicacion').value = toDateInput(r.Fecha_Aplicacion);
@@ -602,6 +608,8 @@ async function editMuestra(id) {
   document.getElementById('mu-edit-fecha-entrega').value = toDateInput(r.Fecha_Entrega);
 
   document.getElementById('mu-overlay').classList.add('show');
+  if (muGeoAC) { if (muGeoAC.deptAC) muGeoAC.deptAC.destroy(); if (muGeoAC.muniAC) muGeoAC.muniAC.destroy(); muGeoAC = null; }
+  muGeoAC = setupGeoAutocomplete(document.getElementById('mu-departamento'), document.getElementById('mu-municipio'));
   await loadProductosCache();
   setupMuEditProdAC();
 }
@@ -612,6 +620,7 @@ function closeMuModal() {
   muLines = [];
   destroyMuProdACs();
   if (muEditProdAC) { muEditProdAC.destroy(); muEditProdAC = null; }
+  if (muGeoAC) { if (muGeoAC.deptAC) muGeoAC.deptAC.destroy(); if (muGeoAC.muniAC) muGeoAC.muniAC.destroy(); muGeoAC = null; }
 }
 
 document.getElementById('mu-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeMuModal(); });
@@ -705,6 +714,7 @@ async function saveMuestra() {
         Fecha_Solicitud: document.getElementById('mu-fecha-solicitud').value,
         Fecha_Despacho: document.getElementById('mu-fecha-despacho').value,
         Responsable: document.getElementById('mu-responsable').value.trim(),
+        Departamento: document.getElementById('mu-departamento').value.trim(),
         Municipio: document.getElementById('mu-municipio').value.trim(),
         Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
         Fecha_Aplicacion: document.getElementById('mu-fecha-aplicacion').value,
@@ -759,6 +769,7 @@ async function saveMuestra() {
       Fecha_Solicitud: fechaSol,
       Fecha_Despacho: document.getElementById('mu-fecha-despacho').value,
       Responsable: responsable,
+      Departamento: document.getElementById('mu-departamento').value.trim(),
       Municipio: document.getElementById('mu-municipio').value.trim(),
       Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
       Fecha_Aplicacion: document.getElementById('mu-fecha-aplicacion').value,
