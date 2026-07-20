@@ -29,6 +29,20 @@ function getSigla(n) { return SIGLAS[(n||'').trim()] || n || '—'; }
 var SIGLA_CLASSES = ['PARCELAR','GREEN','RESO','IASO','IAS'];
 function getSiglaClass(n) { var s = getSigla(n); return SIGLA_CLASSES.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
 
+function populateEmpresaSelect(id, defaultLabel, extras) {
+  var sel = document.getElementById(id);
+  if (!sel) return;
+  var empresas = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas) ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING) : EMPRESAS_HOLDING;
+  var opts = '<option value="">' + (defaultLabel || '— Seleccionar —') + '</option>';
+  empresas.forEach(function(e) {
+    opts += '<option value="' + e.value + '">' + e.sigla + '</option>';
+  });
+  if (extras) extras.forEach(function(x) {
+    opts += '<option value="' + x + '">' + x + '</option>';
+  });
+  sel.innerHTML = opts;
+}
+
 function _addRow(arr) {
   return arr.map(function(r) { r.__row = r.id; return r; });
 }

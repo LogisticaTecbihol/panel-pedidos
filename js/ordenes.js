@@ -5,22 +5,8 @@ var catalogoProductos = [];
 var ocLineas = [];
 
 // ── Constants ──
-var EMPRESAS_HOLDING = [
-  { value: 'PARCELAR DE COLOMBIA SAS', sigla: 'PARCELAR' },
-  { value: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS', sigla: 'GREEN' },
-  { value: 'SOLUCIONES INTEGRALES RESO SAS', sigla: 'RESO' },
-  { value: 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS', sigla: 'IASO' },
-  { value: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS', sigla: 'IAS' },
-];
-
-function getSiglaOC(n) {
-  for (var i = 0; i < EMPRESAS_HOLDING.length; i++) {
-    if (EMPRESAS_HOLDING[i].value === (n||'').trim()) return EMPRESAS_HOLDING[i].sigla;
-  }
-  return n || '—';
-}
-var SIGLA_CLS = ['PARCELAR','GREEN','RESO','IASO','IAS'];
-function getSiglaClassOC(n) { var s = getSiglaOC(n); return SIGLA_CLS.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
+function getSiglaOC(n) { return getSigla(n); }
+function getSiglaClassOC(n) { return getSiglaClass(n); }
 
 function matchEmpresa(name) {
   var n = (name || '').trim().toUpperCase();
@@ -79,6 +65,11 @@ function applySortOC(rows) {
 // ── Load from API ──
 async function loadOrdenes() {
   await _authReady;
+  var ocExtras = ['CHIA ABAGO'];
+  populateEmpresaSelect('f-emp-dest', 'Todas', ocExtras);
+  populateEmpresaSelect('f-emp-orig', 'Todas', ocExtras);
+  populateEmpresaSelect('oc-emp-dest', '— Seleccionar —', ocExtras);
+  populateEmpresaSelect('oc-emp-orig', '— Seleccionar —', ocExtras);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -240,8 +231,8 @@ function renderOCTable() {
       '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision || '—') + '</td>' +
       '<td>' + estadoBadge(r.Estado) + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
-        '<button class="btn-edit" onclick="openEditOC(' + r.__row + ')" title="Editar">✏️</button>' +
-        '<button class="btn-del" onclick="openDeleteOC(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditOC(' + r.__row + ')" title="Editar">✏️</button>' +
+        '<button class="btn-del" onclick="openDeleteOC(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');

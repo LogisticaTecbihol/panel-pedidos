@@ -6,22 +6,8 @@ var ingLineas = [];
 
 // ── Constants ──
 var ORIGENES = ['Planta Mosquera', 'Planta Cachipay', 'Proveedor Carval', 'Chia Abago', 'Bodega Villeta'];
-var EMPRESAS_HOLDING = [
-  { value: 'PARCELAR DE COLOMBIA SAS', sigla: 'PARCELAR' },
-  { value: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS', sigla: 'GREEN' },
-  { value: 'SOLUCIONES INTEGRALES RESO SAS', sigla: 'RESO' },
-  { value: 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS', sigla: 'IASO' },
-  { value: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS', sigla: 'IAS' },
-];
-
-function getSiglaIng(n) {
-  for (var i = 0; i < EMPRESAS_HOLDING.length; i++) {
-    if (EMPRESAS_HOLDING[i].value === (n||'').trim()) return EMPRESAS_HOLDING[i].sigla;
-  }
-  return n || '—';
-}
-var SIGLA_CLS = ['PARCELAR','GREEN','RESO','IASO','IAS'];
-function getSiglaClassIng(n) { var s = getSiglaIng(n); return SIGLA_CLS.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
+function getSiglaIng(n) { return getSigla(n); }
+function getSiglaClassIng(n) { return getSiglaClass(n); }
 
 // ── Sorting ──
 var sortLevelsIng = [];
@@ -66,6 +52,10 @@ function applySortIng(rows) {
 // ── Load from API ──
 async function loadIngresos() {
   await _authReady;
+  populateEmpresaSelect('f-emp-orig', 'Todas');
+  populateEmpresaSelect('f-emp-dest', 'Todas');
+  populateEmpresaSelect('ing-empresa-origen');
+  populateEmpresaSelect('ing-empresa-destino');
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -240,8 +230,8 @@ function renderIngTable() {
       '<td style="font-size:0.78rem">' + (r.Remision_Origen||'—') + '</td>' +
       '<td style="font-size:0.78rem">' + (r.Remision_Destino||'—') + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
-        '<button class="btn-edit" onclick="openEditIng(' + r.__row + ')" title="Editar">✏️</button>' +
-        '<button class="btn-del" onclick="openDeleteIng(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditIng(' + r.__row + ')" title="Editar">✏️</button>' +
+        '<button class="btn-del" onclick="openDeleteIng(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');

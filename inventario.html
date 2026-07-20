@@ -75,11 +75,6 @@
       <label>Empresa</label>
       <select id="f-empresa">
         <option value="">Todas</option>
-        <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-        <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-        <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-        <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-        <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
       </select>
     </div>
     <div class="fg"><label>Producto</label><select id="f-prod"><option value="">Todos</option></select></div>
@@ -100,11 +95,11 @@
       <h3>Inventario de productos <span id="row-ct-inv" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort-inv" onclick="clearSortInv()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
-        <label style="background:#8e44ad;color:white;border:none;padding:8px 18px;border-radius:7px;cursor:pointer;font-size:0.84rem;font-weight:600;transition:background 0.2s;display:inline-flex;align-items:center;gap:4px" onmouseover="this.style.background='#7d3c98'" onmouseout="this.style.background='#8e44ad'">
+        <label class="auth-edit-only" style="background:#8e44ad;color:white;border:none;padding:8px 18px;border-radius:7px;cursor:pointer;font-size:0.84rem;font-weight:600;transition:background 0.2s;display:inline-flex;align-items:center;gap:4px" onmouseover="this.style.background='#7d3c98'" onmouseout="this.style.background='#8e44ad'">
           📄 Importar Excel
           <input type="file" id="import-inv-file" accept=".xlsx,.xls" style="display:none" onchange="importInventarioExcel(this)">
         </label>
-        <button class="btn-dl" onclick="openNewInventario()" style="background:#8e44ad">📊 Nuevo registro</button>
+        <button class="btn-dl auth-edit-only" onclick="openNewInventario()" style="background:#8e44ad">📊 Nuevo registro</button>
         <button class="btn-dl" onclick="loadInventario()">🔄 Actualizar datos</button>
       </div>
     </div>
@@ -139,11 +134,6 @@
           <label class="ef-label">Empresa</label>
           <select class="ef" id="inv-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
           </select>
         </div>
       </div>
@@ -240,11 +230,6 @@
           <label class="ef-label">Empresa para este inventario</label>
           <select class="ef" id="import-inv-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
           </select>
         </div>
         <div>

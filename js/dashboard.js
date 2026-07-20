@@ -93,7 +93,7 @@ var dashFiltersAttached = false;
 function populateDashFilters() {
   var emps = [];
   dPedidos.forEach(function(p) {
-    if (p.Nombre_Empresa && emps.indexOf(p.Nombre_Empresa) < 0) emps.push(p.Nombre_Empresa);
+    if (p.Nombre_Empresa && emps.indexOf(p.Nombre_Empresa) < 0 && AUTH.hasCompany(p.Nombre_Empresa)) emps.push(p.Nombre_Empresa);
   });
   emps.sort();
   var sel = document.getElementById('df-emp');

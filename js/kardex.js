@@ -17,24 +17,19 @@ var ncMovimientos = [];
 var ncFiltered = [];
 var activeTab = 'kardex';
 
-var EMPRESAS_HOLDING = [
-  { value: 'PARCELAR DE COLOMBIA SAS', sigla: 'PARCELAR' },
-  { value: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS', sigla: 'GREEN' },
-  { value: 'SOLUCIONES INTEGRALES RESO SAS', sigla: 'RESO' },
-  { value: 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS', sigla: 'IASO' },
-  { value: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS', sigla: 'IAS' },
-];
-
-function getSiglaKx(n) {
-  for (var i = 0; i < EMPRESAS_HOLDING.length; i++) {
-    if (EMPRESAS_HOLDING[i].value === (n || '').trim()) return EMPRESAS_HOLDING[i].sigla;
-  }
-  return n || '—';
-}
+function getSiglaKx(n) { return getSigla(n); }
 
 // ── Load all modules ──
 async function loadKardex() {
   await _authReady;
+  var kxExtras = ['CHIA ABAGO'];
+  populateEmpresaSelect('f-empresa', '— Seleccionar —', kxExtras);
+  populateEmpresaSelect('nc-f-empresa', '— Seleccionar —', kxExtras);
+  populateEmpresaSelect('nc-empresa', '— Seleccionar —', kxExtras);
+  populateEmpresaSelect('ncsi-empresa', '— Seleccionar —', kxExtras);
+  populateEmpresaSelect('aj-empresa', '— Seleccionar —', kxExtras);
+  populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras);
+  populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -539,7 +534,7 @@ function renderKardexTable() {
     var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#27ae60;font-weight:700">+' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var salidaStr = m.tipo === 'Salida' ? '<span style="color:#e74c3c;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#2c3e50';
-    var deleteBtn = m._ajusteId ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var deleteBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
     var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.producto || '').replace(/"/g, '&quot;') + '">' + (m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.modulo === 'Saldo Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
@@ -1497,8 +1492,8 @@ function renderNCTable() {
     var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#e67e22;font-weight:700">+' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var salidaStr = m.tipo === 'Salida' ? '<span style="color:#27ae60;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#c0392b';
-    var editBtn = m._ajusteId ? '<button class="btn-edit" onclick="openEditNC(' + m._ajusteId + ')" title="Editar registro" style="font-size:0.72rem;padding:3px 8px">✏️</button>' : '';
-    var deleteBtn = m._ajusteId ? '<button class="btn-del" onclick="openDeleteNC(' + m._ajusteId + ',\'' + (m.tipo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar registro" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var editBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditNC(' + m._ajusteId + ')" title="Editar registro" style="font-size:0.72rem;padding:3px 8px">✏️</button>' : '';
+    var deleteBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteNC(' + m._ajusteId + ',\'' + (m.tipo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar registro" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
 
     return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +

@@ -8,22 +8,8 @@ var tramitarDevLines = [];
 var tramitarDevKey = null;
 
 // ── Constants ──
-var EMPRESAS_HOLDING_DEV = [
-  { value: 'PARCELAR DE COLOMBIA SAS', sigla: 'PARCELAR' },
-  { value: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS', sigla: 'GREEN' },
-  { value: 'SOLUCIONES INTEGRALES RESO SAS', sigla: 'RESO' },
-  { value: 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS', sigla: 'IASO' },
-  { value: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS', sigla: 'IAS' },
-];
-
-function getSiglaDev(n) {
-  for (var i = 0; i < EMPRESAS_HOLDING_DEV.length; i++) {
-    if (EMPRESAS_HOLDING_DEV[i].value === (n||'').trim()) return EMPRESAS_HOLDING_DEV[i].sigla;
-  }
-  return n || '—';
-}
-var SIGLA_CLS_DEV = ['PARCELAR','GREEN','RESO','IASO','IAS'];
-function getSiglaClassDev(n) { var s = getSiglaDev(n); return SIGLA_CLS_DEV.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
+function getSiglaDev(n) { return getSigla(n); }
+function getSiglaClassDev(n) { return getSiglaClass(n); }
 
 function fmtMoney(v) {
   var n = Number(v) || 0;
@@ -73,6 +59,10 @@ function applySortDev(rows) {
 // ── Load from API ──
 async function loadDevoluciones() {
   await _authReady;
+  populateEmpresaSelect('f-empresa', 'Todas');
+  populateEmpresaSelect('fc-empresa', 'Todas');
+  populateEmpresaSelect('fp-empresa', 'Todas');
+  populateEmpresaSelect('dev-empresa');
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -348,7 +338,7 @@ function renderDevTable() {
     var estadoBadge = esTramitada
       ? '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Tramitada</span>'
       : '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>';
-    var tramitarBtn = esTramitada
+    var tramitarBtn = !AUTH.canEdit() ? '' : esTramitada
       ? '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Ver/editar trámite" style="background:#6c757d;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Editar</button>'
       : '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Tramitar devolución" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Tramitar</button>';
     return '<tr>' +
@@ -367,7 +357,7 @@ function renderDevTable() {
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-edit" onclick="viewDevDetail(\'' + keyEsc + '\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
         tramitarBtn +
-        '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar devolución">🗑️</button>' +
+        (AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar devolución">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -452,8 +442,8 @@ function viewDevDetail(key) {
       '<td style="text-align:right">' + fmtMoney(x.Valor_Unitario) + '</td>' +
       '<td style="text-align:right;font-weight:700">' + fmtMoney(x.Valor_Total) + '</td>' +
       '<td style="white-space:nowrap">' +
-        '<button class="btn-edit" onclick="closeViewDev();openEditDev(' + x.__row + ')" style="font-size:0.75rem;padding:3px 8px" title="Editar línea">✏️</button> ' +
-        '<button class="btn-del" onclick="closeViewDev();openDeleteDev(0,' + (x.__row||0) + ')" style="font-size:0.75rem;padding:3px 8px" title="Eliminar línea">🗑️</button>' +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewDev();openEditDev(' + x.__row + ')" style="font-size:0.75rem;padding:3px 8px" title="Editar línea">✏️</button> ' +
+        '<button class="btn-del" onclick="closeViewDev();openDeleteDev(0,' + (x.__row||0) + ')" style="font-size:0.75rem;padding:3px 8px" title="Eliminar línea">🗑️</button>' : '') +
       '</td></tr>';
   });
 
@@ -1092,9 +1082,9 @@ function prefillDevForm(data) {
     }
   }
   if (!matched) {
-    for (var i = 0; i < EMPRESAS_HOLDING_DEV.length; i++) {
-      if (empVal.indexOf(EMPRESAS_HOLDING_DEV[i].sigla) >= 0) {
-        empSelect.value = EMPRESAS_HOLDING_DEV[i].value;
+    for (var i = 0; i < EMPRESAS_HOLDING.length; i++) {
+      if (empVal.indexOf(EMPRESAS_HOLDING[i].sigla) >= 0) {
+        empSelect.value = EMPRESAS_HOLDING[i].value;
         break;
       }
     }

@@ -24,6 +24,7 @@ function getSigla(n) { return SIGLAS[(n||'').trim()] || n || '—'; }
 // ── Load ──
 async function loadReportes() {
   await _authReady;
+  populateEmpresaSelect('ra-empresa', 'Seleccionar...');
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -110,7 +111,7 @@ var rptFiltersAttached = false;
 function populateRptFilters() {
   var emps = [], coms = [], clis = [];
   pedidos.forEach(function(p) {
-    if (p.Nombre_Empresa && emps.indexOf(p.Nombre_Empresa) < 0) emps.push(p.Nombre_Empresa);
+    if (p.Nombre_Empresa && emps.indexOf(p.Nombre_Empresa) < 0 && AUTH.hasCompany(p.Nombre_Empresa)) emps.push(p.Nombre_Empresa);
     if (p.Comercial && coms.indexOf(p.Comercial) < 0) coms.push(p.Comercial);
     var cli = (p.Cliente || '').trim();
     if (cli && clis.indexOf(cli) < 0) clis.push(cli);

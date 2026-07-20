@@ -28,6 +28,7 @@ function getSiglaClassCam(n) { var s = getSiglaCam(n); return SIGLA_CLS_CAM.inde
 // ── Load ──
 async function loadCambios() {
   await _authReady;
+  populateEmpresaSelect('cam-empresa');
   setSyncStatus('syncing', 'Cargando cambios...');
   try {
     var data = await apiGet('getCambios');
@@ -252,7 +253,7 @@ function renderCamTable() {
       : esPend
         ? '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>'
         : '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Completado</span>';
-    var gestionarBtn = '<button onclick="openGestionarCam(\''+keyEsc+'\')" title="Gestionar cambio" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Gestionar</button>';
+    var gestionarBtn = AUTH.canEdit() ? '<button onclick="openGestionarCam(\''+keyEsc+'\')" title="Gestionar cambio" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Gestionar</button>' : '';
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">'+(i+1)+'</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">'+fmtDate(r.Fecha_Solicitud)+'</td>' +
@@ -267,8 +268,8 @@ function renderCamTable() {
       '<td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
         '<button onclick="viewCamDetail(\''+keyEsc+'\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
         gestionarBtn +
-        '<button onclick="openEditCamGroup(\''+keyEsc+'\')" title="Editar" style="background:#8e44ad;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">✏️</button>' +
-        '<button class="btn-del" onclick="openDeleteCamGroup(\''+keyEsc+'\')" title="Eliminar">🗑️</button>' +
+        (AUTH.canEdit() ? '<button onclick="openEditCamGroup(\''+keyEsc+'\')" title="Editar" style="background:#8e44ad;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">✏️</button>' +
+        '<button class="btn-del" onclick="openDeleteCamGroup(\''+keyEsc+'\')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');

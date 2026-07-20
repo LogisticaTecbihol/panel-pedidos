@@ -109,8 +109,8 @@
       <h3>Órdenes registradas <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort" onclick="clearSort()" title="Quitar todos los ordenamientos">✕ Limpiar orden</button>
-        <button class="btn-dl" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
-        <button class="btn-dl" onclick="document.getElementById('file-upload').click()" style="background:#27ae60">📥 Cargar Pedido</button>
+        <button class="btn-dl auth-edit-only" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
+        <button class="btn-dl auth-edit-only" onclick="document.getElementById('file-upload').click()" style="background:#27ae60">📥 Cargar Pedido</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
         <button class="btn-dl" onclick="exportOrdenesExcel()" style="background:#217346">📊 Exportar Excel</button>
         <button class="btn-dl" onclick="loadFromAPI()">🔄 Actualizar datos</button>
@@ -425,11 +425,6 @@
           <label class="ef-label">Empresa *</label>
           <select class="ef" id="nv-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
           </select>
         </div>
         <div>

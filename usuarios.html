@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Gestión de Usuarios — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<title>Usuarios – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css">
+</head>
+<body>
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html">📋 Pedidos</a>
+    <a href="ingresos.html">📥 Ingresos</a>
+    <a href="ordenes.html">🛒 Órdenes</a>
+    <a href="devoluciones.html">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html">📊 Inventario</a>
+    <a href="kardex.html">📋 Kardex</a>
+    <a href="muestras.html">🧪 Muestras</a>
+    <a href="reenvases.html">🏭 Salidas a producción</a>
+    <a href="reportes.html">📈 Reportes</a>
+    <a href="dashboard.html">📊 Dashboard</a>
+    <a href="usuarios.html" id="nav-usuarios" class="active">👥 Usuarios</a>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Cargando usuarios...</h2>
+  <p>Verificando permisos de administrador</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadUsuarios()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc" style="border-color:#1a5276"><div class="num" id="s-total" style="color:#1a5276">0</div><div class="lbl">Total usuarios</div></div>
+    <div class="sc" style="border-color:#e74c3c"><div class="num" id="s-admins" style="color:#e74c3c">0</div><div class="lbl">Admins</div></div>
+    <div class="sc" style="border-color:#27ae60"><div class="num" id="s-editors" style="color:#27ae60">0</div><div class="lbl">Editores</div></div>
+    <div class="sc" style="border-color:#f39c12"><div class="num" id="s-readers" style="color:#f39c12">0</div><div class="lbl">Lectores</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>👥 Usuarios del sistema <span id="row-ct-usr" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="openNewUser()" style="background:#1a5276">➕ Nuevo Usuario</button>
+        <button class="btn-dl" onclick="loadUsuarios()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nombre</th>
+            <th>Email</th>
+            <th>Rol</th>
+            <th>Empresas</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="t-body-usr"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- USER MODAL -->
+<div class="overlay" id="usr-overlay">
+  <div class="modal-box" style="max-width:580px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#1a5276,#2471a3)">
+      <div style="flex:1">
+        <h2 id="usr-modal-title">➕ Nuevo Usuario</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Crear o editar cuenta de usuario</div>
+      </div>
+      <button class="btn-close" onclick="closeUserModal()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="usr-edit-id" value="">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div>
+          <label class="ef-label">Nombre completo</label>
+          <input class="ef" id="usr-nombre" type="text" placeholder="Ej: Juan Pérez">
+        </div>
+        <div>
+          <label class="ef-label">Correo electrónico</label>
+          <input class="ef" id="usr-email" type="email" placeholder="usuario@empresa.com">
+        </div>
+        <div id="usr-pass-group">
+          <label class="ef-label">Contraseña</label>
+          <input class="ef" id="usr-password" type="password" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+        </div>
+        <div>
+          <label class="ef-label">Rol</label>
+          <select class="ef" id="usr-rol">
+            <option value="lector">Lector (solo lectura)</option>
+            <option value="editor">Editor (lectura + escritura)</option>
+            <option value="admin">Admin (acceso total)</option>
+          </select>
+        </div>
+      </div>
+      <div style="border-top:1px solid #e2e8f0;padding-top:14px">
+        <div style="font-weight:700;font-size:0.88rem;color:#2d3748;margin-bottom:10px">🏢 Empresas asignadas</div>
+        <div id="usr-empresas-checks" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+      </div>
+    </div>
+    <div class="mftr">
+      <div style="font-size:0.8rem;color:#718096">Los datos se guardan directamente en la nube</div>
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeUserModal()">Cancelar</button>
+        <button class="btn-confirm" id="btn-save-usr" onclick="saveUser()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="overlay" id="del-usr-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1">
+        <h2>⚠️ Desactivar Usuario</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">El usuario no podrá acceder al sistema</div>
+      </div>
+      <button class="btn-close" onclick="closeDeleteUser()">✕</button>
+    </div>
+    <div class="mbody" style="text-align:center;padding:28px 24px">
+      <div style="font-size:2.5rem;margin-bottom:12px">⚠️</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#2d3748;margin-bottom:8px" id="del-usr-msg">¿Desactivar este usuario?</div>
+      <div style="font-size:0.82rem;color:#718096" id="del-usr-detail"></div>
+    </div>
+    <div class="mftr" style="justify-content:center;gap:12px">
+      <button class="btn-cancel" onclick="closeDeleteUser()">Cancelar</button>
+      <button class="btn-confirm" id="btn-del-usr-confirm" onclick="confirmToggleUser()" style="background:#e74c3c">⚠️ Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/usuarios.js"></script>
+</body>
+</html>

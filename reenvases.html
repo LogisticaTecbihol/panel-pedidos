@@ -92,7 +92,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
       <h3><span id="card-title-re">Salidas — Productos Buenos</span> <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort-re" onclick="clearSortRe()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
-        <button class="btn-dl" id="btn-new-re" onclick="openNewReenvase()" style="background:#d35400">🏭 Nueva Salida (Buenos)</button>
+        <button class="btn-dl auth-edit-only" id="btn-new-re" onclick="openNewReenvase()" style="background:#d35400">🏭 Nueva Salida (Buenos)</button>
         <button class="btn-dl" onclick="loadReenvases()">🔄 Actualizar datos</button>
       </div>
     </div>
@@ -130,11 +130,6 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
           <label class="ef-label">Empresa</label>
           <select class="ef" id="re-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
           </select>
         </div>
         <div>

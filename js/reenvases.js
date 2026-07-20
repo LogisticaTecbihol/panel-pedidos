@@ -157,6 +157,7 @@ var RE_COLS = [
 
 async function loadReenvases() {
   await _authReady;
+  populateEmpresaSelect('re-empresa');
   var loadZone = document.getElementById('load-zone');
   var main = document.getElementById('main');
   var loadErr = document.getElementById('load-error');
@@ -189,7 +190,7 @@ function populateReFilters() {
   allReenvases.forEach(function(r) {
     var bod = r.Bodega || 'Productos Buenos';
     if (bod !== bodegaActual) return;
-    if (r.Empresa) empresas[r.Empresa] = 1;
+    if (r.Empresa && AUTH.hasCompany(r.Empresa)) empresas[r.Empresa] = 1;
   });
 
   var sel = document.getElementById('f-empresa');
@@ -335,8 +336,8 @@ function renderReTable() {
       '<td>' + escHtml(r.Remision || '—') + '</td>' +
       '<td>' + escHtml(obs || '—') + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-        '<button class="btn-edit" onclick="editReenvase(' + r.id + ')">✏️</button> ' +
-        '<button class="btn-del" onclick="deleteReenvase(' + r.id + ')">🗑️</button>' +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="editReenvase(' + r.id + ')">✏️</button> ' +
+        '<button class="btn-del" onclick="deleteReenvase(' + r.id + ')">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 }

@@ -76,12 +76,6 @@
       <label>Empresa</label>
       <select id="f-empresa">
         <option value="">— Seleccionar —</option>
-        <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-        <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-        <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-        <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-        <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
-        <option value="CHIA ABAGO">CHIA ABAGO</option>
       </select>
     </div>
     <div class="fg">
@@ -97,12 +91,12 @@
     <div class="card-head">
       <h3>Kardex de Inventario <span id="row-ct-kx" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn-dl" onclick="openAjusteModal()" style="background:#0e6655">➕ Ajuste manual</button>
-        <button class="btn-dl" onclick="openSaldoInicialModal()" style="background:#1a5276">📦 Saldo inicial</button>
-        <button class="btn-dl" onclick="openCargaMasivaModal('PARCELAR')" style="background:#8e44ad">📥 Carga PARCELAR</button>
-        <button class="btn-dl" onclick="openCargaMasivaModal('GREEN')" style="background:#27ae60">📥 Carga GREEN</button>
-        <button class="btn-dl" onclick="openCargaMasivaModal('RESO')" style="background:#e67e22">📥 Carga RESO</button>
-        <button class="btn-dl" onclick="openCargaMasivaModal('IAS')" style="background:#2c3e50">📥 Carga IAS</button>
+        <button class="btn-dl auth-edit-only" onclick="openAjusteModal()" style="background:#0e6655">➕ Ajuste manual</button>
+        <button class="btn-dl auth-edit-only" onclick="openSaldoInicialModal()" style="background:#1a5276">📦 Saldo inicial</button>
+        <button class="btn-dl auth-edit-only" onclick="openCargaMasivaModal('PARCELAR')" style="background:#8e44ad">📥 Carga PARCELAR</button>
+        <button class="btn-dl auth-edit-only" onclick="openCargaMasivaModal('GREEN')" style="background:#27ae60">📥 Carga GREEN</button>
+        <button class="btn-dl auth-edit-only" onclick="openCargaMasivaModal('RESO')" style="background:#e67e22">📥 Carga RESO</button>
+        <button class="btn-dl auth-edit-only" onclick="openCargaMasivaModal('IAS')" style="background:#2c3e50">📥 Carga IAS</button>
         <button class="btn-dl" onclick="exportKardexExcel()">📥 Exportar Excel</button>
         <button class="btn-dl" onclick="loadKardex()">🔄 Actualizar datos</button>
       </div>
@@ -139,12 +133,6 @@
       <label>Empresa</label>
       <select id="nc-f-empresa">
         <option value="">— Seleccionar —</option>
-        <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-        <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-        <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-        <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-        <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
-        <option value="CHIA ABAGO">CHIA ABAGO</option>
       </select>
     </div>
     <div class="fg">
@@ -160,9 +148,9 @@
     <div class="card-head">
       <h3>⚠️ Kardex Bodega No Conforme <span id="row-ct-nc" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn-dl" onclick="openNCModal('Ingreso_NC')" style="background:#e67e22">📥 Ingreso a Bodega NC</button>
-        <button class="btn-dl" onclick="openNCSaldoModal()" style="background:#1a5276">📦 Saldo inicial</button>
-        <button class="btn-dl" onclick="openNCModal('Salida_NC')" style="background:#27ae60">📤 Salida de Bodega NC</button>
+        <button class="btn-dl auth-edit-only" onclick="openNCModal('Ingreso_NC')" style="background:#e67e22">📥 Ingreso a Bodega NC</button>
+        <button class="btn-dl auth-edit-only" onclick="openNCSaldoModal()" style="background:#1a5276">📦 Saldo inicial</button>
+        <button class="btn-dl auth-edit-only" onclick="openNCModal('Salida_NC')" style="background:#27ae60">📤 Salida de Bodega NC</button>
         <button class="btn-dl" onclick="exportNCExcel()">📥 Exportar Excel</button>
         <button class="btn-dl" onclick="loadKardex()">🔄 Actualizar datos</button>
       </div>
@@ -255,12 +243,6 @@
           <label class="ef-label">Empresa</label>
           <select class="ef" id="nc-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
-            <option value="CHIA ABAGO">CHIA ABAGO</option>
           </select>
         </div>
         <div>
@@ -361,12 +343,6 @@
           <label class="ef-label">Empresa</label>
           <select class="ef" id="ncsi-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
-            <option value="CHIA ABAGO">CHIA ABAGO</option>
           </select>
         </div>
       </div>
@@ -425,12 +401,6 @@
           <label class="ef-label">Empresa</label>
           <select class="ef" id="aj-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
-            <option value="CHIA ABAGO">CHIA ABAGO</option>
           </select>
         </div>
         <div>
@@ -496,12 +466,6 @@
           <label class="ef-label">Empresa</label>
           <select class="ef" id="si-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
-            <option value="CHIA ABAGO">CHIA ABAGO</option>
           </select>
         </div>
       </div>
@@ -578,12 +542,6 @@
           <label class="ef-label">Empresa</label>
           <select class="ef" id="cm-empresa">
             <option value="">— Seleccionar —</option>
-            <option value="PARCELAR DE COLOMBIA SAS">PARCELAR</option>
-            <option value="GREEN AGROSOLUCIONES DE COLOMBIA SAS">GREEN</option>
-            <option value="SOLUCIONES INTEGRALES RESO SAS">RESO</option>
-            <option value="INSUMOS AGROPECUARIOS SOSTENIBLES SAS">IASO</option>
-            <option value="INSUMOS AGROPECUARIOS DE LA SABANA SAS">IAS</option>
-            <option value="CHIA ABAGO">CHIA ABAGO</option>
           </select>
         </div>
         <div>
