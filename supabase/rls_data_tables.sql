@@ -9,6 +9,29 @@
 
 
 -- ══════════════════════════════════════════════════════════════
+-- 0. LIMPIAR políticas permisivas preexistentes (anon_all,
+--    authenticated_full_access, etc.) que anulan el filtrado
+-- ══════════════════════════════════════════════════════════════
+
+DO $$
+DECLARE
+  t text;
+  p text;
+BEGIN
+  FOR t, p IN
+    SELECT tablename, policyname FROM pg_policies
+    WHERE schemaname = 'public'
+    AND policyname IN ('anon_all','anon_full_access','anon_full_clientesunicos','authenticated_full_access')
+    AND tablename IN ('Pedidos','Productos','Ingresos','Devoluciones','CambiosMercancia',
+      'Inventario','OrdenesCompra','SolicitudMuestras','Reenvases','KardexAjustes',
+      'KardexNC','RemisionesAnuladas','Consecutivos','ClientesUnicos','maestro_productos')
+  LOOP
+    EXECUTE format('DROP POLICY %I ON %I', p, t);
+  END LOOP;
+END $$;
+
+
+-- ══════════════════════════════════════════════════════════════
 -- 1. TABLAS CON COLUMNA "Empresa" (texto = nombre completo)
 --    Devoluciones, CambiosMercancia, Inventario, SolicitudMuestras,
 --    Reenvases, KardexAjustes, KardexNC, RemisionesAnuladas

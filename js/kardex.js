@@ -30,6 +30,7 @@ async function loadKardex() {
   populateEmpresaSelect('aj-empresa', '— Seleccionar —', kxExtras);
   populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras);
   populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras);
+  EMPRESAS_EXIST = AUTH.getFilteredEmpresas(EMPRESAS_HOLDING).concat([{ value: 'CHIA ABAGO', sigla: 'CHIA ABAGO' }]);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -1884,14 +1885,7 @@ async function saveNCSaldo() {
 // ── EXISTENCIAS POR EMPRESA ──
 // ══════════════════════════════════════════
 
-var EMPRESAS_EXIST = [
-  { value: 'PARCELAR DE COLOMBIA SAS', sigla: 'PARCELAR' },
-  { value: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS', sigla: 'GREEN' },
-  { value: 'SOLUCIONES INTEGRALES RESO SAS', sigla: 'RESO' },
-  { value: 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS', sigla: 'IASO' },
-  { value: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS', sigla: 'IAS' },
-  { value: 'CHIA ABAGO', sigla: 'CHIA ABAGO' }
-];
+var EMPRESAS_EXIST = [];
 
 var existData = [];
 var existFiltered = [];
