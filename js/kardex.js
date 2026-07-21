@@ -19,6 +19,15 @@ var activeTab = 'kardex';
 
 function getSiglaKx(n) { return getSigla(n); }
 
+function _empresaTienePlanta(empresa) {
+  var s = getSiglaKx(empresa);
+  return s === 'GREEN' || s === 'PARCELAR';
+}
+
+function _esOrigenPlanta(origen) {
+  return /planta/i.test(origen || '');
+}
+
 // ── Load all modules ──
 async function loadKardex() {
   await _authReady;
@@ -159,8 +168,9 @@ function buildMovimientos() {
     if (cant <= 0) return;
     var origenLc = (ing.Origen || '').toLowerCase();
     var esCachipay = origenLc.indexOf('cachipay') >= 0 || origenLc.indexOf('proveedor') >= 0;
-    // ENTRADA destino
-    if (ing.Empresa_Destino) {
+    var esPlantaOrigen = _esOrigenPlanta(ing.Origen);
+    // ENTRADA destino — se omite si destino es empresa con planta y origen es planta
+    if (ing.Empresa_Destino && !(_empresaTienePlanta(ing.Empresa_Destino) && esPlantaOrigen)) {
       kxMovimientos.push({
         fecha: ing.Fecha || '',
         tipo: 'Entrada',
@@ -174,8 +184,9 @@ function buildMovimientos() {
         _ajusteId: null
       });
     }
-    // SALIDA origen — se omite para ingresos desde Cachipay o misma empresa
-    if (ing.Empresa_Origen && !esCachipay && ing.Empresa_Origen !== ing.Empresa_Destino) {
+    // SALIDA origen — se omite para ingresos desde Cachipay, planta o misma empresa
+    var skipSalida = esCachipay || (_empresaTienePlanta(ing.Empresa_Origen) && esPlantaOrigen);
+    if (ing.Empresa_Origen && !skipSalida && ing.Empresa_Origen !== ing.Empresa_Destino) {
       kxMovimientos.push({
         fecha: ing.Fecha || '',
         tipo: 'Salida',
@@ -294,7 +305,9 @@ function buildMovimientos() {
   });
 
   // Salidas a producción (Reenvases) — SALIDA (solo Bodega Productos Buenos)
+  // Se excluyen para GREEN y PARCELAR (no manejamos inventario de planta)
   kxReenvases.forEach(function(re) {
+    if (_empresaTienePlanta(re.Empresa)) return;
     var bodega = re.Bodega || 'Productos Buenos';
     if (bodega !== 'Productos Buenos') return;
     var cant = Number(re.Cantidad) || 0;
