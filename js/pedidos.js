@@ -1710,6 +1710,24 @@ function populateComercialSelect(empresa) {
   dl.innerHTML = list.map(function(c) { return '<option value="' + c.replace(/"/g, '&quot;') + '">'; }).join('');
 }
 
+function nextConsecutivoPorComercial(comercial) {
+  if (!comercial) return '';
+  var cLow = comercial.trim().toLowerCase();
+  var max = 0;
+  pedidos.forEach(function(p) {
+    if ((p.Comercial || '').trim().toLowerCase() === cLow) {
+      var n = Number(p.Consecutivo) || 0;
+      if (n > max) max = n;
+    }
+  });
+  return max + 1;
+}
+
+function actualizarConsecutivoNuevo() {
+  var comercial = document.getElementById('nv-comercial').value.trim();
+  document.getElementById('nv-consecutivo').value = comercial ? nextConsecutivoPorComercial(comercial) : '';
+}
+
 async function openNuevoPedido() {
   document.getElementById('nv-empresa').value = '';
   document.getElementById('nv-consecutivo').value = '';
@@ -1733,7 +1751,9 @@ async function openNuevoPedido() {
   nvEmpSel.onchange = function() {
     document.getElementById('nv-comercial').value = '';
     populateComercialSelect(nvEmpSel.value);
+    actualizarConsecutivoNuevo();
   };
+  document.getElementById('nv-comercial').oninput = actualizarConsecutivoNuevo;
   populateNuevoDataLists();
   renderNuevoLines();
   document.getElementById('nuevo-overlay').classList.add('show');
@@ -1763,7 +1783,10 @@ async function openNuevoPedido() {
         if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
         if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
         if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
-        if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) document.getElementById('nv-comercial').value = lastOrder.Comercial;
+        if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
+          document.getElementById('nv-comercial').value = lastOrder.Comercial;
+          actualizarConsecutivoNuevo();
+        }
       }
     }
   });
@@ -1866,7 +1889,7 @@ async function guardarNuevoPedido() {
   var cliente = document.getElementById('nv-cliente').value.trim();
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
-  if (!consecutivo) { showToast('Ingresa el consecutivo', '#e74c3c'); return; }
+  if (!consecutivo) { showToast('Selecciona un comercial para generar el consecutivo', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha del pedido', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
 
