@@ -35,6 +35,20 @@
   .btn-export { background: #148f77; color: white; border: none; padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600; transition: background 0.2s; }
   .btn-export:hover { background: #117a65; }
   .empty-msg { text-align: center; color: #a0aec0; padding: 32px; font-size: 0.9rem; }
+  .rem-row-main { cursor: pointer; }
+  .rem-row-main:hover { background: #edf2f7 !important; }
+  .rem-row-main.rem-open { background: #ebf5fb !important; }
+  .rem-expand { display: inline-block; width: 16px; font-size: 0.65rem; color: #718096; transition: transform 0.15s; text-align: center; }
+  .rem-detail-row { display: none; }
+  .rem-detail-row.open { display: table-row; }
+  .rem-detail-row > td { padding: 0 14px 14px 14px !important; background: #f8fafc; border-bottom: 2px solid #d6e4f0 !important; }
+  .rem-detail-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin: 6px 0 0 0; border-radius: 6px; overflow: hidden; }
+  .rem-detail-table th { background: #e8f0f8; padding: 7px 12px; text-align: left; font-size: 0.7rem; text-transform: uppercase; color: #1a5276; font-weight: 700; border-bottom: 2px solid #d6e4f0; }
+  .rem-detail-table td { padding: 6px 12px; border-bottom: 1px solid #edf2f7; }
+  .rem-detail-table tr:last-child td { border-bottom: none; }
+  .rem-detail-table tr:hover { background: #edf6fc; }
+  .rem-detail-table .money { text-align: right; font-variant-numeric: tabular-nums; }
+  .rem-detail-label { font-size: 0.72rem; color: #1a5276; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -193,6 +207,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/reportes.js?v=20260630a"></script>
+<script src="js/reportes.js?v=20260721a"></script>
 </body>
 </html>

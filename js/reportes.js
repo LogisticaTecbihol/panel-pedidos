@@ -337,8 +337,9 @@ function _addRemision(map, key, empresa, numRem, modulo, referencia, detalle, ca
   }
   var row = map[key];
   if (referencia) row.referencias[referencia] = true;
-  if (detalle) row.detalles.push(detalle);
-  row.cantidad += Number(cantidad) || 0;
+  var cant = Number(cantidad) || 0;
+  if (detalle) row.detalles.push({ text: detalle, cantidad: cant, fecha: String(fecha || ''), referencia: referencia || '' });
+  row.cantidad += cant;
   if (fecha) row.fechas.push(String(fecha));
 }
 
@@ -580,8 +581,29 @@ function sortedRemData() {
   });
 }
 
+function toggleRemDetail(idx, e) {
+  if (e) e.stopPropagation();
+  var detail = document.getElementById('rem-detail-' + idx);
+  var mainRow = document.getElementById('rem-row-' + idx);
+  var chevron = document.getElementById('rem-chev-' + idx);
+  if (detail.classList.contains('open')) {
+    detail.classList.remove('open');
+    mainRow.classList.remove('rem-open');
+    chevron.textContent = '▶';
+  } else {
+    detail.classList.add('open');
+    mainRow.classList.add('rem-open');
+    chevron.textContent = '▼';
+  }
+}
+
+function _parseDetalle(text) {
+  var m = String(text || '').match(/^(.+?)\s*\((.+?)\)\s*$/);
+  return m ? { producto: m[1].trim(), presentacion: m[2].trim() } : { producto: text || '—', presentacion: '' };
+}
+
 function renderRemTable() {
-  var MOD_COLORS = { 'Pedido': '#2980b9', 'Ingreso': '#27ae60', 'Orden de Compra': '#8e44ad', 'Muestra': '#e67e22', 'Salida a producción': '#d35400', 'Devolución': '#c0392b', 'Dev. Ingreso': '#e74c3c', 'Dev. Salida': '#c0392b', 'Cambio': '#16a085', 'Cambio Ingreso': '#1abc9c', 'Cambio Salida': '#16a085', 'Anulada': '#7f8c8d' };
+  var MOD_COLORS = { 'Pedido': '#2980b9', 'Ingreso': '#27ae60', 'Orden de Compra': '#8e44ad', 'Muestra': '#e67e22', 'Salida a producción': '#d35400', 'Devolución': '#c0392b', 'Dev. Ingreso': '#e74c3c', 'Dev. Salida': '#c0392b', 'Cambio': '#16a085', 'Cambio Ingreso': '#1abc9c', 'Cambio Salida': '#16a085', 'Anulada': '#7f8c8d', 'NC Ingreso': '#e74c3c', 'NC Salida': '#c0392b' };
   var cols = [
     { id: 'empresa', label: 'Empresa' },
     { id: 'empresaOrigen', label: 'Emp. Origen' },
@@ -611,13 +633,15 @@ function renderRemTable() {
     return;
   }
 
-  tbody.innerHTML = rows.map(function(r) {
+  tbody.innerHTML = rows.map(function(r, idx) {
     var modColor = MOD_COLORS[r.modulo] || '#718096';
     var empOrigCell = r.empresaOrigen ? '<span class="badge-emp" style="background:#fef9e7;color:#7d6608">' + getSigla(r.empresaOrigen) + '</span>' : '—';
     var empDestCell = r.empresaDestino ? '<span class="badge-emp" style="background:#eafaf1;color:#1e8449">' + getSigla(r.empresaDestino) + '</span>' : '—';
-    var deleteBtn = r._anulada_id ? ' <button onclick="deleteRemAnulada(' + r._anulada_id + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button>' : '';
-    return '<tr' + (r.modulo === 'Anulada' ? ' style="background:#fdf2f2"' : '') + '>' +
-      '<td><span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + r.empresa + '</span></td>' +
+    var deleteBtn = r._anulada_id ? ' <button onclick="event.stopPropagation();deleteRemAnulada(' + r._anulada_id + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button>' : '';
+    var hasDetalles = r.detalles && r.detalles.length > 0;
+
+    var mainRow = '<tr class="rem-row-main" id="rem-row-' + idx + '" onclick="toggleRemDetail(' + idx + ')"' + (r.modulo === 'Anulada' ? ' style="background:#fdf2f2"' : '') + '>' +
+      '<td><span class="rem-expand" id="rem-chev-' + idx + '">▶</span> <span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + r.empresa + '</span></td>' +
       '<td>' + empOrigCell + '</td>' +
       '<td>' + empDestCell + '</td>' +
       '<td style="font-weight:700;color:#2c3e50">' + r.remision + deleteBtn + '</td>' +
@@ -627,6 +651,32 @@ function renderRemTable() {
       '<td class="money" style="color:#27ae60;font-weight:600">' + r.cantidad.toLocaleString('es-CO') + '</td>' +
       '<td style="font-size:0.8rem;color:#718096">' + (r.fecha ? fmtDate(r.fecha) : '—') + '</td>' +
     '</tr>';
+
+    var detailRow = '<tr class="rem-detail-row" id="rem-detail-' + idx + '"><td colspan="9">';
+    if (hasDetalles) {
+      detailRow += '<div class="rem-detail-label">Productos en remisión ' + r.remision + ' — ' + r.empresa + ' (' + r.modulo + ')</div>';
+      detailRow += '<table class="rem-detail-table"><thead><tr>' +
+        '<th style="width:5%">#</th><th style="width:35%">Producto</th><th style="width:18%">Presentación</th>' +
+        '<th style="width:14%;text-align:right">Cantidad</th><th style="width:14%">Fecha</th><th style="width:14%">Referencia</th>' +
+        '</tr></thead><tbody>';
+      r.detalles.forEach(function(d, di) {
+        var p = _parseDetalle(d.text);
+        detailRow += '<tr>' +
+          '<td style="color:#a0aec0;font-size:0.72rem">' + (di + 1) + '</td>' +
+          '<td style="font-weight:600;color:#2c3e50">' + p.producto + '</td>' +
+          '<td>' + (p.presentacion || '—') + '</td>' +
+          '<td class="money" style="color:#27ae60;font-weight:600">' + (d.cantidad || 0).toLocaleString('es-CO') + '</td>' +
+          '<td style="font-size:0.78rem;color:#718096">' + (d.fecha ? fmtDate(d.fecha) : '—') + '</td>' +
+          '<td style="font-size:0.78rem">' + (d.referencia || '—') + '</td>' +
+        '</tr>';
+      });
+      detailRow += '</tbody></table>';
+    } else {
+      detailRow += '<div class="empty-msg" style="padding:12px;font-size:0.82rem">Sin detalle de productos para esta remisión.</div>';
+    }
+    detailRow += '</td></tr>';
+
+    return mainRow + detailRow;
   }).join('');
 }
 
