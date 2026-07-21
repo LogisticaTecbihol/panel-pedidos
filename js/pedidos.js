@@ -512,6 +512,7 @@ function openDetail(idx) {
     document.getElementById('md-departamento'),
     document.getElementById('md-municipio')
   );
+  loadAdjuntos(c.Nombre_Empresa, c.Consecutivo);
 }
 
 function closeModal() {
@@ -2475,6 +2476,193 @@ function generarPedidoPDF(data) {
   var sigla = getSigla(data.empresa) || 'Pedido';
   doc.save('Pedido_' + sigla + '_' + (data.consecutivo || 'nuevo') + '.pdf');
 }
+
+// ── Adjuntos (Supabase Storage) ──
+var ADJUNTOS_BUCKET = 'pedidos-adjuntos';
+var adjuntosCache = {};
+
+function adjuntoPath(empresa, consecutivo, filename) {
+  var emp = getSigla(empresa).replace(/[^a-zA-Z0-9_-]/g, '_');
+  return emp + '/' + consecutivo + '/' + filename;
+}
+
+function adjuntoKey(empresa, consecutivo) {
+  return getSigla(empresa) + '_' + consecutivo;
+}
+
+async function loadAdjuntos(empresa, consecutivo) {
+  var listEl = document.getElementById('adjuntos-list');
+  var countEl = document.getElementById('adjuntos-count');
+  listEl.innerHTML = '<div class="adjuntos-loading">Cargando adjuntos...</div>';
+
+  var folder = getSigla(empresa).replace(/[^a-zA-Z0-9_-]/g, '_') + '/' + consecutivo;
+  var res2 = await _sb.storage.from(ADJUNTOS_BUCKET).list(folder, { limit: 50 });
+
+  var files = (res2.data || []).filter(function(f) { return f.name && f.id; });
+  var key = adjuntoKey(empresa, consecutivo);
+  adjuntosCache[key] = files;
+
+  if (!files.length) {
+    listEl.innerHTML = '<div class="adjuntos-empty">Sin archivos adjuntos</div>';
+    countEl.textContent = '';
+    return;
+  }
+
+  countEl.textContent = '(' + files.length + ')';
+  listEl.innerHTML = files.map(function(f) {
+    var ext = (f.name.split('.').pop() || '').toLowerCase();
+    var icon = ext === 'pdf' ? '📄' : '🖼️';
+    var size = f.metadata && f.metadata.size ? formatFileSize(f.metadata.size) : '';
+    var path = folder + '/' + f.name;
+    var nameEsc = f.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    var pathEsc = path.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return '<div class="adjunto-item">' +
+      '<div class="adjunto-icon">' + icon + '</div>' +
+      '<div class="adjunto-info">' +
+        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
+      '</div>' +
+      '<div class="adjunto-actions">' +
+        '<button class="btn-adj-ver" onclick="previewAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
+        '<button class="btn-adj-ver" onclick="downloadAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
+        (AUTH.canEdit() ? '<button class="btn-adj-del" onclick="deleteAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+async function handleAdjuntoUpload(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  var maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    showToast('El archivo excede 5 MB. Selecciona un archivo más pequeño.', '#e74c3c');
+    return;
+  }
+
+  var allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (allowed.indexOf(file.type) < 0) {
+    showToast('Tipo de archivo no permitido. Usa PDF, JPG, PNG o WEBP.', '#e74c3c');
+    return;
+  }
+
+  if (activeIdx === null) return;
+  var c = consecs[activeIdx];
+  var empresa = c.Nombre_Empresa;
+  var consecutivo = c.Consecutivo;
+
+  var timestamp = Date.now();
+  var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var finalName = timestamp + '_' + safeName;
+  var path = adjuntoPath(empresa, consecutivo, finalName);
+
+  var progWrap = document.getElementById('adjunto-progress');
+  var progFill = document.getElementById('adjunto-prog-fill');
+  var progText = document.getElementById('adjunto-prog-text');
+  progWrap.style.display = 'block';
+  progFill.style.width = '30%';
+  progText.textContent = 'Subiendo ' + file.name + '...';
+
+  var res = await _sb.storage.from(ADJUNTOS_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    upsert: false
+  });
+
+  progFill.style.width = '100%';
+
+  if (res.error) {
+    progWrap.style.display = 'none';
+    showToast('Error al subir: ' + res.error.message, '#e74c3c');
+    return;
+  }
+
+  progText.textContent = 'Listo';
+  setTimeout(function() { progWrap.style.display = 'none'; progFill.style.width = '0%'; }, 1200);
+
+  showToast('Archivo adjuntado correctamente', '#27ae60');
+  await loadAdjuntos(empresa, consecutivo);
+}
+
+async function previewAdjunto(path, ext) {
+  var res = _sb.storage.from(ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+
+  var contentEl = document.getElementById('adjunto-preview-content');
+  if (ext === 'pdf') {
+    contentEl.innerHTML = '<iframe src="' + url + '"></iframe>';
+  } else {
+    contentEl.innerHTML = '<img src="' + url + '" alt="Preview">';
+  }
+  document.getElementById('adjunto-preview-overlay').classList.add('show');
+}
+
+function closeAdjuntoPreview() {
+  document.getElementById('adjunto-preview-overlay').classList.remove('show');
+  document.getElementById('adjunto-preview-content').innerHTML = '';
+}
+
+async function downloadAdjunto(path, filename) {
+  var res = _sb.storage.from(ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'archivo';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function deleteAdjunto(path) {
+  if (!confirm('¿Eliminar este archivo adjunto?')) return;
+  var res = await _sb.storage.from(ADJUNTOS_BUCKET).remove([path]);
+  if (res.error) {
+    showToast('Error al eliminar: ' + res.error.message, '#e74c3c');
+    return;
+  }
+  showToast('Archivo eliminado', '#e67e22');
+  if (activeIdx !== null) {
+    var c = consecs[activeIdx];
+    await loadAdjuntos(c.Nombre_Empresa, c.Consecutivo);
+  }
+}
+
+// Drag & drop
+(function() {
+  var dz = document.getElementById('adjunto-dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    var input = document.getElementById('adjunto-input');
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    handleAdjuntoUpload(input);
+  });
+})();
 
 // ── Auto-load on page open ──
 loadFromAPI();
