@@ -1,6 +1,12 @@
 // ── State ──
 var inventario = [];
 var pedidos = [];
+var reenvasesInv = [];
+var ingresosInv = [];
+var muestrasInv = [];
+var devolucionesInv = [];
+var cambiosMercInv = [];
+var ordenesCompraInv = [];
 var editInvRow = null;
 var catalogoProductos = [];
 var invLineas = [];
@@ -21,6 +27,7 @@ var SORT_COLS_INV = [
   { id:'lote',      label:'Lote',         fn: function(r) { return (r.Lote||'').toLowerCase(); } },
   { id:'cantidad',  label:'Cantidad',     fn: function(r) { return Number(r.Cantidad)||0; } },
   { id:'disponible',label:'Disponible',   fn: function(r) { return Number(r._disponible)||0; } },
+  { id:'movimientos',label:'Movimientos', fn: function(r) { return Number(r._movimientos)||0; } },
 ];
 
 function toggleSortInv(id, e) {
@@ -67,14 +74,103 @@ function computeComprometido() {
   return comp;
 }
 
+// ── Compute net movements from all good-product modules ──
+function _esBueno(bodega) {
+  var b = (bodega || '').toLowerCase().trim();
+  return b !== 'producto no conforme';
+}
+
+function computeMovimientos() {
+  var mov = {};
+  function add(empresa, producto, cantidad) {
+    var prod = norm(producto);
+    if (!prod) return;
+    var key = norm(empresa) + '||' + prod;
+    if (!mov[key]) mov[key] = 0;
+    mov[key] += cantidad;
+  }
+
+  // 1. Reenvases (Salidas a producción) — producto sale → restar
+  reenvasesInv.forEach(function(re) {
+    if (!_esBueno(re.Bodega || 'Productos Buenos')) return;
+    add(re.Empresa, re.Producto, -(Number(re.Cantidad) || 0));
+  });
+
+  // 2. Muestras despachadas — producto sale → restar cant entregada
+  muestrasInv.forEach(function(m) {
+    var cant = Number(m.Cant_Entregada) || 0;
+    if (cant <= 0) return;
+    add(m.Empresa, m.Producto, -cant);
+  });
+
+  // 3. Ingresos (transferencias) — sale de origen, entra a destino
+  ingresosInv.forEach(function(ing) {
+    var cant = Number(ing.Cantidad) || 0;
+    if (cant <= 0) return;
+    if (ing.Empresa_Origen) add(ing.Empresa_Origen, ing.Producto, -cant);
+    if (ing.Empresa_Destino) add(ing.Empresa_Destino, ing.Producto, cant);
+  });
+
+  // 4. Órdenes de compra recibidas — producto entra → sumar
+  ordenesCompraInv.forEach(function(oc) {
+    if ((oc.Estado || '').toLowerCase() === 'anulada') return;
+    if (!String(oc.Remision || '').trim()) return;
+    if (!_esBueno(oc.Bodega)) return;
+    var cant = Number(oc.Cantidad) || 0;
+    if (cant <= 0) return;
+    add(oc.Empresa_Destino, oc.Producto, cant);
+  });
+
+  // 5. Devoluciones tramitadas
+  devolucionesInv.forEach(function(d) {
+    if ((d.Estado || '').toLowerCase() !== 'tramitada') return;
+    var cant = Number(d.Cantidad) || 0;
+    if (cant <= 0) return;
+    if (String(d.Remision_Ingreso || '').trim() && _esBueno(d.Bodega_Ingreso)) {
+      add(d.Empresa, d.Producto, cant);
+    }
+    if (String(d.Remision_Salida || '').trim() && _esBueno(d.Bodega_Salida)) {
+      add(d.Empresa, d.Producto, -cant);
+    }
+  });
+
+  // 6. Cambios de mercancía cerrados
+  var cambiosGrp = {};
+  cambiosMercInv.forEach(function(c) {
+    var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
+    if (!cambiosGrp[gk]) cambiosGrp[gk] = [];
+    cambiosGrp[gk].push(c);
+  });
+  Object.keys(cambiosGrp).forEach(function(gk) {
+    var lines = cambiosGrp[gk];
+    var hdr = lines[0];
+    if ((hdr.Estado || '').toLowerCase() !== 'cerrado') return;
+    lines.forEach(function(l) {
+      var cant = Number(l.Cantidad) || 0;
+      if (cant <= 0) return;
+      if (l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Ingreso)) {
+        add(hdr.Empresa, l.Producto, cant);
+      } else if (l.Tipo_Linea === 'ENTREGAR' && _esBueno(hdr.Bodega_Salida)) {
+        add(hdr.Empresa, l.Producto, -cant);
+      }
+    });
+  });
+
+  return mov;
+}
+
 function enrichInventario() {
   var comp = computeComprometido();
+  var mov = computeMovimientos();
   inventario.forEach(function(r) {
     var prod = norm(r.Producto);
+    var emp = norm(r.Empresa);
     var stock = Number(r.Cantidad) || 0;
     var comprometido = comp[prod] || 0;
+    var movimiento = mov[emp + '||' + prod] || 0;
     r._comprometido = comprometido;
-    r._disponible = stock - comprometido;
+    r._movimientos = movimiento;
+    r._disponible = stock - comprometido + movimiento;
   });
 }
 
@@ -102,7 +198,13 @@ async function loadInventario() {
   try {
     var results = await Promise.all([
       apiGet('getInventario'),
-      apiGet('getPedidos')
+      apiGet('getPedidos'),
+      apiGet('getReenvases').catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getIngresos').catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getMuestras').catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getDevoluciones').catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getCambios').catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getOrdenesCompra').catch(function() { return { ok: true, ordenes: [] }; })
     ]);
 
     var dataInv = results[0];
@@ -116,6 +218,12 @@ async function loadInventario() {
     });
 
     pedidos = dataPed.ok ? (dataPed.pedidos || []) : [];
+    reenvasesInv = results[2].reenvases || [];
+    ingresosInv = results[3].ingresos || [];
+    muestrasInv = results[4].muestras || [];
+    devolucionesInv = results[5].devoluciones || [];
+    cambiosMercInv = results[6].cambios || [];
+    ordenesCompraInv = results[7].ordenes || [];
 
     enrichInventario();
     populateInvFilters();
@@ -204,6 +312,7 @@ function renderInvHeader() {
     { label:'Lote', id:'lote' },
     { label:'Stock', id:'cantidad' },
     { label:'Comprometido', id:null },
+    { label:'Movimientos', id:'movimientos' },
     { label:'Disponible', id:'disponible' },
     { label:'Acción', id:null },
   ];
@@ -226,11 +335,13 @@ function renderInvTable() {
   var totalRefs = inventario.length;
   var totalStock = inventario.reduce(function(s, r) { return s + (Number(r.Cantidad)||0); }, 0);
   var totalComp = inventario.reduce(function(s, r) { return s + (r._comprometido||0); }, 0);
+  var totalMov = inventario.reduce(function(s, r) { return s + (r._movimientos||0); }, 0);
   var totalDisp = inventario.reduce(function(s, r) { return s + (r._disponible||0); }, 0);
 
   document.getElementById('s-total').textContent = totalRefs;
   document.getElementById('s-stock').textContent = totalStock.toLocaleString('es-CO');
   document.getElementById('s-comprometido').textContent = totalComp.toLocaleString('es-CO');
+  document.getElementById('s-movimientos').textContent = (totalMov >= 0 ? '+' : '') + totalMov.toLocaleString('es-CO');
   document.getElementById('s-disponible').textContent = totalDisp.toLocaleString('es-CO');
   document.getElementById('row-ct-inv').textContent = '(' + rows.length + ' mostrados)';
 
@@ -247,13 +358,16 @@ function renderInvTable() {
 
   var tbody = document.getElementById('t-body-inv');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="12"><div class="empty">No hay registros de inventario con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13"><div class="empty">No hay registros de inventario con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
   tbody.innerHTML = rows.map(function(r, i) {
     var dispClass = r._disponible <= 0 ? 'inv-disp-neg' : r._disponible <= 10 ? 'inv-disp-low' : 'inv-disp-ok';
     var compStr = r._comprometido > 0 ? r._comprometido.toLocaleString('es-CO') : '—';
+    var movVal = r._movimientos || 0;
+    var movStr = movVal === 0 ? '—' : (movVal > 0 ? '+' : '') + movVal.toLocaleString('es-CO');
+    var movColor = movVal < 0 ? '#e74c3c' : movVal > 0 ? '#27ae60' : '#718096';
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
@@ -265,6 +379,7 @@ function renderInvTable() {
       '<td style="font-size:0.78rem">' + (r.Lote||'—') + '</td>' +
       '<td style="text-align:center;font-weight:700">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
       '<td style="text-align:center;font-size:0.82rem;color:#e67e22;font-weight:600">' + compStr + '</td>' +
+      '<td style="text-align:center;font-size:0.82rem;color:' + movColor + ';font-weight:600">' + movStr + '</td>' +
       '<td style="text-align:center"><span class="inv-disp-badge ' + dispClass + '">' + r._disponible.toLocaleString('es-CO') + '</span></td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditInv(' + r.__row + ')" title="Editar">✏️</button>' +
