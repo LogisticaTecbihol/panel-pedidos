@@ -2284,6 +2284,9 @@ function generarRemisionPDF(data) {
   y += 4;
 
   var tableBody = (data.entregas || []).map(function(p, i) {
+    var vUnit = Number(p.valor_unitario) || 0;
+    var textoTieneBonif = /bonificado/i.test(String(p.producto || ''));
+    var esBonif = (p.bonificado || '') === 'Si' || (p.bonificado || '') === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
     return [
       i + 1,
       String(p.producto || ''),
@@ -2291,7 +2294,7 @@ function generarRemisionPDF(data) {
       Number(p.cantidad) || 0,
       fmtMoney(p.valor_unitario),
       fmtMoney(p.valor_total),
-      p.bonificado === 'Si' || p.bonificado === 'Sí' ? 'Si' : 'No'
+      esBonif ? 'Sí' : 'No'
     ];
   });
 
@@ -2422,6 +2425,9 @@ function generarPedidoPDF(data) {
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
 
   var tableBody = (data.productos || []).map(function(p, i) {
+    var vUnit = Number(p.valor_unitario) || 0;
+    var textoTieneBonif = /bonificado/i.test(String(p.producto || ''));
+    var esBonif = (p.bonificado || '').trim() === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
     return [
       i + 1,
       String(p.producto || ''),
@@ -2429,7 +2435,7 @@ function generarPedidoPDF(data) {
       Number(p.cantidad) || 0,
       fmtMoney(p.valor_unitario),
       fmtMoney(p.valor_total),
-      p.bonificado === 'Sí' ? 'Sí' : 'No'
+      esBonif ? 'Sí' : 'No'
     ];
   });
 
