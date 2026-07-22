@@ -1568,52 +1568,111 @@ function exportProdExcel() {
   showToast('Excel exportado: ' + prodFiltered.length + ' productos');
 }
 
-// ── Bulk Tramitar ──
+// ── Bulk Tramitar (2-step wizard) ──
+var bulkTramitarData = { keys: [], groups: [], allLines: [] };
+
 function openBulkTramitarDev() {
   var keys = Object.keys(selectedDevKeys).filter(function(k) { return selectedDevKeys[k]; });
   if (!keys.length) { showToast('Selecciona al menos una devolución pendiente', '#e74c3c'); return; }
 
   var allLines = [];
-  var summaryItems = [];
+  var groupMap = {};
+  var groupOrder = [];
+
   keys.forEach(function(key) {
     var lines = devoluciones.filter(function(r) {
       return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === key;
     });
     if (!lines.length) return;
     var r = lines[0];
-    summaryItems.push({
-      key: key,
-      consecutivo: r.Consecutivo || '—',
-      cliente: r.Cliente || '—',
-      empresa: getSiglaDev(r.Empresa),
-      nProds: lines.length,
-      totalCant: lines.reduce(function(s, l) { return s + (Number(l.Cantidad) || 0); }, 0)
-    });
+    var gKey = (r.Empresa || '') + '||' + (r.Fecha || '') + '||' + (r.Cliente || '');
+    if (!groupMap[gKey]) {
+      groupMap[gKey] = {
+        empresa: r.Empresa, empresaSigla: getSiglaDev(r.Empresa), empresaClass: getSiglaClassDev(r.Empresa),
+        fecha: r.Fecha, cliente: r.Cliente || '—',
+        consecutivos: [], nProds: 0, totalCant: 0, totalValor: 0, devKeys: []
+      };
+      groupOrder.push(gKey);
+    }
+    var g = groupMap[gKey];
+    g.consecutivos.push(r.Consecutivo || '—');
+    g.nProds += lines.length;
+    g.devKeys.push(key);
     lines.forEach(function(l) {
-      allLines.push({ id: l.__row || l.id, Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada || 0 });
+      g.totalCant += Number(l.Cantidad) || 0;
+      g.totalValor += Number(l.Valor_Total) || 0;
+      allLines.push({
+        id: l.__row || l.id, Producto: l.Producto, Presentacion: l.Presentacion,
+        Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada || 0,
+        Consecutivo: r.Consecutivo || '—', Cliente: r.Cliente || '—'
+      });
     });
   });
 
+  var groups = groupOrder.map(function(k) { return groupMap[k]; });
+  bulkTramitarData = { keys: keys, groups: groups, allLines: allLines };
+
   document.getElementById('bulk-tramitar-meta').innerHTML =
-    '<span>' + keys.length + ' devolución(es) seleccionada(s)</span>' +
+    '<span>' + keys.length + ' devolución(es)</span>' +
+    '<span>' + groups.length + ' grupo(s) por empresa/fecha/cliente</span>' +
     '<span>' + allLines.length + ' línea(s) de producto</span>';
 
-  var summaryHtml = '<div style="max-height:200px;overflow-y:auto;margin-bottom:16px">' +
-    '<table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc">' +
-    '<th>#</th><th>Empresa</th><th>Consec.</th><th>Cliente</th><th style="text-align:center"># Prod.</th><th style="text-align:right">Cant. Total</th>' +
-    '</tr></thead><tbody>' +
-    summaryItems.map(function(s, i) {
-      return '<tr>' +
-        '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
-        '<td>' + s.empresa + '</td>' +
-        '<td style="text-align:center;font-weight:600">' + s.consecutivo + '</td>' +
-        '<td style="font-weight:600">' + s.cliente + '</td>' +
-        '<td style="text-align:center">' + s.nProds + '</td>' +
-        '<td style="text-align:right;font-weight:600">' + s.totalCant + '</td>' +
-        '</tr>';
-    }).join('') +
-    '</tbody></table></div>';
-  document.getElementById('bulk-tramitar-summary').innerHTML = summaryHtml;
+  var groupsHtml = groups.map(function(g, gi) {
+    return '<div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin-bottom:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+        '<div style="display:flex;align-items:center;gap:10px">' +
+          '<span class="sigla-badge ' + g.empresaClass + '">' + g.empresaSigla + '</span>' +
+          '<span style="font-weight:700;font-size:0.9rem;color:#2d3748">' + g.cliente + '</span>' +
+          '<span style="font-size:0.78rem;color:#718096">📅 ' + fmtDate(g.fecha) + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<span style="background:#edf2f7;padding:3px 10px;border-radius:10px;font-size:0.76rem;font-weight:600;color:#4a5568">' + g.nProds + ' producto(s)</span>' +
+          '<span style="font-weight:700;font-size:0.86rem;color:#2d3748">' + fmtMoney(g.totalValor) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+        '<span style="font-size:0.76rem;color:#718096;font-weight:600">Consecutivos:</span>' +
+        g.consecutivos.map(function(c) {
+          return '<span style="background:#e2e8f0;padding:2px 8px;border-radius:6px;font-size:0.78rem;font-weight:600;color:#2d3748">' + c + '</span>';
+        }).join('') +
+        '<span style="font-size:0.76rem;color:#718096;margin-left:8px">Cant. total: <strong>' + g.totalCant + '</strong></span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  document.getElementById('bulk-tramitar-groups').innerHTML = groupsHtml;
+
+  document.getElementById('bulk-step-1').style.display = 'block';
+  document.getElementById('bulk-step-2').style.display = 'none';
+  document.getElementById('btn-bulk-next').style.display = 'inline-block';
+  document.getElementById('btn-bulk-back').style.display = 'none';
+  document.getElementById('btn-bulk-tramitar-dev').style.display = 'none';
+  document.getElementById('bulk-tramitar-title').textContent = '📝 Vista General — Devoluciones Seleccionadas';
+  document.getElementById('bulk-tramitar-footer-msg').textContent = 'Revisa las devoluciones y continúa al detalle';
+
+  document.getElementById('bulk-tramitar-dev-overlay').classList.add('show');
+}
+
+function bulkTramitarNext() {
+  document.getElementById('bulk-step-1').style.display = 'none';
+  document.getElementById('bulk-step-2').style.display = 'block';
+  document.getElementById('btn-bulk-next').style.display = 'none';
+  document.getElementById('btn-bulk-back').style.display = 'inline-block';
+  document.getElementById('btn-bulk-tramitar-dev').style.display = 'inline-block';
+  document.getElementById('bulk-tramitar-title').textContent = '📝 Detalle de Productos y Trámite';
+  document.getElementById('bulk-tramitar-footer-msg').innerHTML = 'Se actualizará el estado a <strong>Tramitada</strong> en todas las seleccionadas';
+
+  var linesHtml = bulkTramitarData.allLines.map(function(l, i) {
+    return '<tr>' +
+      '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
+      '<td style="font-weight:600;font-size:0.78rem;text-align:center">' + l.Consecutivo + '</td>' +
+      '<td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (l.Cliente || '').replace(/"/g,'&quot;') + '">' + l.Cliente + '</td>' +
+      '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (l.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
+      '<td><input class="ef bulk-cant-dev" data-idx="' + i + '" type="number" min="0" max="' + (l.Cantidad || 9999) + '" value="' + (Number(l.Cant_Entregada) || Number(l.Cantidad) || 0) + '" style="width:100px;text-align:right"></td>' +
+    '</tr>';
+  }).join('');
+  document.getElementById('bulk-tramitar-lines').innerHTML = linesHtml;
 
   document.getElementById('bulk-tramitar-remision-ingreso').value = '';
   document.getElementById('bulk-tramitar-bodega-ingreso').value = 'Productos Buenos';
@@ -1623,8 +1682,17 @@ function openBulkTramitarDev() {
   document.getElementById('bulk-tramitar-fecha-salida').value = today();
 
   document.getElementById('btn-bulk-tramitar-dev').disabled = false;
-  document.getElementById('btn-bulk-tramitar-dev').textContent = '✓ Tramitar ' + keys.length + ' devolución(es)';
-  document.getElementById('bulk-tramitar-dev-overlay').classList.add('show');
+  document.getElementById('btn-bulk-tramitar-dev').textContent = '✓ Tramitar ' + bulkTramitarData.keys.length + ' devolución(es)';
+}
+
+function bulkTramitarBack() {
+  document.getElementById('bulk-step-1').style.display = 'block';
+  document.getElementById('bulk-step-2').style.display = 'none';
+  document.getElementById('btn-bulk-next').style.display = 'inline-block';
+  document.getElementById('btn-bulk-back').style.display = 'none';
+  document.getElementById('btn-bulk-tramitar-dev').style.display = 'none';
+  document.getElementById('bulk-tramitar-title').textContent = '📝 Vista General — Devoluciones Seleccionadas';
+  document.getElementById('bulk-tramitar-footer-msg').textContent = 'Revisa las devoluciones y continúa al detalle';
 }
 
 function closeBulkTramitarDev() {
@@ -1646,7 +1714,12 @@ async function saveBulkTramitarDev() {
   if (!remSalida) { showToast('Ingresa el N° de remisión de salida', '#e74c3c'); return; }
   if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
 
-  var keys = Object.keys(selectedDevKeys).filter(function(k) { return selectedDevKeys[k]; });
+  document.querySelectorAll('.bulk-cant-dev').forEach(function(inp) {
+    var idx = Number(inp.dataset.idx);
+    if (bulkTramitarData.allLines[idx]) bulkTramitarData.allLines[idx].Cant_Entregada = Number(inp.value) || 0;
+  });
+
+  var keys = bulkTramitarData.keys;
   if (!keys.length) return;
 
   var btn = document.getElementById('btn-bulk-tramitar-dev');
@@ -1664,7 +1737,10 @@ async function saveBulkTramitarDev() {
     if (!lines.length) continue;
 
     var lineas = lines.map(function(l) {
-      return { id: l.__row || l.id, Cant_Entregada: Number(l.Cant_Entregada) || Number(l.Cantidad) || 0 };
+      var lineId = l.__row || l.id;
+      var match = bulkTramitarData.allLines.filter(function(al) { return al.id === lineId; })[0];
+      var cantDev = match ? (Number(match.Cant_Entregada) || 0) : (Number(l.Cant_Entregada) || Number(l.Cantidad) || 0);
+      return { id: lineId, Cant_Entregada: cantDev };
     });
 
     try {
