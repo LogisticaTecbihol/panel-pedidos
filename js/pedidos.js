@@ -787,8 +787,8 @@ async function guardarTodo() {
         var pedida = Number(dl.Cantidad) || 0;
         var entregada = Number(dl.Cant_Entregada) || 0;
         if (pedida > 0 && entregada >= pedida) {
-          var tieneRemision = (dl.Remisiones || '').trim() !== '';
-          upd.Estado_2 = tieneRemision ? 'Cerrado' : 'Alistado';
+          var todasConRemision = (dl._entregas || []).length > 0 && (dl._entregas || []).every(function(e) { return (e.remision || '').trim() !== ''; });
+          upd.Estado_2 = todasConRemision ? 'Cerrado' : 'Alistado';
         }
         if (Object.keys(upd).length > 0) {
           await _sb.from('Pedidos').update(upd).eq('id', dl.__row);
