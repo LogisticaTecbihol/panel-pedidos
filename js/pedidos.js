@@ -408,7 +408,7 @@ function renderTable() {
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (c['N°']||'') + '</td>' +
       '<td title="' + (c.Nombre_Empresa||'') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + getSigla(c.Nombre_Empresa) + '</span></td>' +
-      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '"></span></td>' +
+      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
       '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (c.Cliente||'') + '">' + (c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
       '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
@@ -514,7 +514,7 @@ function openDetail(idx) {
     document.getElementById('md-departamento'),
     document.getElementById('md-municipio')
   );
-  loadAdjuntos(c.Nombre_Empresa, c.Consecutivo);
+  loadAdjuntos(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
 }
 
 function closeModal() {
@@ -2499,6 +2499,7 @@ async function loadAdjuntosIndex() {
   updateAdjuntosBadges();
 }
 
+
 function updateAdjuntosBadges() {
   var badges = document.querySelectorAll('.adjunto-badge-cell');
   badges.forEach(function(el) {
@@ -2509,25 +2510,33 @@ function updateAdjuntosBadges() {
   });
 }
 
-function adjuntoPath(empresa, consecutivo, filename) {
+function sanitizeForPath(s) {
+  return (s || '').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+}
+
+function adjuntoFolder(empresa, consecutivo, cliente) {
   var emp = getSigla(empresa).replace(/[^a-zA-Z0-9_-]/g, '_');
-  return emp + '/' + consecutivo + '/' + filename;
+  return emp + '/' + consecutivo + '_' + sanitizeForPath(cliente);
 }
 
-function adjuntoKey(empresa, consecutivo) {
-  return getSigla(empresa) + '_' + consecutivo;
+function adjuntoPath(empresa, consecutivo, cliente, filename) {
+  return adjuntoFolder(empresa, consecutivo, cliente) + '/' + filename;
 }
 
-async function loadAdjuntos(empresa, consecutivo) {
+function adjuntoKey(empresa, consecutivo, cliente) {
+  return getSigla(empresa) + '_' + consecutivo + '_' + sanitizeForPath(cliente);
+}
+
+async function loadAdjuntos(empresa, consecutivo, cliente) {
   var listEl = document.getElementById('adjuntos-list');
   var countEl = document.getElementById('adjuntos-count');
   listEl.innerHTML = '<div class="adjuntos-loading">Cargando adjuntos...</div>';
 
-  var folder = getSigla(empresa).replace(/[^a-zA-Z0-9_-]/g, '_') + '/' + consecutivo;
+  var folder = adjuntoFolder(empresa, consecutivo, cliente);
   var res2 = await _sb.storage.from(ADJUNTOS_BUCKET).list(folder, { limit: 50 });
 
   var files = (res2.data || []).filter(function(f) { return f.name && f.id; });
-  var key = adjuntoKey(empresa, consecutivo);
+  var key = adjuntoKey(empresa, consecutivo, cliente);
   adjuntosCache[key] = files;
 
   if (!files.length) {
@@ -2586,11 +2595,12 @@ async function handleAdjuntoUpload(input) {
   var c = consecs[activeIdx];
   var empresa = c.Nombre_Empresa;
   var consecutivo = c.Consecutivo;
+  var cliente = c.Cliente;
 
   var timestamp = Date.now();
   var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   var finalName = timestamp + '_' + safeName;
-  var path = adjuntoPath(empresa, consecutivo, finalName);
+  var path = adjuntoPath(empresa, consecutivo, cliente, finalName);
 
   var progWrap = document.getElementById('adjunto-progress');
   var progFill = document.getElementById('adjunto-prog-fill');
@@ -2616,9 +2626,9 @@ async function handleAdjuntoUpload(input) {
   setTimeout(function() { progWrap.style.display = 'none'; progFill.style.width = '0%'; }, 1200);
 
   showToast('Archivo adjuntado correctamente', '#27ae60');
-  adjuntosIndex[adjuntoKey(empresa, consecutivo)] = true;
+  adjuntosIndex[adjuntoKey(empresa, consecutivo, cliente)] = true;
   updateAdjuntosBadges();
-  await loadAdjuntos(empresa, consecutivo);
+  await loadAdjuntos(empresa, consecutivo, cliente);
 }
 
 async function previewAdjunto(path, ext) {
@@ -2671,7 +2681,7 @@ async function deleteAdjunto(path) {
   showToast('Archivo eliminado', '#e67e22');
   if (activeIdx !== null) {
     var c = consecs[activeIdx];
-    await loadAdjuntos(c.Nombre_Empresa, c.Consecutivo);
+    await loadAdjuntos(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
   }
 }
 
