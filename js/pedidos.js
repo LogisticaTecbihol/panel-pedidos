@@ -723,6 +723,17 @@ async function guardarTodo() {
   });
   if (entregadaExcedida) { showToast('La cantidad total de entregas supera la pedida', '#e74c3c'); return; }
 
+  if (rem && entregas.length === 0) {
+    detailWorkingLines.forEach(function(l) {
+      if ((Number(l.Cant_Entregada) || 0) > 0 && (l._entregas || []).some(function(e) { return !(e.remision || '').trim(); })) {
+        l._entregas.forEach(function(e) {
+          if (!(e.remision || '').trim()) e.remision = rem;
+        });
+        l.Remisiones = formatEntregas(l._entregas);
+      }
+    });
+  }
+
   var anyDelivery = detailWorkingLines.some(function(l) { return (Number(l.Cant_Entregada)||0) > 0; });
   detailWorkingLines.forEach(function(l) {
     var pedida = Number(l.Cantidad) || 0;
@@ -738,14 +749,6 @@ async function guardarTodo() {
       l.Estado_Entrega = 'Recibido';
     }
   });
-
-  if (rem && entregas.length === 0) {
-    detailWorkingLines.forEach(function(l) {
-      if ((Number(l.Cant_Entregada) || 0) > 0 && !(l.Remisiones || '').trim()) {
-        l.Remisiones = rem;
-      }
-    });
-  }
 
   var hdr = {
     Cliente: document.getElementById('md-cliente').value.trim(),
