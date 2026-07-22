@@ -234,9 +234,11 @@ function getLinesFor(c) {
 function derivedStatus(lines) {
   if (!lines.length) return 'Recibido';
   var ent = lines.filter(function(l) { return norm(l.Estado_Entrega) === 'entregado'; }).length;
+  var ali = lines.filter(function(l) { return norm(l.Estado_Entrega) === 'alistado'; }).length;
   var par = lines.filter(function(l) { return norm(l.Estado_Entrega) === 'parcial'; }).length;
   if (ent === lines.length) return 'Entregado';
-  if (ent > 0 || par > 0) return 'Parcial';
+  if ((ent + ali) === lines.length) return 'Alistado';
+  if (ent > 0 || ali > 0 || par > 0) return 'Parcial';
   return 'Recibido';
 }
 
@@ -404,9 +406,9 @@ function renderTable() {
     var est = derivedStatus(lines);
     var est2 = derivedEstado2(lines);
     var pct = derivedPct(lines);
-    var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : 'b-ent';
+    var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : est === 'Alistado' ? 'b-alistado' : 'b-ent';
     var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
-    var done = est === 'Entregado';
+    var done = est === 'Entregado' || est === 'Alistado';
     var idx = consecs.indexOf(c);
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (c['N°']||'') + '</td>' +
@@ -482,8 +484,8 @@ function openDetail(idx) {
       var pendiente = Math.max(0, pedida - entregada);
       var rawEst = (l.Estado_Entrega || '').trim();
       var estL = (!rawEst || norm(rawEst) === 'recibido') ? (orderHasDeliveries ? 'Parcial' : 'Recibido') : rawEst;
-      var badgeL = norm(estL) === 'recibido' ? 'b-rec' : norm(estL) === 'parcial' ? 'b-par' : 'b-ent';
-      var done = norm(estL) === 'entregado';
+      var badgeL = norm(estL) === 'recibido' ? 'b-rec' : norm(estL) === 'parcial' ? 'b-par' : norm(estL) === 'alistado' ? 'b-alistado' : 'b-ent';
+      var done = norm(estL) === 'entregado' || norm(estL) === 'alistado';
       var prodNombre = l.Producto || '';
       var textoTieneBonif = /bonificado/i.test(prodNombre);
       var prodLimpio = textoTieneBonif ? prodNombre.replace(/\s*bonificado\s*/gi, ' ').trim() : prodNombre;
@@ -726,7 +728,8 @@ async function guardarTodo() {
     var pedida = Number(l.Cantidad) || 0;
     var entregada = Number(l.Cant_Entregada) || 0;
     if (pedida > 0 && entregada >= pedida) {
-      l.Estado_Entrega = 'Entregado';
+      var todasRemision = (l._entregas || []).length > 0 && (l._entregas || []).every(function(e) { return (e.remision || '').trim() !== ''; });
+      l.Estado_Entrega = todasRemision ? 'Entregado' : 'Alistado';
     } else if (entregada > 0) {
       l.Estado_Entrega = 'Parcial';
     } else if (anyDelivery) {
@@ -2085,7 +2088,7 @@ function renderDetalle() {
   tbody.innerHTML = rows.map(function(p) {
     var est = (p.Estado_Entrega || 'Recibido').trim();
     var est2 = (p.Estado_2 || 'Abierto').trim();
-    var badgeEst = norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : 'b-ent';
+    var badgeEst = norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : norm(est) === 'alistado' ? 'b-alistado' : 'b-ent';
     var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
     return '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClass(p.Nombre_Empresa) + '">' + getSigla(p.Nombre_Empresa) + '</span></td>' +

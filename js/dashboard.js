@@ -209,6 +209,7 @@ function buildEntregas(ped) {
     }
     var est = (p.Estado_Entrega || 'Recibido').trim();
     if (est === 'Entregado' || ordMap[key].estado === 'Entregado') ordMap[key].estado = 'Entregado';
+    else if (est === 'Alistado' || ordMap[key].estado === 'Alistado') ordMap[key].estado = 'Alistado';
     else if (est === 'Parcial' || (Number(p.Cant_Entregada) || 0) > 0) ordMap[key].estado = 'Parcial';
   });
 

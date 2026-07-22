@@ -273,7 +273,9 @@ BEGIN
 
     v_nueva_entregada := v_prev_entregada + COALESCE((ent->>'cantidad')::numeric, 0);
     v_pendiente := GREATEST(0, v_cant_pedida - v_nueva_entregada);
-    v_estado := CASE WHEN v_pendiente <= 0 THEN 'Entregado' ELSE 'Parcial' END;
+    v_estado := CASE WHEN v_pendiente <= 0 THEN
+      CASE WHEN ent->>'remision' IS NOT NULL AND ent->>'remision' != '' THEN 'Entregado' ELSE 'Alistado' END
+      ELSE 'Parcial' END;
     v_new_rem := CASE
       WHEN ent->>'remision' IS NOT NULL AND ent->>'remision' != ''
       THEN CASE WHEN v_prev_rem != '' THEN v_prev_rem || ', ' || (ent->>'remision') ELSE ent->>'remision' END
