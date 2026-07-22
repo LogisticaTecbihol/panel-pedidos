@@ -186,6 +186,7 @@ async function loadFromAPI() {
     rebuildConsecs();
     populateFilters();
     renderTable();
+    loadAdjuntosIndex();
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
@@ -407,7 +408,7 @@ function renderTable() {
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (c['N°']||'') + '</td>' +
       '<td title="' + (c.Nombre_Empresa||'') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + getSigla(c.Nombre_Empresa) + '</span></td>' +
-      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + '</td>' +
+      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '"></span></td>' +
       '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (c.Cliente||'') + '">' + (c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
       '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
@@ -429,6 +430,7 @@ function renderTable() {
   }).join('');
 
   renderPagination(totalRows);
+  updateAdjuntosBadges();
 
   var detPanel = document.getElementById('panel-detalle');
   if (detPanel && detPanel.style.display !== 'none') renderDetalle();
@@ -2480,6 +2482,32 @@ function generarPedidoPDF(data) {
 // ── Adjuntos (Supabase Storage) ──
 var ADJUNTOS_BUCKET = 'pedidos-adjuntos';
 var adjuntosCache = {};
+var adjuntosIndex = {};
+
+async function loadAdjuntosIndex() {
+  adjuntosIndex = {};
+  var siglas = EMPRESAS_HOLDING.map(function(e) { return e.sigla; });
+  var promises = siglas.map(function(sigla) {
+    return _sb.storage.from(ADJUNTOS_BUCKET).list(sigla, { limit: 1000 }).then(function(res) {
+      var folders = (res.data || []).filter(function(f) { return f.name && !f.id; });
+      folders.forEach(function(f) {
+        adjuntosIndex[sigla + '_' + f.name] = true;
+      });
+    }).catch(function() {});
+  });
+  await Promise.all(promises);
+  updateAdjuntosBadges();
+}
+
+function updateAdjuntosBadges() {
+  var badges = document.querySelectorAll('.adjunto-badge-cell');
+  badges.forEach(function(el) {
+    var key = el.getAttribute('data-adj-key');
+    if (key && adjuntosIndex[key]) {
+      el.innerHTML = ' <span title="Tiene archivos adjuntos" style="cursor:help;font-size:0.85rem">📎</span>';
+    }
+  });
+}
 
 function adjuntoPath(empresa, consecutivo, filename) {
   var emp = getSigla(empresa).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -2588,6 +2616,8 @@ async function handleAdjuntoUpload(input) {
   setTimeout(function() { progWrap.style.display = 'none'; progFill.style.width = '0%'; }, 1200);
 
   showToast('Archivo adjuntado correctamente', '#27ae60');
+  adjuntosIndex[adjuntoKey(empresa, consecutivo)] = true;
+  updateAdjuntosBadges();
   await loadAdjuntos(empresa, consecutivo);
 }
 
