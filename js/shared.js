@@ -312,7 +312,7 @@ async function apiPost(body) {
           Vendedor: body.Vendedor || '', Cliente: body.Cliente || '', NIT: body.NIT || '',
           Direccion: body.Direccion || '', Municipio: body.Municipio || '',
           Departamento: body.Departamento || '', Telefono: body.Telefono || '',
-          Num_Factura: body.Num_Factura || '', Producto: lin.Producto || '',
+          Num_Factura: lin.Num_Factura || body.Num_Factura || '', Producto: lin.Producto || '',
           Presentacion: lin.Presentacion || '', Cantidad: cant,
           Cant_Entregada: Number(lin.Cant_Entregada) || 0, Valor_Unitario: vU,
           Valor_Total: Number(lin.Valor_Total) || (cant * vU),

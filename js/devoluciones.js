@@ -346,7 +346,7 @@ function renderDevTable() {
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
       '<td title="' + (r.Empresa||'') + '"><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + getSiglaDev(r.Empresa) + '</span></td>' +
       '<td style="text-align:center;font-weight:600">' + (r.Consecutivo||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Num_Factura||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (function(){ var fs={}; (r._lines||[r]).forEach(function(l){ if(l.Num_Factura) fs[l.Num_Factura]=1; }); var k=Object.keys(fs); return k.length ? k.join(', ') : '—'; })() + '</td>' +
       '<td style="font-weight:600;font-size:0.82rem">' + (r.Cliente||'—') + '</td>' +
       '<td style="font-size:0.78rem">' + (r.Vendedor||'—') + '</td>' +
       '<td style="text-align:center"><span style="background:#edf2f7;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.8rem">' + (r._nProds||0) + '</span></td>' +
@@ -391,7 +391,6 @@ function viewDevDetail(key) {
     devField('Municipio', r.Municipio) +
     devField('Departamento', r.Departamento) +
     devField('Teléfono', r.Telefono) +
-    devField('N° Factura', r.Num_Factura) +
     devField('Motivo', r.Motivo) +
     devField('Estado', estadoLabel) +
     '</div>' +
@@ -426,7 +425,7 @@ function viewDevDetail(key) {
     '</div>';
 
   html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc">' +
-    '<th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th>' +
+    '<th>Factura</th><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th>' +
     '<th style="text-align:right">Cant. Devuelta</th><th style="text-align:right">V. Unitario</th>' +
     '<th style="text-align:right">V. Total</th><th style="width:80px"></th>' +
     '</tr></thead><tbody>';
@@ -435,6 +434,7 @@ function viewDevDetail(key) {
   lines.forEach(function(x) {
     totalValor += Number(x.Valor_Total) || 0;
     html += '<tr>' +
+      '<td style="font-size:0.78rem">' + (x.Num_Factura || '—') + '</td>' +
       '<td style="font-weight:600">' + (x.Producto || '—') + '</td>' +
       '<td>' + (x.Presentacion || '—') + '</td>' +
       '<td style="text-align:right">' + (x.Cantidad || 0) + '</td>' +
@@ -448,7 +448,7 @@ function viewDevDetail(key) {
   });
 
   html += '<tr style="background:#fef9f2;font-weight:700;border-top:2px solid #e2e8f0">' +
-    '<td colspan="5" style="text-align:right">TOTAL:</td>' +
+    '<td colspan="6" style="text-align:right">TOTAL:</td>' +
     '<td style="text-align:right">' + fmtMoney(totalValor) + '</td><td></td></tr>';
   html += '</tbody></table></div>';
 
@@ -576,6 +576,7 @@ function renderDevLines() {
   tbody.innerHTML = devLineas.map(function(l, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
+      '<td><input class="ef dev-factura" data-line="' + i + '" type="text" value="' + ((l.Num_Factura||'').replace(/"/g,'&quot;')) + '" placeholder="FV..." style="width:100px"></td>' +
       '<td style="position:relative"><div style="position:relative"><input class="ef dev-prod-search" data-line="' + i + '" type="text" value="' + ((l.Producto||'').replace(/"/g,'&quot;')) + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
       '<td><input class="ef dev-pres" data-line="' + i + '" type="text" value="' + ((l.Presentacion||'').replace(/"/g,'&quot;')) + '" placeholder="Pres." style="width:100px"></td>' +
       '<td><input class="ef dev-cant" data-line="' + i + '" type="number" min="0" value="' + (l.Cantidad||'') + '" placeholder="0" style="width:65px;text-align:right"></td>' +
@@ -607,7 +608,7 @@ function renderDevLines() {
 }
 
 function addDevLine() {
-  devLineas.push({ Producto: '', Presentacion: '', Cantidad: '', Cant_Entregada: '', Valor_Unitario: '', Valor_Total: 0 });
+  devLineas.push({ Num_Factura: '', Producto: '', Presentacion: '', Cantidad: '', Cant_Entregada: '', Valor_Unitario: '', Valor_Total: 0 });
   renderDevLines();
   var lastInput = document.querySelector('.dev-prod-search[data-line="' + (devLineas.length - 1) + '"]');
   if (lastInput) lastInput.focus();
@@ -620,6 +621,10 @@ function removeDevLine(i) {
 }
 
 function readDevLines() {
+  document.querySelectorAll('.dev-factura').forEach(function(inp) {
+    var i = Number(inp.dataset.line);
+    if (devLineas[i]) devLineas[i].Num_Factura = inp.value.trim();
+  });
   document.querySelectorAll('.dev-prod-search').forEach(function(inp) {
     var i = Number(inp.dataset.line);
     if (devLineas[i]) devLineas[i].Producto = inp.value.trim();
@@ -690,7 +695,6 @@ function openNewDev() {
   document.getElementById('dev-fecha').value = today();
   document.getElementById('dev-consecutivo').value = '';
   document.getElementById('dev-vendedor').value = '';
-  document.getElementById('dev-num-factura').value = '';
   document.getElementById('dev-cliente').value = '';
   document.getElementById('dev-nit').value = '';
   document.getElementById('dev-direccion').value = '';
@@ -706,7 +710,7 @@ function openNewDev() {
   document.getElementById('dev-edit-single').style.display = 'none';
   document.getElementById('dev-multi-lines').style.display = 'block';
 
-  devLineas = [{ Producto: '', Presentacion: '', Cantidad: '', Cant_Entregada: '', Valor_Unitario: '', Valor_Total: 0 }];
+  devLineas = [{ Num_Factura: '', Producto: '', Presentacion: '', Cantidad: '', Cant_Entregada: '', Valor_Unitario: '', Valor_Total: 0 }];
   renderDevLines();
   buildClientSearchDev();
   document.getElementById('dev-overlay').classList.add('show');
@@ -734,7 +738,6 @@ function openEditDev(row) {
   document.getElementById('dev-fecha').value = toDateInput(r.Fecha);
   document.getElementById('dev-consecutivo').value = r.Consecutivo || '';
   document.getElementById('dev-vendedor').value = r.Vendedor || '';
-  document.getElementById('dev-num-factura').value = r.Num_Factura || '';
   document.getElementById('dev-cliente').value = r.Cliente || '';
   document.getElementById('dev-nit').value = r.NIT || '';
   document.getElementById('dev-direccion').value = r.Direccion || '';
@@ -748,6 +751,7 @@ function openEditDev(row) {
 
   document.getElementById('dev-multi-lines').style.display = 'none';
   document.getElementById('dev-edit-single').style.display = 'block';
+  document.getElementById('dev-edit-num-factura').value = r.Num_Factura || '';
   document.getElementById('dev-edit-producto').value = r.Producto || '';
   document.getElementById('dev-edit-presentacion').value = r.Presentacion || '';
   document.getElementById('dev-edit-cantidad').value = r.Cantidad || '';
@@ -774,7 +778,6 @@ async function saveDevolucion() {
   var fecha = document.getElementById('dev-fecha').value;
   var consecutivo = document.getElementById('dev-consecutivo').value.trim();
   var vendedor = document.getElementById('dev-vendedor').value.trim();
-  var num_factura = document.getElementById('dev-num-factura').value.trim();
   var cliente = document.getElementById('dev-cliente').value.trim();
   var nit = document.getElementById('dev-nit').value.trim();
   var direccion = document.getElementById('dev-direccion').value.trim();
@@ -791,6 +794,7 @@ async function saveDevolucion() {
   var btn = document.getElementById('btn-save-dev');
 
   if (editDev) {
+    var num_factura = document.getElementById('dev-edit-num-factura').value.trim();
     var prod = document.getElementById('dev-edit-producto').value.trim();
     var pres = document.getElementById('dev-edit-presentacion').value.trim();
     var cant = Number(document.getElementById('dev-edit-cantidad').value) || 0;
@@ -837,7 +841,7 @@ async function saveDevolucion() {
       action: 'agregarDevolucion',
       Fecha: fecha, Empresa: empresa, Consecutivo: consecutivo, Vendedor: vendedor,
       Cliente: cliente, NIT: nit, Direccion: direccion, Municipio: municipio,
-      Departamento: departamento, Telefono: telefono, Num_Factura: num_factura,
+      Departamento: departamento, Telefono: telefono,
       Motivo: motivo, Observaciones: observaciones,
       lineas: validLines,
     });
@@ -1093,7 +1097,6 @@ function prefillDevForm(data) {
   if (data.fecha) document.getElementById('dev-fecha').value = data.fecha;
   document.getElementById('dev-consecutivo').value = data.consecutivo || '';
   document.getElementById('dev-vendedor').value = data.vendedor || '';
-  document.getElementById('dev-num-factura').value = data.numFactura || '';
   document.getElementById('dev-cliente').value = data.cliente || '';
   document.getElementById('dev-nit').value = data.nit || '';
   document.getElementById('dev-direccion').value = data.direccion || '';
@@ -1109,6 +1112,7 @@ function prefillDevForm(data) {
       var cant = Number(l.Cantidad) || 0;
       var vUnit = Number(l.Valor_Unitario) || 0;
       return {
+        Num_Factura: l.Num_Factura || data.numFactura || '',
         Producto: l.Producto || '',
         Presentacion: l.Presentacion || '',
         Cantidad: cant,

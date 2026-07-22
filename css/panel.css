@@ -127,6 +127,7 @@ tbody td { padding: 9px 12px; vertical-align: middle; }
 .b-par  { background: #bee3f8; color: #2c5282; }
 .b-ent  { background: #c6f6d5; color: #276749; }
 .b-abierto   { background: #e8f5e9; color: #2e7d32; }
+.b-alistado  { background: #f3e5f5; color: #7b1fa2; }
 .b-cerrado   { background: #e3f2fd; color: #1565c0; }
 .b-anulado   { background: #fce4ec; color: #c62828; }
 .b-bloqueado { background: #fff3e0; color: #e65100; }

@@ -212,9 +212,10 @@ function buildEntregas(ped) {
     else if (est === 'Parcial' || (Number(p.Cant_Entregada) || 0) > 0) ordMap[key].estado = 'Parcial';
   });
 
-  var recibidos = 0, parciales = 0, entregados = 0, anulados = 0, cerrados = 0;
+  var recibidos = 0, parciales = 0, entregados = 0, alistados = 0, anulados = 0, cerrados = 0;
   Object.values(ordMap).forEach(function(o) {
     if (o.est2 === 'Anulado') { anulados++; return; }
+    if (o.est2 === 'Alistado') { alistados++; return; }
     if (o.est2 === 'Cerrado') { cerrados++; return; }
     if (o.est2 === 'Bloqueado por cartera') { anulados++; return; }
     if (o.estado === 'Entregado') entregados++;
@@ -222,12 +223,13 @@ function buildEntregas(ped) {
     else recibidos++;
   });
 
-  var total = recibidos + parciales + entregados + anulados + cerrados;
+  var total = recibidos + parciales + entregados + alistados + anulados + cerrados;
 
   var segData = [
     { label: 'Recibidos', val: recibidos, color: '#e67e22' },
     { label: 'Parciales', val: parciales, color: '#2980b9' },
     { label: 'Entregados', val: entregados, color: '#27ae60' },
+    { label: 'Alistados', val: alistados, color: '#7b1fa2' },
     { label: 'Cerrados', val: cerrados, color: '#1565c0' },
     { label: 'Anulados', val: anulados, color: '#e74c3c' },
   ];
@@ -298,7 +300,7 @@ function buildTopProductos(ped) {
   var map = {};
   ped.forEach(function(p) {
     var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 === 'Anulado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera') return;
+    if (est2 === 'Anulado' || est2 === 'Alistado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera') return;
     var pend = Number(p.Cant_Pendiente) || 0;
     if (pend <= 0) return;
     var prod = (p.Producto || '').toUpperCase().trim();

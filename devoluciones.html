@@ -271,15 +271,9 @@
       </div>
 
       <!-- Vendedor -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-        <div>
-          <label class="ef-label">Vendedor</label>
-          <input class="ef" id="dev-vendedor" type="text" placeholder="Nombre del vendedor">
-        </div>
-        <div>
-          <label class="ef-label">N° de Factura</label>
-          <input class="ef" id="dev-num-factura" type="text" placeholder="Ej: FV 3472">
-        </div>
+      <div style="margin-bottom:16px">
+        <label class="ef-label">Vendedor</label>
+        <input class="ef" id="dev-vendedor" type="text" placeholder="Nombre del vendedor">
       </div>
 
       <!-- Datos del cliente -->
@@ -342,6 +336,7 @@
             <thead>
               <tr style="background:#f7fafc">
                 <th style="width:26px">#</th>
+                <th style="width:110px">Factura</th>
                 <th>Producto (buscar)</th>
                 <th style="width:110px">Presentación</th>
                 <th style="width:75px">Cantidad</th>
@@ -354,7 +349,7 @@
             <tbody id="dev-lines"></tbody>
             <tfoot>
               <tr style="background:#fef9f2;font-weight:700">
-                <td colspan="5"></td>
+                <td colspan="6"></td>
                 <td style="text-align:right;font-size:0.82rem">TOTAL:</td>
                 <td style="text-align:right;font-size:0.82rem" id="dev-total-display">$0</td>
                 <td></td>
@@ -367,7 +362,11 @@
       <!-- Single product edit (edit mode) -->
       <div id="dev-edit-single" style="display:none">
         <div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px;font-weight:700;font-size:0.88rem;color:#2d3748">📦 Producto</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:8px">
+          <div>
+            <label class="ef-label">N° Factura</label>
+            <input class="ef" id="dev-edit-num-factura" type="text" placeholder="Ej: FV 3472">
+          </div>
           <div>
             <label class="ef-label">Producto</label>
             <input class="ef" id="dev-edit-producto" type="text" placeholder="Nombre del producto">

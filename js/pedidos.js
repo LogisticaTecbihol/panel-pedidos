@@ -246,7 +246,10 @@ function derivedEstado2(lines) {
   if (vals.indexOf('Anulado') >= 0) return 'Anulado';
   if (vals.indexOf('Bloqueado por cartera') >= 0) return 'Bloqueado por cartera';
   var allCerrado = vals.every(function(v) { return v === 'Cerrado'; });
-  return allCerrado ? 'Cerrado' : 'Abierto';
+  if (allCerrado) return 'Cerrado';
+  var allCerradoOrAlistado = vals.every(function(v) { return v === 'Cerrado' || v === 'Alistado'; });
+  if (allCerradoOrAlistado) return 'Alistado';
+  return 'Abierto';
 }
 
 function derivedPct(lines) {
@@ -402,7 +405,7 @@ function renderTable() {
     var est2 = derivedEstado2(lines);
     var pct = derivedPct(lines);
     var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : 'b-ent';
-    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
+    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
     var done = est === 'Entregado';
     var idx = consecs.indexOf(c);
     return '<tr>' +
@@ -783,7 +786,10 @@ async function guardarTodo() {
         if (obs) upd.Observaciones = obs;
         var pedida = Number(dl.Cantidad) || 0;
         var entregada = Number(dl.Cant_Entregada) || 0;
-        if (pedida > 0 && entregada >= pedida) upd.Estado_2 = 'Cerrado';
+        if (pedida > 0 && entregada >= pedida) {
+          var tieneRemision = (dl.Remisiones || '').trim() !== '';
+          upd.Estado_2 = tieneRemision ? 'Cerrado' : 'Alistado';
+        }
         if (Object.keys(upd).length > 0) {
           await _sb.from('Pedidos').update(upd).eq('id', dl.__row);
         }
@@ -2080,7 +2086,7 @@ function renderDetalle() {
     var est = (p.Estado_Entrega || 'Recibido').trim();
     var est2 = (p.Estado_2 || 'Abierto').trim();
     var badgeEst = norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : 'b-ent';
-    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
+    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
     return '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClass(p.Nombre_Empresa) + '">' + getSigla(p.Nombre_Empresa) + '</span></td>' +
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (p.Cliente||'') + '">' + (p.Cliente||'—') + '</td>' +

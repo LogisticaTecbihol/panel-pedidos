@@ -287,7 +287,9 @@ BEGIN
       "Fecha_Ult_Entrega" = ent->>'fecha',
       "Remisiones" = v_new_rem,
       "Observaciones" = COALESCE(p_observaciones, "Observaciones"),
-      "Estado_2" = CASE WHEN v_pendiente <= 0 THEN 'Cerrado' ELSE "Estado_2" END
+      "Estado_2" = CASE WHEN v_pendiente <= 0 THEN
+        CASE WHEN ent->>'remision' IS NOT NULL AND ent->>'remision' != '' THEN 'Cerrado' ELSE 'Alistado' END
+        ELSE "Estado_2" END
     WHERE id = v_row;
 
     v_order_keys := array_append(v_order_keys, v_emp || '||' || v_con);
