@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Auditoría — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<title>Auditoría – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css">
+<style>
+.audit-row { cursor: pointer; transition: background 0.15s; }
+.audit-row:hover { background: #edf2f7 !important; }
+.badge-insert { background:#27ae60; color:#fff; padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700; }
+.badge-update { background:#2980b9; color:#fff; padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700; }
+.badge-delete { background:#e74c3c; color:#fff; padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700; }
+.json-block { background:#f7fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px; font-family:'Cascadia Code','Fira Code',monospace; font-size:0.78rem; white-space:pre-wrap; word-break:break-all; max-height:300px; overflow-y:auto; color:#2d3748; }
+.diff-added { color:#27ae60; font-weight:600; }
+.diff-removed { color:#e74c3c; font-weight:600; }
+.audit-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.audit-detail-grid h4 { font-size:0.82rem; color:#718096; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+@media (max-width:700px) { .audit-detail-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html">📋 Pedidos</a>
+    <a href="ingresos.html">📥 Ingresos</a>
+    <a href="ordenes.html">🛒 Órdenes</a>
+    <a href="devoluciones.html">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html">📊 Inventario</a>
+    <a href="kardex.html">📋 Kardex</a>
+    <a href="muestras.html">🧪 Muestras</a>
+    <a href="reenvases.html">🏭 Salidas a producción</a>
+    <a href="reportes.html">📈 Reportes</a>
+    <a href="dashboard.html">📊 Dashboard</a>
+    <a href="usuarios.html" id="nav-usuarios" class="auth-admin-only" style="display:none">👥 Usuarios</a>
+    <a href="auditoria.html" id="nav-auditoria" class="auth-admin-only active" style="display:none">🔍 Auditoría</a>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Cargando auditoría...</h2>
+  <p>Verificando permisos de administrador</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadAudit()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc" style="border-color:#1a5276"><div class="num" id="s-total" style="color:#1a5276">0</div><div class="lbl">Total registros</div></div>
+    <div class="sc" style="border-color:#27ae60"><div class="num" id="s-inserts" style="color:#27ae60">0</div><div class="lbl">Creaciones</div></div>
+    <div class="sc" style="border-color:#2980b9"><div class="num" id="s-updates" style="color:#2980b9">0</div><div class="lbl">Ediciones</div></div>
+    <div class="sc" style="border-color:#e74c3c"><div class="num" id="s-deletes" style="color:#e74c3c">0</div><div class="lbl">Eliminaciones</div></div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="filters">
+    <div class="fg">
+      <label>Tabla:</label>
+      <select class="ef" id="f-tabla" style="min-width:140px">
+        <option value="">Todas</option>
+        <option value="Pedidos">Pedidos</option>
+        <option value="Ingresos">Ingresos</option>
+        <option value="Devoluciones">Devoluciones</option>
+        <option value="CambiosMercancia">Cambios</option>
+        <option value="Inventario">Inventario</option>
+        <option value="OrdenesCompra">Órdenes</option>
+        <option value="SolicitudMuestras">Muestras</option>
+        <option value="KardexAjustes">Kardex Ajustes</option>
+        <option value="KardexNC">Kardex NC</option>
+        <option value="Reenvases">Reenvases</option>
+        <option value="RemisionesAnuladas">Rem. Anuladas</option>
+        <option value="usuarios">Usuarios</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Acción:</label>
+      <select class="ef" id="f-accion" style="min-width:120px">
+        <option value="">Todas</option>
+        <option value="INSERT">Creación</option>
+        <option value="UPDATE">Edición</option>
+        <option value="DELETE">Eliminación</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Usuario:</label>
+      <select class="ef" id="f-usuario" style="min-width:160px">
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Desde:</label>
+      <input class="ef" type="date" id="f-desde" style="min-width:130px">
+    </div>
+    <div class="fg">
+      <label>Hasta:</label>
+      <input class="ef" type="date" id="f-hasta" style="min-width:130px">
+    </div>
+    <div class="fg">
+      <label>Buscar:</label>
+      <input class="ef" type="text" id="f-buscar" placeholder="ID, email, dato..." style="min-width:160px">
+    </div>
+    <button class="btn-dl" onclick="applyFilters()" style="background:#1a5276">🔍 Filtrar</button>
+    <button class="btn-dl" onclick="clearFilters()">✕ Limpiar</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>🔍 Registro de Auditoría <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="exportCSV()">📥 Exportar CSV</button>
+        <button class="btn-dl" onclick="loadAudit()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:155px">Fecha / Hora</th>
+            <th>Usuario</th>
+            <th>Acción</th>
+            <th>Tabla</th>
+            <th>Registro ID</th>
+            <th>Resumen</th>
+          </tr>
+        </thead>
+        <tbody id="t-body"></tbody>
+      </table>
+    </div>
+    <div id="pagination" style="display:flex;justify-content:center;gap:8px;padding:14px 0"></div>
+  </div>
+
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="overlay" id="detail-overlay">
+  <div class="modal-box" style="max-width:750px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#1a5276,#2471a3)">
+      <div style="flex:1">
+        <h2 id="detail-title">🔍 Detalle de Auditoría</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px" id="detail-subtitle"></div>
+      </div>
+      <button class="btn-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="mbody" id="detail-body" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="mftr">
+      <div></div>
+      <button class="btn-cancel" onclick="closeDetail()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/auditoria.js"></script>
+</body>
+</html>
