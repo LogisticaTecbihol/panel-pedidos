@@ -203,7 +203,8 @@ async function saveUser() {
     if (editId) {
       var res = await _sb.from('usuarios').update({
         nombre: nombre,
-        rol: rol
+        rol: rol,
+        modificado_por: _uid()
       }).eq('id', editId);
       if (res.error) throw new Error(res.error.message);
 
@@ -242,7 +243,8 @@ async function saveUser() {
         email: email,
         nombre: nombre,
         rol: rol,
-        activo: true
+        activo: true,
+        creado_por: _uid()
       }]);
       if (usrRes.error) throw new Error(usrRes.error.message);
 
@@ -301,7 +303,7 @@ async function confirmToggleUser() {
 
   try {
     var newStatus = !toggleUsrActivo;
-    var res = await _sb.from('usuarios').update({ activo: newStatus }).eq('id', toggleUsrId);
+    var res = await _sb.from('usuarios').update({ activo: newStatus, modificado_por: _uid() }).eq('id', toggleUsrId);
     if (res.error) throw new Error(res.error.message);
     closeDeleteUser();
     showToast(newStatus ? '🔓 Usuario reactivado' : '🔒 Usuario desactivado');

@@ -797,6 +797,7 @@ async function guardarTodo() {
           upd.Estado_2 = todasConRemision ? 'Cerrado' : 'Alistado';
         }
         if (Object.keys(upd).length > 0) {
+          upd.modificado_por = _uid();
           await _sb.from('Pedidos').update(upd).eq('id', dl.__row);
         }
       }

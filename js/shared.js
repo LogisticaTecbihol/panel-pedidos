@@ -152,6 +152,10 @@ async function apiGet(action) {
   }
 }
 
+function _uid() {
+  return (typeof AUTH !== 'undefined' && AUTH.getUser()) ? AUTH.getUser().id : null;
+}
+
 // ── Capa de compatibilidad: apiPost ──
 async function apiPost(body) {
   try {
@@ -170,7 +174,7 @@ async function apiPost(body) {
       if (res.error) return { ok: false, error: res.error.message };
       for (var ei = 0; ei < entregas.length; ei++) {
         if (entregas[ei].fecha && entregas[ei].row) {
-          await _sb.from('Pedidos').update({ Fecha_Ult_Entrega: entregas[ei].fecha }).eq('id', entregas[ei].row);
+          await _sb.from('Pedidos').update({ Fecha_Ult_Entrega: entregas[ei].fecha, modificado_por: _uid() }).eq('id', entregas[ei].row);
         }
       }
       return res.data;
@@ -219,7 +223,8 @@ async function apiPost(body) {
           Archivo_Fuente: body.archivo_fuente || '', Estado: 'recibido',
           ID_Cliente: idCl || '', ID_Comercial: idCm || '', ID_Producto: idPr || '',
           Observaciones: body.observaciones || '', Estado_2: 'Abierto',
-          Bonificado: prod.bonificado || ''
+          Bonificado: prod.bonificado || '',
+          creado_por: _uid()
         });
       }
       var res = await _sb.from('Pedidos').insert(rows);
@@ -266,7 +271,8 @@ async function apiPost(body) {
           Producto: lin.Producto || '', Presentacion: lin.Presentacion || '',
           Cantidad: Number(lin.Cantidad) || 0, Responsable: body.Responsable || '',
           Remision_Origen: body.Remision_Origen || '', Remision_Destino: body.Remision_Destino || '',
-          Observaciones: body.Observaciones || '', Fecha_Registro: now
+          Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          creado_por: _uid()
         };
       });
       var res = await _sb.from('Ingresos').insert(rows);
@@ -281,7 +287,8 @@ async function apiPost(body) {
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Cantidad: Number(body.Cantidad) || 0, Responsable: body.Responsable || '',
         Remision_Origen: body.Remision_Origen || '', Remision_Destino: body.Remision_Destino || '',
-        Observaciones: body.Observaciones || ''
+        Observaciones: body.Observaciones || '',
+        modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
@@ -318,7 +325,8 @@ async function apiPost(body) {
           Valor_Total: Number(lin.Valor_Total) || (cant * vU),
           Motivo: body.Motivo || '', Observaciones: body.Observaciones || '',
           Estado: 'Pendiente', Remision: '', Fecha_Devolucion: '',
-          Fecha_Registro: now
+          Fecha_Registro: now,
+          creado_por: _uid()
         };
       });
       var res = await _sb.from('Devoluciones').insert(rows);
@@ -343,6 +351,7 @@ async function apiPost(body) {
       if (body.Remision !== undefined) upd.Remision = body.Remision;
       if (body.Fecha_Devolucion !== undefined) upd.Fecha_Devolucion = body.Fecha_Devolucion;
       if (body.Estado !== undefined) upd.Estado = body.Estado;
+      upd.modificado_por = _uid();
       var res = await _sb.from('Devoluciones').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
@@ -362,7 +371,8 @@ async function apiPost(body) {
           Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
           Fecha_Salida: body.Fecha_Salida || '',
           Cant_Entregada: Number(lin.Cant_Entregada) || 0,
-          Estado: 'Tramitada'
+          Estado: 'Tramitada',
+          modificado_por: _uid()
         }).eq('id', lin.id);
         if (res.error) return { ok: false, error: res.error.message };
       }
@@ -394,7 +404,7 @@ async function apiPost(body) {
           Valor_Cliente: Number(h.Valor_Cliente) || 0,
           Valor_Empresa: Number(h.Valor_Empresa) || 0,
           Observaciones: h.Observaciones || '', Estado: 'Pendiente',
-          Fecha_Registro: now
+          Fecha_Registro: now, creado_por: _uid()
         });
       });
       (body.lineasEntregar || []).forEach(function(lin) {
@@ -410,7 +420,7 @@ async function apiPost(body) {
           Valor_Cliente: Number(h.Valor_Cliente) || 0,
           Valor_Empresa: Number(h.Valor_Empresa) || 0,
           Observaciones: h.Observaciones || '', Estado: 'Pendiente',
-          Fecha_Registro: now
+          Fecha_Registro: now, creado_por: _uid()
         });
       });
       if (!allLines.length) return { ok: false, error: 'Sin líneas' };
@@ -429,7 +439,8 @@ async function apiPost(body) {
           Remision_Salida: body.Remision_Salida || '',
           Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
           Fecha_Salida: body.Fecha_Salida || '',
-          Estado: 'Cerrado'
+          Estado: 'Cerrado',
+          modificado_por: _uid()
         }).eq('id', ids[i]);
         if (res.error) return { ok: false, error: res.error.message };
       }
@@ -459,7 +470,8 @@ async function apiPost(body) {
           Producto: lin.Producto || '', Presentacion: lin.Presentacion || '',
           Unidad_Medida: lin.Unidad_Medida || '', Cantidad_Caja: Number(lin.Cantidad_Caja) || 0,
           Lote: lin.Lote || '', Cantidad: Number(lin.Cantidad) || 0,
-          Observaciones: body.Observaciones || '', Fecha_Registro: now
+          Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          creado_por: _uid()
         };
       });
       var res = await _sb.from('Inventario').insert(rows);
@@ -473,7 +485,8 @@ async function apiPost(body) {
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Unidad_Medida: body.Unidad_Medida || '', Cantidad_Caja: Number(body.Cantidad_Caja) || 0,
         Lote: body.Lote || '', Cantidad: Number(body.Cantidad) || 0,
-        Observaciones: body.Observaciones || ''
+        Observaciones: body.Observaciones || '',
+        modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
@@ -507,7 +520,8 @@ async function apiPost(body) {
           Cantidad: cant, Valor_Unitario: vU,
           Valor_Total: Number(lin.Valor_Total) || (cant * vU),
           Total_Orden: Number(body.Total_Orden) || 0, Observaciones: body.Observaciones || '',
-          Estado: body.Estado || 'Abierta', Fecha_Registro: now, Remision: body.Remision || ''
+          Estado: body.Estado || 'Abierta', Fecha_Registro: now, Remision: body.Remision || '',
+          creado_por: _uid()
         };
       });
       var res = await _sb.from('OrdenesCompra').insert(rows);
@@ -529,6 +543,7 @@ async function apiPost(body) {
         Estado: body.Estado || 'Abierta'
       };
       if (body.Remision !== undefined) upd.Remision = body.Remision || '';
+      upd.modificado_por = _uid();
       var res = await _sb.from('OrdenesCompra').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
@@ -559,7 +574,8 @@ async function apiPost(body) {
           Cantidad: Number(lin.Cantidad) || 0, Cant_Entregada: Number(lin.Cant_Entregada) || 0,
           Fecha_Entrega: lin.Fecha_Entrega || '', Solicitante: body.Solicitante || '',
           Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
-          Observaciones: body.Observaciones || '', Fecha_Registro: now
+          Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          creado_por: _uid()
         };
       });
       var res = await _sb.from('SolicitudMuestras').insert(rows);
@@ -578,7 +594,8 @@ async function apiPost(body) {
         Cantidad: Number(body.Cantidad) || 0, Cant_Entregada: Number(body.Cant_Entregada) || 0,
         Fecha_Entrega: body.Fecha_Entrega || '', Solicitante: body.Solicitante || '',
         Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
-        Observaciones: body.Observaciones || ''
+        Observaciones: body.Observaciones || '',
+        modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
@@ -604,7 +621,8 @@ async function apiPost(body) {
           Producto: lin.Producto || '', Presentacion: lin.Presentacion || '',
           Tipo: body.Tipo || 'Ajuste_Sobrante',
           Cantidad: Number(lin.Cantidad) || 0,
-          Observaciones: body.Observaciones || '', Fecha_Registro: now
+          Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          creado_por: _uid()
         };
       });
       var res = await _sb.from('KardexAjustes').insert(rows);
@@ -638,7 +656,8 @@ async function apiPost(body) {
         Fecha: body.Fecha || '', Empresa: body.Empresa || '',
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Tipo: body.Tipo || '', Cantidad: Number(body.Cantidad) || 0,
-        Observaciones: body.Observaciones || ''
+        Observaciones: body.Observaciones || '',
+        modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
@@ -663,7 +682,8 @@ async function apiPost(body) {
           Tipo: body.Tipo || 'Ingreso_NC',
           Cantidad: Number(lin.Cantidad) || 0,
           Motivo: body.Motivo || '', Remision: body.Remision || '',
-          Observaciones: body.Observaciones || '', Fecha_Registro: now
+          Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          creado_por: _uid()
         };
       });
       var res = await _sb.from('KardexNC').insert(rows);
@@ -677,7 +697,8 @@ async function apiPost(body) {
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Tipo: body.Tipo || '', Cantidad: Number(body.Cantidad) || 0,
         Motivo: body.Motivo || '', Remision: body.Remision || '',
-        Observaciones: body.Observaciones || ''
+        Observaciones: body.Observaciones || '',
+        modificado_por: _uid()
       };
       var res = await _sb.from('KardexNC').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
@@ -700,7 +721,8 @@ async function apiPost(body) {
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
         Remision: body.Remision || '', Fecha: body.Fecha || '',
         Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
-        Fecha_Registro: now
+        Fecha_Registro: now,
+        creado_por: _uid()
       };
       var res = await _sb.from('Reenvases').insert([row]);
       if (res.error) return { ok: false, error: res.error.message };
@@ -713,7 +735,8 @@ async function apiPost(body) {
         Producto: body.Producto || '',
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
         Remision: body.Remision || '', Fecha: body.Fecha || '',
-        Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos'
+        Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
+        modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
@@ -731,7 +754,8 @@ async function apiPost(body) {
         Empresa: body.Empresa || '', Remision: body.Remision || '',
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Cantidad: Number(body.Cantidad) || 0, Fecha: body.Fecha || '',
-        Observaciones: body.Observaciones || '', Fecha_Registro: now
+        Observaciones: body.Observaciones || '', Fecha_Registro: now,
+        creado_por: _uid()
       };
       var res = await _sb.from('RemisionesAnuladas').insert([row]);
       if (res.error) return { ok: false, error: res.error.message };
