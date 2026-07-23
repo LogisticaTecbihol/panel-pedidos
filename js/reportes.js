@@ -356,17 +356,30 @@ function _buildRemisionesInner() {
   var empresasSet = {};
   var totalLineas = 0;
 
-  // 1. Pedidos — campo Remisiones (puede tener varios separados por coma)
+  // 1. Pedidos — campo Remisiones (formato estructurado: rem|cant|fecha,rem|cant|fecha)
   pedidos.forEach(function(p) {
     var rem = String(p.Remisiones || '').trim();
     if (!rem) return;
     var empNombre = p.Nombre_Empresa || '';
     if (fEmp && empNombre !== fEmp) return;
-    var nums = rem.split(/[,;\/]+/).map(function(r) { return String(r).trim(); }).filter(Boolean);
-    nums.forEach(function(numRem) {
+    var parts = rem.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    var hasStructured = parts.some(function(pt) { return pt.indexOf('|') >= 0; });
+    parts.forEach(function(part) {
+      var numRem, cant, fecha;
+      if (hasStructured) {
+        var segs = part.split('|');
+        numRem = (segs[0] || '').trim();
+        cant = Number(segs[1]) || 0;
+        fecha = (segs[2] || '').trim();
+      } else {
+        numRem = part;
+        cant = Number(p.Cant_Entregada) || 0;
+        fecha = p.Fecha_Ult_Entrega || '';
+      }
+      if (!numRem) return;
       if (fTxt && numRem.toLowerCase().indexOf(fTxt) < 0 && getSigla(empNombre).toLowerCase().indexOf(fTxt) < 0) return;
       var key = empNombre + '||' + numRem + '||Pedido';
-      _addRemision(map, key, empNombre, numRem, 'Pedido', 'Orden ' + (p.Consecutivo || ''), (p.Producto || '') + ' (' + (p.Presentacion || '') + ')', p.Cant_Entregada, p.Fecha_Ult_Entrega);
+      _addRemision(map, key, empNombre, numRem, 'Pedido', 'Orden ' + (p.Consecutivo || ''), (p.Producto || '') + ' (' + (p.Presentacion || '') + ')', cant, fecha);
       empresasSet[getSigla(empNombre)] = true;
       totalLineas++;
     });
