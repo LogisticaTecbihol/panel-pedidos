@@ -207,6 +207,14 @@
         <div><label class="ef-label">Teléfono</label><input class="ef" id="md-telefono" type="text"></div>
         <div><label class="ef-label">Plazo de Pago</label><input class="ef" id="md-plazo" type="text"></div>
         <div><label class="ef-label">Precio Facturación</label><input class="ef" id="md-precio" type="text"></div>
+        <div><label class="ef-label">Facturar a nombre de</label><input class="ef" id="md-facturar-a" type="text"></div>
+        <div><label class="ef-label">NIT Adicional</label><input class="ef" id="md-nit-adicional" type="text"></div>
+        <div><label class="ef-label">Pedido en Consignación</label>
+          <select class="ef" id="md-consignacion">
+            <option value="No">No</option>
+            <option value="Sí">Sí</option>
+          </select>
+        </div>
         <div><label class="ef-label">Estado</label>
           <select class="ef" id="md-estado2">
             <option value="Abierto">Abierto</option>
@@ -343,6 +351,14 @@
         <div><label class="ef-label">Teléfono</label><input class="ef" id="ed-telefono" type="text"></div>
         <div><label class="ef-label">Plazo de Pago</label><input class="ef" id="ed-plazo" type="text"></div>
         <div><label class="ef-label">Precio Facturación</label><input class="ef" id="ed-precio" type="text"></div>
+        <div><label class="ef-label">Facturar a nombre de</label><input class="ef" id="ed-facturar-a" type="text"></div>
+        <div><label class="ef-label">NIT Adicional</label><input class="ef" id="ed-nit-adicional" type="text"></div>
+        <div><label class="ef-label">Pedido en Consignación</label>
+          <select class="ef" id="ed-consignacion">
+            <option value="No">No</option>
+            <option value="Sí">Sí</option>
+          </select>
+        </div>
         <div><label class="ef-label">Estado 2</label>
           <select class="ef" id="ed-estado2">
             <option value="Abierto">Abierto</option>
@@ -533,6 +549,21 @@
           <label class="ef-label">Precio Facturación</label>
           <input class="ef" id="nv-precio" type="text" list="dl-precio" placeholder="Seleccionar o digitar">
           <datalist id="dl-precio"></datalist>
+        </div>
+        <div>
+          <label class="ef-label">Facturar a nombre de</label>
+          <input class="ef" id="nv-facturar-a" type="text" placeholder="Igual al cliente por defecto">
+        </div>
+        <div>
+          <label class="ef-label">NIT Adicional</label>
+          <input class="ef" id="nv-nit-adicional" type="text" placeholder="NIT adicional">
+        </div>
+        <div>
+          <label class="ef-label">Pedido en Consignación</label>
+          <select class="ef" id="nv-consignacion">
+            <option value="No" selected>No</option>
+            <option value="Sí">Sí</option>
+          </select>
         </div>
       </div>
       <div style="background:#fef9e7;border:1px solid #f9e79f;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:0.84rem">

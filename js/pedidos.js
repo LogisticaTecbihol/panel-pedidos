@@ -457,6 +457,9 @@ function openDetail(idx) {
   document.getElementById('md-telefono').value = c.Telefono || '';
   document.getElementById('md-plazo').value = c.Plazo_Pago || '';
   document.getElementById('md-precio').value = c.Precio_Facturacion || '';
+  document.getElementById('md-facturar-a').value = c.Facturar_A || c.Cliente || '';
+  document.getElementById('md-nit-adicional').value = c.NIT_Adicional || '';
+  document.getElementById('md-consignacion').value = c.Consignacion || 'No';
   document.getElementById('md-estado2').value = derivedEstado2(lines);
   document.getElementById('m-total').textContent = fmtMoney(c.Total_Orden);
   var obsText = c.Observaciones || lines.reduce(function(a, l) { return a || l.Observaciones; }, '') || '';
@@ -760,6 +763,9 @@ async function guardarTodo() {
     Telefono: document.getElementById('md-telefono').value.trim(),
     Plazo_Pago: document.getElementById('md-plazo').value.trim(),
     Precio_Facturacion: document.getElementById('md-precio').value.trim(),
+    Facturar_A: document.getElementById('md-facturar-a').value.trim(),
+    NIT_Adicional: document.getElementById('md-nit-adicional').value.trim(),
+    Consignacion: document.getElementById('md-consignacion').value,
     Total_Orden: detailWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('md-estado2').value,
     Nombre_Empresa: c.Nombre_Empresa,
@@ -962,6 +968,9 @@ function openEdit(idx) {
   document.getElementById('ed-telefono').value = c.Telefono || '';
   document.getElementById('ed-plazo').value = c.Plazo_Pago || '';
   document.getElementById('ed-precio').value = c.Precio_Facturacion || '';
+  document.getElementById('ed-facturar-a').value = c.Facturar_A || c.Cliente || '';
+  document.getElementById('ed-nit-adicional').value = c.NIT_Adicional || '';
+  document.getElementById('ed-consignacion').value = c.Consignacion || 'No';
   document.getElementById('ed-estado2').value = derivedEstado2(getLinesFor(c));
   document.getElementById('btn-saveEdit').disabled = false;
   document.getElementById('btn-saveEdit').textContent = '✓ Aplicar cambios';
@@ -1072,6 +1081,9 @@ async function saveEdit() {
     Telefono: document.getElementById('ed-telefono').value.trim(),
     Plazo_Pago: document.getElementById('ed-plazo').value.trim(),
     Precio_Facturacion: document.getElementById('ed-precio').value.trim(),
+    Facturar_A: document.getElementById('ed-facturar-a').value.trim(),
+    NIT_Adicional: document.getElementById('ed-nit-adicional').value.trim(),
+    Consignacion: document.getElementById('ed-consignacion').value,
     Total_Orden: editWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('ed-estado2').value,
   };
@@ -1757,6 +1769,10 @@ async function openNuevoPedido() {
   document.getElementById('nv-departamento').value = '';
   document.getElementById('nv-plazo').value = '';
   document.getElementById('nv-precio').value = '';
+  document.getElementById('nv-facturar-a').value = '';
+  document.getElementById('nv-facturar-a').removeAttribute('data-edited');
+  document.getElementById('nv-nit-adicional').value = '';
+  document.getElementById('nv-consignacion').value = 'No';
   document.getElementById('nv-observaciones').value = '';
   document.getElementById('nv-dup-warn').style.display = 'none';
   document.getElementById('btn-guardar-nuevo').disabled = false;
@@ -1770,6 +1786,13 @@ async function openNuevoPedido() {
     actualizarConsecutivoNuevo();
   };
   document.getElementById('nv-comercial').oninput = actualizarConsecutivoNuevo;
+  document.getElementById('nv-cliente').addEventListener('input', function() {
+    var fa = document.getElementById('nv-facturar-a');
+    if (!fa.dataset.edited) fa.value = this.value;
+  });
+  document.getElementById('nv-facturar-a').addEventListener('input', function() {
+    this.dataset.edited = '1';
+  });
   populateNuevoDataLists();
   renderNuevoLines();
   document.getElementById('nuevo-overlay').classList.add('show');
@@ -1787,6 +1810,7 @@ async function openNuevoPedido() {
     },
     onSelect: function(c) {
       document.getElementById('nv-cliente').value = c.cliente || '';
+      document.getElementById('nv-facturar-a').value = c.cliente || '';
       if (c.nit) document.getElementById('nv-nit').value = c.nit;
       if (c.telefono) document.getElementById('nv-telefono').value = c.telefono;
       if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
@@ -1944,6 +1968,9 @@ async function guardarNuevoPedido() {
       comercial: document.getElementById('nv-comercial').value.trim(),
       plazo_pago: document.getElementById('nv-plazo').value.trim(),
       precio_facturacion: document.getElementById('nv-precio').value.trim(),
+      facturar_a: document.getElementById('nv-facturar-a').value.trim() || cliente,
+      nit_adicional: document.getElementById('nv-nit-adicional').value.trim(),
+      consignacion: document.getElementById('nv-consignacion').value,
       total_orden: totalOrden,
       observaciones: document.getElementById('nv-observaciones').value.trim(),
       productos: productosValidos.map(function(p) {
@@ -1969,6 +1996,9 @@ async function guardarNuevoPedido() {
       comercial: document.getElementById('nv-comercial').value.trim(),
       plazo: document.getElementById('nv-plazo').value.trim(),
       precio: document.getElementById('nv-precio').value.trim(),
+      facturar_a: document.getElementById('nv-facturar-a').value.trim() || cliente,
+      nit_adicional: document.getElementById('nv-nit-adicional').value.trim(),
+      consignacion: document.getElementById('nv-consignacion').value,
       observaciones: document.getElementById('nv-observaciones').value.trim(),
       total: totalOrden,
       productos: productosValidos,
@@ -2214,6 +2244,9 @@ function exportarPedidoDesdeModal() {
     comercial: document.getElementById('md-comercial').value.trim() || c.Comercial,
     plazo: document.getElementById('md-plazo').value.trim() || c.Plazo_Pago,
     precio: document.getElementById('md-precio').value.trim() || c.Precio_Facturacion,
+    facturar_a: document.getElementById('md-facturar-a').value.trim() || c.Facturar_A || c.Cliente,
+    nit_adicional: document.getElementById('md-nit-adicional').value.trim() || c.NIT_Adicional,
+    consignacion: document.getElementById('md-consignacion').value || c.Consignacion || 'No',
     observaciones: obsText,
     total: c.Total_Orden,
     productos: lines.map(function(l) {
@@ -2382,6 +2415,8 @@ function generarPedidoPDF(data) {
   var left = [
     ['Cliente', data.cliente],
     ['NIT', data.nit],
+    ['Facturar a', data.facturar_a && data.facturar_a !== data.cliente ? data.facturar_a : null],
+    ['NIT Adicional', data.nit_adicional],
     ['Teléfono', data.telefono],
     ['Municipio', data.municipio],
     ['Departamento', data.departamento],
@@ -2391,6 +2426,7 @@ function generarPedidoPDF(data) {
     ['Plazo de Pago', data.plazo],
     ['Precio Facturación', data.precio],
     ['Dirección', data.direccion],
+    ['Consignación', data.consignacion === 'Sí' ? 'Sí' : null],
   ];
 
   var halfW = (pw - 28) / 2;

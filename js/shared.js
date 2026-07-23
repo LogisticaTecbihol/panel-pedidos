@@ -224,6 +224,9 @@ async function apiPost(body) {
           ID_Cliente: idCl || '', ID_Comercial: idCm || '', ID_Producto: idPr || '',
           Observaciones: body.observaciones || '', Estado_2: 'Abierto',
           Bonificado: prod.bonificado || '',
+          Facturar_A: body.facturar_a || body.cliente || '',
+          NIT_Adicional: body.nit_adicional || '',
+          Consignacion: body.consignacion || 'No',
           creado_por: _uid()
         });
       }
