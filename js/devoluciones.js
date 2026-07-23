@@ -7,6 +7,7 @@ var devLineas = [];
 var tramitarDevLines = [];
 var tramitarDevKey = null;
 var selectedDevKeys = {};
+var devViewMode = 'grouped';
 
 // ── Constants ──
 function getSiglaDev(n) { return getSigla(n); }
@@ -40,6 +41,162 @@ function toggleSortDev(id, e) {
 }
 
 function clearSortDev() { sortLevelsDev = []; renderDevTable(); }
+
+function setDevView(mode) {
+  devViewMode = mode;
+  document.getElementById('dev-table-view').style.display = mode === 'table' ? 'block' : 'none';
+  document.getElementById('dev-grouped-view').style.display = mode === 'grouped' ? 'block' : 'none';
+  document.getElementById('btn-view-table').style.background = mode === 'table' ? '#e67e22' : '#edf2f7';
+  document.getElementById('btn-view-table').style.color = mode === 'table' ? 'white' : '#718096';
+  document.getElementById('btn-view-grouped').style.background = mode === 'grouped' ? '#e67e22' : '#edf2f7';
+  document.getElementById('btn-view-grouped').style.color = mode === 'grouped' ? 'white' : '#718096';
+  renderDevTable();
+}
+
+function toggleGroupSelect(sgKey, checked) {
+  var byConsec = groupDevoluciones(filteredDev());
+  byConsec.forEach(function(r) {
+    var itemSgKey = (r.Empresa || '') + '||' + (r.Fecha || '') + '||' + (r.Cliente || '');
+    if (itemSgKey === sgKey && (r._estado || 'Pendiente') === 'Pendiente') {
+      selectedDevKeys[r._key] = checked;
+    }
+  });
+  renderDevTable();
+}
+
+function tramitarGroupDev(sgKey) {
+  var byConsec = groupDevoluciones(filteredDev());
+  selectedDevKeys = {};
+  byConsec.forEach(function(r) {
+    var itemSgKey = (r.Empresa || '') + '||' + (r.Fecha || '') + '||' + (r.Cliente || '');
+    if (itemSgKey === sgKey && (r._estado || 'Pendiente') === 'Pendiente') {
+      selectedDevKeys[r._key] = true;
+    }
+  });
+  updateBulkBarDev();
+  openBulkTramitarDev();
+}
+
+function renderDevGrouped(grouped) {
+  var container = document.getElementById('dev-grouped-view');
+  if (!container) return;
+
+  var superGroups = {};
+  var superOrder = [];
+  grouped.forEach(function(r) {
+    var sgKey = (r.Empresa || '') + '||' + (r.Fecha || '') + '||' + (r.Cliente || '');
+    if (!superGroups[sgKey]) {
+      superGroups[sgKey] = { empresa: r.Empresa, fecha: r.Fecha, cliente: r.Cliente, items: [], sgKey: sgKey };
+      superOrder.push(sgKey);
+    }
+    superGroups[sgKey].items.push(r);
+  });
+
+  superOrder.sort(function(a, b) {
+    var ga = superGroups[a], gb = superGroups[b];
+    var cEmp = (ga.empresa || '').localeCompare(gb.empresa || '', 'es');
+    if (cEmp !== 0) return cEmp;
+    var cFecha = (gb.fecha || '').localeCompare(ga.fecha || '');
+    if (cFecha !== 0) return cFecha;
+    return (ga.cliente || '').localeCompare(gb.cliente || '', 'es');
+  });
+
+  if (!superOrder.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:#718096;font-size:0.9rem">No hay devoluciones con los filtros seleccionados.</div>';
+    return;
+  }
+
+  container.innerHTML = superOrder.map(function(sgKey) {
+    var g = superGroups[sgKey];
+    var sgKeyEsc = sgKey.replace(/'/g, "\\'");
+    var totalProds = g.items.reduce(function(s, r) { return s + (r._nProds || 0); }, 0);
+    var totalCant = g.items.reduce(function(s, r) { return s + (r._totalCant || 0); }, 0);
+    var totalValor = g.items.reduce(function(s, r) { return s + (r._totalValor || 0); }, 0);
+    var pendientes = g.items.filter(function(r) { return (r._estado || 'Pendiente') === 'Pendiente'; });
+    var tramitadas = g.items.filter(function(r) { return r._estado === 'Tramitada'; });
+    var allPendSel = pendientes.length > 0 && pendientes.every(function(r) { return selectedDevKeys[r._key]; });
+    var somePendSel = pendientes.some(function(r) { return selectedDevKeys[r._key]; });
+
+    var html = '<div style="background:white;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden">';
+
+    html += '<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;background:linear-gradient(135deg,#f7fafc,#edf2f7);border-bottom:1px solid #e2e8f0;flex-wrap:wrap">';
+    if (AUTH.canEdit() && pendientes.length > 0) {
+      html += '<input type="checkbox" class="dev-group-cb" data-sgkey="' + sgKeyEsc + '" ' +
+        (allPendSel ? 'checked' : '') +
+        ' onchange="toggleGroupSelect(\'' + sgKeyEsc + '\', this.checked)" title="Seleccionar todas las pendientes del grupo">';
+    }
+    html += '<span class="sigla-badge ' + getSiglaClassDev(g.empresa) + '" style="font-size:0.84rem">' + getSiglaDev(g.empresa) + '</span>';
+    html += '<span style="font-weight:700;font-size:0.94rem;color:#2d3748">' + (g.cliente || '—') + '</span>';
+    html += '<span style="font-size:0.82rem;color:#718096;white-space:nowrap">📅 ' + fmtDate(g.fecha) + '</span>';
+    html += '<div style="margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap">';
+    html += '<span style="background:#edf2f7;padding:3px 10px;border-radius:10px;font-size:0.76rem;font-weight:600;color:#4a5568">' + g.items.length + ' devol.</span>';
+    html += '<span style="background:#edf2f7;padding:3px 10px;border-radius:10px;font-size:0.76rem;font-weight:600;color:#4a5568">' + totalProds + ' prod.</span>';
+    html += '<span style="background:#edf2f7;padding:3px 10px;border-radius:10px;font-size:0.76rem;font-weight:600;color:#4a5568">Cant: ' + totalCant + '</span>';
+    html += '<span style="font-weight:700;font-size:0.88rem;color:#2d3748">' + fmtMoney(totalValor) + '</span>';
+    if (tramitadas.length === g.items.length) {
+      html += '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">✓ Todo tramitado</span>';
+    } else if (tramitadas.length > 0) {
+      html += '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">' + pendientes.length + ' pendiente(s)</span>';
+    } else {
+      html += '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>';
+    }
+    html += '</div></div>';
+
+    html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;margin:0;width:100%"><thead><tr style="background:#fafbfc">';
+    if (AUTH.canEdit()) html += '<th style="width:30px"></th>';
+    html += '<th style="text-align:center">Consec.</th><th>Factura</th><th>Vendedor</th><th style="text-align:center"># Prod.</th><th style="text-align:center">Cant.</th><th style="text-align:right">Valor</th><th>Motivo</th><th style="text-align:center">Estado</th><th>Acciones</th>';
+    html += '</tr></thead><tbody>';
+
+    g.items.forEach(function(r) {
+      var keyEsc = (r._key || '').replace(/'/g, "\\'");
+      var estado = r._estado || 'Pendiente';
+      var esTramitada = estado === 'Tramitada';
+      var estadoBadge = esTramitada
+        ? '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700">Tramitada</span>'
+        : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700">Pendiente</span>';
+      var tramitarBtn = !AUTH.canEdit() ? '' : esTramitada
+        ? '<button onclick="openTramitarDev(\'' + keyEsc + '\')" title="Ver/editar trámite" style="background:#6c757d;font-size:0.72rem;padding:3px 8px;border-radius:4px;color:white;border:none;cursor:pointer;font-weight:700">📝</button>'
+        : '<button onclick="openTramitarDev(\'' + keyEsc + '\')" title="Tramitar" style="background:#27ae60;font-size:0.72rem;padding:3px 8px;border-radius:4px;color:white;border:none;cursor:pointer;font-weight:700">📝</button>';
+      var checkboxTd = !AUTH.canEdit() ? '' : esTramitada ? '<td></td>'
+        : '<td style="text-align:center"><input type="checkbox" class="dev-row-cb" data-key="' + keyEsc + '" ' + (selectedDevKeys[r._key] ? 'checked' : '') + ' onchange="toggleSelectDev(\'' + keyEsc + '\',this.checked)"></td>';
+      var facturas = (function() {
+        var fs = {};
+        (r._lines || [r]).forEach(function(l) { if (l.Num_Factura) fs[l.Num_Factura] = 1; });
+        var k = Object.keys(fs);
+        return k.length ? k.join(', ') : '—';
+      })();
+
+      html += '<tr' + (selectedDevKeys[r._key] ? ' style="background:#edf7ed"' : '') + '>' +
+        checkboxTd +
+        '<td style="text-align:center;font-weight:600">' + (r.Consecutivo || '—') + '</td>' +
+        '<td style="font-size:0.78rem">' + facturas + '</td>' +
+        '<td style="font-size:0.78rem">' + (r.Vendedor || '—') + '</td>' +
+        '<td style="text-align:center"><span style="background:#edf2f7;padding:1px 6px;border-radius:8px;font-weight:700;font-size:0.78rem">' + (r._nProds || 0) + '</span></td>' +
+        '<td style="text-align:center;font-weight:600">' + (r._totalCant || 0) + '</td>' +
+        '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(r._totalValor) + '</td>' +
+        '<td style="font-size:0.74rem;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.Motivo || '') + '">' + (r.Motivo || '—') + '</td>' +
+        '<td style="text-align:center">' + estadoBadge + '</td>' +
+        '<td><div style="display:flex;gap:4px;align-items:center">' +
+          '<button onclick="viewDevDetail(\'' + keyEsc + '\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:3px 8px;border-radius:4px;color:white;border:none;cursor:pointer;font-weight:700">📋</button>' +
+          tramitarBtn +
+          (AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '') +
+        '</div></td>' +
+      '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+
+    if (AUTH.canEdit() && pendientes.length > 0) {
+      html += '<div style="padding:10px 18px;background:#f0faf4;border-top:1px solid #e2e8f0;display:flex;justify-content:flex-end;gap:8px;align-items:center">';
+      html += '<span style="font-size:0.78rem;color:#718096;margin-right:auto">' + pendientes.length + ' pendiente(s) en este grupo</span>';
+      html += '<button onclick="tramitarGroupDev(\'' + sgKeyEsc + '\')" style="background:#27ae60;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700;transition:background 0.2s" onmouseover="this.style.background=\'#219a52\'" onmouseout="this.style.background=\'#27ae60\'">📝 Tramitar grupo</button>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+    return html;
+  }).join('');
+}
 
 function applySortDev(rows) {
   if (!sortLevelsDev.length) return rows;
@@ -369,6 +526,8 @@ function renderDevTable() {
   document.getElementById('row-ct-dev').textContent = '(' + grouped.length + ' mostrados)';
 
   renderDevHeader();
+
+  renderDevGrouped(grouped);
 
   var tbody = document.getElementById('t-body-dev');
   if (!grouped.length) {
