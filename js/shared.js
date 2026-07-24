@@ -830,7 +830,12 @@ function showToast(msg, color) {
   t.classList.add('show'); setTimeout(function() { t.classList.remove('show'); }, 3500);
 }
 
+var _overlayOpenedAt = 0;
+document.addEventListener('animationstart', function(e) {
+  if (e.animationName === 'pop') _overlayOpenedAt = Date.now();
+});
 function isBackdropClick(e) {
+  if (Date.now() - _overlayOpenedAt < 400) return false;
   return e.target === e.currentTarget && e.offsetX <= e.currentTarget.clientWidth && e.offsetY <= e.currentTarget.clientHeight;
 }
 

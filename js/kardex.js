@@ -169,8 +169,8 @@ function buildMovimientos() {
     var origenLc = (ing.Origen || '').toLowerCase();
     var esCachipay = origenLc.indexOf('cachipay') >= 0 || origenLc.indexOf('proveedor') >= 0;
     var esPlantaOrigen = _esOrigenPlanta(ing.Origen);
-    // ENTRADA destino — se omite si destino es empresa con planta y origen es planta
-    if (ing.Empresa_Destino && !(_empresaTienePlanta(ing.Empresa_Destino) && esPlantaOrigen)) {
+    // ENTRADA destino
+    if (ing.Empresa_Destino) {
       kxMovimientos.push({
         fecha: ing.Fecha || '',
         tipo: 'Entrada',
