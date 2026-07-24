@@ -1470,6 +1470,29 @@ function switchTab(tab) {
 var prodData = [];
 var prodFiltered = [];
 var prodFiltersAttached = false;
+var prodSortCol = 'totalUds';
+var prodSortDir = 'desc';
+
+var PROD_SORT_COLS = {
+  producto:  { fn: function(r) { return r.producto.toLowerCase(); }, type: 'string' },
+  devCount:  { fn: function(r) { return r.devCount; }, type: 'number' },
+  devCant:   { fn: function(r) { return r.devCant; }, type: 'number' },
+  camCount:  { fn: function(r) { return r.camCount; }, type: 'number' },
+  camCant:   { fn: function(r) { return r.camCant; }, type: 'number' },
+  devValor:  { fn: function(r) { return r.devValor; }, type: 'number' },
+  clientes:  { fn: function(r) { return Object.keys(r.clientes).length; }, type: 'number' },
+  totalUds:  { fn: function(r) { return r.devCant + r.camCant; }, type: 'number' },
+};
+
+function toggleProdSort(col) {
+  if (prodSortCol === col) {
+    prodSortDir = prodSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    prodSortCol = col;
+    prodSortDir = col === 'producto' ? 'asc' : 'desc';
+  }
+  renderPorProducto();
+}
 
 function calcularPorProducto() {
   var map = {};
@@ -1549,7 +1572,14 @@ function renderPorProducto() {
     return true;
   });
 
-  prodFiltered.sort(function(a, b) { return (b.devCant + b.camCant) - (a.devCant + a.camCant); });
+  var sortDef = PROD_SORT_COLS[prodSortCol];
+  if (sortDef) {
+    prodFiltered.sort(function(a, b) {
+      var va = sortDef.fn(a), vb = sortDef.fn(b);
+      var cmp = sortDef.type === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+      return prodSortDir === 'asc' ? cmp : -cmp;
+    });
+  }
 
   var totalDev = 0, totalCam = 0, totalValor = 0;
   prodFiltered.forEach(function(row) {
@@ -1568,8 +1598,25 @@ function renderPorProducto() {
 }
 
 function renderProdTable() {
-  var cols = ['#', 'Producto', 'Dev.', 'Uds. Devueltas', 'Cambios', 'Uds. Cambios', 'Valor Dev.', 'Empresas', 'Clientes', 'Motivo Principal', ''];
-  document.getElementById('t-head-prod').innerHTML = cols.map(function(c) { return '<th>' + c + '</th>'; }).join('');
+  var cols = [
+    { label: '#', id: null },
+    { label: 'Producto', id: 'producto' },
+    { label: 'Dev.', id: 'devCount' },
+    { label: 'Uds. Devueltas', id: 'devCant' },
+    { label: 'Cambios', id: 'camCount' },
+    { label: 'Uds. Cambios', id: 'camCant' },
+    { label: 'Valor Dev.', id: 'devValor' },
+    { label: 'Empresas', id: null },
+    { label: 'Clientes', id: 'clientes' },
+    { label: 'Motivo Principal', id: null },
+    { label: '', id: null }
+  ];
+  document.getElementById('t-head-prod').innerHTML = cols.map(function(col) {
+    if (!col.id) return '<th>' + col.label + '</th>';
+    var active = prodSortCol === col.id;
+    var dirCls = active ? (prodSortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    return '<th class="sortable ' + dirCls + '" onclick="toggleProdSort(\'' + col.id + '\')">' + col.label + '<span class="sort-icon"></span></th>';
+  }).join('');
 
   var tbody = document.getElementById('t-body-prod');
   if (!prodFiltered.length) {
