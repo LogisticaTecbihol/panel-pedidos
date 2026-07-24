@@ -86,7 +86,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra');
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Estado,Observaciones,Municipio,Bodega,Direccion' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {

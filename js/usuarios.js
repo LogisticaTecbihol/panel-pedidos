@@ -27,14 +27,16 @@ async function loadUsuarios() {
   }
 
   try {
-    var res = await _sb.from('usuarios').select('*').order('created_at');
+    var _usrResults = await Promise.all([
+      _sb.from('usuarios').select('*').order('created_at'),
+      _sb.from('usuario_empresas').select('usuario_id, empresa_sigla, empresas(nombre_completo)')
+    ]);
+    var res = _usrResults[0];
+    var ueRes = _usrResults[1];
     if (res.error) throw new Error(res.error.message);
+    if (ueRes.error) throw new Error(ueRes.error.message);
 
     usrList = res.data || [];
-
-    var ueRes = await _sb.from('usuario_empresas')
-      .select('usuario_id, empresa_sigla, empresas(nombre_completo)');
-    if (ueRes.error) throw new Error(ueRes.error.message);
 
     usrEmpresas = {};
     (ueRes.data || []).forEach(function(r) {

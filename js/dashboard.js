@@ -38,13 +38,13 @@ async function loadDashboard() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos'),
-      apiGet('getDevoluciones').catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getIngresos').catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getInventario').catch(function() { return { ok: true, inventario: [] }; }),
-      apiGet('getOrdenesCompra').catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras').catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases').catch(function() { return { ok: true, reenvases: [] }; })
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Producto,Comercial' }),
+      apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getInventario', { columns: 'Empresa,Cantidad' }).catch(function() { return { ok: true, inventario: [] }; }),
+      apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Estado' }).catch(function() { return { ok: true, ordenes: [] }; }),
+      apiGet('getMuestras', { columns: 'Empresa,Estado' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getReenvases', { columns: 'Empresa,Cantidad' }).catch(function() { return { ok: true, reenvases: [] }; })
     ]);
 
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');

@@ -197,14 +197,14 @@ async function loadInventario() {
 
   try {
     var results = await Promise.all([
-      apiGet('getInventario'),
-      apiGet('getPedidos'),
-      apiGet('getReenvases').catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getIngresos').catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getMuestras').catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getDevoluciones').catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getCambios').catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getOrdenesCompra').catch(function() { return { ok: true, ordenes: [] }; })
+      apiGet('getInventario', { columns: 'id,Fecha,Empresa,Producto,Presentacion,Unidad_Medida,Cantidad_Caja,Lote,Cantidad,Observaciones' }),
+      apiGet('getPedidos', { columns: 'Producto,Cantidad,Cant_Entregada,Estado_2' }),
+      apiGet('getReenvases', { columns: 'Bodega,Empresa,Producto,Cantidad' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getIngresos', { columns: 'Cantidad,Empresa_Origen,Empresa_Destino,Producto' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getMuestras', { columns: 'Cant_Entregada,Empresa,Producto' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getDevoluciones', { columns: 'Estado,Cantidad,Remision_Ingreso,Bodega_Ingreso,Remision_Salida,Bodega_Salida,Empresa,Producto' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Cantidad,Tipo_Linea,Producto,Bodega_Ingreso,Bodega_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getOrdenesCompra', { columns: 'Estado,Remision,Bodega,Cantidad,Empresa_Destino,Producto' }).catch(function() { return { ok: true, ordenes: [] }; })
     ]);
 
     var dataInv = results[0];

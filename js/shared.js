@@ -48,45 +48,47 @@ function _addRow(arr) {
 }
 
 // ── Capa de compatibilidad: apiGet ──
-async function apiGet(action) {
+// opts.columns: string de columnas para select (default '*')
+async function apiGet(action, opts) {
+  var cols = (opts && opts.columns) || '*';
   try {
     if (action === 'getPedidos') {
-      var res = await _sb.from('Pedidos').select('*').order('id');
+      var res = await _sb.from('Pedidos').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, pedidos: _addRow(res.data) };
     }
     if (action === 'getConsecutivos') {
-      var res = await _sb.from('Consecutivos').select('*').order('"N"');
+      var res = await _sb.from('Consecutivos').select(cols).order('"N"');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, consecutivos: res.data };
     }
     if (action === 'getIngresos') {
-      var res = await _sb.from('Ingresos').select('*').order('id');
+      var res = await _sb.from('Ingresos').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ingresos: _addRow(res.data) };
     }
     if (action === 'getDevoluciones') {
-      var res = await _sb.from('Devoluciones').select('*').order('id');
+      var res = await _sb.from('Devoluciones').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, devoluciones: _addRow(res.data) };
     }
     if (action === 'getCambios') {
-      var res = await _sb.from('CambiosMercancia').select('*').order('id');
+      var res = await _sb.from('CambiosMercancia').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, cambios: _addRow(res.data) };
     }
     if (action === 'getInventario') {
-      var res = await _sb.from('Inventario').select('*').order('id');
+      var res = await _sb.from('Inventario').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, inventario: _addRow(res.data) };
     }
     if (action === 'getOrdenesCompra') {
-      var res = await _sb.from('OrdenesCompra').select('*').order('id');
+      var res = await _sb.from('OrdenesCompra').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ordenes: _addRow(res.data) };
     }
     if (action === 'getMaestroProductos') {
-      var res = await _sb.from('maestro_productos').select('*');
+      var res = await _sb.from('maestro_productos').select(cols);
       if (res.error) return { ok: false, error: res.error.message, productos: [] };
       return {
         ok: true,
@@ -97,7 +99,7 @@ async function apiGet(action) {
       };
     }
     if (action === 'getClientesUnicos') {
-      var res = await _sb.from('ClientesUnicos').select('*');
+      var res = await _sb.from('ClientesUnicos').select(cols);
       if (res.error) return { ok: false, error: res.error.message, clientes: [] };
       return {
         ok: true,
@@ -111,7 +113,7 @@ async function apiGet(action) {
       };
     }
     if (action === 'getProductos') {
-      var res = await _sb.from('Productos').select('*');
+      var res = await _sb.from('Productos').select(cols);
       if (res.error) return { ok: true, productos: [] };
       return {
         ok: true,
@@ -121,27 +123,27 @@ async function apiGet(action) {
       };
     }
     if (action === 'getMuestras') {
-      var res = await _sb.from('SolicitudMuestras').select('*').order('id');
+      var res = await _sb.from('SolicitudMuestras').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, muestras: _addRow(res.data) };
     }
     if (action === 'getReenvases') {
-      var res = await _sb.from('Reenvases').select('*').order('id');
+      var res = await _sb.from('Reenvases').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, reenvases: _addRow(res.data) };
     }
     if (action === 'getKardexAjustes') {
-      var res = await _sb.from('KardexAjustes').select('*').order('id');
+      var res = await _sb.from('KardexAjustes').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ajustes: _addRow(res.data) };
     }
     if (action === 'getKardexNC') {
-      var res = await _sb.from('KardexNC').select('*').order('id');
+      var res = await _sb.from('KardexNC').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ajustesNC: _addRow(res.data) };
     }
     if (action === 'getRemisionesAnuladas') {
-      var res = await _sb.from('RemisionesAnuladas').select('*').order('id');
+      var res = await _sb.from('RemisionesAnuladas').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, remisionesAnuladas: _addRow(res.data) };
     }

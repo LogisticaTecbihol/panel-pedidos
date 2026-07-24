@@ -72,7 +72,7 @@ async function loadIngresos() {
   }
 
   try {
-    var data = await apiGet('getIngresos');
+    var data = await apiGet('getIngresos', { columns: 'id,Fecha,Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Responsable,Remision_Origen,Remision_Destino,Observaciones' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ingresos = (data.ingresos || []).map(function(r) {

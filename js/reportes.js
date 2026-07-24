@@ -41,15 +41,20 @@ async function loadReportes() {
   }
 
   try {
-    var data = await apiGet('getPedidos');
-    if (!data.ok) throw new Error(data.error || 'Error desconocido');
+    var results = await Promise.all([
+      apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Consecutivo,Fecha_Pedido,Cliente,Comercial,Producto,Presentacion,Cantidad,Cant_Entregada,Cant_Pendiente,Estado_Entrega,Estado_2,Remisiones,Fecha_Ult_Entrega' }),
+      apiGet('getIngresos', { columns: 'id,Empresa_Origen,Empresa_Destino,Remision_Origen,Remision_Destino,Origen,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getOrdenesCompra', { columns: 'id,Remision,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, ordenes: [] }; }),
+      apiGet('getMuestras', { columns: 'id,Remision,Empresa,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Entrega,Fecha_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getReenvases', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getDevoluciones', { columns: 'id,Empresa,Consecutivo,Remision_Ingreso,Remision,Remision_Salida,Producto,Presentacion,Cantidad,Fecha_Ingreso,Fecha_Devolucion,Fecha,Fecha_Salida' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getRemisionesAnuladas', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha,Observaciones' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
+      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision_Salida,Observaciones,Producto,Tipo_Linea,Cantidad,Fecha_Ingreso,Fecha_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getKardexNC', { columns: 'id,Remision,Empresa,Tipo,Producto,Presentacion,Cantidad,Fecha,Motivo' }).catch(function() { return { ok: true, ajustesNC: [] }; })
+    ]);
 
-    var EXPECTED = ['Fecha_Procesamiento','Nombre_Empresa','Consecutivo','Fecha_Pedido',
-      'Cliente','NIT','Telefono','Direccion_Envio','Municipio','Departamento',
-      'Comercial','Plazo_Pago','Precio_Facturacion','Producto','Presentacion',
-      'Cantidad','Valor_Unitario','Valor_Total','Total_Orden','Archivo_Fuente',
-      'Estado','ID_Cliente','ID_Comercial','ID_Producto',
-      'Cant_Entregada','Cant_Pendiente','Estado_Entrega','Fecha_Ult_Entrega','Remisiones','Observaciones','Estado_2','Bonificado'];
+    var data = results[0];
+    if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     data.pedidos = data.pedidos.filter(function(p) {
       return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente';
@@ -68,24 +73,14 @@ async function loadReportes() {
       return p;
     });
 
-    var results = await Promise.all([
-      apiGet('getIngresos').catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra').catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras').catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases').catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getDevoluciones').catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getRemisionesAnuladas').catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
-      apiGet('getCambios').catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getKardexNC').catch(function() { return { ok: true, ajustesNC: [] }; })
-    ]);
-    ingresos = (results[0].ingresos || []);
-    ordenesCompra = (results[1].ordenes || []);
-    muestras = (results[2].muestras || []);
-    reenvases = (results[3].reenvases || []);
-    devoluciones = (results[4].devoluciones || []);
-    remisionesAnuladas = (results[5].remisionesAnuladas || []);
-    cambiosMerc = (results[6].cambios || []);
-    kardexNC = (results[7].ajustesNC || []);
+    ingresos = (results[1].ingresos || []);
+    ordenesCompra = (results[2].ordenes || []);
+    muestras = (results[3].muestras || []);
+    reenvases = (results[4].reenvases || []);
+    devoluciones = (results[5].devoluciones || []);
+    remisionesAnuladas = (results[6].remisionesAnuladas || []);
+    cambiosMerc = (results[7].cambios || []);
+    kardexNC = (results[8].ajustesNC || []);
 
     populateRptFilters();
     buildReport();

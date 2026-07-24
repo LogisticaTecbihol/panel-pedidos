@@ -27,12 +27,18 @@ var AUTH = (function() {
 
       _user = data.session.user;
 
-      var res = await _sb.from('usuarios')
-        .select('*')
-        .eq('id', _user.id)
-        .eq('activo', true)
-        .single();
+      var authResults = await Promise.all([
+        _sb.from('usuarios')
+          .select('*')
+          .eq('id', _user.id)
+          .eq('activo', true)
+          .single(),
+        _sb.from('usuario_empresas')
+          .select('empresa_sigla, empresas(nombre_completo)')
+          .eq('usuario_id', _user.id)
+      ]);
 
+      var res = authResults[0];
       if (res.error || !res.data) {
         await _sb.auth.signOut();
         if (!isLoginPage) {
@@ -44,11 +50,7 @@ var AUTH = (function() {
 
       _profile = res.data;
 
-      var ueRes = await _sb.from('usuario_empresas')
-        .select('empresa_sigla, empresas(nombre_completo)')
-        .eq('usuario_id', _user.id);
-
-      _companies = (ueRes.data || []).map(function(r) {
+      _companies = (authResults[1].data || []).map(function(r) {
         return { sigla: r.empresa_sigla, nombre: r.empresas.nombre_completo };
       });
 

@@ -1605,12 +1605,10 @@ function destroyGeoAC(key) {
 }
 
 async function loadAutocompleteData() {
-  if (!clientesCache) {
-    try { var r = await apiGet('getClientesUnicos'); if (r.ok) clientesCache = r.clientes || []; } catch(e) { clientesCache = []; }
-  }
-  if (!productosCache) {
-    try { var r = await apiGet('getMaestroProductos'); if (r.ok) productosCache = r.productos || []; } catch(e) { productosCache = []; }
-  }
+  var promises = [];
+  if (!clientesCache) promises.push(apiGet('getClientesUnicos').then(function(r) { if (r.ok) clientesCache = r.clientes || []; }).catch(function() { clientesCache = []; }));
+  if (!productosCache) promises.push(apiGet('getMaestroProductos').then(function(r) { if (r.ok) productosCache = r.productos || []; }).catch(function() { productosCache = []; }));
+  if (promises.length) await Promise.all(promises);
 }
 
 function initAutocomplete(input, opts) {
