@@ -204,10 +204,10 @@ function buildMovimientos() {
 
   // Devoluciones — ENTRADA si va a Productos Buenos, SALIDA si va a No Conforme
   kxDevoluciones.forEach(function(d) {
+    var estado = (d.Estado || '').toLowerCase();
+    if (estado === 'anulado' || estado === 'pendiente') return;
     var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
     if (cant <= 0) return;
-    var estado = (d.Estado || '').toLowerCase();
-    if (estado === 'anulado') return;
     var bodegaIng = (d.Bodega_Ingreso || '').trim();
     var esNC = bodegaIng === 'Producto No Conforme';
     kxMovimientos.push({
@@ -1280,10 +1280,10 @@ function buildNCMovimientos() {
 
   // Devoluciones a Bodega No Conforme
   kxDevoluciones.forEach(function(d) {
+    var estado = (d.Estado || '').toLowerCase();
+    if (estado === 'anulado' || estado === 'pendiente') return;
     var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
     if (cant <= 0) return;
-    var estado = (d.Estado || '').toLowerCase();
-    if (estado === 'anulado') return;
     var bodegaIng = (d.Bodega_Ingreso || '').trim();
     if (bodegaIng !== 'Producto No Conforme') return;
     ncMovimientos.push({
