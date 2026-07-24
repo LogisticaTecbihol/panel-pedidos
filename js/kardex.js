@@ -305,9 +305,7 @@ function buildMovimientos() {
   });
 
   // Salidas a producción (Reenvases) — SALIDA (solo Bodega Productos Buenos)
-  // Se excluyen para GREEN y PARCELAR (no manejamos inventario de planta)
   kxReenvases.forEach(function(re) {
-    if (_empresaTienePlanta(re.Empresa)) return;
     var bodega = re.Bodega || 'Productos Buenos';
     if (bodega !== 'Productos Buenos') return;
     var cant = Number(re.Cantidad) || 0;
@@ -319,7 +317,7 @@ function buildMovimientos() {
       tipo: 'Salida',
       modulo: 'Producción',
       remision: rem,
-      referencia: re.Destino || '',
+      referencia: re.Planta || '',
       empresa: re.Empresa || '',
       producto: re.Producto || '',
       presentacion: re.Presentacion || '',
