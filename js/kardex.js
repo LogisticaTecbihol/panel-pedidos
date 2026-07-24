@@ -66,7 +66,7 @@ async function loadKardex() {
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Fecha_Salida,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, cambios: [] }; })
+      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Fecha_Salida,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
     ]);
 
     kxPedidos = (results[0].pedidos || []).filter(function(p) {
