@@ -328,6 +328,27 @@ function buildMovimientos() {
     });
   });
 
+  // Ingresos a Bodega NC — SALIDA de la bodega de productos buenos
+  // (el ingreso a NC no se refleja en Kardex General ni en Existencias)
+  ncAjustes.forEach(function(a) {
+    if (a.Tipo !== 'Ingreso_NC') return;
+    var cant = Number(a.Cantidad) || 0;
+    if (cant <= 0) return;
+    var motivoLbl = NC_MOTIVO_LABELS[a.Motivo] || a.Motivo || '';
+    kxMovimientos.push({
+      fecha: a.Fecha || '',
+      tipo: 'Salida',
+      modulo: 'Bodega NC',
+      remision: a.Remision || '',
+      referencia: 'Traslado a NC' + (motivoLbl ? ' — ' + motivoLbl : '') + (a.Observaciones ? ' — ' + a.Observaciones : ''),
+      empresa: a.Empresa || '',
+      producto: a.Producto || '',
+      presentacion: a.Presentacion || '',
+      cantidad: cant,
+      _ajusteId: null
+    });
+  });
+
   // Ajustes manuales y Saldos iniciales
   kxAjustes.forEach(function(a) {
     var cant = Number(a.Cantidad) || 0;
