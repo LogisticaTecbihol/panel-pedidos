@@ -100,13 +100,20 @@
     <button onclick="clearSelectionDev()" style="background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.4);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar selección</button>
   </div>
 
+  <!-- Sub-tabs like pedidos -->
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="btn-dl" id="dev-subtab-ordenes" onclick="switchDevSubTab('ordenes')" style="background:#e67e22">🔄 Devoluciones</button>
+    <button class="btn-dl" id="dev-subtab-detalle" onclick="switchDevSubTab('detalle')" style="background:#718096">📑 Vista detallada</button>
+  </div>
+
+  <div id="panel-dev-ordenes">
   <div class="card">
     <div class="card-head">
       <h3>Devoluciones registradas <span id="row-ct-dev" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <div style="display:flex;gap:0;border:1px solid #cbd5e0;border-radius:6px;overflow:hidden;margin-right:4px" title="Modo de vista">
-          <button id="btn-view-table" onclick="setDevView('table')" style="padding:5px 10px;font-size:0.76rem;font-weight:600;border:none;cursor:pointer;background:#edf2f7;color:#718096;transition:all 0.2s" title="Vista tabla">📋 Tabla</button>
-          <button id="btn-view-grouped" onclick="setDevView('grouped')" style="padding:5px 10px;font-size:0.76rem;font-weight:600;border:none;cursor:pointer;background:#e67e22;color:white;transition:all 0.2s" title="Vista agrupada">📊 Agrupado</button>
+          <button id="btn-view-table" onclick="setDevView('table')" style="padding:5px 10px;font-size:0.76rem;font-weight:600;border:none;cursor:pointer;background:#e67e22;color:white;transition:all 0.2s" title="Vista tabla">📋 Tabla</button>
+          <button id="btn-view-grouped" onclick="setDevView('grouped')" style="padding:5px 10px;font-size:0.76rem;font-weight:600;border:none;cursor:pointer;background:#edf2f7;color:#718096;transition:all 0.2s" title="Vista agrupada">📊 Agrupado</button>
         </div>
         <button id="btn-clear-sort-dev" onclick="clearSortDev()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
         <button class="btn-dl auth-edit-only" onclick="document.getElementById('dev-file-upload').click()" style="background:#2c3e50">📂 Importar Excel</button>
@@ -115,7 +122,7 @@
         <button class="btn-dl" onclick="loadDevoluciones()">🔄 Actualizar datos</button>
       </div>
     </div>
-    <div id="dev-table-view" style="display:none">
+    <div id="dev-table-view">
       <div style="overflow-x:auto">
         <table>
           <thead>
@@ -125,8 +132,29 @@
         </table>
       </div>
     </div>
-    <div id="dev-grouped-view"></div>
+    <div id="dev-grouped-view" style="display:none"></div>
   </div>
+  <div class="pagination" id="dev-pagination"></div>
+  </div>
+
+  <!-- Panel Vista Detallada (solo lectura, por línea) -->
+  <div id="panel-dev-detalle" style="display:none">
+  <div class="card">
+    <div class="card-head">
+      <h3>📑 Vista detallada por línea <span id="dev-det-count" style="font-weight:400;color:#718096"></span></h3>
+      <button class="btn-dl" onclick="exportDevDetalleCSV()">📥 Exportar CSV</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr id="dev-det-head"></tr>
+        </thead>
+        <tbody id="dev-det-body"></tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+
   </div><!-- /tab-devoluciones -->
 
   <!-- ═══ TAB CAMBIOS ═══ -->

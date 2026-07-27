@@ -7,7 +7,10 @@ var devLineas = [];
 var tramitarDevLines = [];
 var tramitarDevKey = null;
 var selectedDevKeys = {};
-var devViewMode = 'grouped';
+var devViewMode = 'table';
+var devCurrentPage = 1;
+var devPageSize = 25;
+var devDetSort = [];
 
 // ── Constants ──
 function getSiglaDev(n) { return getSigla(n); }
@@ -344,6 +347,15 @@ function closeClientAutocompleteDev() {
 }
 
 // ── Filters ──
+function onDevFilterChange() {
+  devCurrentPage = 1;
+  renderDevTable();
+  var detallePanel = document.getElementById('panel-dev-detalle');
+  if (detallePanel && detallePanel.style.display !== 'none') {
+    renderDevDetalle();
+  }
+}
+
 var devFiltersAttached = false;
 function populateDevFilters() {
   var productos = [], clientes = [], motivos = [];
@@ -367,8 +379,8 @@ function populateDevFilters() {
 
   if (!devFiltersAttached) {
     ['f-empresa','f-cliente','f-motivo','f-prod','f-txt'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', renderDevTable);
-      document.getElementById(id).addEventListener('input', renderDevTable);
+      document.getElementById(id).addEventListener('change', onDevFilterChange);
+      document.getElementById(id).addEventListener('input', onDevFilterChange);
     });
     devFiltersAttached = true;
   }
@@ -529,14 +541,23 @@ function renderDevTable() {
 
   renderDevGrouped(grouped);
 
+  var totalRows = grouped.length;
+  var totalPages = Math.ceil(totalRows / devPageSize) || 1;
+  if (devCurrentPage > totalPages) devCurrentPage = totalPages;
+
   var tbody = document.getElementById('t-body-dev');
   if (!grouped.length) {
     tbody.innerHTML = '<tr><td colspan="14"><div class="empty">No hay devoluciones con los filtros seleccionados.</div></td></tr>';
+    renderDevPagination(0);
     updateBulkBarDev();
     return;
   }
 
-  tbody.innerHTML = grouped.map(function(r, i) {
+  var startIdx = (devCurrentPage - 1) * devPageSize;
+  var pageRows = grouped.slice(startIdx, startIdx + devPageSize);
+
+  tbody.innerHTML = pageRows.map(function(r, ri) {
+    var i = startIdx + ri;
     var keyEsc = (r._key || '').replace(/'/g, "\\'");
     var estado = r._estado || 'Pendiente';
     var esTramitada = estado === 'Tramitada';
@@ -573,6 +594,7 @@ function renderDevTable() {
     '</tr>';
   }).join('');
 
+  renderDevPagination(totalRows);
   updateBulkBarDev();
 }
 
@@ -1980,6 +2002,223 @@ async function saveBulkTramitarDev() {
   }
 
   await loadDevoluciones();
+}
+
+// ── Pagination ──
+function devGoToPage(p) {
+  devCurrentPage = p;
+  renderDevTable();
+  var card = document.querySelector('#panel-dev-ordenes .card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function devChangePageSize(val) {
+  devPageSize = Number(val) || 25;
+  devCurrentPage = 1;
+  renderDevTable();
+}
+
+function renderDevPagination(totalRows) {
+  var el = document.getElementById('dev-pagination');
+  if (!el) return;
+  var totalPages = Math.ceil(totalRows / devPageSize);
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  var start = (devCurrentPage - 1) * devPageSize + 1;
+  var end = Math.min(devCurrentPage * devPageSize, totalRows);
+  var html = '<span class="pg-info">' + start + '–' + end + ' de ' + totalRows + '</span>';
+
+  html += '<button ' + (devCurrentPage <= 1 ? 'disabled' : 'onclick="devGoToPage(1)"') + ' title="Primera">«</button>';
+  html += '<button ' + (devCurrentPage <= 1 ? 'disabled' : 'onclick="devGoToPage(' + (devCurrentPage - 1) + ')"') + ' title="Anterior">‹</button>';
+
+  var range = [];
+  if (totalPages <= 7) {
+    for (var i = 1; i <= totalPages; i++) range.push(i);
+  } else {
+    range.push(1);
+    if (devCurrentPage > 3) range.push('...');
+    for (var i = Math.max(2, devCurrentPage - 1); i <= Math.min(totalPages - 1, devCurrentPage + 1); i++) range.push(i);
+    if (devCurrentPage < totalPages - 2) range.push('...');
+    range.push(totalPages);
+  }
+  range.forEach(function(p) {
+    if (p === '...') { html += '<span class="pg-ellipsis">…</span>'; return; }
+    html += '<button class="' + (p === devCurrentPage ? 'pg-active' : '') + '" onclick="devGoToPage(' + p + ')">' + p + '</button>';
+  });
+
+  html += '<button ' + (devCurrentPage >= totalPages ? 'disabled' : 'onclick="devGoToPage(' + (devCurrentPage + 1) + ')"') + ' title="Siguiente">›</button>';
+  html += '<button ' + (devCurrentPage >= totalPages ? 'disabled' : 'onclick="devGoToPage(' + totalPages + ')"') + ' title="Última">»</button>';
+
+  html += '<select onchange="devChangePageSize(this.value)">';
+  [25, 50, 100].forEach(function(n) {
+    html += '<option value="' + n + '"' + (devPageSize === n ? ' selected' : '') + '>' + n + ' / pág</option>';
+  });
+  html += '</select>';
+
+  el.innerHTML = html;
+}
+
+// ── Sub-tab switching ──
+function switchDevSubTab(tab) {
+  var ordenes = document.getElementById('panel-dev-ordenes');
+  var detalle = document.getElementById('panel-dev-detalle');
+  var tabOrd = document.getElementById('dev-subtab-ordenes');
+  var tabDet = document.getElementById('dev-subtab-detalle');
+  if (tab === 'ordenes') {
+    ordenes.style.display = 'block';
+    detalle.style.display = 'none';
+    tabOrd.style.background = '#e67e22';
+    tabDet.style.background = '#718096';
+  } else {
+    ordenes.style.display = 'none';
+    detalle.style.display = 'block';
+    tabOrd.style.background = '#718096';
+    tabDet.style.background = '#e67e22';
+    renderDevDetalle();
+  }
+}
+
+// ── Vista Detallada (flat per-line) ──
+var DEV_DET_COLS = [
+  { id: 'empresa', label: 'Empresa' },
+  { id: 'cliente', label: 'Cliente' },
+  { id: 'consecutivo', label: 'Consecutivo' },
+  { id: 'fecha', label: 'Fecha' },
+  { id: 'factura', label: 'Factura' },
+  { id: 'producto', label: 'Producto' },
+  { id: 'presentacion', label: 'Presentación' },
+  { id: 'cantidad', label: 'Cantidad' },
+  { id: 'cant_devuelta', label: 'Cant. Devuelta' },
+  { id: 'valor_total', label: 'V. Total' },
+  { id: 'motivo', label: 'Motivo' },
+  { id: 'estado', label: 'Estado' },
+];
+
+function toggleDevDetSort(col, e) {
+  var shift = e && e.shiftKey;
+  var idx = devDetSort.findIndex(function(l) { return l.col === col; });
+  if (shift) {
+    if (idx >= 0) devDetSort.splice(idx, 1);
+    else devDetSort.push({ col: col, dir: 'asc' });
+  } else if (idx >= 0) {
+    if (devDetSort[idx].dir === 'asc') devDetSort[idx].dir = 'desc';
+    else devDetSort.splice(idx, 1);
+  } else {
+    devDetSort = [{ col: col, dir: 'asc' }];
+  }
+  renderDevDetalle();
+}
+
+function renderDevDetalle() {
+  var fe = document.getElementById('f-empresa').value;
+  var fc = document.getElementById('f-cliente').value;
+  var fm = document.getElementById('f-motivo').value;
+  var fp = document.getElementById('f-prod').value;
+  var ft = document.getElementById('f-txt').value.toLowerCase();
+
+  var rows = devoluciones.filter(function(r) {
+    if (fe && r.Empresa !== fe) return false;
+    if (fc && r.Cliente !== fc) return false;
+    if (fm && r.Motivo !== fm) return false;
+    if (fp && r.Producto !== fp) return false;
+    if (ft) {
+      var hay = [r.Cliente, r.Vendedor, r.Producto, r.Presentacion, r.Num_Factura, r.Motivo, r.Observaciones, r.Consecutivo, r.NIT, r.Remision, r.Estado].join(' ').toLowerCase();
+      if (hay.indexOf(ft) < 0) return false;
+    }
+    return true;
+  });
+
+  if (devDetSort.length) {
+    rows = [].concat(rows).sort(function(a, b) {
+      for (var s = 0; s < devDetSort.length; s++) {
+        var col = devDetSort[s].col, dir = devDetSort[s].dir;
+        var va, vb;
+        if (col === 'empresa') { va = getSiglaDev(a.Empresa); vb = getSiglaDev(b.Empresa); }
+        else if (col === 'cliente') { va = (a.Cliente||'').toLowerCase(); vb = (b.Cliente||'').toLowerCase(); }
+        else if (col === 'consecutivo') { va = Number(a.Consecutivo)||0; vb = Number(b.Consecutivo)||0; }
+        else if (col === 'fecha') { va = +(new Date(a.Fecha||0)); vb = +(new Date(b.Fecha||0)); }
+        else if (col === 'factura') { va = (a.Num_Factura||'').toLowerCase(); vb = (b.Num_Factura||'').toLowerCase(); }
+        else if (col === 'producto') { va = (a.Producto||'').toLowerCase(); vb = (b.Producto||'').toLowerCase(); }
+        else if (col === 'presentacion') { va = (a.Presentacion||'').toLowerCase(); vb = (b.Presentacion||'').toLowerCase(); }
+        else if (col === 'cantidad') { va = Number(a.Cantidad)||0; vb = Number(b.Cantidad)||0; }
+        else if (col === 'cant_devuelta') { va = Number(a.Cant_Entregada)||0; vb = Number(b.Cant_Entregada)||0; }
+        else if (col === 'valor_total') { va = Number(a.Valor_Total)||0; vb = Number(b.Valor_Total)||0; }
+        else if (col === 'motivo') { va = (a.Motivo||'').toLowerCase(); vb = (b.Motivo||'').toLowerCase(); }
+        else if (col === 'estado') { va = (a.Estado||'Pendiente'); vb = (b.Estado||'Pendiente'); }
+        else { va = ''; vb = ''; }
+        var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+        if (cmp !== 0) return dir === 'asc' ? cmp : -cmp;
+      }
+      return 0;
+    });
+  }
+
+  document.getElementById('dev-det-count').textContent = '(' + rows.length + ' líneas)';
+
+  var headEl = document.getElementById('dev-det-head');
+  headEl.innerHTML = DEV_DET_COLS.map(function(c) {
+    var idx = devDetSort.findIndex(function(l) { return l.col === c.id; });
+    var cls = idx >= 0 ? (devDetSort[idx].dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    var badge = idx >= 0 && devDetSort.length > 1 ? '<span style="font-size:0.6rem;vertical-align:super;color:#e67e22">' + (idx+1) + '</span>' : '';
+    return '<th class="sortable ' + cls + '" onclick="toggleDevDetSort(\'' + c.id + '\',event)">' + c.label + badge + '<span class="sort-icon"></span></th>';
+  }).join('');
+
+  var tbody = document.getElementById('dev-det-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="' + DEV_DET_COLS.length + '"><div class="empty">No hay líneas con los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function(r) {
+    var estado = (r.Estado || 'Pendiente').trim();
+    var estadoBadge = estado === 'Tramitada'
+      ? '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Tramitada</span>'
+      : '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>';
+    return '<tr>' +
+      '<td><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + getSiglaDev(r.Empresa) + '</span></td>' +
+      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.Cliente||'') + '">' + (r.Cliente||'—') + '</td>' +
+      '<td style="text-align:center;font-weight:700">' + (r.Consecutivo||'') + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Num_Factura||'—') + '</td>' +
+      '<td style="font-weight:600">' + (r.Producto||'—') + '</td>' +
+      '<td>' + (r.Presentacion||'—') + '</td>' +
+      '<td class="money">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
+      '<td class="money" style="color:#e67e22;font-weight:600">' + (Number(r.Cant_Entregada)||0).toLocaleString('es-CO') + '</td>' +
+      '<td class="money" style="font-weight:700">' + fmtMoney(r.Valor_Total) + '</td>' +
+      '<td style="font-size:0.76rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.Motivo||'') + '">' + (r.Motivo||'—') + '</td>' +
+      '<td style="text-align:center">' + estadoBadge + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function exportDevDetalleCSV() {
+  var rows = filteredDev();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+
+  var lines = ['Empresa,Cliente,Consecutivo,Fecha,Factura,Producto,Presentacion,Cantidad,Cant_Devuelta,Valor_Total,Motivo,Estado'];
+  rows.forEach(function(r) {
+    lines.push([
+      getSiglaDev(r.Empresa),
+      '"' + (r.Cliente||'').replace(/"/g,'""') + '"',
+      r.Consecutivo||'',
+      r.Fecha||'',
+      '"' + (r.Num_Factura||'').replace(/"/g,'""') + '"',
+      '"' + (r.Producto||'').replace(/"/g,'""') + '"',
+      '"' + (r.Presentacion||'').replace(/"/g,'""') + '"',
+      Number(r.Cantidad)||0,
+      Number(r.Cant_Entregada)||0,
+      Number(r.Valor_Total)||0,
+      '"' + (r.Motivo||'').replace(/"/g,'""') + '"',
+      r.Estado||'Pendiente',
+    ].join(','));
+  });
+
+  var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  var link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'Devoluciones_Detalle_' + today() + '.csv';
+  link.click();
+  showToast('CSV exportado: ' + rows.length + ' líneas');
 }
 
 // ── Auto-load ──
