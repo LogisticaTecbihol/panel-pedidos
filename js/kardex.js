@@ -202,17 +202,17 @@ function buildMovimientos() {
     }
   });
 
-  // Devoluciones — ENTRADA si va a Productos Buenos, SALIDA si va a No Conforme
+  // Devoluciones — solo ENTRADA a Productos Buenos (Bodega NC se excluye del Kardex General)
   kxDevoluciones.forEach(function(d) {
     var estado = (d.Estado || '').toLowerCase();
     if (estado === 'anulado' || estado === 'pendiente') return;
     var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
     if (cant <= 0) return;
     var bodegaIng = (d.Bodega_Ingreso || '').trim();
-    var esNC = bodegaIng === 'Producto No Conforme';
+    if (bodegaIng === 'Producto No Conforme') return;
     kxMovimientos.push({
       fecha: d.Fecha_Devolucion || d.Fecha || '',
-      tipo: esNC ? 'Salida' : 'Entrada',
+      tipo: 'Entrada',
       modulo: 'Devoluciones',
       remision: d.Remision || d.Remision_Ingreso || '',
       referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
@@ -359,35 +359,6 @@ function buildMovimientos() {
     });
   });
 
-  // Ajustes NC — reflejar en Kardex General
-  // Ingreso_NC = producto sale de bodega buena → SALIDA
-  // Salida_NC con Retorno_conforme = producto regresa a bodega buena → ENTRADA
-  ncAjustes.forEach(function(a) {
-    var cant = Number(a.Cantidad) || 0;
-    if (cant <= 0) return;
-    var tipo = a.Tipo || '';
-    var motivo = a.Motivo || '';
-    var esTipo;
-    if (tipo === 'Ingreso_NC') {
-      esTipo = 'Salida';
-    } else if (tipo === 'Salida_NC' && motivo === 'Retorno_conforme') {
-      esTipo = 'Entrada';
-    } else {
-      return;
-    }
-    kxMovimientos.push({
-      fecha: a.Fecha || '',
-      tipo: esTipo,
-      modulo: 'Bodega NC',
-      remision: a.Remision || '',
-      referencia: (NC_MOTIVO_LABELS[motivo] || motivo) + (a.Observaciones ? ' — ' + a.Observaciones : ''),
-      empresa: a.Empresa || '',
-      producto: a.Producto || '',
-      presentacion: a.Presentacion || '',
-      cantidad: cant,
-      _ajusteId: null
-    });
-  });
 }
 
 // ── Filters ──
