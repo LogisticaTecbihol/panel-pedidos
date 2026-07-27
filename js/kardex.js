@@ -122,14 +122,16 @@ function buildMovimientos() {
     var producto = p.Producto || '';
     var presentacion = p.Presentacion || '';
     var remStr = (p.Remisiones || '').trim();
-    var hasStructured = remStr && remStr.indexOf('|') >= 0;
+    if (!remStr) return;
+    var hasStructured = remStr.indexOf('|') >= 0;
 
     if (hasStructured) {
       remStr.split(',').forEach(function(seg) {
         seg = seg.trim();
         if (!seg) return;
         var parts = seg.split('|');
-        var rem = parts[0] || '';
+        var rem = (parts[0] || '').trim();
+        if (!rem) return;
         var cant = Number(parts[1]) || 0;
         var fecha = parts[2] || p.Fecha_Ult_Entrega || p.Fecha_Pedido || '';
         if (cant <= 0) return;
