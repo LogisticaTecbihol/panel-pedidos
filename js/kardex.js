@@ -68,7 +68,7 @@ async function loadKardex() {
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Presentacion,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; })
+      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; })
     ]);
 
     kxPedidos = (results[0].pedidos || []).filter(function(p) {
@@ -1303,7 +1303,7 @@ function buildNCMovimientos() {
         referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '') + (c.Razon_Cambio ? ' — ' + c.Razon_Cambio : ''),
         empresa: c.Empresa || '',
         producto: c.Producto || '',
-        presentacion: c.Presentacion || '',
+        presentacion: '',
         cantidad: cant,
         _ajusteId: null
       });
@@ -1320,7 +1320,7 @@ function buildNCMovimientos() {
         referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
         empresa: c.Empresa || '',
         producto: c.Producto || '',
-        presentacion: c.Presentacion || '',
+        presentacion: '',
         cantidad: cant,
         _ajusteId: null
       });
