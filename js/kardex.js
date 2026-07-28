@@ -68,7 +68,7 @@ async function loadKardex() {
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Fecha_Salida,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
+      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Presentacion,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; })
     ]);
 
     kxPedidos = (results[0].pedidos || []).filter(function(p) {
@@ -231,13 +231,15 @@ function buildMovimientos() {
     });
   });
 
-  // Cambios de Mercancía — SALIDA (solo líneas ENTREGAR salen de bodega productos buenos)
+  // Cambios de Mercancía — SALIDA (solo líneas ENTREGAR desde bodega productos buenos)
   kxCambios.forEach(function(c) {
     if (c.Tipo_Linea !== 'ENTREGAR') return;
     var cant = Number(c.Cantidad) || 0;
     if (cant <= 0) return;
     var estado = (c.Estado || '').toLowerCase();
     if (estado !== 'cerrado' && estado !== 'cerrada') return;
+    var bodegaSal = (c.Bodega_Salida || 'Productos Buenos').trim();
+    if (bodegaSal !== 'Productos Buenos') return;
     var rem = String(c.Remision_Salida || '').trim();
     if (!rem) return;
     kxMovimientos.push({
@@ -1280,6 +1282,51 @@ function buildNCMovimientos() {
     });
   });
 
+  // Cambios de Mercancía — CAMBIAR con Bodega_Ingreso NC = ENTRADA;
+  // ENTREGAR con Bodega_Salida NC = SALIDA
+  kxCambios.forEach(function(c) {
+    var estado = (c.Estado || '').toLowerCase();
+    if (estado !== 'cerrado' && estado !== 'cerrada') return;
+    var cant = Number(c.Cantidad) || 0;
+    if (cant <= 0) return;
+
+    if (c.Tipo_Linea === 'CAMBIAR') {
+      var bodegaIng = (c.Bodega_Ingreso || '').trim();
+      if (bodegaIng !== 'Producto No Conforme') return;
+      var remIng = String(c.Remision_Ingreso || '').trim();
+      if (!remIng) return;
+      ncMovimientos.push({
+        fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '',
+        tipo: 'Entrada',
+        motivo: 'Cambio_NC',
+        remision: remIng,
+        referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '') + (c.Razon_Cambio ? ' — ' + c.Razon_Cambio : ''),
+        empresa: c.Empresa || '',
+        producto: c.Producto || '',
+        presentacion: c.Presentacion || '',
+        cantidad: cant,
+        _ajusteId: null
+      });
+    } else if (c.Tipo_Linea === 'ENTREGAR') {
+      var bodegaSal = (c.Bodega_Salida || '').trim();
+      if (bodegaSal !== 'Producto No Conforme') return;
+      var remSal = String(c.Remision_Salida || '').trim();
+      if (!remSal) return;
+      ncMovimientos.push({
+        fecha: c.Fecha_Salida || c.Fecha_Solicitud || '',
+        tipo: 'Salida',
+        motivo: 'Cambio_NC',
+        remision: remSal,
+        referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
+        empresa: c.Empresa || '',
+        producto: c.Producto || '',
+        presentacion: c.Presentacion || '',
+        cantidad: cant,
+        _ajusteId: null
+      });
+    }
+  });
+
   // Devoluciones a Bodega No Conforme
   kxDevoluciones.forEach(function(d) {
     var estado = (d.Estado || '').toLowerCase();
@@ -1466,6 +1513,7 @@ var NC_MOTIVO_LABELS = {
   'Retorno_conforme': 'Retorno conforme',
   'Produccion_NC': 'Salida Producción',
   'Devolucion_NC': 'Devolución',
+  'Cambio_NC': 'Cambio',
   'Otro': 'Otro'
 };
 
@@ -1483,6 +1531,7 @@ var NC_MOTIVO_COLORS = {
   'Retorno_conforme': '#0e6655',
   'Produccion_NC': '#d35400',
   'Devolucion_NC': '#e67e22',
+  'Cambio_NC': '#2980b9',
   'Otro': '#718096'
 };
 
@@ -2114,6 +2163,7 @@ function _kxncModulo(m) {
   if (m.motivo === 'Saldo_Inicial') return 'Saldo Inicial NC';
   if (m.motivo === 'Produccion_NC') return 'Producción NC';
   if (m.motivo === 'Devolucion_NC') return 'Devolución NC';
+  if (m.motivo === 'Cambio_NC') return 'Cambio NC';
   if (m.tipo === 'Entrada') return 'Ingreso NC';
   return 'Salida NC';
 }
@@ -2216,7 +2266,8 @@ function renderKardexNCTable() {
     'Ingreso NC': '#e67e22',
     'Salida NC': '#27ae60',
     'Devolución NC': '#e67e22',
-    'Producción NC': '#d35400'
+    'Producción NC': '#d35400',
+    'Cambio NC': '#2980b9'
   };
 
   tbody.innerHTML = kxncFiltered.map(function(m, i) {
