@@ -2345,8 +2345,16 @@ var existNCFiltersAttached = false;
 function calcularExistenciasNC() {
   var saldos = {};
 
+  var fechaCorte = null;
+  ncMovimientos.forEach(function(m) {
+    if (m.motivo === 'Saldo_Inicial' && m.fecha) {
+      if (!fechaCorte || m.fecha < fechaCorte) fechaCorte = m.fecha;
+    }
+  });
+
   ncMovimientos.forEach(function(m) {
     if (!m.producto || !m.empresa) return;
+    if (fechaCorte && m.fecha < fechaCorte) return;
     var key = m.producto;
     if (!saldos[key]) {
       saldos[key] = { producto: m.producto };
