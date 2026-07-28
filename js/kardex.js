@@ -15,6 +15,7 @@ var kxFiltered = [];
 var ncAjustes = [];
 var ncMovimientos = [];
 var ncFiltered = [];
+var kxncFiltered = [];
 var activeTab = 'kardex';
 
 function getSiglaKx(n) { return getSigla(n); }
@@ -39,6 +40,7 @@ async function loadKardex() {
   populateEmpresaSelect('aj-empresa', '— Seleccionar —', kxExtras);
   populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras);
   populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras);
+  populateEmpresaSelect('kxnc-f-empresa', '— Seleccionar —', kxExtras);
   EMPRESAS_EXIST = AUTH.getFilteredEmpresas(EMPRESAS_HOLDING).concat([{ value: 'CHIA ABAGO', sigla: 'CHIA ABAGO' }]);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
@@ -86,9 +88,12 @@ async function loadKardex() {
     buildNCMovimientos();
     populateKxFilters();
     populateNCFilters();
+    populateKxNCFilters();
     calcularKardex();
     calcularNC();
+    calcularKardexNC();
     if (activeTab === 'exist') calcularExistencias();
+    if (activeTab === 'exnc') calcularExistenciasNC();
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
@@ -1227,7 +1232,9 @@ function switchKardexTab(tab) {
   var tabs = [
     { id: 'tab-kardex', panel: 'panel-kardex', color: '#0e6655', key: 'kardex' },
     { id: 'tab-nc', panel: 'panel-nc', color: '#e67e22', key: 'nc' },
-    { id: 'tab-exist', panel: 'panel-exist', color: '#1a5276', key: 'exist' }
+    { id: 'tab-exist', panel: 'panel-exist', color: '#1a5276', key: 'exist' },
+    { id: 'tab-kxnc', panel: 'panel-kxnc', color: '#c0392b', key: 'kxnc' },
+    { id: 'tab-exnc', panel: 'panel-exnc', color: '#c0392b', key: 'exnc' }
   ];
   tabs.forEach(function(t) {
     var btn = document.getElementById(t.id);
@@ -1243,6 +1250,7 @@ function switchKardexTab(tab) {
     }
   });
   if (tab === 'exist') calcularExistencias();
+  if (tab === 'exnc') calcularExistenciasNC();
 }
 
 // ══════════════════════════════════════════
@@ -2049,6 +2057,385 @@ function exportExistExcel() {
   XLSX.utils.book_append_sheet(wb, ws, 'Existencias');
   XLSX.writeFile(wb, 'Existencias_por_Empresa_' + today() + '.xlsx');
   showToast('Excel exportado: ' + existFiltered.length + ' productos');
+}
+
+// ══════════════════════════════════════════
+// ── KARDEX NC (estilo Kardex General) ──
+// ══════════════════════════════════════════
+
+var kxncFiltersAttached = false;
+
+function populateKxNCFilters() {
+  if (!kxncFiltersAttached) {
+    document.getElementById('kxnc-f-empresa').addEventListener('change', function() {
+      populateKxNCProductFilter();
+      calcularKardexNC();
+    });
+    document.getElementById('kxnc-f-prod').addEventListener('change', calcularKardexNC);
+    document.getElementById('kxnc-f-desde').addEventListener('change', calcularKardexNC);
+    document.getElementById('kxnc-f-hasta').addEventListener('change', calcularKardexNC);
+    kxncFiltersAttached = true;
+  }
+  populateKxNCProductFilter();
+}
+
+function populateKxNCProductFilter() {
+  var fEmp = document.getElementById('kxnc-f-empresa').value;
+  var productos = {};
+  ncMovimientos.forEach(function(m) {
+    if (fEmp && m.empresa !== fEmp) return;
+    if (m.producto) productos[m.producto] = true;
+  });
+  var sorted = Object.keys(productos).sort();
+  var fp = document.getElementById('kxnc-f-prod');
+  var current = fp.value;
+  fp.innerHTML = '<option value="">— Todos —</option>' + sorted.map(function(p) {
+    return '<option value="' + p.replace(/"/g, '&quot;') + '">' + p + '</option>';
+  }).join('');
+  if (current && sorted.indexOf(current) >= 0) fp.value = current;
+}
+
+function clearKardexNCFilters() {
+  document.getElementById('kxnc-f-empresa').value = '';
+  document.getElementById('kxnc-f-prod').value = '';
+  document.getElementById('kxnc-f-desde').value = '';
+  document.getElementById('kxnc-f-hasta').value = '';
+  populateKxNCProductFilter();
+  calcularKardexNC();
+}
+
+var NC_MODULO_LABELS = {
+  'Saldo_Inicial': 'Saldo Inicial NC',
+  'Produccion_NC': 'Producción NC',
+  'Devolucion_NC': 'Devolución NC'
+};
+
+function _kxncModulo(m) {
+  if (m.motivo === 'Saldo_Inicial') return 'Saldo Inicial NC';
+  if (m.motivo === 'Produccion_NC') return 'Producción NC';
+  if (m.motivo === 'Devolucion_NC') return 'Devolución NC';
+  if (m.tipo === 'Entrada') return 'Ingreso NC';
+  return 'Salida NC';
+}
+
+function calcularKardexNC() {
+  var fEmp = document.getElementById('kxnc-f-empresa').value;
+  var fProd = document.getElementById('kxnc-f-prod').value;
+  var fDesde = document.getElementById('kxnc-f-desde').value;
+  var fHasta = document.getElementById('kxnc-f-hasta').value;
+
+  if (!fEmp) {
+    document.getElementById('kxnc-no-filter').style.display = 'block';
+    document.getElementById('kxnc-table-wrap').style.display = 'none';
+    document.getElementById('kxnc-s-saldo-ini').textContent = '0';
+    document.getElementById('kxnc-s-entradas').textContent = '0';
+    document.getElementById('kxnc-s-salidas').textContent = '0';
+    document.getElementById('kxnc-s-saldo-act').textContent = '0';
+    document.getElementById('row-ct-kxnc').textContent = '';
+    return;
+  }
+
+  document.getElementById('kxnc-no-filter').style.display = 'none';
+  document.getElementById('kxnc-table-wrap').style.display = 'block';
+
+  var fechaCorte = '2026-07-01';
+  kxncFiltered = ncMovimientos.filter(function(m) {
+    if (m.empresa !== fEmp) return false;
+    if (fProd && m.producto !== fProd) return false;
+    var desde = fDesde || fechaCorte;
+    if (m.fecha < desde) return false;
+    if (fHasta && m.fecha > fHasta) return false;
+    return true;
+  });
+
+  kxncFiltered.sort(function(a, b) {
+    var da = a.fecha || '';
+    var db = b.fecha || '';
+    if (da !== db) return da < db ? -1 : 1;
+    var pa = a.motivo === 'Saldo_Inicial' ? 0 : 1;
+    var pb = b.motivo === 'Saldo_Inicial' ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    var ea = a.tipo === 'Entrada' ? 0 : 1;
+    var eb = b.tipo === 'Entrada' ? 0 : 1;
+    return ea - eb;
+  });
+
+  var saldoIni = 0;
+  var totalEntradas = 0;
+  var totalSalidas = 0;
+  var saldosPorProducto = {};
+
+  kxncFiltered.forEach(function(m) {
+    if (!saldosPorProducto[m.producto]) saldosPorProducto[m.producto] = 0;
+    if (m.tipo === 'Entrada') {
+      saldosPorProducto[m.producto] += m.cantidad;
+      if (m.motivo === 'Saldo_Inicial') {
+        saldoIni += m.cantidad;
+      } else {
+        totalEntradas += m.cantidad;
+      }
+    } else {
+      saldosPorProducto[m.producto] -= m.cantidad;
+      totalSalidas += m.cantidad;
+    }
+    m._saldoKxnc = saldosPorProducto[m.producto];
+  });
+
+  var saldoTotal = 0;
+  Object.keys(saldosPorProducto).forEach(function(k) { saldoTotal += saldosPorProducto[k]; });
+
+  document.getElementById('kxnc-s-saldo-ini').textContent = saldoIni.toLocaleString('es-CO');
+  document.getElementById('kxnc-s-entradas').textContent = totalEntradas.toLocaleString('es-CO');
+  document.getElementById('kxnc-s-salidas').textContent = totalSalidas.toLocaleString('es-CO');
+  document.getElementById('kxnc-s-saldo-act').textContent = saldoTotal.toLocaleString('es-CO');
+
+  renderKardexNCTable();
+}
+
+function renderKardexNCTable() {
+  var fProd = document.getElementById('kxnc-f-prod').value;
+  var showProd = !fProd;
+  var cols = showProd
+    ? ['#', 'Fecha', 'Tipo', 'Módulo', 'Producto', 'N° Remisión', 'Referencia', 'Entrada', 'Salida', 'Saldo']
+    : ['#', 'Fecha', 'Tipo', 'Módulo', 'N° Remisión', 'Referencia', 'Entrada', 'Salida', 'Saldo'];
+  var colSpan = cols.length;
+  document.getElementById('t-head-kxnc').innerHTML = cols.map(function(c) {
+    return '<th>' + c + '</th>';
+  }).join('');
+
+  document.getElementById('row-ct-kxnc').textContent = '(' + kxncFiltered.length + ' movimientos)';
+
+  var tbody = document.getElementById('t-body-kxnc');
+  if (!kxncFiltered.length) {
+    tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay movimientos NC con los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+
+  var MOD_COLORS = {
+    'Saldo Inicial NC': '#1a5276',
+    'Ingreso NC': '#e67e22',
+    'Salida NC': '#27ae60',
+    'Devolución NC': '#e67e22',
+    'Producción NC': '#d35400'
+  };
+
+  tbody.innerHTML = kxncFiltered.map(function(m, i) {
+    var modulo = _kxncModulo(m);
+    var modColor = MOD_COLORS[modulo] || '#718096';
+    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#e67e22;font-weight:700">+' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
+    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#27ae60;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
+    var saldoColor = m._saldoKxnc < 0 ? '#e74c3c' : '#c0392b';
+    var referencia = m.referencia || '';
+    var motivoLbl = NC_MOTIVO_LABELS[m.motivo] || m.motivo || '';
+    if (motivoLbl && m.motivo !== 'Saldo_Inicial' && m.motivo !== 'Produccion_NC' && m.motivo !== 'Devolucion_NC') {
+      referencia = motivoLbl + (referencia ? ' — ' + referencia : '');
+    }
+    var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.producto || '').replace(/"/g, '&quot;') + '">' + (m.producto || '—') + '</td>' : '';
+
+    return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
+      '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#e67e22' : '#27ae60') + '">' + (m.tipo === 'Entrada' ? 'Ingreso' : 'Salida') + '</span></td>' +
+      '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + modulo + '</span></td>' +
+      prodCol +
+      '<td style="font-size:0.8rem;font-weight:600">' + (m.remision || '—') + '</td>' +
+      '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + referencia.replace(/"/g, '&quot;') + '">' + (referencia || '—') + '</td>' +
+      '<td style="text-align:right">' + entradaStr + '</td>' +
+      '<td style="text-align:right">' + salidaStr + '</td>' +
+      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldoKxnc.toLocaleString('es-CO') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function exportKardexNCExcel() {
+  if (!kxncFiltered.length) { showToast('No hay datos para exportar. Selecciona una empresa.', '#e74c3c'); return; }
+
+  var fEmp = document.getElementById('kxnc-f-empresa').value;
+  var fProd = document.getElementById('kxnc-f-prod').value;
+
+  var data = kxncFiltered.map(function(m, i) {
+    var motivoLbl = NC_MOTIVO_LABELS[m.motivo] || m.motivo || '';
+    return {
+      '#': i + 1,
+      'Fecha': m.fecha || '',
+      'Tipo': m.tipo === 'Entrada' ? 'Ingreso NC' : 'Salida NC',
+      'Módulo': _kxncModulo(m),
+      'Motivo': motivoLbl,
+      'N° Remisión': m.remision || '',
+      'Referencia': m.referencia || '',
+      'Producto': m.producto,
+      'Presentación': m.presentacion,
+      'Entrada': m.tipo === 'Entrada' ? m.cantidad : '',
+      'Salida': m.tipo === 'Salida' ? m.cantidad : '',
+      'Saldo': m._saldoKxnc
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    { wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 18 },
+    { wch: 15 }, { wch: 35 }, { wch: 30 }, { wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 10 }
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Kardex NC');
+  var filename = 'KardexNC_' + getSiglaKx(fEmp) + '_' + (fProd || '').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30) + '_' + today() + '.xlsx';
+  XLSX.writeFile(wb, filename);
+  showToast('Excel exportado: ' + kxncFiltered.length + ' movimientos');
+}
+
+// ══════════════════════════════════════════
+// ── EXISTENCIAS NC POR EMPRESA ──
+// ══════════════════════════════════════════
+
+var existDataNC = [];
+var existFilteredNC = [];
+var existNCFiltersAttached = false;
+
+function calcularExistenciasNC() {
+  var saldos = {};
+
+  ncMovimientos.forEach(function(m) {
+    if (!m.producto || !m.empresa) return;
+    var key = m.producto;
+    if (!saldos[key]) {
+      saldos[key] = { producto: m.producto };
+      EMPRESAS_EXIST.forEach(function(e) { saldos[key][e.value] = 0; });
+    }
+    if (typeof saldos[key][m.empresa] === 'undefined') {
+      saldos[key][m.empresa] = 0;
+    }
+    if (m.tipo === 'Entrada') {
+      saldos[key][m.empresa] += m.cantidad;
+    } else {
+      saldos[key][m.empresa] -= m.cantidad;
+    }
+  });
+
+  existDataNC = Object.keys(saldos).sort().map(function(k) {
+    var row = saldos[k];
+    var total = 0;
+    EMPRESAS_EXIST.forEach(function(e) { total += (row[e.value] || 0); });
+    row._total = total;
+    return row;
+  });
+
+  if (!existNCFiltersAttached) {
+    document.getElementById('exnc-f-buscar').addEventListener('input', renderExistenciasNC);
+    document.getElementById('exnc-f-mostrar').addEventListener('change', renderExistenciasNC);
+    existNCFiltersAttached = true;
+  }
+
+  renderExistenciasNC();
+}
+
+function clearExistNCFilters() {
+  document.getElementById('exnc-f-buscar').value = '';
+  document.getElementById('exnc-f-mostrar').value = 'todos';
+  renderExistenciasNC();
+}
+
+function renderExistenciasNC() {
+  var buscar = (document.getElementById('exnc-f-buscar').value || '').toLowerCase().trim();
+  var mostrar = document.getElementById('exnc-f-mostrar').value;
+
+  existFilteredNC = existDataNC.filter(function(row) {
+    if (buscar && row.producto.toLowerCase().indexOf(buscar) < 0) return false;
+    if (mostrar === 'con_stock' && row._total <= 0) return false;
+    if (mostrar === 'sin_stock' && row._total !== 0) return false;
+    if (mostrar === 'negativo' && row._total >= 0) return false;
+    return true;
+  });
+
+  var totalUnidades = 0;
+  var empresasConStock = {};
+  existFilteredNC.forEach(function(row) {
+    EMPRESAS_EXIST.forEach(function(e) {
+      var val = row[e.value] || 0;
+      if (val > 0) empresasConStock[e.value] = true;
+    });
+    totalUnidades += row._total;
+  });
+
+  document.getElementById('exnc-s-productos').textContent = existFilteredNC.length.toLocaleString('es-CO');
+  document.getElementById('exnc-s-empresas').textContent = Object.keys(empresasConStock).length;
+  document.getElementById('exnc-s-total').textContent = totalUnidades.toLocaleString('es-CO');
+  document.getElementById('row-ct-exnc').textContent = '(' + existFilteredNC.length + ' productos)';
+
+  renderExistNCTable();
+}
+
+function renderExistNCTable() {
+  var thead = document.getElementById('t-head-exnc');
+  var headerCols = '<th style="position:sticky;left:0;background:#f0f4f8;z-index:2">#</th>' +
+    '<th style="position:sticky;left:30px;background:#f0f4f8;z-index:2;min-width:220px">Producto</th>';
+  EMPRESAS_EXIST.forEach(function(e) {
+    headerCols += '<th style="text-align:right;min-width:90px">' + e.sigla + '</th>';
+  });
+  headerCols += '<th style="text-align:right;min-width:90px;background:#fdedec;font-weight:800">TOTAL NC</th>';
+  thead.innerHTML = headerCols;
+
+  var tbody = document.getElementById('t-body-exnc');
+  if (!existFilteredNC.length) {
+    var colSpan = 3 + EMPRESAS_EXIST.length;
+    tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos NC con los filtros seleccionados.</div></td></tr>';
+    document.getElementById('t-foot-exnc').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = existFilteredNC.map(function(row, i) {
+    var html = '<tr>' +
+      '<td style="color:#718096;font-size:0.78rem;position:sticky;left:0;background:white;z-index:1">' + (i + 1) + '</td>' +
+      '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + row.producto.replace(/"/g, '&quot;') + '">' + row.producto + '</td>';
+    EMPRESAS_EXIST.forEach(function(e) {
+      var val = row[e.value] || 0;
+      var color = val > 0 ? '#e67e22' : val < 0 ? '#e74c3c' : '#cbd5e0';
+      var weight = val !== 0 ? '700' : '400';
+      html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + val.toLocaleString('es-CO') + '</td>';
+    });
+    var totalColor = row._total > 0 ? '#c0392b' : row._total < 0 ? '#e74c3c' : '#cbd5e0';
+    html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#fdf2f2;font-size:0.88rem">' + row._total.toLocaleString('es-CO') + '</td>';
+    html += '</tr>';
+    return html;
+  }).join('');
+
+  var totales = {};
+  EMPRESAS_EXIST.forEach(function(e) { totales[e.value] = 0; });
+  var granTotal = 0;
+  existFilteredNC.forEach(function(row) {
+    EMPRESAS_EXIST.forEach(function(e) { totales[e.value] += (row[e.value] || 0); });
+    granTotal += row._total;
+  });
+
+  var footHtml = '<td style="position:sticky;left:0;background:#f0f4f8;z-index:1"></td>' +
+    '<td style="position:sticky;left:30px;background:#f0f4f8;z-index:1;font-size:0.84rem;font-weight:800;color:#2d3748">TOTALES</td>';
+  EMPRESAS_EXIST.forEach(function(e) {
+    var val = totales[e.value];
+    var color = val > 0 ? '#e67e22' : val < 0 ? '#e74c3c' : '#718096';
+    footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + val.toLocaleString('es-CO') + '</td>';
+  });
+  footHtml += '<td style="text-align:right;font-weight:800;color:#c0392b;background:#fdedec;font-size:0.95rem">' + granTotal.toLocaleString('es-CO') + '</td>';
+  document.getElementById('t-foot-exnc').innerHTML = footHtml;
+}
+
+function exportExistNCExcel() {
+  if (!existFilteredNC.length) { showToast('No hay datos para exportar.', '#e74c3c'); return; }
+
+  var data = existFilteredNC.map(function(row, i) {
+    var obj = { '#': i + 1, 'Producto': row.producto };
+    EMPRESAS_EXIST.forEach(function(e) { obj[e.sigla] = row[e.value] || 0; });
+    obj['TOTAL NC'] = row._total;
+    return obj;
+  });
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  var colWidths = [{ wch: 5 }, { wch: 35 }];
+  EMPRESAS_EXIST.forEach(function() { colWidths.push({ wch: 12 }); });
+  colWidths.push({ wch: 12 });
+  ws['!cols'] = colWidths;
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Existencias NC');
+  XLSX.writeFile(wb, 'Existencias_NC_por_Empresa_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + existFilteredNC.length + ' productos');
 }
 
 // ── Auto-load ──

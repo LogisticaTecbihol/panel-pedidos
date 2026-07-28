@@ -56,10 +56,12 @@
   </div>
 
   <!-- TABS -->
-  <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid #e2e8f0">
+  <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid #e2e8f0;flex-wrap:wrap">
     <button id="tab-kardex" onclick="switchKardexTab('kardex')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#0e6655;color:white;border-radius:8px 8px 0 0;transition:all 0.2s">📋 Kardex General</button>
     <button id="tab-nc" onclick="switchKardexTab('nc')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">⚠️ Bodega No Conforme</button>
     <button id="tab-exist" onclick="switchKardexTab('exist')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📊 Existencias por Empresa</button>
+    <button id="tab-kxnc" onclick="switchKardexTab('kxnc')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📋 Kardex NC</button>
+    <button id="tab-exnc" onclick="switchKardexTab('exnc')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📊 Existencias NC por Empresa</button>
   </div>
 
   <!-- ═══ TAB: KARDEX GENERAL ═══ -->
@@ -221,6 +223,106 @@
   </div>
 
   </div><!-- /panel-exist -->
+
+  <!-- ═══ TAB: KARDEX NC ═══ -->
+  <div id="panel-kxnc" style="display:none">
+
+  <div class="stats">
+    <div class="sc" style="border-color:#1a5276"><div class="num" id="kxnc-s-saldo-ini" style="color:#1a5276">0</div><div class="lbl">Saldo Inicial NC</div></div>
+    <div class="sc" style="border-color:#e67e22"><div class="num" id="kxnc-s-entradas" style="color:#e67e22">0</div><div class="lbl">Total Entradas NC</div></div>
+    <div class="sc" style="border-color:#27ae60"><div class="num" id="kxnc-s-salidas" style="color:#27ae60">0</div><div class="lbl">Total Salidas NC</div></div>
+    <div class="sc" style="border-color:#c0392b"><div class="num" id="kxnc-s-saldo-act" style="font-weight:800;color:#c0392b">0</div><div class="lbl">Saldo Actual NC</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg">
+      <label>Empresa</label>
+      <select id="kxnc-f-empresa">
+        <option value="">— Seleccionar —</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Producto</label>
+      <select id="kxnc-f-prod"><option value="">— Todos —</option></select>
+    </div>
+    <div class="fg"><label>Desde</label><input type="date" id="kxnc-f-desde"></div>
+    <div class="fg"><label>Hasta</label><input type="date" id="kxnc-f-hasta"></div>
+    <button onclick="clearKardexNCFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>📋 Kardex de Producto No Conforme <span id="row-ct-kxnc" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-dl" onclick="exportKardexNCExcel()">📥 Exportar Excel</button>
+        <button class="btn-dl" onclick="loadKardex()">🔄 Actualizar datos</button>
+      </div>
+    </div>
+    <div id="kxnc-no-filter" style="text-align:center;padding:48px 24px;color:#718096">
+      <div style="font-size:2.5rem;margin-bottom:12px">📋</div>
+      <div style="font-size:1rem;font-weight:700;color:#2d3748;margin-bottom:8px">Selecciona una empresa</div>
+      <div style="font-size:0.88rem">Usa los filtros de arriba para consultar el Kardex de producto no conforme.</div>
+    </div>
+    <div id="kxnc-table-wrap" style="overflow-x:auto;display:none">
+      <table>
+        <thead>
+          <tr id="t-head-kxnc"></tr>
+        </thead>
+        <tbody id="t-body-kxnc"></tbody>
+      </table>
+    </div>
+  </div>
+
+  </div><!-- /panel-kxnc -->
+
+  <!-- ═══ TAB: EXISTENCIAS NC POR EMPRESA ═══ -->
+  <div id="panel-exnc" style="display:none">
+
+  <div class="stats">
+    <div class="sc" style="border-color:#2c3e50"><div class="num" id="exnc-s-productos" style="color:#2c3e50">0</div><div class="lbl">Productos NC</div></div>
+    <div class="sc" style="border-color:#c0392b"><div class="num" id="exnc-s-empresas" style="color:#c0392b">0</div><div class="lbl">Empresas con NC</div></div>
+    <div class="sc" style="border-color:#e67e22"><div class="num" id="exnc-s-total" style="color:#e67e22;font-weight:800">0</div><div class="lbl">Total Unidades NC</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg">
+      <label>Buscar producto</label>
+      <input type="text" id="exnc-f-buscar" placeholder="Escriba para filtrar..." style="min-width:240px">
+    </div>
+    <div class="fg">
+      <label>Mostrar</label>
+      <select id="exnc-f-mostrar">
+        <option value="todos">Todos los productos</option>
+        <option value="con_stock">Solo con existencia > 0</option>
+        <option value="sin_stock">Solo sin existencia</option>
+        <option value="negativo">Solo saldo negativo</option>
+      </select>
+    </div>
+    <button onclick="clearExistNCFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>📊 Existencias de Producto No Conforme por Empresa <span id="row-ct-exnc" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-dl" onclick="exportExistNCExcel()">📥 Exportar Excel</button>
+        <button class="btn-dl" onclick="loadKardex()">🔄 Actualizar datos</button>
+      </div>
+    </div>
+    <div id="exnc-table-wrap" style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr id="t-head-exnc"></tr>
+        </thead>
+        <tbody id="t-body-exnc"></tbody>
+        <tfoot>
+          <tr id="t-foot-exnc" style="background:#f0f4f8;font-weight:800"></tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  </div><!-- /panel-exnc -->
 
 </div>
 
@@ -586,6 +688,6 @@
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/kardex.js?v=20260724b"></script>
+<script src="js/kardex.js?v=20260728a"></script>
 </body>
 </html>
