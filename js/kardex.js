@@ -20,6 +20,8 @@ var activeTab = 'kardex';
 
 function getSiglaKx(n) { return getSigla(n); }
 
+function _normProd(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+
 function _empresaTienePlanta(empresa) {
   var s = getSiglaKx(empresa);
   return s === 'GREEN' || s === 'PARCELAR';
@@ -124,7 +126,7 @@ function buildMovimientos() {
     if (est2 === 'Anulado') return;
     var ref = 'Orden ' + (p.Consecutivo || '') + ' — ' + (p.Cliente || '');
     var empresa = p.Nombre_Empresa || '';
-    var producto = p.Producto || '';
+    var producto = _normProd(p.Producto);
     var presentacion = p.Presentacion || '';
     var remStr = (p.Remisiones || '').trim();
     if (!remStr) return;
@@ -185,7 +187,7 @@ function buildMovimientos() {
         remision: ing.Remision_Destino || '',
         referencia: 'Desde ' + getSiglaKx(ing.Empresa_Origen) + (ing.Origen ? ' — ' + ing.Origen : ''),
         empresa: ing.Empresa_Destino,
-        producto: ing.Producto || '',
+        producto: _normProd(ing.Producto),
         presentacion: ing.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -201,7 +203,7 @@ function buildMovimientos() {
         remision: ing.Remision_Origen || '',
         referencia: 'Hacia ' + getSiglaKx(ing.Empresa_Destino) + (ing.Origen ? ' — ' + ing.Origen : ''),
         empresa: ing.Empresa_Origen,
-        producto: ing.Producto || '',
+        producto: _normProd(ing.Producto),
         presentacion: ing.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -224,7 +226,7 @@ function buildMovimientos() {
       remision: d.Remision || d.Remision_Ingreso || '',
       referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
       empresa: d.Empresa || '',
-      producto: d.Producto || '',
+      producto: _normProd(d.Producto),
       presentacion: d.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -249,7 +251,7 @@ function buildMovimientos() {
       remision: rem,
       referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
       empresa: c.Empresa || '',
-      producto: c.Producto || '',
+      producto: _normProd(c.Producto),
       presentacion: c.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -270,7 +272,7 @@ function buildMovimientos() {
         remision: rem,
         referencia: 'OC ' + (oc.Consecutivo || '') + ' — Desde ' + getSiglaKx(oc.Empresa_Origen),
         empresa: oc.Empresa_Destino,
-        producto: oc.Producto || '',
+        producto: _normProd(oc.Producto),
         presentacion: oc.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -284,7 +286,7 @@ function buildMovimientos() {
         remision: rem,
         referencia: 'OC ' + (oc.Consecutivo || '') + ' — Hacia ' + getSiglaKx(oc.Empresa_Destino),
         empresa: oc.Empresa_Origen,
-        producto: oc.Producto || '',
+        producto: _normProd(oc.Producto),
         presentacion: oc.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -306,7 +308,7 @@ function buildMovimientos() {
       remision: rem,
       referencia: 'Sol. ' + (m.Consecutivo || '') + (m.Solicitante ? ' — ' + m.Solicitante : ''),
       empresa: m.Empresa || '',
-      producto: m.Producto || '',
+      producto: _normProd(m.Producto),
       presentacion: m.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -328,7 +330,7 @@ function buildMovimientos() {
       remision: rem,
       referencia: re.Planta || '',
       empresa: re.Empresa || '',
-      producto: re.Producto || '',
+      producto: _normProd(re.Producto),
       presentacion: re.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -349,7 +351,7 @@ function buildMovimientos() {
       remision: a.Remision || '',
       referencia: 'Traslado a NC' + (motivoLbl ? ' — ' + motivoLbl : '') + (a.Observaciones ? ' — ' + a.Observaciones : ''),
       empresa: a.Empresa || '',
-      producto: a.Producto || '',
+      producto: _normProd(a.Producto),
       presentacion: a.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -382,7 +384,7 @@ function buildMovimientos() {
       remision: '',
       referencia: a.Observaciones || '',
       empresa: a.Empresa || '',
-      producto: a.Producto || '',
+      producto: _normProd(a.Producto),
       presentacion: a.Presentacion || '',
       cantidad: cant,
       _ajusteId: a.__row || a.id || null
@@ -1275,7 +1277,7 @@ function buildNCMovimientos() {
       remision: re.Remision || '',
       referencia: (re.Planta ? re.Planta : '') + (re.Observaciones ? ' — ' + re.Observaciones : ''),
       empresa: re.Empresa || '',
-      producto: re.Producto || '',
+      producto: _normProd(re.Producto),
       presentacion: re.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -1302,7 +1304,7 @@ function buildNCMovimientos() {
         remision: remIng,
         referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '') + (c.Razon_Cambio ? ' — ' + c.Razon_Cambio : ''),
         empresa: c.Empresa || '',
-        producto: c.Producto || '',
+        producto: _normProd(c.Producto),
         presentacion: '',
         cantidad: cant,
         _ajusteId: null
@@ -1319,7 +1321,7 @@ function buildNCMovimientos() {
         remision: remSal,
         referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
         empresa: c.Empresa || '',
-        producto: c.Producto || '',
+        producto: _normProd(c.Producto),
         presentacion: '',
         cantidad: cant,
         _ajusteId: null
@@ -1342,7 +1344,7 @@ function buildNCMovimientos() {
       remision: d.Remision || d.Remision_Ingreso || '',
       referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
       empresa: d.Empresa || '',
-      producto: d.Producto || '',
+      producto: _normProd(d.Producto),
       presentacion: d.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -1374,7 +1376,7 @@ function buildNCMovimientos() {
       remision: a.Remision || '',
       referencia: a.Observaciones || '',
       empresa: a.Empresa || '',
-      producto: a.Producto || '',
+      producto: _normProd(a.Producto),
       presentacion: a.Presentacion || '',
       cantidad: cant,
       _ajusteId: a.__row || a.id || null
