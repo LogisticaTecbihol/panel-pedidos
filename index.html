@@ -150,8 +150,9 @@
     var badge = document.createElement('span');
     badge.className = 'card-badge';
     badge.textContent = info.newCount > 99 ? '99+' : String(info.newCount);
-    badge.title = info.newCount + ' nueva(s) desde tu última visita';
+    badge.title = 'Ver ' + info.newCount + ' nueva(s)';
     card.appendChild(badge);
+    _bindBadgeDropdown(badge, c.key, info);
   });
 })();
 </script>

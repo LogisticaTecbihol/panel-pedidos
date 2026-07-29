@@ -953,6 +953,164 @@ function markModuleSeen(moduleKey) {
   });
 }
 
+// ── Dropdown de notificaciones (lista de nuevos ítems) ──
+
+var _newItemsCache = {};
+var _openNotifDD = null;
+
+var _MODULE_META = {
+  pedidos:      { label: 'Pedidos',              href: 'pedidos.html' },
+  devoluciones: { label: 'Devoluciones y Cambios', href: 'devoluciones.html' },
+  muestras:     { label: 'Solicitud de Muestras', href: 'muestras.html' }
+};
+
+function _colsForNotifTable(t) {
+  if (t === 'Pedidos')           return 'id,Consecutivo,Cliente,Nombre_Empresa,Fecha_Pedido';
+  if (t === 'Devoluciones')      return 'id,Consecutivo,Cliente,Empresa,Fecha,Motivo';
+  if (t === 'CambiosMercancia')  return 'id,Consecutivo,Cliente,Empresa,Fecha_Solicitud';
+  if (t === 'SolicitudMuestras') return 'id,Consecutivo,Empresa,Fecha_Solicitud,Responsable,Solicitante,Municipio';
+  return 'id';
+}
+
+function _rowToNotifItem(t, r) {
+  var sigla = (typeof getSigla === 'function') ? getSigla(r.Empresa || r.Nombre_Empresa) : (r.Empresa || r.Nombre_Empresa || '');
+  var consec = r.Consecutivo || ('#' + r.id);
+  if (t === 'Pedidos') return {
+    id: r.id, prefix: '',
+    title: consec + ' · ' + (r.Cliente || '—'),
+    sub: sigla,
+    date: (r.Fecha_Pedido || '').slice(0, 10)
+  };
+  if (t === 'Devoluciones') return {
+    id: r.id, prefix: '[DEV] ',
+    title: '[DEV] ' + consec + ' · ' + (r.Cliente || '—'),
+    sub: sigla + (r.Motivo ? ' · ' + r.Motivo : ''),
+    date: (r.Fecha || '').slice(0, 10)
+  };
+  if (t === 'CambiosMercancia') return {
+    id: r.id, prefix: '[CAM] ',
+    title: '[CAM] ' + consec + ' · ' + (r.Cliente || '—'),
+    sub: sigla,
+    date: (r.Fecha_Solicitud || '').slice(0, 10)
+  };
+  if (t === 'SolicitudMuestras') return {
+    id: r.id, prefix: '',
+    title: consec + ' · ' + (r.Responsable || r.Solicitante || '—'),
+    sub: sigla + (r.Municipio ? ' · ' + r.Municipio : ''),
+    date: (r.Fecha_Solicitud || '').slice(0, 10)
+  };
+  return { id: r.id, prefix: '', title: '#' + r.id, sub: '', date: '' };
+}
+
+async function _fetchNewItems(moduleKey, info) {
+  if (_newItemsCache[moduleKey]) return _newItemsCache[moduleKey];
+  var all = [];
+  await Promise.all(info.tables.map(async function(t) {
+    var raw = localStorage.getItem(info.prefix + t);
+    var maxIdSnapshot = info.maxIds[t] || 0;
+    var lastSeen = parseInt(raw, 10);
+    if (isNaN(lastSeen)) lastSeen = maxIdSnapshot;
+    var res = await _sb.from(t).select(_colsForNotifTable(t))
+      .gt('id', lastSeen).order('id', { ascending: false }).limit(30);
+    (res.data || []).forEach(function(r) { all.push({ table: t, row: r }); });
+  }));
+  var groups = {};
+  var order = [];
+  all.forEach(function(x) {
+    var consec = x.row.Consecutivo || ('#' + x.row.id);
+    var k = x.table + '|' + consec;
+    if (!groups[k]) {
+      groups[k] = _rowToNotifItem(x.table, x.row);
+      groups[k]._maxId = x.row.id;
+      groups[k]._lineas = 0;
+      order.push(k);
+    }
+    groups[k]._lineas += 1;
+    if (x.row.id > groups[k]._maxId) groups[k]._maxId = x.row.id;
+  });
+  var arr = order.map(function(k) { return groups[k]; })
+    .sort(function(a, b) { return b._maxId - a._maxId; })
+    .slice(0, 10);
+  arr.forEach(function(g) {
+    if (g._lineas > 1) g.sub = (g.sub ? g.sub + ' · ' : '') + g._lineas + ' líneas';
+  });
+  _newItemsCache[moduleKey] = arr;
+  return arr;
+}
+
+function _closeNotifDropdown() {
+  if (_openNotifDD) {
+    _openNotifDD.remove();
+    _openNotifDD = null;
+  }
+}
+
+function _openNotifDropdown(anchorEl, moduleKey, info) {
+  _closeNotifDropdown();
+  var dd = document.createElement('div');
+  dd.className = 'notif-dd';
+  dd.innerHTML = '<div class="notif-dd-loading">Cargando…</div>';
+  document.body.appendChild(dd);
+  var meta = _MODULE_META[moduleKey] || { label: moduleKey, href: '#' };
+  var rect = anchorEl.getBoundingClientRect();
+  var top = rect.bottom + window.scrollY + 6;
+  var left = Math.max(8, Math.min(window.innerWidth - 340, rect.left + window.scrollX - 20));
+  dd.style.top = top + 'px';
+  dd.style.left = left + 'px';
+  dd._anchor = anchorEl;
+  _openNotifDD = dd;
+
+  _fetchNewItems(moduleKey, info).then(function(items) {
+    if (_openNotifDD !== dd) return;
+    if (!items.length) {
+      dd.innerHTML = '<div class="notif-dd-empty">Sin novedades para mostrar.</div>';
+      return;
+    }
+    var html = '<div class="notif-dd-header">🔔 Nuevas de ' + escHtml(meta.label) +
+      ' (' + info.newCount + ')</div>';
+    html += '<ul class="notif-dd-list">';
+    items.forEach(function(it) {
+      html += '<li><a href="' + meta.href + '" data-mkey="' + moduleKey + '">' +
+        '<div class="notif-dd-title">' + escHtml(it.title) + '</div>' +
+        (it.sub ? '<div class="notif-dd-sub">' + escHtml(it.sub) + '</div>' : '') +
+        (it.date ? '<div class="notif-dd-date">📅 ' + escHtml(it.date) + '</div>' : '') +
+        '</a></li>';
+    });
+    html += '</ul>';
+    html += '<a class="notif-dd-footer" href="' + meta.href + '" data-mkey="' + moduleKey + '">Ver todas →</a>';
+    dd.innerHTML = html;
+    dd.querySelectorAll('a[data-mkey]').forEach(function(a) {
+      a.addEventListener('click', function() { markModuleSeen(moduleKey); });
+    });
+  }).catch(function() {
+    if (_openNotifDD !== dd) return;
+    dd.innerHTML = '<div class="notif-dd-empty">Error cargando.</div>';
+  });
+}
+
+function _bindBadgeDropdown(badgeEl, moduleKey, info) {
+  badgeEl.style.cursor = 'pointer';
+  badgeEl.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (_openNotifDD && _openNotifDD._anchor === badgeEl) {
+      _closeNotifDropdown();
+      return;
+    }
+    _openNotifDropdown(badgeEl, moduleKey, info);
+  });
+}
+
+document.addEventListener('click', function(e) {
+  if (!_openNotifDD) return;
+  if (_openNotifDD.contains(e.target)) return;
+  var t = e.target;
+  if (t && t.classList && (t.classList.contains('nav-badge') || t.classList.contains('card-badge'))) return;
+  _closeNotifDropdown();
+});
+window.addEventListener('resize', _closeNotifDropdown);
+window.addEventListener('scroll', _closeNotifDropdown, true);
+
 // Auto-run: pintar badges en el navbar de la página actual
 (async function paintNavBadges() {
   try {
@@ -970,9 +1128,9 @@ function markModuleSeen(moduleKey) {
       var badge = document.createElement('span');
       badge.className = 'nav-badge';
       badge.textContent = info.newCount > 99 ? '99+' : String(info.newCount);
-      badge.title = info.newCount + ' nueva(s) desde tu última visita';
+      badge.title = 'Ver ' + info.newCount + ' nueva(s)';
       link.appendChild(badge);
-      link.addEventListener('click', function() { markModuleSeen(m.key); });
+      _bindBadgeDropdown(badge, m.key, info);
     });
-  } catch (e) { /* silencioso: no romper la app por un badge */ }
+  } catch (e) { /* silencioso */ }
 })();
