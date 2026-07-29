@@ -900,3 +900,79 @@ function setSyncStatus(state, msg) {
   ico.textContent = state === 'ok' ? '☁️' : state === 'syncing' ? '🔄' : '⚠️';
   msgEl.textContent = msg;
 }
+
+// ══════════════════════════════════════════════════════════════
+// Notificaciones: badges de nuevas solicitudes por módulo
+// ══════════════════════════════════════════════════════════════
+
+var NEW_COUNTS_CONFIG = [
+  { key: 'pedidos',      href: 'pedidos.html',      tables: ['Pedidos'] },
+  { key: 'devoluciones', href: 'devoluciones.html', tables: ['Devoluciones', 'CambiosMercancia'] },
+  { key: 'muestras',     href: 'muestras.html',     tables: ['SolicitudMuestras'] }
+];
+
+var _newCountsPromise = null;
+
+function getNewCountsPerModule() {
+  if (_newCountsPromise) return _newCountsPromise;
+  _newCountsPromise = (async function() {
+    await _authReady;
+    var user = (typeof AUTH !== 'undefined' && AUTH.getUser) ? AUTH.getUser() : null;
+    if (!user) return {};
+    var prefix = 'lastSeenId_' + user.id + '_';
+    var out = {};
+    await Promise.all(NEW_COUNTS_CONFIG.map(async function(m) {
+      var maxIds = {};
+      var totalNew = 0;
+      await Promise.all(m.tables.map(async function(t) {
+        var maxRes = await _sb.from(t).select('id').order('id', { ascending: false }).limit(1);
+        var maxId = (maxRes.data && maxRes.data[0]) ? maxRes.data[0].id : 0;
+        maxIds[t] = maxId;
+        var seenKey = prefix + t;
+        var raw = localStorage.getItem(seenKey);
+        if (raw === null) { localStorage.setItem(seenKey, String(maxId)); return; }
+        var lastSeen = parseInt(raw, 10);
+        if (isNaN(lastSeen) || maxId <= lastSeen) return;
+        var cntRes = await _sb.from(t).select('id', { count: 'exact', head: true }).gt('id', lastSeen);
+        totalNew += (cntRes.count || 0);
+      }));
+      out[m.key] = { maxIds: maxIds, newCount: totalNew, prefix: prefix, tables: m.tables };
+    }));
+    return out;
+  })();
+  return _newCountsPromise;
+}
+
+function markModuleSeen(moduleKey) {
+  return getNewCountsPerModule().then(function(counts) {
+    var m = counts[moduleKey];
+    if (!m) return;
+    Object.keys(m.maxIds).forEach(function(t) {
+      localStorage.setItem(m.prefix + t, String(m.maxIds[t]));
+    });
+  });
+}
+
+// Auto-run: pintar badges en el navbar de la página actual
+(async function paintNavBadges() {
+  try {
+    await _authReady;
+    var counts = await getNewCountsPerModule();
+    NEW_COUNTS_CONFIG.forEach(function(m) {
+      var link = document.querySelector('.navbar a[href="' + m.href + '"]');
+      if (!link) return;
+      if (link.classList.contains('active')) {
+        markModuleSeen(m.key);
+        return;
+      }
+      var info = counts[m.key];
+      if (!info || info.newCount <= 0) return;
+      var badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      badge.textContent = info.newCount > 99 ? '99+' : String(info.newCount);
+      badge.title = info.newCount + ' nueva(s) desde tu última visita';
+      link.appendChild(badge);
+      link.addEventListener('click', function() { markModuleSeen(m.key); });
+    });
+  } catch (e) { /* silencioso: no romper la app por un badge */ }
+})();

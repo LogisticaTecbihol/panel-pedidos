@@ -30,6 +30,16 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #2d3748;
   color: #1a5276; background: #f0f4f8;
   pointer-events: none;
 }
+.nav-badge {
+  display: inline-block;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  background: #e74c3c; color: white;
+  border-radius: 9px;
+  font-size: 0.68rem; font-weight: 800; line-height: 18px;
+  text-align: center;
+  margin-left: 4px;
+  box-shadow: 0 1px 3px rgba(231,76,60,0.4);
+}
 
 /* ── LOAD ZONE ── */
 #load-zone {
