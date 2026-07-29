@@ -88,12 +88,12 @@ async function apiGet(action, opts) {
       return { ok: true, ordenes: _addRow(res.data) };
     }
     if (action === 'getMaestroProductos') {
-      var res = await _sb.from('maestro_productos').select(cols);
+      var res = await _sb.from('maestro_productos').select('Producto');
       if (res.error) return { ok: false, error: res.error.message, productos: [] };
       return {
         ok: true,
         productos: res.data.map(function(r) {
-          return { producto: r.Producto, presentacion: r.Presentacion, empresa: r.Empresa };
+          return { producto: r.Producto, presentacion: '', empresa: '' };
         }),
         source: 'maestro_productos'
       };
@@ -634,19 +634,18 @@ async function apiPost(body) {
       if (res.error) return { ok: false, error: res.error.message };
 
       // Register new products in maestro_productos so they appear in search
-      var maestroRes = await _sb.from('maestro_productos').select('Producto,Presentacion,Empresa');
+      var maestroRes = await _sb.from('maestro_productos').select('Producto');
       var existing = {};
       if (maestroRes.data) {
         maestroRes.data.forEach(function(r) {
-          existing[r.Producto + '||' + (r.Presentacion || '') + '||' + (r.Empresa || '')] = true;
+          existing[r.Producto] = true;
         });
       }
       var newProducts = [];
       lineas.forEach(function(lin) {
-        var key = (lin.Producto || '') + '||' + (lin.Presentacion || '') + '||' + (body.Empresa || '');
-        if (lin.Producto && !existing[key]) {
-          newProducts.push({ Producto: lin.Producto, Presentacion: lin.Presentacion || '', Empresa: body.Empresa || '' });
-          existing[key] = true;
+        if (lin.Producto && !existing[lin.Producto]) {
+          newProducts.push({ Producto: lin.Producto });
+          existing[lin.Producto] = true;
         }
       });
       if (newProducts.length) {
@@ -776,10 +775,16 @@ async function apiPost(body) {
     if (action === 'addMaestroProductos') {
       var items = body.items || [];
       if (!items.length) return { ok: true, added: 0 };
-      var rows = items.map(function(it) {
-        return { Producto: it.producto, Presentacion: it.presentacion || '', Empresa: it.empresa || '' };
+      var seen = {};
+      var rows = [];
+      items.forEach(function(it) {
+        if (it.producto && !seen[it.producto]) {
+          seen[it.producto] = true;
+          rows.push({ Producto: it.producto });
+        }
       });
-      var res = await _sb.from('maestro_productos').insert(rows);
+      if (!rows.length) return { ok: true, added: 0 };
+      var res = await _sb.from('maestro_productos').upsert(rows, { onConflict: 'Producto', ignoreDuplicates: true });
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };
     }

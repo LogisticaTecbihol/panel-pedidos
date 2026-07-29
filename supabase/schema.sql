@@ -162,9 +162,7 @@ CREATE TABLE "Productos" (
 
 CREATE TABLE "maestro_productos" (
   id bigint generated always as identity primary key,
-  "Producto" text,
-  "Presentacion" text,
-  "Empresa" text
+  "Producto" text UNIQUE
 );
 
 CREATE TABLE "ClientesUnicos" (
