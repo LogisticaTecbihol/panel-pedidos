@@ -43,7 +43,7 @@
   <p>Selecciona un módulo para comenzar a trabajar</p>
 
   <div class="modules-grid">
-    <a href="pedidos.html" class="module-card">
+    <a href="pedidos.html" class="module-card" id="card-pedidos">
       <div class="icon">📋</div>
       <h3>Pedidos</h3>
       <p>Gestión de pedidos, registro de entregas, importación desde Excel y seguimiento de estado.</p>
@@ -57,7 +57,7 @@
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="devoluciones.html" class="module-card">
+    <a href="devoluciones.html" class="module-card" id="card-devoluciones">
       <div class="icon">🔄</div>
       <h3>Devoluciones</h3>
       <p>Registro de devoluciones por motivo, empresa origen/destino, producto y responsable.</p>
@@ -85,7 +85,7 @@
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="muestras.html" class="module-card">
+    <a href="muestras.html" class="module-card" id="card-muestras">
       <div class="icon">🧪</div>
       <h3>Solicitud de Muestras</h3>
       <p>Registro de solicitudes de muestras comerciales, seguimiento de despachos y responsables.</p>
@@ -132,5 +132,61 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
+<script>
+// ── Badges de "nuevas solicitudes" en tarjetas del home ──
+(async function() {
+  await _authReady;
+  var user = (typeof AUTH !== 'undefined' && AUTH.getUser) ? AUTH.getUser() : null;
+  if (!user) return;
+
+  var prefix = 'lastSeenId_' + user.id + '_';
+
+  var modules = [
+    { cardId: 'card-pedidos',      tables: ['Pedidos'] },
+    { cardId: 'card-devoluciones', tables: ['Devoluciones', 'CambiosMercancia'] },
+    { cardId: 'card-muestras',     tables: ['SolicitudMuestras'] }
+  ];
+
+  await Promise.all(modules.map(async function(m) {
+    var card = document.getElementById(m.cardId);
+    if (!card) return;
+
+    var maxIds = {};
+    var totalNew = 0;
+
+    await Promise.all(m.tables.map(async function(t) {
+      var maxRes = await _sb.from(t).select('id').order('id', { ascending: false }).limit(1);
+      var maxId = (maxRes.data && maxRes.data[0]) ? maxRes.data[0].id : 0;
+      maxIds[t] = maxId;
+
+      var seenKey = prefix + t;
+      var raw = localStorage.getItem(seenKey);
+      if (raw === null) {
+        localStorage.setItem(seenKey, String(maxId));
+        return;
+      }
+      var lastSeen = parseInt(raw, 10);
+      if (isNaN(lastSeen) || maxId <= lastSeen) return;
+
+      var cntRes = await _sb.from(t).select('id', { count: 'exact', head: true }).gt('id', lastSeen);
+      totalNew += (cntRes.count || 0);
+    }));
+
+    card.addEventListener('click', function() {
+      Object.keys(maxIds).forEach(function(t) {
+        localStorage.setItem(prefix + t, String(maxIds[t]));
+      });
+    });
+
+    if (totalNew > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'card-badge';
+      badge.textContent = totalNew > 99 ? '99+' : String(totalNew);
+      badge.title = totalNew + ' nueva(s) desde tu última visita';
+      card.appendChild(badge);
+    }
+  }));
+})();
+</script>
 </body>
 </html>
