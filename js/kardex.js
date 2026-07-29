@@ -393,6 +393,11 @@ function buildMovimientos() {
     });
   });
 
+  // Regla global: sin remisión solo se admite Saldo Inicial.
+  kxMovimientos = kxMovimientos.filter(function(m) {
+    if (m.modulo === 'Saldo Inicial') return true;
+    return !!(m.remision && String(m.remision).trim());
+  });
 }
 
 // ── Filters ──
@@ -1383,6 +1388,12 @@ function buildNCMovimientos() {
       cantidad: cant,
       _ajusteId: a.__row || a.id || null
     });
+  });
+
+  // Regla global: sin remisión solo se admite Saldo Inicial.
+  ncMovimientos = ncMovimientos.filter(function(m) {
+    if (m.motivo === 'Saldo_Inicial') return true;
+    return !!(m.remision && String(m.remision).trim());
   });
 }
 
