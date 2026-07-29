@@ -5,7 +5,7 @@ var catalogoProductos = [];
 var ingLineas = [];
 
 // ── Constants ──
-var ORIGENES = ['Planta Mosquera', 'Planta Cachipay', 'Proveedor Carval', 'Chia Abago', 'Bodega Villeta'];
+var ORIGENES = ['Planta Mosquera', 'Planta Cachipay', 'Proveedor Carval', 'Chia Abago', 'Bodega Villeta', 'Germisemillas'];
 function getSiglaIng(n) { return getSigla(n); }
 function getSiglaClassIng(n) { return getSiglaClass(n); }
 
@@ -362,7 +362,7 @@ function onOrigenChange() {
   if (empresa) {
     document.getElementById('ing-empresa-origen').value = empresa;
   }
-  var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta';
+  var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta' || origen === 'Germisemillas';
   document.getElementById('ing-empresa-origen-wrap').style.display = esExterno ? 'none' : '';
   document.getElementById('ing-remision-origen-wrap').style.display = esExterno ? 'none' : '';
   if (esExterno) {
@@ -448,7 +448,7 @@ async function saveIngreso() {
 
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
   if (!origen) { showToast('Selecciona el origen', '#e74c3c'); return; }
-  var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta';
+  var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta' || origen === 'Germisemillas';
   if (!esExterno && !empresa_origen) { showToast('Selecciona la empresa origen', '#e74c3c'); return; }
   if (origen !== 'Chia Abago' && !empresa_destino) { showToast('Selecciona la empresa destino', '#e74c3c'); return; }
   if (!responsable) { showToast('Ingresa el responsable', '#e74c3c'); return; }
