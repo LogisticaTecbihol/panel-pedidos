@@ -43,7 +43,7 @@ async function loadKardex() {
   populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras);
   populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras);
   populateEmpresaSelect('kxnc-f-empresa', '— Seleccionar —', kxExtras);
-  EMPRESAS_EXIST = AUTH.getFilteredEmpresas(EMPRESAS_HOLDING).concat([{ value: 'CHIA ABAGO', sigla: 'CHIA ABAGO' }]);
+  EMPRESAS_EXIST = AUTH.getFilteredEmpresas(EMPRESAS_HOLDING);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
