@@ -263,25 +263,33 @@ function derivedPct(lines) {
 // ── Filters ──
 var filtersAttached = false;
 function populateFilters() {
-  var emps = []; var clis = [];
+  var emps = []; var clis = []; var coms = [];
   consecs.forEach(function(c) {
     if (c.Nombre_Empresa && emps.indexOf(c.Nombre_Empresa) < 0) emps.push(c.Nombre_Empresa);
     if (c.Cliente && clis.indexOf(c.Cliente) < 0) clis.push(c.Cliente);
+    var com = (c.Comercial || '').trim();
+    if (com && coms.indexOf(com) < 0) coms.push(com);
   });
-  emps.sort(); clis.sort();
+  emps.sort(); clis.sort(); coms.sort(function(a, b) { return a.localeCompare(b, 'es'); });
   var fe = document.getElementById('f-emp');
   var fc = document.getElementById('f-cli');
+  var fcom = document.getElementById('f-com');
   var prevEmp = fe.value;
   var prevCli = fc.value;
+  var prevCom = fcom ? fcom.value : '';
   fe.innerHTML = '<option value="">Todas</option>' + emps.map(function(e) { return '<option value="' + e + '">' + getSigla(e) + ' — ' + e + '</option>'; }).join('');
   document.getElementById('dl-f-cli').innerHTML = clis.map(function(c) { return '<option value="' + c + '">'; }).join('');
+  if (fcom) fcom.innerHTML = '<option value="">Todos</option>' + coms.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
   if (prevEmp) fe.value = prevEmp;
   if (prevCli) fc.value = prevCli;
+  if (fcom && prevCom) fcom.value = prevCom;
   if (!filtersAttached) {
     function onFilterChange() { currentPage = 1; renderTable(); }
-    ['f-emp','f-cli','f-est','f-est2','f-txt'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', onFilterChange);
-      document.getElementById(id).addEventListener('input', onFilterChange);
+    ['f-emp','f-com','f-cli','f-est','f-est2','f-txt'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', onFilterChange);
+      el.addEventListener('input', onFilterChange);
     });
     filtersAttached = true;
   }
@@ -289,12 +297,15 @@ function populateFilters() {
 
 function filtered() {
   var fe = document.getElementById('f-emp').value;
+  var fcomEl = document.getElementById('f-com');
+  var fcom = fcomEl ? fcomEl.value : '';
   var fc = document.getElementById('f-cli').value;
   var fs = document.getElementById('f-est').value;
   var fs2 = document.getElementById('f-est2').value;
   var ft = document.getElementById('f-txt').value.toLowerCase();
   return consecs.filter(function(c) {
     if (fe && c.Nombre_Empresa !== fe) return false;
+    if (fcom && (c.Comercial||'').trim() !== fcom) return false;
     if (fc && (c.Cliente||'').toLowerCase().indexOf(fc.toLowerCase()) < 0) return false;
     var lines = getLinesFor(c);
     var est = derivedStatus(lines);
@@ -310,6 +321,8 @@ function filtered() {
 
 function clearFilters() {
   document.getElementById('f-emp').value = '';
+  var fcomEl = document.getElementById('f-com');
+  if (fcomEl) fcomEl.value = '';
   document.getElementById('f-cli').value = '';
   document.getElementById('f-est').value = '';
   document.getElementById('f-est2').value = '';
@@ -2043,6 +2056,8 @@ function toggleDetSort(col, e) {
 
 function renderDetalle() {
   var fe = document.getElementById('f-emp').value;
+  var fcomEl = document.getElementById('f-com');
+  var fcom = fcomEl ? fcomEl.value : '';
   var fc = document.getElementById('f-cli').value;
   var fs = document.getElementById('f-est').value;
   var fs2 = document.getElementById('f-est2').value;
@@ -2050,6 +2065,7 @@ function renderDetalle() {
 
   var rows = pedidos.filter(function(p) {
     if (fe && p.Nombre_Empresa !== fe) return false;
+    if (fcom && (p.Comercial || '').trim() !== fcom) return false;
     if (fc && (p.Cliente || '').toLowerCase().indexOf(fc.toLowerCase()) < 0) return false;
     if (fs) {
       var rawEst = norm(p.Estado_Entrega || 'Recibido');
@@ -2139,6 +2155,8 @@ function renderDetalle() {
 
 function exportDetalleCSV() {
   var fe = document.getElementById('f-emp').value;
+  var fcomEl = document.getElementById('f-com');
+  var fcom = fcomEl ? fcomEl.value : '';
   var fc = document.getElementById('f-cli').value;
   var fs = document.getElementById('f-est').value;
   var fs2 = document.getElementById('f-est2').value;
@@ -2146,6 +2164,7 @@ function exportDetalleCSV() {
 
   var rows = pedidos.filter(function(p) {
     if (fe && p.Nombre_Empresa !== fe) return false;
+    if (fcom && (p.Comercial || '').trim() !== fcom) return false;
     if (fc && (p.Cliente || '').toLowerCase().indexOf(fc.toLowerCase()) < 0) return false;
     if (fs && norm(p.Estado_Entrega || 'Recibido') !== norm(fs)) return false;
     if (fs2 && (p.Estado_2 || 'Abierto').trim() !== fs2) return false;
