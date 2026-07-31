@@ -809,12 +809,6 @@ async function guardarTodo() {
         upd.Cant_Entregada = dl.Cant_Entregada || 0;
         upd.Cant_Pendiente = dl.Cant_Pendiente || 0;
         if (obs) upd.Observaciones = obs;
-        var pedida = Number(dl.Cantidad) || 0;
-        var entregada = Number(dl.Cant_Entregada) || 0;
-        if (pedida > 0 && entregada >= pedida) {
-          var todasConRemision = (dl._entregas || []).length > 0 && (dl._entregas || []).every(function(e) { return (e.remision || '').trim() !== ''; });
-          upd.Estado_2 = todasConRemision ? 'Cerrado' : 'Alistado';
-        }
         if (Object.keys(upd).length > 0) {
           upd.modificado_por = _uid();
           await _sb.from('Pedidos').update(upd).eq('id', dl.__row);
