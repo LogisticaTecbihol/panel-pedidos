@@ -705,25 +705,78 @@ function renderAsignacionCell(i, l, empresaPedido) {
     : '<div style="font-size:0.72rem;color:#a94442;background:#fdecea;border:1px solid #f5c2c0;padding:2px 6px;border-radius:4px">Sin stock disponible</div>';
   return selectHTML +
     '<div style="display:flex;gap:4px;margin-top:3px">' +
-      '<input type="number" class="asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right">' +
+      '<input type="number" class="asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right" oninput="validateAsignCant(' + i + ')">' +
       '<button type="button" onclick="addAsignacion(' + i + ')" ' +
         'style="background:#3498db;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700;cursor:pointer">+ Añadir</button>' +
     '</div>' +
     '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
 }
 
-function onAsignEmpresaChange(i) {
-  // Ajusta el máximo del input de cantidad según el disponible de la empresa elegida.
+// Máximo asignable ahora mismo para la línea i:
+// mínimo entre lo pendiente por entregar y lo disponible libre
+// en la empresa seleccionada. Devuelve null si aún no hay empresa
+// seleccionada (no se puede acotar el tope).
+function _maxAsignable(i) {
   var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
-  var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
-  if (!sel || !inp) return;
+  if (!sel || !sel.value) return null;
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
   var pendiente = _pendienteRestante(i);
   var yaEnEmpresa = _sumaAsignadaEnEmpresa(i, sel.value);
   var libre = Math.max(0, disp - yaEnEmpresa);
-  var tope = Math.min(pendiente, libre);
+  return Math.min(pendiente, libre);
+}
+
+function onAsignEmpresaChange(i) {
+  // Ajusta el placeholder + revalida el input actual al cambiar la empresa.
+  var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
+  if (!inp) return;
+  var tope = _maxAsignable(i);
+  if (tope == null) {
+    inp.removeAttribute('max');
+    inp.placeholder = '0';
+    inp.classList.remove('error');
+    inp.title = '';
+    return;
+  }
   inp.max = tope;
   inp.placeholder = 'máx ' + tope;
+  validateAsignCant(i);
+}
+
+// Validación en vivo mientras el usuario tipea la cantidad.
+// Marca el input en rojo si supera el tope permitido y anota el
+// motivo en el tooltip para que el usuario vea por qué.
+function validateAsignCant(i) {
+  var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
+  var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
+  if (!inp) return;
+  var cant = Number(inp.value) || 0;
+  if (cant <= 0) {
+    inp.classList.remove('error');
+    inp.title = '';
+    return;
+  }
+  if (!sel || !sel.value) {
+    inp.classList.add('error');
+    inp.title = 'Selecciona primero la empresa origen';
+    return;
+  }
+  var pendiente = _pendienteRestante(i);
+  if (cant > pendiente) {
+    inp.classList.add('error');
+    inp.title = 'La cantidad supera el pendiente por entregar (' + pendiente + ')';
+    return;
+  }
+  var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
+  var yaEnEmpresa = _sumaAsignadaEnEmpresa(i, sel.value);
+  var libre = Math.max(0, disp - yaEnEmpresa);
+  if (cant > libre) {
+    inp.classList.add('error');
+    inp.title = 'Supera el disponible en esa empresa (' + libre + ')';
+    return;
+  }
+  inp.classList.remove('error');
+  inp.title = '';
 }
 
 function _pendienteRestante(i) {
@@ -754,19 +807,22 @@ function addAsignacion(i) {
   var cant = Number(inp.value) || 0;
   if (!empresa) { showToast('Selecciona la empresa origen', '#e67e22'); return; }
   if (cant <= 0) { showToast('Ingresa una cantidad mayor a 0', '#e67e22'); return; }
-  var pend = _pendienteRestante(i);
-  if (cant > pend) { showToast('La cantidad supera el pendiente (' + pend + ')', '#e74c3c'); return; }
-  var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
-  var ya = _sumaAsignadaEnEmpresa(i, empresa);
-  if ((ya + cant) > disp) {
-    showToast('Supera el disponible en esa empresa (' + Math.max(0, disp - ya) + ')', '#e74c3c');
+
+  // Reutiliza la validación en vivo. Si quedó en error, mostramos
+  // el motivo (guardado en title) y bloqueamos.
+  validateAsignCant(i);
+  if (inp.classList.contains('error')) {
+    showToast(inp.title || 'Cantidad inválida', '#e74c3c');
     return;
   }
+
   dl._asignaciones.push({ empresa_stock: empresa, cantidad: cant });
   inp.value = '';
   sel.selectedIndex = 0;
   inp.removeAttribute('max');
   inp.placeholder = '0';
+  inp.classList.remove('error');
+  inp.title = '';
   renderAsignacionChips(i);
 }
 
