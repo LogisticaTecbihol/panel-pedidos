@@ -2533,11 +2533,57 @@ function generarRemisionPDF(data) {
   doc.setFont(undefined, 'bold');
   doc.text('Total: ' + fmtMoney(data.total), pw - 16, finalY + 4, { align: 'right' });
 
-  finalY += 20;
+  var ph = doc.internal.pageSize.getHeight();
+  var sigTop = finalY + 22;
+  var footerReserve = 12;
+  var minSigTop = ph - 60;
+  if (sigTop < minSigTop) sigTop = minSigTop;
+  if (sigTop > ph - 42) {
+    doc.addPage();
+    sigTop = 40;
+  }
+
+  var sigW = (pw - 28 - 12) / 3;
+  var lineY = sigTop + 18;
+  var labelY = lineY + 5;
+  var subY = labelY + 5;
+  var cols = [
+    { x: 14, label: 'Emitido por', sub: 'Nombre y firma' },
+    { x: 14 + sigW + 6, label: 'Despachado / Conductor', sub: 'Nombre y firma' },
+    { x: 14 + (sigW + 6) * 2, label: 'Recibido por el cliente', sub: 'Nombre, firma y fecha' }
+  ];
+  doc.setDrawColor(darkText[0], darkText[1], darkText[2]);
+  doc.setLineWidth(0.3);
+  doc.setFontSize(8);
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+  cols.forEach(function(c) {
+    doc.line(c.x, lineY, c.x + sigW, lineY);
+    doc.setFont(undefined, 'bold');
+    doc.text(c.label, c.x + sigW / 2, labelY, { align: 'center' });
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(grayText[0], grayText[1], grayText[2]);
+    doc.text(c.sub, c.x + sigW / 2, subY, { align: 'center' });
+    doc.setFontSize(8);
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+  });
+  var fechaRecY = subY + 6;
+  var fechaLabelX = cols[2].x + 2;
+  var fechaLineX1 = fechaLabelX + 20;
+  var fechaLineX2 = cols[2].x + sigW - 2;
+  doc.setFontSize(7);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+  doc.text('Fecha:', fechaLabelX, fechaRecY);
+  doc.setDrawColor(160, 174, 192);
+  doc.line(fechaLineX1, fechaRecY + 0.5, fechaLineX2, fechaRecY + 0.5);
+
+  var genY = sigTop + 42;
+  if (genY > ph - 8) genY = ph - 8;
   doc.setFontSize(7);
   doc.setTextColor(grayText[0], grayText[1], grayText[2]);
   doc.setFont(undefined, 'normal');
-  doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, finalY);
+  doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, genY);
 
   var sigla = getSigla(data.empresa) || 'Remision';
   var fileName = 'Remision_' + sigla + '_' + (data.consecutivo || '') + (data.remision ? '_' + String(data.remision) : '') + '.pdf';
