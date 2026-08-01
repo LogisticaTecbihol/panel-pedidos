@@ -753,12 +753,12 @@ function buildProductSearchDev(lineIdx) {
 
     var list = document.createElement('div');
     list.className = 'autocomplete-list';
-    list.style.cssText = 'position:absolute;z-index:100;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:200px;overflow-y:auto;width:100%;left:0;top:100%';
+    list.style.cssText = 'position:absolute;z-index:100;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:320px;overflow-y:auto;width:100%;min-width:460px;left:0;top:100%';
 
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
-      item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center';
-      item.innerHTML = '<span style="font-weight:600">' + (p.producto||'') + '</span><span style="color:#718096;font-size:0.75rem">' + (p.presentacion||'') + '</span>';
+      item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.84rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center;gap:16px';
+      item.innerHTML = '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (p.producto||'') + '</span><span style="color:#718096;font-size:0.76rem;white-space:nowrap;flex-shrink:0">' + (p.presentacion||'') + '</span>';
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         inp.value = p.producto;
@@ -812,7 +812,7 @@ function renderDevLines() {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
       '<td><input class="ef dev-factura" data-line="' + i + '" type="text" value="' + ((l.Num_Factura||'').replace(/"/g,'&quot;')) + '" placeholder="FV..." style="width:100px"></td>' +
-      '<td style="position:relative"><div style="position:relative"><input class="ef dev-prod-search" data-line="' + i + '" type="text" value="' + ((l.Producto||'').replace(/"/g,'&quot;')) + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
+      '<td style="position:relative;min-width:320px"><div style="position:relative"><input class="ef dev-prod-search" data-line="' + i + '" type="text" value="' + ((l.Producto||'').replace(/"/g,'&quot;')) + '" placeholder="Buscar producto..." autocomplete="off" style="width:100%;min-width:300px"></div></td>' +
       '<td><input class="ef dev-pres" data-line="' + i + '" type="text" value="' + ((l.Presentacion||'').replace(/"/g,'&quot;')) + '" placeholder="Pres." style="width:100px"></td>' +
       '<td><input class="ef dev-cant" data-line="' + i + '" type="number" min="0" value="' + (l.Cantidad||'') + '" placeholder="0" style="width:65px;text-align:right"></td>' +
       '<td><input class="ef dev-cant-ent" data-line="' + i + '" type="number" min="0" value="' + (l.Cant_Entregada||'') + '" placeholder="0" style="width:75px;text-align:right"></td>' +
