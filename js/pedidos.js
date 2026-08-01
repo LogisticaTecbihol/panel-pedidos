@@ -2480,8 +2480,10 @@ function _drawRemisionCopy(doc, data, palette) {
   var titleX = 14;
   if (logo) {
     try {
-      doc.addImage(logo.data, 'PNG', 4, 4, 22, 22);
-      titleX = 30;
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(4, 3, 24, 24, 4, 4, 'F');
+      doc.addImage(logo.data, 'PNG', 5, 4, 22, 22);
+      titleX = 34;
     } catch (e) {}
   }
 
@@ -2702,8 +2704,10 @@ function generarPedidoPDF(data) {
   var titleXP = 14;
   if (logoP) {
     try {
-      doc.addImage(logoP.data, 'PNG', 4, 4, 22, 22);
-      titleXP = 30;
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(4, 3, 24, 24, 4, 4, 'F');
+      doc.addImage(logoP.data, 'PNG', 5, 4, 22, 22);
+      titleXP = 34;
     } catch (e) {}
   }
 
