@@ -2426,22 +2426,23 @@ function generarRemisionPDF(data) {
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   doc.setFontSize(9);
 
+  var consignVal = (data.consignacion === 'Sí' || data.consignacion === 'Si') ? 'Sí' : 'No';
   var left = [
-    ['Cliente', data.cliente],
-    ['NIT', data.nit],
-    ['Facturar a', data.facturar_a && data.facturar_a !== data.cliente ? data.facturar_a : null],
-    ['NIT Adicional', data.nit_adicional],
-    ['Telefono', data.telefono],
-    ['Municipio', data.municipio],
-    ['Departamento', data.departamento],
+    ['Cliente', data.cliente || ''],
+    ['NIT', data.nit || ''],
+    ['Facturar a', data.facturar_a || ''],
+    ['NIT Adicional', data.nit_adicional || ''],
+    ['Telefono', data.telefono || ''],
+    ['Municipio', data.municipio || ''],
+    ['Departamento', data.departamento || ''],
   ];
   var right = [
-    ['Comercial', data.comercial],
-    ['Plazo de Pago', data.plazo],
-    ['Precio Facturacion', data.precio],
-    ['Direccion', data.direccion],
-    ['Consignacion', (data.consignacion === 'Sí' || data.consignacion === 'Si') ? 'Sí' : null],
-    ['Fecha pedido', data.fecha_pedido],
+    ['Comercial', data.comercial || ''],
+    ['Plazo de Pago', data.plazo || ''],
+    ['Precio Facturacion', data.precio || ''],
+    ['Direccion', data.direccion || ''],
+    ['Consignacion', consignVal],
+    ['Fecha pedido', data.fecha_pedido || ''],
   ];
 
   var halfW = (pw - 28) / 2;
@@ -2453,41 +2454,41 @@ function generarRemisionPDF(data) {
   var maxF = Math.max(left.length, right.length);
   for (var fi = 0; fi < maxF; fi++) {
     var rowH = 0;
-    if (fi < left.length && left[fi][1]) {
+    if (fi < left.length) {
       doc.setFont(undefined, 'bold');
       doc.text(left[fi][0] + ':', 14, y);
       doc.setFont(undefined, 'normal');
-      var lLines = doc.splitTextToSize(String(left[fi][1]), leftValMaxW);
+      var lVal = String(left[fi][1] || '');
+      var lLines = lVal ? doc.splitTextToSize(lVal, leftValMaxW) : [''];
       doc.text(lLines, leftValX, y);
       rowH = Math.max(rowH, (lLines.length - 1) * 4);
     }
-    if (fi < right.length && right[fi][1]) {
+    if (fi < right.length) {
       doc.setFont(undefined, 'bold');
       doc.text(right[fi][0] + ':', rightLabelX, y);
       doc.setFont(undefined, 'normal');
-      var rLines = doc.splitTextToSize(String(right[fi][1]), rightValMaxW);
+      var rVal = String(right[fi][1] || '');
+      var rLines = rVal ? doc.splitTextToSize(rVal, rightValMaxW) : [''];
       doc.text(rLines, rightValX, y);
       rowH = Math.max(rowH, (rLines.length - 1) * 4);
     }
     y += 6 + rowH;
   }
 
-  if (data.observaciones) {
-    y += 3;
-    doc.setFont(undefined, 'normal');
-    var obsMaxW = pw - 28 - 48;
-    var obsLines = doc.splitTextToSize(String(data.observaciones), obsMaxW);
-    var obsH = Math.max(14, obsLines.length * 4 + 8);
-    doc.setFillColor(254, 249, 231);
-    doc.roundedRect(14, y - 4, pw - 28, obsH, 2, 2, 'F');
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(125, 102, 8);
-    doc.text('Observaciones:', 18, y + 1);
-    doc.setFont(undefined, 'normal');
-    doc.text(obsLines, 62, y + 1);
-    y += obsH;
-    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  }
+  y += 3;
+  var obsText = String(data.observaciones || '');
+  var obsMaxW = pw - 28 - 48;
+  var obsLines = obsText ? doc.splitTextToSize(obsText, obsMaxW) : [''];
+  var obsH = Math.max(14, obsLines.length * 4 + 8);
+  doc.setFillColor(254, 249, 231);
+  doc.roundedRect(14, y - 4, pw - 28, obsH, 2, 2, 'F');
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(125, 102, 8);
+  doc.text('Observaciones:', 18, y + 1);
+  doc.setFont(undefined, 'normal');
+  doc.text(obsLines, 62, y + 1);
+  y += obsH;
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
 
   y += 4;
 
