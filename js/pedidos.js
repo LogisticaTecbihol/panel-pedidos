@@ -710,9 +710,17 @@ function renderAsignacionCell(i, l, empresaPedido) {
     });
     opciones = lista.map(function(x) {
       var marca = norm(x.empresa) === norm(empresaPedido) ? ' ★' : '';
-      var disp = Math.round(x.disponible * 100) / 100;
-      return '<option value="' + x.empresa.replace(/"/g,'&quot;') + '" data-disp="' + disp + '">' +
-        x.sigla + marca + ' · ' + disp + ' disp.</option>';
+      var dispRaw = Math.round(x.disponible * 100) / 100;
+      // Ajuste por sesión: restar lo ya asignado a esa (empresa,
+      // producto) en TODAS las líneas del pedido, para que dos líneas
+      // del mismo producto no puedan sobregirar el mismo pool.
+      var yaSesion = _asignadoEnSesion(x.empresa, l.Producto);
+      var dispRest = Math.max(0, dispRaw - yaSesion);
+      var etiqueta = (yaSesion > 0)
+        ? x.sigla + marca + ' · ' + dispRest + ' disp. (base ' + dispRaw + ')'
+        : x.sigla + marca + ' · ' + dispRest + ' disp.';
+      return '<option value="' + x.empresa.replace(/"/g,'&quot;') + '" data-disp="' + dispRaw + '">' +
+        etiqueta + '</option>';
     }).join('');
   }
   var selectHTML = opciones
@@ -750,10 +758,12 @@ function refreshAsignacionCell(i) {
 function _maxAsignable(i) {
   var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
   if (!sel || !sel.value) return null;
+  var dl = detailWorkingLines[i];
+  if (!dl) return null;
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
   var pendiente = _pendienteRestante(i);
-  var yaEnEmpresa = _sumaAsignadaEnEmpresa(i, sel.value);
-  var libre = Math.max(0, disp - yaEnEmpresa);
+  var yaEnSesion = _asignadoEnSesion(sel.value, dl.Producto);
+  var libre = Math.max(0, disp - yaEnSesion);
   return Math.min(pendiente, libre);
 }
 
@@ -796,10 +806,11 @@ function validateAsignCant(i) {
     inp.title = 'Selecciona primero la empresa origen';
     return;
   }
+  var dl = detailWorkingLines[i];
   var pendiente = _pendienteRestante(i);
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
-  var yaEnEmpresa = _sumaAsignadaEnEmpresa(i, sel.value);
-  var libre = Math.max(0, disp - yaEnEmpresa);
+  var yaEnSesion = dl ? _asignadoEnSesion(sel.value, dl.Producto) : 0;
+  var libre = Math.max(0, disp - yaEnSesion);
   var tope = Math.min(pendiente, libre);
 
   if (cant > tope) {
@@ -830,13 +841,28 @@ function _pendienteRestante(i) {
   return Math.max(0, pedida - yaEntregada - yaAsignada);
 }
 
-function _sumaAsignadaEnEmpresa(i, empresa) {
-  var dl = detailWorkingLines[i];
-  if (!dl || !dl._asignaciones) return 0;
-  var n = norm(empresa);
-  return dl._asignaciones.reduce(function(s, a) {
-    return s + (norm(a.empresa_stock) === n ? (a.cantidad || 0) : 0);
-  }, 0);
+// Normalización de producto compatible con Existencias._normProd
+// (whitespace-collapse + trim, sin cambiar mayúsculas). Debe coincidir
+// para que el "disponible por empresa/producto" del snapshot y las
+// sumas de esta sesión hablen del mismo producto.
+function _normProdSel(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+
+// Suma en TODA la sesión (todas las líneas del pedido) las cantidades
+// ya asignadas a esa (empresa_stock, producto). Con esto se acota el
+// disponible restante, evitando que dos líneas del mismo producto
+// consuman el mismo pool más de lo que hay físicamente.
+function _asignadoEnSesion(empresa, producto) {
+  var empN = norm(empresa);
+  var prodN = _normProdSel(producto);
+  var total = 0;
+  (detailWorkingLines || []).forEach(function(dl) {
+    if (!dl || !dl._asignaciones) return;
+    if (_normProdSel(dl.Producto) !== prodN) return;
+    dl._asignaciones.forEach(function(a) {
+      if (norm(a.empresa_stock) === empN) total += (Number(a.cantidad) || 0);
+    });
+  });
+  return total;
 }
 
 function addAsignacion(i) {
@@ -866,6 +892,10 @@ function addAsignacion(i) {
   inp.classList.remove('error');
   inp.title = '';
   renderAsignacionChips(i);
+  // Actualizar el "disp." mostrado en las líneas hermanas que
+  // comparten producto (misma normalización), para que reflejen el
+  // nuevo pool restante de esa empresa.
+  _refreshSameProductoCells(i);
 }
 
 function removeAsignacion(i, k) {
@@ -873,6 +903,23 @@ function removeAsignacion(i, k) {
   if (!dl || !dl._asignaciones) return;
   dl._asignaciones.splice(k, 1);
   renderAsignacionChips(i);
+  _refreshSameProductoCells(i);
+}
+
+// Re-renderiza las celdas de asignación de todas las líneas que
+// comparten producto con la línea i (excepto la propia). Necesario
+// tras agregar/quitar una asignación para que la etiqueta "disp."
+// del dropdown refleje el pool disponible en esta sesión.
+function _refreshSameProductoCells(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return;
+  var prodN = _normProdSel(dl.Producto);
+  (detailWorkingLines || []).forEach(function(other, j) {
+    if (j === i) return;
+    if (!other) return;
+    if (_normProdSel(other.Producto) !== prodN) return;
+    if (typeof refreshAsignacionCell === 'function') refreshAsignacionCell(j);
+  });
 }
 
 function renderAsignacionChips(i) {
