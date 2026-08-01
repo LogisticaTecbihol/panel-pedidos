@@ -15,6 +15,7 @@ var rptSort = { col: 'pendiente', dir: 'desc' };
 var existSnapshot = null;
 var plantaData = [];
 var plantaSort = { col: 'producir', dir: 'desc' };
+var plantaExpanded = {}; // prodKey → true si su detalle está desplegado
 var trasladosData = [];
 var trasladosSort = { col: 'fecha', dir: 'desc' };
 
@@ -378,8 +379,9 @@ function buildPlanta() {
   var fCli = document.getElementById('rf-cli').value;
   var fTxt = (document.getElementById('rf-txt').value || '').toLowerCase();
 
-  // 1) Agregar pendientes por producto
-  var acum = {}; // prodNorm → { producto, presentaciones:Set, pendiente, empresas:Set }
+  // 1) Agregar pendientes por producto (guardando las líneas
+  //    contribuyentes para el detalle desplegable)
+  var acum = {}; // prodNorm → { producto, presentaciones:Set, pendiente, empresas:Set, _lineas:[] }
   pedidos.forEach(function(p) {
     var pend = Number(p.Cant_Pendiente) || 0;
     if (pend <= 0) return;
@@ -397,17 +399,32 @@ function buildPlanta() {
         prodKey: prodKey,
         presentaciones: {},
         pendiente: 0,
-        empresasPed: {}
+        empresasPed: {},
+        _lineas: [],
+        _traslados: []
       };
     }
     acum[prodKey].pendiente += pend;
     var pres = String(p.Presentacion || '').trim();
     if (pres) acum[prodKey].presentaciones[pres] = true;
     if (p.Nombre_Empresa) acum[prodKey].empresasPed[p.Nombre_Empresa] = true;
+    acum[prodKey]._lineas.push({
+      empresa: p.Nombre_Empresa || '',
+      consecutivo: p.Consecutivo || '',
+      cliente: (p.Cliente || '').trim(),
+      comercial: (p.Comercial || '').trim(),
+      presentacion: pres,
+      cantidad: Number(p.Cantidad) || 0,
+      entregada: Number(p.Cant_Entregada) || 0,
+      pendiente: pend,
+      fecha: p.Fecha_Pedido || '',
+      estado2: est2
+    });
   });
 
   // 2) Agregar traslados pendientes (OC Tipo='Traslado', Remision vacía, Estado no anulada)
   var trasladosByProd = {};
+  var trasladosListByProd = {};
   ordenesCompra.forEach(function(oc) {
     if ((oc.Tipo || 'Compra') !== 'Traslado') return;
     if (String(oc.Remision || '').trim()) return;
@@ -418,6 +435,15 @@ function buildPlanta() {
     if (!key) return;
     if (!trasladosByProd[key]) trasladosByProd[key] = 0;
     trasladosByProd[key] += cant;
+    if (!trasladosListByProd[key]) trasladosListByProd[key] = [];
+    trasladosListByProd[key].push({
+      consecutivo: oc.Consecutivo || '',
+      origen: oc.Empresa_Origen || '',
+      destino: oc.Empresa_Destino || '',
+      cantidad: cant,
+      fecha: oc.Fecha || '',
+      refPedido: oc.Ref_Pedido || ''
+    });
   });
 
   // 3) Existencia por empresa desde el snapshot (misma lógica que Kardex)
@@ -451,7 +477,9 @@ function buildPlanta() {
       trasladosPend: trasladosPend,
       producir: producir,
       estado: estado,
-      empresasPedidoCount: Object.keys(a.empresasPed).length
+      empresasPedidoCount: Object.keys(a.empresasPed).length,
+      _lineas: a._lineas || [],
+      _traslados: trasladosListByProd[key] || []
     };
   });
 
@@ -506,6 +534,7 @@ function sortedPlanta() {
 function renderPlantaTable() {
   var empresasList = _empresasVisibles();
   var cols = [
+    { id: '_toggle', label: '' },
     { id: 'producto', label: 'Producto' },
     { id: 'presentaciones', label: 'Presentación(es)' },
     { id: 'pendiente', label: 'Pendiente' }
@@ -520,6 +549,7 @@ function renderPlantaTable() {
 
   var head = document.getElementById('pl-head');
   head.innerHTML = cols.map(function(c) {
+    if (c.id === '_toggle') return '<th style="width:26px"></th>';
     var cls = plantaSort.col === c.id ? (plantaSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
     var safeId = String(c.id).replace(/'/g, "\\'");
     return '<th class="' + cls + '" onclick="togglePlantaSort(\'' + safeId + '\')">' + c.label + '</th>';
@@ -539,9 +569,13 @@ function renderPlantaTable() {
     if (r.estado === 'verde') badge = '<span style="background:#d5f5e3;color:#1e8449;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟢 Cubierto</span>';
     else if (r.estado === 'amarillo') badge = '<span style="background:#fef5e7;color:#b7791f;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟡 Cubierto con traslados</span>';
     else badge = '<span style="background:#fadbd8;color:#a93226;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🔴 Producir</span>';
-    var celdas = '<td style="font-weight:700;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.producto || '').replace(/"/g, '&quot;') + '">' + (r.producto || '—') + '</td>' +
+    var abierto = !!plantaExpanded[r.prodKey];
+    var keyEsc = r.prodKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    var chevron = '<button onclick="togglePlantaDetail(\'' + keyEsc + '\')" title="Ver pedidos que suman este pendiente" style="background:none;border:none;color:#1a5276;cursor:pointer;font-size:0.85rem;font-weight:700;padding:0 4px">' + (abierto ? '▾' : '▸') + '</button>';
+    var celdas = '<td style="text-align:center">' + chevron + '</td>' +
+      '<td style="font-weight:700;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.producto || '').replace(/"/g, '&quot;') + '">' + (r.producto || '—') + '</td>' +
       '<td style="font-size:0.78rem;color:#4a5568">' + (r.presentaciones || '—') + '</td>' +
-      '<td class="money" style="font-weight:700">' + r.pendiente.toLocaleString('es-CO') + '</td>';
+      '<td class="money" style="font-weight:700"><a href="#" onclick="togglePlantaDetail(\'' + keyEsc + '\');return false" style="color:#1a5276;text-decoration:none;border-bottom:1px dashed #cbd5e0" title="Ver detalle">' + r.pendiente.toLocaleString('es-CO') + '</a></td>';
     empresasList.forEach(function(e) {
       var v = r.porEmp[e.value] || 0;
       var color = v > 0 ? '#27ae60' : '#cbd5e0';
@@ -555,8 +589,95 @@ function renderPlantaTable() {
     var colorProd = r.producir > 0 ? '#e74c3c' : '#27ae60';
     celdas += '<td class="money" style="font-weight:800;color:' + colorProd + ';font-size:0.95rem">' + r.producir.toLocaleString('es-CO') + '</td>';
     celdas += '<td>' + badge + '</td>';
-    return '<tr>' + celdas + '</tr>';
+    var mainRow = '<tr>' + celdas + '</tr>';
+    var detailRow = abierto ? renderPlantaDetail(r, cols.length) : '';
+    return mainRow + detailRow;
   }).join('');
+}
+
+// Alterna el detalle desplegable de una fila.
+function togglePlantaDetail(prodKey) {
+  if (plantaExpanded[prodKey]) delete plantaExpanded[prodKey];
+  else plantaExpanded[prodKey] = true;
+  renderPlantaTable();
+}
+
+// Genera el <tr> con el detalle: lista de pedidos que suman el
+// pendiente y (si aplica) OC de traslado que se descuentan del
+// disponible.
+function renderPlantaDetail(r, colspan) {
+  var lineas = r._lineas || [];
+  var traslados = r._traslados || [];
+
+  // Orden natural: por empresa, luego consecutivo
+  lineas = [].concat(lineas).sort(function(a, b) {
+    var eA = getSigla(a.empresa), eB = getSigla(b.empresa);
+    if (eA !== eB) return eA.localeCompare(eB, 'es');
+    return String(a.consecutivo).localeCompare(String(b.consecutivo), 'es', { numeric: true });
+  });
+
+  var lineasHTML = '<div style="margin-bottom:10px">' +
+    '<div style="font-weight:700;font-size:0.78rem;color:#1a5276;margin-bottom:4px">📋 ' + lineas.length + ' línea(s) de pedido suman ' + r.pendiente.toLocaleString('es-CO') + ' unidades</div>' +
+    '<table style="width:100%;border-collapse:collapse;background:white;border:1px solid #e2e8f0;border-radius:4px">' +
+    '<thead><tr style="background:#f7fafc">' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Empresa</th>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Consecutivo</th>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Cliente</th>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Comercial</th>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Presentación</th>' +
+      '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Pedida</th>' +
+      '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Entregada</th>' +
+      '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Pendiente</th>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Fecha</th>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Estado</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    lineas.map(function(l) {
+      return '<tr>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;border-bottom:1px solid #f0f4f8"><span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + getSigla(l.empresa) + '</span></td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;font-weight:700;border-bottom:1px solid #f0f4f8">' + (l.consecutivo || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;border-bottom:1px solid #f0f4f8;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (l.cliente || '').replace(/"/g, '&quot;') + '">' + (l.cliente || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;color:#4a5568;border-bottom:1px solid #f0f4f8">' + (l.comercial || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;color:#4a5568;border-bottom:1px solid #f0f4f8">' + (l.presentacion || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;border-bottom:1px solid #f0f4f8">' + l.cantidad.toLocaleString('es-CO') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;color:#27ae60;border-bottom:1px solid #f0f4f8">' + l.entregada.toLocaleString('es-CO') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;font-weight:700;color:#e74c3c;border-bottom:1px solid #f0f4f8">' + l.pendiente.toLocaleString('es-CO') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.72rem;color:#4a5568;border-bottom:1px solid #f0f4f8;white-space:nowrap">' + (l.fecha ? fmtDate(l.fecha) : '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.72rem;color:#4a5568;border-bottom:1px solid #f0f4f8">' + (l.estado2 || '—') + '</td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table></div>';
+
+  var trasladosHTML = '';
+  if (traslados.length) {
+    trasladosHTML = '<div>' +
+      '<div style="font-weight:700;font-size:0.78rem;color:#e67e22;margin-bottom:4px">🚚 ' + traslados.length + ' OC de traslado pendiente(s) que descontamos del disponible (' + r.trasladosPend.toLocaleString('es-CO') + ' unidades)</div>' +
+      '<table style="width:100%;border-collapse:collapse;background:white;border:1px solid #e2e8f0;border-radius:4px">' +
+      '<thead><tr style="background:#fef5e7">' +
+        '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Consecutivo</th>' +
+        '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Origen → Destino</th>' +
+        '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Cantidad</th>' +
+        '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Fecha</th>' +
+        '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Ref. Pedido</th>' +
+      '</tr></thead>' +
+      '<tbody>' +
+      traslados.map(function(t) {
+        return '<tr>' +
+          '<td style="padding:3px 8px;font-size:0.74rem;font-weight:700;border-bottom:1px solid #f0f4f8">' + (t.consecutivo || '—') + '</td>' +
+          '<td style="padding:3px 8px;font-size:0.74rem;border-bottom:1px solid #f0f4f8">' + getSigla(t.origen) + ' → ' + getSigla(t.destino) + '</td>' +
+          '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;font-weight:700;color:#e67e22;border-bottom:1px solid #f0f4f8">' + t.cantidad.toLocaleString('es-CO') + '</td>' +
+          '<td style="padding:3px 8px;font-size:0.72rem;color:#4a5568;border-bottom:1px solid #f0f4f8;white-space:nowrap">' + (t.fecha ? fmtDate(t.fecha) : '—') + '</td>' +
+          '<td style="padding:3px 8px;font-size:0.72rem;color:#4a5568;border-bottom:1px solid #f0f4f8">' + (t.refPedido || '—') + '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
+  return '<tr class="planta-detail">' +
+    '<td colspan="' + colspan + '" style="background:#f7fafc;padding:12px 16px;border-top:1px dashed #cbd5e0">' +
+    lineasHTML + trasladosHTML +
+    '</td>' +
+    '</tr>';
 }
 
 function exportPlanta() {
