@@ -2079,18 +2079,19 @@ function renderExistencias() {
 
 function renderExistTable(empresasView) {
   empresasView = empresasView || EMPRESAS_EXIST;
+  var showTotal = empresasView.length > 1;
   var thead = document.getElementById('t-head-ex');
   var headerCols = '<th style="position:sticky;left:0;background:#f0f4f8;z-index:2">#</th>' +
     '<th style="position:sticky;left:30px;background:#f0f4f8;z-index:2;min-width:220px">Producto</th>';
   empresasView.forEach(function(e) {
     headerCols += '<th style="text-align:right;min-width:90px">' + e.sigla + '</th>';
   });
-  headerCols += '<th style="text-align:right;min-width:90px;background:#edf2f7;font-weight:800">TOTAL</th>';
+  if (showTotal) headerCols += '<th style="text-align:right;min-width:90px;background:#edf2f7;font-weight:800">TOTAL</th>';
   thead.innerHTML = headerCols;
 
   var tbody = document.getElementById('t-body-ex');
   if (!existFiltered.length) {
-    var colSpan = 3 + empresasView.length;
+    var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0);
     tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos con los filtros seleccionados.</div></td></tr>';
     document.getElementById('t-foot-ex').innerHTML = '';
     return;
@@ -2106,9 +2107,11 @@ function renderExistTable(empresasView) {
       var weight = val !== 0 ? '700' : '400';
       html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + val.toLocaleString('es-CO') + '</td>';
     });
-    var totalView = row._totalView != null ? row._totalView : row._total;
-    var totalColor = totalView > 0 ? '#2c3e50' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
-    html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#f7fafc;font-size:0.88rem">' + totalView.toLocaleString('es-CO') + '</td>';
+    if (showTotal) {
+      var totalView = row._totalView != null ? row._totalView : row._total;
+      var totalColor = totalView > 0 ? '#2c3e50' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
+      html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#f7fafc;font-size:0.88rem">' + totalView.toLocaleString('es-CO') + '</td>';
+    }
     html += '</tr>';
     return html;
   }).join('');
@@ -2128,7 +2131,7 @@ function renderExistTable(empresasView) {
     var color = val > 0 ? '#27ae60' : val < 0 ? '#e74c3c' : '#718096';
     footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + val.toLocaleString('es-CO') + '</td>';
   });
-  footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem">' + granTotal.toLocaleString('es-CO') + '</td>';
+  if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem">' + granTotal.toLocaleString('es-CO') + '</td>';
   document.getElementById('t-foot-ex').innerHTML = footHtml;
 }
 
@@ -2140,10 +2143,11 @@ function exportExistExcel() {
     ? EMPRESAS_EXIST.filter(function(e) { return e.value === empresaSel; })
     : EMPRESAS_EXIST;
 
+  var showTotal = empresasView.length > 1;
   var data = existFiltered.map(function(row, i) {
     var obj = { '#': i + 1, 'Producto': row.producto };
     empresasView.forEach(function(e) { obj[e.sigla] = row[e.value] || 0; });
-    obj['TOTAL'] = (row._totalView != null ? row._totalView : row._total);
+    if (showTotal) obj['TOTAL'] = (row._totalView != null ? row._totalView : row._total);
     return obj;
   });
 
@@ -2152,7 +2156,7 @@ function exportExistExcel() {
     ? ((empresasView[0] && empresasView[0].sigla ? empresasView[0].sigla + ' — ' : '') + empresaSel)
     : 'Todas las empresas';
   var corteLabel = corteEx || today();
-  var totalCols = 2 + empresasView.length + 1;
+  var totalCols = 2 + empresasView.length + (showTotal ? 1 : 0);
 
   var ws = XLSX.utils.aoa_to_sheet([
     ['Existencias de Producto Bueno por Empresa'],
@@ -2166,7 +2170,7 @@ function exportExistExcel() {
   ];
   var colWidths = [{ wch: 5 }, { wch: 35 }];
   empresasView.forEach(function() { colWidths.push({ wch: 12 }); });
-  colWidths.push({ wch: 12 });
+  if (showTotal) colWidths.push({ wch: 12 });
   ws['!cols'] = colWidths;
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Existencias');
@@ -2519,18 +2523,19 @@ function renderExistenciasNC() {
 
 function renderExistNCTable(empresasView) {
   empresasView = empresasView || EMPRESAS_EXIST;
+  var showTotal = empresasView.length > 1;
   var thead = document.getElementById('t-head-exnc');
   var headerCols = '<th style="position:sticky;left:0;background:#f0f4f8;z-index:2">#</th>' +
     '<th style="position:sticky;left:30px;background:#f0f4f8;z-index:2;min-width:220px">Producto</th>';
   empresasView.forEach(function(e) {
     headerCols += '<th style="text-align:right;min-width:90px">' + e.sigla + '</th>';
   });
-  headerCols += '<th style="text-align:right;min-width:90px;background:#fdedec;font-weight:800">TOTAL NC</th>';
+  if (showTotal) headerCols += '<th style="text-align:right;min-width:90px;background:#fdedec;font-weight:800">TOTAL NC</th>';
   thead.innerHTML = headerCols;
 
   var tbody = document.getElementById('t-body-exnc');
   if (!existFilteredNC.length) {
-    var colSpan = 3 + empresasView.length;
+    var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0);
     tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos NC con los filtros seleccionados.</div></td></tr>';
     document.getElementById('t-foot-exnc').innerHTML = '';
     return;
@@ -2546,9 +2551,11 @@ function renderExistNCTable(empresasView) {
       var weight = val !== 0 ? '700' : '400';
       html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + val.toLocaleString('es-CO') + '</td>';
     });
-    var totalView = row._totalView != null ? row._totalView : row._total;
-    var totalColor = totalView > 0 ? '#c0392b' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
-    html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#fdf2f2;font-size:0.88rem">' + totalView.toLocaleString('es-CO') + '</td>';
+    if (showTotal) {
+      var totalView = row._totalView != null ? row._totalView : row._total;
+      var totalColor = totalView > 0 ? '#c0392b' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
+      html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#fdf2f2;font-size:0.88rem">' + totalView.toLocaleString('es-CO') + '</td>';
+    }
     html += '</tr>';
     return html;
   }).join('');
@@ -2568,7 +2575,7 @@ function renderExistNCTable(empresasView) {
     var color = val > 0 ? '#e67e22' : val < 0 ? '#e74c3c' : '#718096';
     footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + val.toLocaleString('es-CO') + '</td>';
   });
-  footHtml += '<td style="text-align:right;font-weight:800;color:#c0392b;background:#fdedec;font-size:0.95rem">' + granTotal.toLocaleString('es-CO') + '</td>';
+  if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#c0392b;background:#fdedec;font-size:0.95rem">' + granTotal.toLocaleString('es-CO') + '</td>';
   document.getElementById('t-foot-exnc').innerHTML = footHtml;
 }
 
@@ -2580,10 +2587,11 @@ function exportExistNCExcel() {
     ? EMPRESAS_EXIST.filter(function(e) { return e.value === empresaSel; })
     : EMPRESAS_EXIST;
 
+  var showTotalNC = empresasView.length > 1;
   var data = existFilteredNC.map(function(row, i) {
     var obj = { '#': i + 1, 'Producto': row.producto };
     empresasView.forEach(function(e) { obj[e.sigla] = row[e.value] || 0; });
-    obj['TOTAL NC'] = (row._totalView != null ? row._totalView : row._total);
+    if (showTotalNC) obj['TOTAL NC'] = (row._totalView != null ? row._totalView : row._total);
     return obj;
   });
 
@@ -2592,7 +2600,7 @@ function exportExistNCExcel() {
     ? ((empresasView[0] && empresasView[0].sigla ? empresasView[0].sigla + ' — ' : '') + empresaSel)
     : 'Todas las empresas';
   var corteLabelNC = corteExNC || today();
-  var totalColsNC = 2 + empresasView.length + 1;
+  var totalColsNC = 2 + empresasView.length + (showTotalNC ? 1 : 0);
 
   var ws = XLSX.utils.aoa_to_sheet([
     ['Existencias de Producto No Conforme por Empresa'],
@@ -2606,7 +2614,7 @@ function exportExistNCExcel() {
   ];
   var colWidths = [{ wch: 5 }, { wch: 35 }];
   empresasView.forEach(function() { colWidths.push({ wch: 12 }); });
-  colWidths.push({ wch: 12 });
+  if (showTotalNC) colWidths.push({ wch: 12 });
   ws['!cols'] = colWidths;
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Existencias NC');
