@@ -2863,6 +2863,13 @@ var _pdfRemisionHeaderInfo = {
     'Av. Troncal de Occidente #11E-03E, Mosquera,',
     'Cundinamarca - Parque Agroindustrial de la Sabana',
     'Cel 3106716741  ·  Correo: inagrosostenible.sas@gmail.com'
+  ],
+  PARCELAR: [
+    'PARCELAR DE COLOMBIA S.A.S',
+    'NIT: 900-156.484-6',
+    'Av. Troncal de Occidente #11E-03E, Mosquera,',
+    'Cundinamarca - Parque Agroindustrial de la Sabana',
+    'Bod 76  ·  Cel: 313 462 9468'
   ]
 };
 
