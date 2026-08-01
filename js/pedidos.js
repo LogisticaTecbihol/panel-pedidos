@@ -2407,7 +2407,7 @@ function exportarPedidoDesdeModal() {
 function _pdfPaletteFor(empresa) {
   var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
   sigla = String(sigla).toUpperCase();
-  if (sigla === 'PARCELAR') return { accent: [107, 142, 35], light: [232, 240, 210] };
+  if (sigla === 'PARCELAR') return { accent: [30, 107, 63], light: [220, 235, 225] };
   if (sigla === 'RESO')     return { accent: [26, 55, 100],  light: [219, 229, 245] };
   return { accent: [39, 174, 96], light: [212, 239, 223] };
 }
