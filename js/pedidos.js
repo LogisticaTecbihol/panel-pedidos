@@ -762,7 +762,7 @@ function _maxAsignable(i) {
   if (!dl) return null;
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
   var pendiente = _pendienteRestante(i);
-  var yaEnSesion = _asignadoEnSesion(sel.value, dl.Producto);
+  var yaEnSesion = _asignadoEnSesion(sel.value, dl.Producto, i);
   var libre = Math.max(0, disp - yaEnSesion);
   return Math.min(pendiente, libre);
 }
@@ -791,7 +791,7 @@ function onAsignEmpresaChange(i) {
 //   • Con empresa seleccionada → si el valor supera el tope
 //     (min pendiente, disponible libre), se recorta al tope al
 //     instante y se avisa mediante un tooltip persistente.
-function validateAsignCant(i) {
+function validateAsignCant(i, _skipPropagate) {
   var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
   var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
   if (!inp) return;
@@ -799,17 +799,19 @@ function validateAsignCant(i) {
   if (cant <= 0) {
     inp.classList.remove('error');
     inp.title = '';
+    if (!_skipPropagate) _propagateValidationSameProducto(i);
     return;
   }
   if (!sel || !sel.value) {
     inp.classList.add('error');
     inp.title = 'Selecciona primero la empresa origen';
+    if (!_skipPropagate) _propagateValidationSameProducto(i);
     return;
   }
   var dl = detailWorkingLines[i];
   var pendiente = _pendienteRestante(i);
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
-  var yaEnSesion = dl ? _asignadoEnSesion(sel.value, dl.Producto) : 0;
+  var yaEnSesion = dl ? _asignadoEnSesion(sel.value, dl.Producto, i) : 0;
   var libre = Math.max(0, disp - yaEnSesion);
   var tope = Math.min(pendiente, libre);
 
@@ -826,10 +828,28 @@ function validateAsignCant(i) {
     inp.classList.add('error');
     clearTimeout(inp._clampTimer);
     inp._clampTimer = setTimeout(function() { inp.classList.remove('error'); }, 900);
+    if (!_skipPropagate) _propagateValidationSameProducto(i);
     return;
   }
   inp.classList.remove('error');
   inp.title = '';
+  if (!_skipPropagate) _propagateValidationSameProducto(i);
+}
+
+// Al cambiar el valor tipeado en la línea i, revalidamos las líneas
+// hermanas que comparten producto: si el usuario tipea 100 en la
+// línea A del mismo pool, la línea B del mismo producto tiene que
+// recortarse al pool restante. Se marca con _skipPropagate=true para
+// evitar recursión infinita.
+function _propagateValidationSameProducto(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return;
+  var prodN = _normProdSel(dl.Producto);
+  (detailWorkingLines || []).forEach(function(other, j) {
+    if (j === i || !other) return;
+    if (_normProdSel(other.Producto) !== prodN) return;
+    validateAsignCant(j, true);
+  });
 }
 
 function _pendienteRestante(i) {
@@ -848,19 +868,38 @@ function _pendienteRestante(i) {
 function _normProdSel(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
 
 // Suma en TODA la sesión (todas las líneas del pedido) las cantidades
-// ya asignadas a esa (empresa_stock, producto). Con esto se acota el
-// disponible restante, evitando que dos líneas del mismo producto
-// consuman el mismo pool más de lo que hay físicamente.
-function _asignadoEnSesion(empresa, producto) {
+// dirigidas a esa (empresa_stock, producto). Incluye:
+//   • chips ya confirmados en cualquier línea (dl._asignaciones);
+//   • valores tipeados aún sin confirmar en las OTRAS líneas
+//     (input .asig-cant) — así, tan pronto como el usuario tipea 100
+//     en la línea A, la línea B ya ve el pool restante recalculado
+//     sin necesidad de que la línea A haga clic en "+ Añadir".
+// excludeLineIdx: índice de la línea que se está validando (se
+//   excluye del "typed" para no contarse a sí misma).
+function _asignadoEnSesion(empresa, producto, excludeLineIdx) {
   var empN = norm(empresa);
   var prodN = _normProdSel(producto);
   var total = 0;
-  (detailWorkingLines || []).forEach(function(dl) {
-    if (!dl || !dl._asignaciones) return;
+  (detailWorkingLines || []).forEach(function(dl, j) {
+    if (!dl) return;
     if (_normProdSel(dl.Producto) !== prodN) return;
-    dl._asignaciones.forEach(function(a) {
-      if (norm(a.empresa_stock) === empN) total += (Number(a.cantidad) || 0);
-    });
+    // Chips confirmados (cuentan siempre, también en la propia línea
+    // porque validamos una asignación NUEVA sobre el resto).
+    if (dl._asignaciones) {
+      dl._asignaciones.forEach(function(a) {
+        if (norm(a.empresa_stock) === empN) total += (Number(a.cantidad) || 0);
+      });
+    }
+    // Valor tipeado en otras líneas (aún sin +Añadir) — se cuenta
+    // sólo si la empresa seleccionada en esa otra línea coincide.
+    if (j !== excludeLineIdx) {
+      var sel = document.querySelector('.asig-empresa[data-i="' + j + '"]');
+      var inp = document.querySelector('.asig-cant[data-i="' + j + '"]');
+      if (sel && inp && norm(sel.value) === empN) {
+        var v = Number(inp.value) || 0;
+        if (v > 0) total += v;
+      }
+    }
   });
   return total;
 }
