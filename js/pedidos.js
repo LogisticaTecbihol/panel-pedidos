@@ -2435,7 +2435,7 @@ function generarRemisionPDF(data) {
   doc.text(String(data.empresa || ''), 14, 21);
   doc.setFontSize(9);
   doc.text('Pedido #' + String(data.consecutivo || ''), pw - 14, 13, { align: 'right' });
-  doc.text('Fecha entrega: ' + String(data.fecha_entrega || ''), pw - 14, 21, { align: 'right' });
+  doc.text('Fecha remision: ' + String(data.fecha_entrega || ''), pw - 14, 21, { align: 'right' });
 
   var y = 40;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
@@ -2608,12 +2608,12 @@ function generarRemisionPDF(data) {
   var recCol = cols[cols.length - 1];
   var fechaRecY = subY + 6;
   var fechaLabelX = recCol.x + 2;
-  var fechaLineX1 = fechaLabelX + 14;
+  var fechaLineX1 = fechaLabelX + 26;
   var fechaLineX2 = recCol.x + sigW - 2;
   doc.setFontSize(7);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.text('Fecha:', fechaLabelX, fechaRecY);
+  doc.text('Fecha de entrega:', fechaLabelX, fechaRecY);
   doc.setDrawColor(160, 174, 192);
   doc.line(fechaLineX1, fechaRecY + 0.5, fechaLineX2, fechaRecY + 0.5);
 
