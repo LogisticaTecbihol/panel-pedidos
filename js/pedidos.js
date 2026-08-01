@@ -2404,10 +2404,10 @@ function exportarPedidoDesdeModal() {
   });
 }
 
-var _pdfLogos = { PARCELAR: null };
+var _pdfLogos = { PARCELAR: null, IASO: null };
 (function _preloadPdfLogos() {
   if (typeof document === 'undefined') return;
-  var sources = { PARCELAR: 'assets/logo_parcelar.png' };
+  var sources = { PARCELAR: 'assets/logo_parcelar.png', IASO: 'assets/logo_iaso.png' };
   Object.keys(sources).forEach(function(key) {
     var img = new Image();
     img.onload = function() {
