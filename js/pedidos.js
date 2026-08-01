@@ -973,7 +973,7 @@ function renderAsignacionChips(i) {
     var sigla = getSigla(a.empresa_stock);
     var traslado = norm(a.empresa_stock) !== empPedido;
     var tag = traslado
-      ? '<span title="Se generará OC de traslado" style="color:#c0392b;font-weight:700">↗ traslado</span>'
+      ? '<span title="Se generará una OC de traslado pendiente de legalizar (cargar N° remisión en Órdenes para afectar inventario)" style="color:#c0392b;font-weight:700">↗ traslado (pend. aprobar)</span>'
       : '<span style="color:#27ae60;font-weight:700">✓ mismo origen</span>';
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
       '<span style="flex:1"><strong>' + a.cantidad + '</strong> ud · ' + sigla + ' · ' + tag + '</span>' +
@@ -1198,10 +1198,16 @@ async function guardarTodo() {
     }
 
     closeModal();
+    var trasladosPend = entregas.filter(function(e) {
+      return norm(e.empresa_stock) !== norm(c.Nombre_Empresa);
+    }).length;
     var msg = entregas.length > 0
       ? '✅ Cambios guardados + ' + entregas.length + ' entrega(s) registrada(s)'
       : '✅ Cambios guardados en la nube';
     showToast(msg);
+    if (trasladosPend > 0) {
+      showToast('⚠ ' + trasladosPend + ' OC de traslado creada(s) — cargar N° remisión en Órdenes para legalizar y afectar inventario', '#e67e22');
+    }
     await loadFromAPI();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -1215,13 +1221,14 @@ async function guardarTodo() {
 //   • Si empresa_stock === empresa del pedido: sólo se inserta la
 //     fila en EntregasPedido; el descuento del stock lo hace el
 //     módulo Inventario al considerar EntregasPedido.
-//   • Si empresa_stock !== empresa del pedido: primero se crea una
-//     OC con Tipo='Traslado' desde empresa_stock hacia la empresa
-//     del pedido (con la misma Remision), y luego se inserta la
-//     EntregasPedido enlazada por orden_compra_id. La OC dispara
-//     el movimiento bilateral (resta a origen, suma a destino) y
-//     la EntregasPedido descuenta el destino → neto: origen pierde,
-//     destino queda igual, y el pedido queda con Cant_Entregada.
+//   • Si empresa_stock !== empresa del pedido: se crea una OC con
+//     Tipo='Traslado', Estado='Abierta' y Remision='' (pendiente de
+//     legalizar), y luego la EntregasPedido enlazada por
+//     orden_compra_id. La OC NO afecta inventario hasta que un
+//     usuario abra la OC en el módulo Órdenes y le cargue el N°
+//     de remisión — recién ahí Existencias.js y Kardex la cuentan
+//     como movimiento bilateral (Salida del origen, Entrada al
+//     destino) y el traslado queda legalizado.
 async function persistirEntregasYTraslados(entregas, c, rem, fecha, obs) {
   var uid = _uid();
   var stamp = new Date();
@@ -1239,6 +1246,11 @@ async function persistirEntregasYTraslados(entregas, c, rem, fecha, obs) {
     if (esTraslado) {
       counter += 1;
       var consecTras = 'T-' + ymd + '-' + hms + (counter > 1 ? '-' + counter : '');
+      // OC de traslado pendiente de aprobación: se crea sin Remisión
+      // y como 'Abierta'. Sólo cuando alguien la abra en el módulo
+      // Órdenes y le cargue el N° de Remisión del traslado se hará
+      // efectiva y afectará el inventario (tanto existencias.js como
+      // Kardex requieren Remision no-vacía en OC para contarla).
       var ocRow = {
         Fecha: fecha || ymd,
         Empresa_Destino: c.Nombre_Empresa,
@@ -1252,11 +1264,12 @@ async function persistirEntregasYTraslados(entregas, c, rem, fecha, obs) {
         Valor_Unitario: 0,
         Valor_Total: 0,
         Total_Orden: 0,
-        Estado: 'Cerrada',
-        Remision: rem,
+        Estado: 'Abierta',
+        Remision: '',
         Bodega: 'Productos Buenos',
         Observaciones: 'Traslado automático por entrega de pedido ' +
-          c.Nombre_Empresa + ' #' + c.Consecutivo,
+          c.Nombre_Empresa + ' #' + c.Consecutivo +
+          ' — pendiente de legalizar (cargar N° remisión).',
         creado_por: uid
       };
       var ocRes = await _sb.from('OrdenesCompra').insert(ocRow).select('id').single();
