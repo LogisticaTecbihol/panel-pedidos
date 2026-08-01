@@ -2473,30 +2473,35 @@ function _drawRemisionCopy(doc, data, palette) {
   var darkText = [45, 55, 72];
   var grayText = [113, 128, 150];
 
-  doc.setFillColor(accent[0], accent[1], accent[2]);
+  doc.setFillColor(255, 255, 255);
   doc.rect(0, 0, pw, 30, 'F');
+  doc.setDrawColor(accent[0], accent[1], accent[2]);
+  doc.setLineWidth(1.2);
+  doc.line(0, 30, pw, 30);
 
   var logo = _pdfHeaderLogoFor(data.empresa);
   var titleX = 14;
   if (logo) {
     try {
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(4, 3, 24, 24, 4, 4, 'F');
       doc.addImage(logo.data, 'PNG', 5, 4, 22, 22);
       titleX = 34;
     } catch (e) {}
   }
 
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(accent[0], accent[1], accent[2]);
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
   doc.text('REMISION' + (data.remision ? '  N° ' + String(data.remision) : ''), titleX, 13);
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   doc.text(String(data.empresa || ''), titleX, 21);
   doc.setFontSize(9);
+  doc.setTextColor(accent[0], accent[1], accent[2]);
+  doc.setFont(undefined, 'bold');
   doc.text('Pedido #' + String(data.consecutivo || ''), pw - 14, 13, { align: 'right' });
   doc.text('Fecha remision: ' + String(data.fecha_entrega || ''), pw - 14, 21, { align: 'right' });
+  doc.setFont(undefined, 'normal');
 
   var y = 40;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
@@ -2536,8 +2541,10 @@ function _drawRemisionCopy(doc, data, palette) {
     var rowH = 0;
     if (fi < left.length) {
       doc.setFont(undefined, 'bold');
+      doc.setTextColor(accent[0], accent[1], accent[2]);
       doc.text(left[fi][0] + ':', 16, y);
       doc.setFont(undefined, 'normal');
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
       var lVal = String(left[fi][1] || '');
       var lLines = lVal ? doc.splitTextToSize(lVal, leftValMaxW) : [''];
       doc.text(lLines, leftValX, y);
@@ -2545,8 +2552,10 @@ function _drawRemisionCopy(doc, data, palette) {
     }
     if (fi < right.length) {
       doc.setFont(undefined, 'bold');
+      doc.setTextColor(accent[0], accent[1], accent[2]);
       doc.text(right[fi][0] + ':', rightLabelX + 2, y);
       doc.setFont(undefined, 'normal');
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
       var rVal = String(right[fi][1] || '');
       var rLines = rVal ? doc.splitTextToSize(rVal, rightValMaxW) : [''];
       doc.text(rLines, rightValX, y);
@@ -2697,29 +2706,35 @@ function generarPedidoPDF(data) {
   var darkText = [45, 55, 72];
   var grayText = [113, 128, 150];
 
-  doc.setFillColor(primary[0], primary[1], primary[2]);
+  doc.setFillColor(255, 255, 255);
   doc.rect(0, 0, pw, 30, 'F');
+  doc.setDrawColor(primary[0], primary[1], primary[2]);
+  doc.setLineWidth(1.2);
+  doc.line(0, 30, pw, 30);
 
   var logoP = _pdfHeaderLogoFor(data.empresa);
   var titleXP = 14;
   if (logoP) {
     try {
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(4, 3, 24, 24, 4, 4, 'F');
       doc.addImage(logoP.data, 'PNG', 5, 4, 22, 22);
       titleXP = 34;
     } catch (e) {}
   }
 
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(primary[0], primary[1], primary[2]);
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
   doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 13);
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   doc.text(String(data.empresa || ''), titleXP, 21);
   doc.setFontSize(9);
+  doc.setTextColor(primary[0], primary[1], primary[2]);
+  doc.setFont(undefined, 'bold');
   doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 13, { align: 'right' });
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   if (data.archivo) doc.text(String(data.archivo), pw - 14, 21, { align: 'right' });
 
   var y = 40;
@@ -2758,16 +2773,20 @@ function generarPedidoPDF(data) {
     var rowH = 0;
     if (fi < left.length && left[fi][1]) {
       doc.setFont(undefined, 'bold');
+      doc.setTextColor(primary[0], primary[1], primary[2]);
       doc.text(left[fi][0] + ':', 16, y);
       doc.setFont(undefined, 'normal');
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
       var lLines = doc.splitTextToSize(String(left[fi][1]), leftValMaxW);
       doc.text(lLines, leftValX, y);
       rowH = Math.max(rowH, (lLines.length - 1) * 4);
     }
     if (fi < right.length && right[fi][1]) {
       doc.setFont(undefined, 'bold');
+      doc.setTextColor(primary[0], primary[1], primary[2]);
       doc.text(right[fi][0] + ':', rightLabelX + 2, y);
       doc.setFont(undefined, 'normal');
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
       var rLines = doc.splitTextToSize(String(right[fi][1]), rightValMaxW);
       doc.text(rLines, rightValX, y);
       rowH = Math.max(rowH, (rLines.length - 1) * 4);
