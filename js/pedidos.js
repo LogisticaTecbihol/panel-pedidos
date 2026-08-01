@@ -2398,13 +2398,22 @@ function exportarPedidoDesdeModal() {
   });
 }
 
+function _pdfPaletteFor(empresa) {
+  var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
+  sigla = String(sigla).toUpperCase();
+  if (sigla === 'PARCELAR') return { accent: [107, 142, 35], light: [232, 240, 210] };
+  if (sigla === 'RESO')     return { accent: [26, 55, 100],  light: [219, 229, 245] };
+  return { accent: [39, 174, 96], light: [212, 239, 223] };
+}
+
 function generarRemisionPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
   var doc = new jsPDF();
   var pw = doc.internal.pageSize.getWidth();
 
-  var accent = [39, 174, 96];
-  var primary = [26, 82, 118];
+  var palette = _pdfPaletteFor(data.empresa);
+  var accent = palette.accent;
+  var totalFill = palette.light;
   var darkText = [45, 55, 72];
   var grayText = [113, 128, 150];
 
@@ -2529,7 +2538,7 @@ function generarRemisionPDF(data) {
   });
 
   var finalY = doc.lastAutoTable.finalY + 10;
-  doc.setFillColor(212, 239, 223);
+  doc.setFillColor(totalFill[0], totalFill[1], totalFill[2]);
   doc.roundedRect(pw - 82, finalY - 5, 68, 14, 3, 3, 'F');
   doc.setFontSize(11);
   doc.setTextColor(accent[0], accent[1], accent[2]);
@@ -2598,7 +2607,9 @@ function generarPedidoPDF(data) {
   var doc = new jsPDF();
   var pw = doc.internal.pageSize.getWidth();
 
-  var primary = [26, 82, 118];
+  var palette = _pdfPaletteFor(data.empresa);
+  var primary = palette.accent;
+  var totalFill = palette.light;
   var darkText = [45, 55, 72];
   var grayText = [113, 128, 150];
 
@@ -2721,7 +2732,7 @@ function generarPedidoPDF(data) {
   });
 
   var finalY = doc.lastAutoTable.finalY + 10;
-  doc.setFillColor(235, 245, 251);
+  doc.setFillColor(totalFill[0], totalFill[1], totalFill[2]);
   doc.roundedRect(pw - 82, finalY - 5, 68, 14, 3, 3, 'F');
   doc.setFontSize(11);
   doc.setTextColor(primary[0], primary[1], primary[2]);
