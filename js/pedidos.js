@@ -841,6 +841,13 @@ async function guardarTodo() {
         municipio: hdr.Municipio,
         departamento: hdr.Departamento,
         telefono: hdr.Telefono,
+        direccion: c.Direccion_Envio || '',
+        plazo: hdr.Plazo_Pago,
+        precio: hdr.Precio_Facturacion,
+        consignacion: hdr.Consignacion,
+        facturar_a: hdr.Facturar_A,
+        nit_adicional: hdr.NIT_Adicional,
+        observaciones: obs,
         remision: rem,
         fecha_entrega: fecha,
         entregas: entregasPDF,
@@ -2287,6 +2294,9 @@ function _buildRemisionesAgrupadas() {
 function _exportarRemisionEspecifica(rem) {
   if (activeIdx == null) return;
   var c = consecs[activeIdx];
+  var obsEl = document.getElementById('m-observaciones');
+  var lines = getLinesFor(c);
+  var obsPed = (obsEl ? obsEl.value.trim() : '') || (lines[0] && lines[0].Observaciones) || c.Observaciones || '';
   generarRemisionPDF({
     empresa: c.Nombre_Empresa,
     consecutivo: c.Consecutivo,
@@ -2297,6 +2307,13 @@ function _exportarRemisionEspecifica(rem) {
     comercial: document.getElementById('md-comercial').value.trim() || c.Comercial,
     municipio: document.getElementById('md-municipio').value.trim() || c.Municipio,
     departamento: document.getElementById('md-departamento').value.trim() || c.Departamento,
+    direccion: c.Direccion_Envio || '',
+    plazo: document.getElementById('md-plazo').value.trim() || c.Plazo_Pago || '',
+    precio: document.getElementById('md-precio').value.trim() || c.Precio_Facturacion || '',
+    consignacion: (document.getElementById('md-consignacion') && document.getElementById('md-consignacion').value) || c.Consignacion || 'No',
+    facturar_a: document.getElementById('md-facturar-a') ? (document.getElementById('md-facturar-a').value.trim() || c.Facturar_A || '') : (c.Facturar_A || ''),
+    nit_adicional: document.getElementById('md-nit-adicional') ? (document.getElementById('md-nit-adicional').value.trim() || c.NIT_Adicional || '') : (c.NIT_Adicional || ''),
+    observaciones: obsPed,
     remision: rem.remision,
     fecha_entrega: rem.fecha,
     entregas: rem.items,
@@ -2412,12 +2429,19 @@ function generarRemisionPDF(data) {
   var left = [
     ['Cliente', data.cliente],
     ['NIT', data.nit],
+    ['Facturar a', data.facturar_a && data.facturar_a !== data.cliente ? data.facturar_a : null],
+    ['NIT Adicional', data.nit_adicional],
     ['Telefono', data.telefono],
+    ['Municipio', data.municipio],
+    ['Departamento', data.departamento],
   ];
   var right = [
     ['Comercial', data.comercial],
-    ['Municipio', data.municipio],
-    ['Departamento', data.departamento],
+    ['Plazo de Pago', data.plazo],
+    ['Precio Facturacion', data.precio],
+    ['Direccion', data.direccion],
+    ['Consignacion', (data.consignacion === 'Sí' || data.consignacion === 'Si') ? 'Sí' : null],
+    ['Fecha pedido', data.fecha_pedido],
   ];
 
   var halfW = (pw - 28) / 2;
@@ -2446,6 +2470,23 @@ function generarRemisionPDF(data) {
       rowH = Math.max(rowH, (rLines.length - 1) * 4);
     }
     y += 6 + rowH;
+  }
+
+  if (data.observaciones) {
+    y += 3;
+    doc.setFont(undefined, 'normal');
+    var obsMaxW = pw - 28 - 48;
+    var obsLines = doc.splitTextToSize(String(data.observaciones), obsMaxW);
+    var obsH = Math.max(14, obsLines.length * 4 + 8);
+    doc.setFillColor(254, 249, 231);
+    doc.roundedRect(14, y - 4, pw - 28, obsH, 2, 2, 'F');
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(125, 102, 8);
+    doc.text('Observaciones:', 18, y + 1);
+    doc.setFont(undefined, 'normal');
+    doc.text(obsLines, 62, y + 1);
+    y += obsH;
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   }
 
   y += 4;
