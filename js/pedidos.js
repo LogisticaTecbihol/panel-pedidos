@@ -2461,6 +2461,8 @@ function generarRemisionPDF(data) {
   var leftValMaxW = rightLabelX - leftValX - 4;
   var rightValMaxW = pw - 14 - rightValX;
   var maxF = Math.max(left.length, right.length);
+  var infoTop = y - 4;
+  var midX = rightLabelX - 3;
   for (var fi = 0; fi < maxF; fi++) {
     var rowH = 0;
     if (fi < left.length) {
@@ -2482,7 +2484,19 @@ function generarRemisionPDF(data) {
       rowH = Math.max(rowH, (rLines.length - 1) * 4);
     }
     y += 6 + rowH;
+    if (fi < maxF - 1) {
+      doc.setDrawColor(200, 210, 220);
+      doc.setLineWidth(0.2);
+      doc.line(14, y - 3, pw - 14, y - 3);
+    }
   }
+  var infoBottom = y - 3;
+  doc.setDrawColor(140, 155, 175);
+  doc.setLineWidth(0.4);
+  doc.rect(14, infoTop, pw - 28, infoBottom - infoTop);
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(200, 210, 220);
+  doc.line(midX, infoTop, midX, infoBottom);
 
   y += 3;
   var obsText = String(data.observaciones || '');
@@ -2655,6 +2669,8 @@ function generarPedidoPDF(data) {
   var leftValMaxW = rightLabelX - leftValX - 4;
   var rightValMaxW = pw - 14 - rightValX;
   var maxF = Math.max(left.length, right.length);
+  var infoTop = y - 4;
+  var midX = rightLabelX - 3;
   for (var fi = 0; fi < maxF; fi++) {
     var rowH = 0;
     if (fi < left.length && left[fi][1]) {
@@ -2674,7 +2690,19 @@ function generarPedidoPDF(data) {
       rowH = Math.max(rowH, (rLines.length - 1) * 4);
     }
     y += 6 + rowH;
+    if (fi < maxF - 1) {
+      doc.setDrawColor(200, 210, 220);
+      doc.setLineWidth(0.2);
+      doc.line(14, y - 3, pw - 14, y - 3);
+    }
   }
+  var infoBottom = y - 3;
+  doc.setDrawColor(140, 155, 175);
+  doc.setLineWidth(0.4);
+  doc.rect(14, infoTop, pw - 28, infoBottom - infoTop);
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(200, 210, 220);
+  doc.line(midX, infoTop, midX, infoBottom);
 
   if (data.observaciones) {
     y += 3;
