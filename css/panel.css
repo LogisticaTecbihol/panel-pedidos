@@ -146,18 +146,21 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #2d3748;
   transition: background 0.2s;
 }
 .btn-dl:hover { background: #154360; }
-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.83rem; border: 1px solid #cbd5e0; }
+thead th {
+  background: #f7fafc; padding: 10px 12px; text-align: left;
+  font-weight: 700; color: #4a5568; font-size: 0.77rem;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  border-right: 1px solid #cbd5e0; border-bottom: 2px solid #cbd5e0; white-space: nowrap;
+}
+tbody tr { transition: background 0.12s; }
+tbody tr:hover { background: #f0f8ff; }
+tbody td { padding: 9px 12px; vertical-align: middle; border-right: 1px solid #cbd5e0; border-bottom: 1px solid #cbd5e0; }
+tfoot td { border-right: 1px solid #cbd5e0; border-top: 1px solid #cbd5e0; }
+thead th:last-child, tbody td:last-child, tfoot td:last-child { border-right: none; }
+tbody tr:last-child td { border-bottom: none; }
 
-/* ── Existencias tables: crisp grid + shrink-to-fit for single empresa ── */
-.existencias-table { border: 1px solid #cbd5e0; }
-.existencias-table thead th,
-.existencias-table tbody td,
-.existencias-table tfoot td { border-right: 1px solid #cbd5e0; border-bottom: 1px solid #cbd5e0; }
-.existencias-table thead th:last-child,
-.existencias-table tbody td:last-child,
-.existencias-table tfoot td:last-child { border-right: none; }
-.existencias-table tbody tr { border-bottom: none; }
-.existencias-table tbody tr:hover td { background: #f0f8ff; }
+/* ── Existencias tables: shrink-to-fit when a single empresa is filtered ── */
 .existencias-table.single { width: auto; }
 .existencias-table.single thead th:nth-child(2),
 .existencias-table.single tbody td:nth-child(2),
@@ -165,15 +168,6 @@ table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
 .existencias-table.single thead th:nth-child(3),
 .existencias-table.single tbody td:nth-child(3),
 .existencias-table.single tfoot td:nth-child(3) { min-width: 110px; }
-thead th {
-  background: #f7fafc; padding: 10px 12px; text-align: left;
-  font-weight: 700; color: #4a5568; font-size: 0.77rem;
-  text-transform: uppercase; letter-spacing: 0.4px;
-  border-bottom: 2px solid #e2e8f0; white-space: nowrap;
-}
-tbody tr { border-bottom: 1px solid #edf2f7; transition: background 0.12s; }
-tbody tr:hover { background: #f0f8ff; }
-tbody td { padding: 9px 12px; vertical-align: middle; }
 
 /* ── SIGLA BADGES ── */
 .sigla-badge {
