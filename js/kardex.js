@@ -2080,6 +2080,8 @@ function renderExistencias() {
 function renderExistTable(empresasView) {
   empresasView = empresasView || EMPRESAS_EXIST;
   var showTotal = empresasView.length > 1;
+  var tbl = document.getElementById('tbl-ex');
+  if (tbl) tbl.classList.toggle('single', empresasView.length === 1);
   var thead = document.getElementById('t-head-ex');
   var headerCols = '<th style="position:sticky;left:0;background:#f0f4f8;z-index:2">#</th>' +
     '<th style="position:sticky;left:30px;background:#f0f4f8;z-index:2;min-width:220px">Producto</th>';
@@ -2524,6 +2526,8 @@ function renderExistenciasNC() {
 function renderExistNCTable(empresasView) {
   empresasView = empresasView || EMPRESAS_EXIST;
   var showTotal = empresasView.length > 1;
+  var tbl = document.getElementById('tbl-exnc');
+  if (tbl) tbl.classList.toggle('single', empresasView.length === 1);
   var thead = document.getElementById('t-head-exnc');
   var headerCols = '<th style="position:sticky;left:0;background:#f0f4f8;z-index:2">#</th>' +
     '<th style="position:sticky;left:30px;background:#f0f4f8;z-index:2;min-width:220px">Producto</th>';

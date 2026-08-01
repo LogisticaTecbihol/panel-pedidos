@@ -147,6 +147,24 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #2d3748;
 }
 .btn-dl:hover { background: #154360; }
 table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+
+/* ── Existencias tables: crisp grid + shrink-to-fit for single empresa ── */
+.existencias-table { border: 1px solid #cbd5e0; }
+.existencias-table thead th,
+.existencias-table tbody td,
+.existencias-table tfoot td { border-right: 1px solid #cbd5e0; border-bottom: 1px solid #cbd5e0; }
+.existencias-table thead th:last-child,
+.existencias-table tbody td:last-child,
+.existencias-table tfoot td:last-child { border-right: none; }
+.existencias-table tbody tr { border-bottom: none; }
+.existencias-table tbody tr:hover td { background: #f0f8ff; }
+.existencias-table.single { width: auto; }
+.existencias-table.single thead th:nth-child(2),
+.existencias-table.single tbody td:nth-child(2),
+.existencias-table.single tfoot td:nth-child(2) { min-width: 260px; max-width: 340px; padding-right: 18px; }
+.existencias-table.single thead th:nth-child(3),
+.existencias-table.single tbody td:nth-child(3),
+.existencias-table.single tfoot td:nth-child(3) { min-width: 110px; }
 thead th {
   background: #f7fafc; padding: 10px 12px; text-align: left;
   font-weight: 700; color: #4a5568; font-size: 0.77rem;
