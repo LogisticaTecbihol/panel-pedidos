@@ -2404,6 +2404,31 @@ function exportarPedidoDesdeModal() {
   });
 }
 
+var _pdfLogos = { PARCELAR: null };
+(function _preloadPdfLogos() {
+  if (typeof document === 'undefined') return;
+  var sources = { PARCELAR: 'assets/logo_parcelar.png' };
+  Object.keys(sources).forEach(function(key) {
+    var img = new Image();
+    img.onload = function() {
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        _pdfLogos[key] = { data: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height };
+      } catch (e) { _pdfLogos[key] = null; }
+    };
+    img.onerror = function() { _pdfLogos[key] = null; };
+    img.src = sources[key];
+  });
+})();
+
+function _pdfHeaderLogoFor(empresa) {
+  var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
+  return _pdfLogos[String(sigla).toUpperCase()] || null;
+}
+
 function _pdfPaletteFor(empresa) {
   var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
   sigla = String(sigla).toUpperCase();
@@ -2451,13 +2476,22 @@ function _drawRemisionCopy(doc, data, palette) {
   doc.setFillColor(accent[0], accent[1], accent[2]);
   doc.rect(0, 0, pw, 30, 'F');
 
+  var logo = _pdfHeaderLogoFor(data.empresa);
+  var titleX = 14;
+  if (logo) {
+    try {
+      doc.addImage(logo.data, 'PNG', 4, 4, 22, 22);
+      titleX = 30;
+    } catch (e) {}
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
-  doc.text('REMISION' + (data.remision ? '  N° ' + String(data.remision) : ''), 14, 13);
+  doc.text('REMISION' + (data.remision ? '  N° ' + String(data.remision) : ''), titleX, 13);
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
-  doc.text(String(data.empresa || ''), 14, 21);
+  doc.text(String(data.empresa || ''), titleX, 21);
   doc.setFontSize(9);
   doc.text('Pedido #' + String(data.consecutivo || ''), pw - 14, 13, { align: 'right' });
   doc.text('Fecha remision: ' + String(data.fecha_entrega || ''), pw - 14, 21, { align: 'right' });
@@ -2664,13 +2698,22 @@ function generarPedidoPDF(data) {
   doc.setFillColor(primary[0], primary[1], primary[2]);
   doc.rect(0, 0, pw, 30, 'F');
 
+  var logoP = _pdfHeaderLogoFor(data.empresa);
+  var titleXP = 14;
+  if (logoP) {
+    try {
+      doc.addImage(logoP.data, 'PNG', 4, 4, 22, 22);
+      titleXP = 30;
+    } catch (e) {}
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
-  doc.text('PEDIDO #' + String(data.consecutivo || ''), 14, 13);
+  doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 13);
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
-  doc.text(String(data.empresa || ''), 14, 21);
+  doc.text(String(data.empresa || ''), titleXP, 21);
   doc.setFontSize(9);
   doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 13, { align: 'right' });
   if (data.archivo) doc.text(String(data.archivo), pw - 14, 21, { align: 'right' });
