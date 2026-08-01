@@ -3060,11 +3060,11 @@ function _drawRemisionCopy(doc, data, palette) {
     headStyles: { fillColor: accent, fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
     bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 12 },
-      1: { cellWidth: 90 },
-      2: { cellWidth: 36 },
-      3: { halign: 'right', cellWidth: 30 },
-      4: { halign: 'center', cellWidth: 16 }
+      0: { halign: 'center', cellWidth: 10 },
+      1: { cellWidth: 82 },
+      2: { cellWidth: 40 },
+      3: { halign: 'right', cellWidth: 32 },
+      4: { halign: 'center', cellWidth: 18 }
     },
     margin: { left: 14, right: 14 },
     styles: { cellPadding: 3, lineColor: [90, 90, 90], lineWidth: 0.3 },
