@@ -2429,6 +2429,21 @@ function _pdfHeaderLogoFor(empresa) {
   return _pdfLogos[String(sigla).toUpperCase()] || null;
 }
 
+var _pdfRemisionHeaderInfo = {
+  IASO: [
+    'INSUMOS AGROPECUARIOS SOSTENIBLES S.A.S',
+    'NIT: 901-924.101-1',
+    'Av. Troncal de Occidente #11E-03E, Mosquera,',
+    'Cundinamarca - Parque Agroindustrial de la Sabana',
+    'Cel 3106716741  ·  Correo: inagrosostenible.sas@gmail.com'
+  ]
+};
+
+function _pdfRemisionHeaderInfoFor(empresa) {
+  var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
+  return _pdfRemisionHeaderInfo[String(sigla).toUpperCase()] || null;
+}
+
 function _pdfPaletteFor(empresa) {
   var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
   sigla = String(sigla).toUpperCase();
@@ -2473,11 +2488,14 @@ function _drawRemisionCopy(doc, data, palette) {
   var darkText = [45, 55, 72];
   var grayText = [113, 128, 150];
 
+  var headerInfo = _pdfRemisionHeaderInfoFor(data.empresa);
+  var headerH = headerInfo ? 48 : 30;
+
   doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, pw, 30, 'F');
+  doc.rect(0, 0, pw, headerH, 'F');
   doc.setDrawColor(accent[0], accent[1], accent[2]);
   doc.setLineWidth(1.2);
-  doc.line(0, 30, pw, 30);
+  doc.line(0, headerH, pw, headerH);
 
   var logo = _pdfHeaderLogoFor(data.empresa);
   var titleX = 14;
@@ -2503,7 +2521,21 @@ function _drawRemisionCopy(doc, data, palette) {
   doc.text('Fecha remision: ' + String(data.fecha_entrega || ''), pw - 14, 21, { align: 'right' });
   doc.setFont(undefined, 'normal');
 
-  var y = 40;
+  if (headerInfo) {
+    doc.setFontSize(7);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(120, 132, 150);
+    var infoStartY = 30;
+    var infoLineH = 3.4;
+    headerInfo.forEach(function(line, i) {
+      var bold = i === 0;
+      if (bold) doc.setFont(undefined, 'bold');
+      doc.text(String(line), pw - 14, infoStartY + i * infoLineH, { align: 'right' });
+      if (bold) doc.setFont(undefined, 'normal');
+    });
+  }
+
+  var y = headerH + 10;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   doc.setFontSize(9);
 
