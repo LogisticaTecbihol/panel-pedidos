@@ -817,7 +817,7 @@ async function guardarTodo() {
       }
     }
 
-    if (entregas.length > 0) {
+    if (entregas.length > 0 && rem) {
       var entregasPDF = entregas.map(function(ent) {
         var dl = detailWorkingLines[ent._idx];
         var vUni = dl ? (Number(dl.Valor_Unitario) || 0) : 0;
@@ -2266,8 +2266,10 @@ function _buildRemisionesAgrupadas() {
     var vUni = Number(l.Valor_Unitario) || 0;
     var entregas = parseEntregas(l.Remisiones, Number(l.Cant_Entregada) || 0, l.Fecha_Ult_Entrega);
     entregas.forEach(function(e) {
-      var key = (e.remision || '(sin número)') + '|' + (e.fecha || '');
-      if (!mapa[key]) mapa[key] = { remision: e.remision || '', fecha: e.fecha || '', items: [], total: 0 };
+      var numRem = (e.remision || '').trim();
+      if (!numRem) return;
+      var key = numRem + '|' + (e.fecha || '');
+      if (!mapa[key]) mapa[key] = { remision: numRem, fecha: e.fecha || '', items: [], total: 0 };
       var cant = Number(e.cantidad) || 0;
       if (cant <= 0) return;
       var vt = cant * vUni;
@@ -2293,6 +2295,10 @@ function _buildRemisionesAgrupadas() {
 
 function _exportarRemisionEspecifica(rem) {
   if (activeIdx == null) return;
+  if (!rem || !rem.remision || !String(rem.remision).trim()) {
+    showToast('La remisión debe tener número asignado para imprimirse.', '#e67e22');
+    return;
+  }
   var c = consecs[activeIdx];
   var obsEl = document.getElementById('m-observaciones');
   var lines = getLinesFor(c);
@@ -2325,7 +2331,7 @@ function exportarRemisionDesdeModal(ev) {
   if (ev && ev.stopPropagation) ev.stopPropagation();
   var remisiones = _buildRemisionesAgrupadas();
   if (!remisiones.length) {
-    showToast('No hay remisiones registradas para este pedido.', '#e67e22');
+    showToast('No hay remisiones con número asignado para imprimir.', '#e67e22');
     return;
   }
   if (remisiones.length === 1) {
