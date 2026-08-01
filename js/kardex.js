@@ -2144,14 +2144,29 @@ function exportExistExcel() {
     return obj;
   });
 
-  var ws = XLSX.utils.json_to_sheet(data);
+  var corteEx = (document.getElementById('ex-f-corte') || {}).value || '';
+  var empresaLabel = empresaSel
+    ? ((empresasView[0] && empresasView[0].sigla ? empresasView[0].sigla + ' — ' : '') + empresaSel)
+    : 'Todas las empresas';
+  var corteLabel = corteEx || today();
+  var totalCols = 2 + empresasView.length + 1;
+
+  var ws = XLSX.utils.aoa_to_sheet([
+    ['Existencias de Producto Bueno por Empresa'],
+    ['Empresa: ' + empresaLabel + '   ·   Fecha de corte: ' + corteLabel],
+    []
+  ]);
+  XLSX.utils.sheet_add_json(ws, data, { origin: 'A4' });
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } }
+  ];
   var colWidths = [{ wch: 5 }, { wch: 35 }];
   empresasView.forEach(function() { colWidths.push({ wch: 12 }); });
   colWidths.push({ wch: 12 });
   ws['!cols'] = colWidths;
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Existencias');
-  var corteEx = (document.getElementById('ex-f-corte') || {}).value || '';
   var fnameEx = corteEx
     ? ('Existencias_por_Empresa_corte_' + corteEx + '.xlsx')
     : ('Existencias_por_Empresa_' + today() + '.xlsx');
@@ -2569,14 +2584,29 @@ function exportExistNCExcel() {
     return obj;
   });
 
-  var ws = XLSX.utils.json_to_sheet(data);
+  var corteExNC = (document.getElementById('exnc-f-corte') || {}).value || '';
+  var empresaLabelNC = empresaSel
+    ? ((empresasView[0] && empresasView[0].sigla ? empresasView[0].sigla + ' — ' : '') + empresaSel)
+    : 'Todas las empresas';
+  var corteLabelNC = corteExNC || today();
+  var totalColsNC = 2 + empresasView.length + 1;
+
+  var ws = XLSX.utils.aoa_to_sheet([
+    ['Existencias de Producto No Conforme por Empresa'],
+    ['Empresa: ' + empresaLabelNC + '   ·   Fecha de corte: ' + corteLabelNC],
+    []
+  ]);
+  XLSX.utils.sheet_add_json(ws, data, { origin: 'A4' });
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: totalColsNC - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: totalColsNC - 1 } }
+  ];
   var colWidths = [{ wch: 5 }, { wch: 35 }];
   empresasView.forEach(function() { colWidths.push({ wch: 12 }); });
   colWidths.push({ wch: 12 });
   ws['!cols'] = colWidths;
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Existencias NC');
-  var corteExNC = (document.getElementById('exnc-f-corte') || {}).value || '';
   var fnameExNC = corteExNC
     ? ('Existencias_NC_por_Empresa_corte_' + corteExNC + '.xlsx')
     : ('Existencias_NC_por_Empresa_' + today() + '.xlsx');
