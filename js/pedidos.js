@@ -2511,8 +2511,8 @@ function generarRemisionPDF(data) {
     head: [['#', 'Producto', 'Presentacion', 'Cant. Entregada', 'Val. Unitario', 'Val. Total', 'Bonif.']],
     body: tableBody,
     theme: 'grid',
-    headStyles: { fillColor: accent, fontSize: 8, fontStyle: 'bold', halign: 'center' },
-    bodyStyles: { fontSize: 8 },
+    headStyles: { fillColor: accent, fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
+    bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
       1: { cellWidth: 55 },
@@ -2522,7 +2522,9 @@ function generarRemisionPDF(data) {
       6: { halign: 'center', cellWidth: 14 }
     },
     margin: { left: 14, right: 14 },
-    styles: { cellPadding: 3 }
+    styles: { cellPadding: 3, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    tableLineColor: [60, 60, 60],
+    tableLineWidth: 0.5
   });
 
   var finalY = doc.lastAutoTable.finalY + 10;
@@ -2701,8 +2703,8 @@ function generarPedidoPDF(data) {
     head: [['#', 'Producto', 'Presentación', 'Cantidad', 'Val. Unitario', 'Val. Total', 'Bonif.']],
     body: tableBody,
     theme: 'grid',
-    headStyles: { fillColor: primary, fontSize: 8, fontStyle: 'bold', halign: 'center' },
-    bodyStyles: { fontSize: 8 },
+    headStyles: { fillColor: primary, fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
+    bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
       1: { cellWidth: 55 },
@@ -2712,7 +2714,9 @@ function generarPedidoPDF(data) {
       6: { halign: 'center', cellWidth: 14 }
     },
     margin: { left: 14, right: 14 },
-    styles: { cellPadding: 3 }
+    styles: { cellPadding: 3, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    tableLineColor: [60, 60, 60],
+    tableLineWidth: 0.5
   });
 
   var finalY = doc.lastAutoTable.finalY + 10;
