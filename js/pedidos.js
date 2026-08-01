@@ -2757,17 +2757,27 @@ function generarPedidoPDF(data) {
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
   doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 13);
+  doc.setFontSize(9);
+  doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 13, { align: 'right' });
+
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.text(String(data.empresa || ''), titleXP, 21);
-  doc.setFontSize(9);
-  doc.setTextColor(primary[0], primary[1], primary[2]);
-  doc.setFont(undefined, 'bold');
-  doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 13, { align: 'right' });
-  doc.setFont(undefined, 'normal');
-  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  if (data.archivo) doc.text(String(data.archivo), pw - 14, 21, { align: 'right' });
+  var empresaText = String(data.empresa || '');
+  var empresaMaxW = (pw - 14) - titleXP;
+  var empresaFit = doc.splitTextToSize(empresaText, empresaMaxW);
+  var empresaOneLine = empresaFit[0] + (empresaFit.length > 1 ? '…' : '');
+  doc.text(empresaOneLine, titleXP, 21);
+
+  if (data.archivo) {
+    doc.setFontSize(6.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(grayText[0], grayText[1], grayText[2]);
+    var archivoText = String(data.archivo);
+    var archivoMaxW = pw - 14 - titleXP;
+    var archivoFit = doc.splitTextToSize(archivoText, archivoMaxW);
+    doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 26, { align: 'right' });
+  }
 
   var y = 40;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
