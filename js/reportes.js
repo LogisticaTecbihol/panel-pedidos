@@ -11,6 +11,13 @@ var kardexNC = [];
 var aggregated = [];
 var rptSort = { col: 'pendiente', dir: 'desc' };
 
+// Programación de planta + Traslados pendientes
+var existSnapshot = null;
+var plantaData = [];
+var plantaSort = { col: 'producir', dir: 'desc' };
+var trasladosData = [];
+var trasladosSort = { col: 'fecha', dir: 'desc' };
+
 var SIGLAS = {
   'PARCELAR DE COLOMBIA SAS': 'PARCELAR',
   'GREEN AGROSOLUCIONES DE COLOMBIA SAS': 'GREEN',
@@ -44,7 +51,7 @@ async function loadReportes() {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Consecutivo,Fecha_Pedido,Cliente,Comercial,Producto,Presentacion,Cantidad,Cant_Entregada,Cant_Pendiente,Estado_Entrega,Estado_2,Remisiones,Fecha_Ult_Entrega' }),
       apiGet('getIngresos', { columns: 'id,Empresa_Origen,Empresa_Destino,Remision_Origen,Remision_Destino,Origen,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'id,Remision,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, ordenes: [] }; }),
+      apiGet('getOrdenesCompra', { columns: 'id,Remision,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha,Tipo,Estado,Ref_Pedido,Observaciones' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'id,Remision,Empresa,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Entrega,Fecha_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getDevoluciones', { columns: 'id,Empresa,Consecutivo,Remision_Ingreso,Remision,Remision_Salida,Producto,Presentacion,Cantidad,Fecha_Ingreso,Fecha_Devolucion,Fecha,Fecha_Salida' }).catch(function() { return { ok: true, devoluciones: [] }; }),
@@ -81,6 +88,17 @@ async function loadReportes() {
     remisionesAnuladas = (results[6].remisionesAnuladas || []);
     cambiosMerc = (results[7].cambios || []);
     kardexNC = (results[8].ajustesNC || []);
+
+    // Snapshot de existencias (mismo cálculo que Kardex/Pedidos)
+    // usado por los tabs "Programación de planta" y "Traslados".
+    try {
+      if (typeof Existencias !== 'undefined' && Existencias.loadSnapshot) {
+        existSnapshot = await Existencias.loadSnapshot();
+      }
+    } catch (e) {
+      existSnapshot = null;
+      console.warn('No se pudo cargar snapshot de existencias:', e);
+    }
 
     populateRptFilters();
     buildReport();
@@ -121,8 +139,8 @@ function populateRptFilters() {
 
   if (!rptFiltersAttached) {
     ['rf-emp','rf-com','rf-cli','rf-txt'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', buildReport);
-      document.getElementById(id).addEventListener('input', buildReport);
+      document.getElementById(id).addEventListener('change', _rebuildActiveTab);
+      document.getElementById(id).addEventListener('input', _rebuildActiveTab);
     });
     rptFiltersAttached = true;
   }
@@ -133,7 +151,19 @@ function clearRptFilters() {
   document.getElementById('rf-com').value = '';
   document.getElementById('rf-cli').value = '';
   document.getElementById('rf-txt').value = '';
-  buildReport();
+  _rebuildActiveTab();
+}
+
+// Reconstruye el tab actualmente visible (pendientes/planta/traslados/remisiones)
+// cada vez que cambian los filtros del header.
+function _rebuildActiveTab() {
+  buildReport(); // el de pendientes siempre lo actualizamos
+  var isPlanta   = document.getElementById('panel-planta')   && document.getElementById('panel-planta').style.display   !== 'none';
+  var isTraslad  = document.getElementById('panel-traslados')&& document.getElementById('panel-traslados').style.display !== 'none';
+  var isRem      = document.getElementById('panel-remisiones')&&document.getElementById('panel-remisiones').style.display!== 'none';
+  if (isPlanta) buildPlanta();
+  if (isTraslad) buildTraslados();
+  if (isRem) buildRemisiones();
 }
 
 function limpiarProducto(nombre) {
@@ -304,11 +334,392 @@ function exportExcel() {
 
 // ── Tabs ──
 function switchTab(tab) {
-  document.getElementById('panel-pendientes').style.display = tab === 'pendientes' ? 'block' : 'none';
-  document.getElementById('panel-remisiones').style.display = tab === 'remisiones' ? 'block' : 'none';
-  document.getElementById('tab-pendientes').style.background = tab === 'pendientes' ? '#1a5276' : '#718096';
-  document.getElementById('tab-remisiones').style.background = tab === 'remisiones' ? '#1a5276' : '#718096';
+  var tabs = ['pendientes', 'planta', 'traslados', 'remisiones'];
+  tabs.forEach(function(t) {
+    var panel = document.getElementById('panel-' + t);
+    var btn = document.getElementById('tab-' + t);
+    if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
+    if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
+  });
+  if (tab === 'planta') buildPlanta();
+  if (tab === 'traslados') buildTraslados();
   if (tab === 'remisiones') buildRemisiones();
+}
+
+// ══════════════════════════════════════════════════════════════
+// PROGRAMACIÓN DE PLANTA
+// ══════════════════════════════════════════════════════════════
+//
+// Agregado por producto (mismo criterio de normalización que Kardex):
+//   Pendiente total = suma de Cant_Pendiente en líneas con
+//     Cant_Pendiente>0 y Estado_2 NO en {Anulado,Cerrado,Bloqueado}.
+//   Existencia holding = suma de existSnapshot.saldos[prod] por empresa.
+//   Traslados pend. aprobar = suma de OrdenesCompra con Tipo='Traslado',
+//     Remision vacía y Estado NO 'Anulada' para ese producto.
+//   A producir = max(0, pendiente − existencia − traslados_pend)
+//   Estado semáforo:
+//     verde   → existencia >= pendiente
+//     amarillo→ existencia + traslados_pend >= pendiente pero exist. < pend.
+//     rojo    → todavía falta producir
+// ══════════════════════════════════════════════════════════════
+
+function _normProdRep(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+
+function _empresasVisibles() {
+  var lista = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas)
+    ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING)
+    : (typeof EMPRESAS_HOLDING !== 'undefined' ? EMPRESAS_HOLDING : []);
+  return lista;
+}
+
+function buildPlanta() {
+  var fEmp = document.getElementById('rf-emp').value;
+  var fCom = document.getElementById('rf-com').value;
+  var fCli = document.getElementById('rf-cli').value;
+  var fTxt = (document.getElementById('rf-txt').value || '').toLowerCase();
+
+  // 1) Agregar pendientes por producto
+  var acum = {}; // prodNorm → { producto, presentaciones:Set, pendiente, empresas:Set }
+  pedidos.forEach(function(p) {
+    var pend = Number(p.Cant_Pendiente) || 0;
+    if (pend <= 0) return;
+    var est2 = (p.Estado_2 || 'Abierto').trim();
+    if (est2 === 'Anulado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera') return;
+    if (fEmp && p.Nombre_Empresa !== fEmp) return;
+    if (fCom && p.Comercial !== fCom) return;
+    if (fCli && (p.Cliente || '').trim() !== fCli) return;
+    var prodDisplay = limpiarProducto(String(p.Producto || '')).toUpperCase().trim();
+    var prodKey = _normProdRep(p.Producto);
+    if (!prodKey) return;
+    if (!acum[prodKey]) {
+      acum[prodKey] = {
+        producto: prodDisplay,
+        prodKey: prodKey,
+        presentaciones: {},
+        pendiente: 0,
+        empresasPed: {}
+      };
+    }
+    acum[prodKey].pendiente += pend;
+    var pres = String(p.Presentacion || '').trim();
+    if (pres) acum[prodKey].presentaciones[pres] = true;
+    if (p.Nombre_Empresa) acum[prodKey].empresasPed[p.Nombre_Empresa] = true;
+  });
+
+  // 2) Agregar traslados pendientes (OC Tipo='Traslado', Remision vacía, Estado no anulada)
+  var trasladosByProd = {};
+  ordenesCompra.forEach(function(oc) {
+    if ((oc.Tipo || 'Compra') !== 'Traslado') return;
+    if (String(oc.Remision || '').trim()) return;
+    if ((oc.Estado || '').toLowerCase() === 'anulada') return;
+    var cant = Number(oc.Cantidad) || 0;
+    if (cant <= 0) return;
+    var key = _normProdRep(oc.Producto);
+    if (!key) return;
+    if (!trasladosByProd[key]) trasladosByProd[key] = 0;
+    trasladosByProd[key] += cant;
+  });
+
+  // 3) Existencia por empresa desde el snapshot (misma lógica que Kardex)
+  var empresasList = _empresasVisibles();
+  var saldos = (existSnapshot && existSnapshot.saldos) || {};
+
+  // 4) Armar filas
+  plantaData = Object.keys(acum).map(function(key) {
+    var a = acum[key];
+    var perEmp = saldos[key] || {};
+    var porEmp = {};
+    var existHolding = 0;
+    empresasList.forEach(function(e) {
+      var v = Math.max(0, perEmp[e.value] || 0);
+      porEmp[e.value] = v;
+      existHolding += v;
+    });
+    var trasladosPend = trasladosByProd[key] || 0;
+    var producir = Math.max(0, a.pendiente - existHolding - trasladosPend);
+    var estado;
+    if (existHolding >= a.pendiente) estado = 'verde';
+    else if (existHolding + trasladosPend >= a.pendiente) estado = 'amarillo';
+    else estado = 'rojo';
+    return {
+      producto: a.producto,
+      prodKey: a.prodKey,
+      presentaciones: Object.keys(a.presentaciones).sort().join(', '),
+      pendiente: a.pendiente,
+      porEmp: porEmp,
+      existHolding: existHolding,
+      trasladosPend: trasladosPend,
+      producir: producir,
+      estado: estado,
+      empresasPedidoCount: Object.keys(a.empresasPed).length
+    };
+  });
+
+  // Filtro texto (aplicar sobre producto y presentacion)
+  if (fTxt) {
+    plantaData = plantaData.filter(function(r) {
+      return r.producto.toLowerCase().indexOf(fTxt) >= 0 || r.presentaciones.toLowerCase().indexOf(fTxt) >= 0;
+    });
+  }
+
+  // Stats
+  document.getElementById('st-pl-productos').textContent = plantaData.length.toLocaleString('es-CO');
+  document.getElementById('st-pl-producir').textContent  = plantaData.reduce(function(s, r) { return s + r.producir; }, 0).toLocaleString('es-CO');
+  document.getElementById('st-pl-traslados').textContent = plantaData.reduce(function(s, r) { return s + r.trasladosPend; }, 0).toLocaleString('es-CO');
+  document.getElementById('st-pl-cubiertos').textContent = plantaData.filter(function(r) { return r.estado === 'verde'; }).length.toLocaleString('es-CO');
+
+  renderPlantaTable();
+}
+
+function togglePlantaSort(col) {
+  if (plantaSort.col === col) {
+    plantaSort.dir = plantaSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    plantaSort.col = col;
+    plantaSort.dir = (col === 'producto' || col === 'presentaciones') ? 'asc' : 'desc';
+  }
+  renderPlantaTable();
+}
+
+function sortedPlanta() {
+  var col = plantaSort.col;
+  var dir = plantaSort.dir;
+  return [].concat(plantaData).sort(function(a, b) {
+    var va, vb;
+    if (col === 'producto') { va = a.producto; vb = b.producto; }
+    else if (col === 'presentaciones') { va = a.presentaciones; vb = b.presentaciones; }
+    else if (col === 'existHolding') { va = a.existHolding; vb = b.existHolding; }
+    else if (col === 'trasladosPend') { va = a.trasladosPend; vb = b.trasladosPend; }
+    else if (col === 'pendiente') { va = a.pendiente; vb = b.pendiente; }
+    else if (col === 'producir') { va = a.producir; vb = b.producir; }
+    else if (col === 'estado') { va = a.estado; vb = b.estado; }
+    else if (typeof col === 'string' && col.indexOf('emp:') === 0) {
+      var emp = col.slice(4);
+      va = (a.porEmp[emp] || 0);
+      vb = (b.porEmp[emp] || 0);
+    } else { va = a.producir; vb = b.producir; }
+    var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function renderPlantaTable() {
+  var empresasList = _empresasVisibles();
+  var cols = [
+    { id: 'producto', label: 'Producto' },
+    { id: 'presentaciones', label: 'Presentación(es)' },
+    { id: 'pendiente', label: 'Pendiente' }
+  ];
+  empresasList.forEach(function(e) {
+    cols.push({ id: 'emp:' + e.value, label: e.sigla });
+  });
+  cols.push({ id: 'existHolding', label: 'Exist. total' });
+  cols.push({ id: 'trasladosPend', label: 'Traslados pend.' });
+  cols.push({ id: 'producir', label: 'A producir' });
+  cols.push({ id: 'estado', label: 'Estado' });
+
+  var head = document.getElementById('pl-head');
+  head.innerHTML = cols.map(function(c) {
+    var cls = plantaSort.col === c.id ? (plantaSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    var safeId = String(c.id).replace(/'/g, "\\'");
+    return '<th class="' + cls + '" onclick="togglePlantaSort(\'' + safeId + '\')">' + c.label + '</th>';
+  }).join('');
+
+  document.getElementById('pl-count').textContent = '(' + plantaData.length + ' producto' + (plantaData.length === 1 ? '' : 's') + ')';
+
+  var rows = sortedPlanta();
+  var tbody = document.getElementById('pl-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="' + cols.length + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos con demanda pendiente.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function(r) {
+    var badge;
+    if (r.estado === 'verde') badge = '<span style="background:#d5f5e3;color:#1e8449;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟢 Cubierto</span>';
+    else if (r.estado === 'amarillo') badge = '<span style="background:#fef5e7;color:#b7791f;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟡 Cubierto con traslados</span>';
+    else badge = '<span style="background:#fadbd8;color:#a93226;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🔴 Producir</span>';
+    var celdas = '<td style="font-weight:700;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.producto || '').replace(/"/g, '&quot;') + '">' + (r.producto || '—') + '</td>' +
+      '<td style="font-size:0.78rem;color:#4a5568">' + (r.presentaciones || '—') + '</td>' +
+      '<td class="money" style="font-weight:700">' + r.pendiente.toLocaleString('es-CO') + '</td>';
+    empresasList.forEach(function(e) {
+      var v = r.porEmp[e.value] || 0;
+      var color = v > 0 ? '#27ae60' : '#cbd5e0';
+      var weight = v > 0 ? '700' : '400';
+      celdas += '<td style="text-align:right;color:' + color + ';font-weight:' + weight + ';font-size:0.84rem">' + v.toLocaleString('es-CO') + '</td>';
+    });
+    var colorExist = r.existHolding >= r.pendiente ? '#27ae60' : '#2c3e50';
+    celdas += '<td class="money" style="font-weight:800;color:' + colorExist + '">' + r.existHolding.toLocaleString('es-CO') + '</td>';
+    var colorTras = r.trasladosPend > 0 ? '#e67e22' : '#cbd5e0';
+    celdas += '<td class="money" style="font-weight:700;color:' + colorTras + '">' + r.trasladosPend.toLocaleString('es-CO') + '</td>';
+    var colorProd = r.producir > 0 ? '#e74c3c' : '#27ae60';
+    celdas += '<td class="money" style="font-weight:800;color:' + colorProd + ';font-size:0.95rem">' + r.producir.toLocaleString('es-CO') + '</td>';
+    celdas += '<td>' + badge + '</td>';
+    return '<tr>' + celdas + '</tr>';
+  }).join('');
+}
+
+function exportPlanta() {
+  var rows = sortedPlanta();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var empresasList = _empresasVisibles();
+  var data = rows.map(function(r) {
+    var base = {
+      'Producto': r.producto || '',
+      'Presentación(es)': r.presentaciones || '',
+      'Pendiente': r.pendiente
+    };
+    empresasList.forEach(function(e) { base[e.sigla] = r.porEmp[e.value] || 0; });
+    base['Exist. total holding'] = r.existHolding;
+    base['Traslados pend. aprobar'] = r.trasladosPend;
+    base['A producir'] = r.producir;
+    base['Estado'] = r.estado === 'verde' ? 'Cubierto' : r.estado === 'amarillo' ? 'Cubierto con traslados' : 'Requiere producción';
+    return base;
+  });
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Planta');
+  XLSX.writeFile(wb, 'programacion_planta_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' productos');
+}
+
+// ══════════════════════════════════════════════════════════════
+// TRASLADOS PENDIENTES DE APROBAR
+// ══════════════════════════════════════════════════════════════
+
+function buildTraslados() {
+  var fEmp = document.getElementById('rf-emp').value;
+  var fTxt = (document.getElementById('rf-txt').value || '').toLowerCase();
+
+  trasladosData = ordenesCompra.filter(function(oc) {
+    if ((oc.Tipo || 'Compra') !== 'Traslado') return false;
+    if (String(oc.Remision || '').trim()) return false;
+    if ((oc.Estado || '').toLowerCase() === 'anulada') return false;
+    if (fEmp && oc.Empresa_Destino !== fEmp && oc.Empresa_Origen !== fEmp) return false;
+    if (fTxt) {
+      var hay = ((oc.Producto || '') + ' ' + (oc.Consecutivo || '') + ' ' + (oc.Ref_Pedido || '')).toLowerCase();
+      if (hay.indexOf(fTxt) < 0) return false;
+    }
+    return true;
+  }).map(function(oc) {
+    return {
+      id: oc.id,
+      consecutivo: oc.Consecutivo || '',
+      origen: oc.Empresa_Origen || '',
+      destino: oc.Empresa_Destino || '',
+      producto: oc.Producto || '',
+      presentacion: oc.Presentacion || '',
+      cantidad: Number(oc.Cantidad) || 0,
+      fecha: oc.Fecha || '',
+      refPedido: oc.Ref_Pedido || '',
+      observaciones: oc.Observaciones || ''
+    };
+  });
+
+  var pedidosSet = {};
+  var empresasSet = {};
+  trasladosData.forEach(function(r) {
+    if (r.refPedido) pedidosSet[r.refPedido] = true;
+    if (r.origen) empresasSet[r.origen] = true;
+  });
+
+  document.getElementById('st-tr-total').textContent    = trasladosData.length.toLocaleString('es-CO');
+  document.getElementById('st-tr-empresas').textContent = Object.keys(empresasSet).length.toLocaleString('es-CO');
+  document.getElementById('st-tr-unidades').textContent = trasladosData.reduce(function(s, r) { return s + r.cantidad; }, 0).toLocaleString('es-CO');
+  document.getElementById('st-tr-pedidos').textContent  = Object.keys(pedidosSet).length.toLocaleString('es-CO');
+
+  renderTrasladosTable();
+}
+
+function toggleTrasladosSort(col) {
+  if (trasladosSort.col === col) {
+    trasladosSort.dir = trasladosSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    trasladosSort.col = col;
+    trasladosSort.dir = (col === 'fecha' || col === 'cantidad') ? 'desc' : 'asc';
+  }
+  renderTrasladosTable();
+}
+
+function sortedTraslados() {
+  var col = trasladosSort.col;
+  var dir = trasladosSort.dir;
+  return [].concat(trasladosData).sort(function(a, b) {
+    var va, vb;
+    if (col === 'fecha') { va = +(new Date(a.fecha || 0)); vb = +(new Date(b.fecha || 0)); }
+    else if (col === 'cantidad') { va = a.cantidad; vb = b.cantidad; }
+    else if (col === 'consecutivo') { va = a.consecutivo; vb = b.consecutivo; }
+    else if (col === 'origen') { va = getSigla(a.origen); vb = getSigla(b.origen); }
+    else if (col === 'destino') { va = getSigla(a.destino); vb = getSigla(b.destino); }
+    else if (col === 'producto') { va = a.producto; vb = b.producto; }
+    else if (col === 'ref') { va = a.refPedido; vb = b.refPedido; }
+    else { va = +(new Date(a.fecha || 0)); vb = +(new Date(b.fecha || 0)); }
+    var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function renderTrasladosTable() {
+  var cols = [
+    { id: 'fecha', label: 'Fecha' },
+    { id: 'consecutivo', label: 'Consecutivo' },
+    { id: 'origen', label: 'Origen' },
+    { id: 'destino', label: 'Destino' },
+    { id: 'producto', label: 'Producto' },
+    { id: 'cantidad', label: 'Cantidad' },
+    { id: 'ref', label: 'Ref. Pedido' },
+    { id: '_act', label: '' }
+  ];
+  document.getElementById('tr-head').innerHTML = cols.map(function(c) {
+    var cls = trasladosSort.col === c.id ? (trasladosSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    if (c.id === '_act') return '<th></th>';
+    return '<th class="' + cls + '" onclick="toggleTrasladosSort(\'' + c.id + '\')">' + c.label + '</th>';
+  }).join('');
+
+  document.getElementById('tr-count').textContent = '(' + trasladosData.length + ' OC)';
+
+  var rows = sortedTraslados();
+  var tbody = document.getElementById('tr-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="' + cols.length + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay traslados pendientes de aprobar. 🎉</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function(r) {
+    return '<tr>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.fecha) + '</td>' +
+      '<td style="font-weight:700;font-size:0.82rem">' + (r.consecutivo || '—') + '</td>' +
+      '<td><span class="badge-emp" style="background:#fef5e7;color:#b7791f">' + getSigla(r.origen) + '</span></td>' +
+      '<td><span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + getSigla(r.destino) + '</span></td>' +
+      '<td style="font-weight:600;font-size:0.82rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.producto || '').replace(/"/g, '&quot;') + '">' + (r.producto || '—') + '</td>' +
+      '<td class="money" style="font-weight:700;color:#e74c3c">' + r.cantidad.toLocaleString('es-CO') + '</td>' +
+      '<td style="font-size:0.78rem;color:#4a5568">' + (r.refPedido || '—') + '</td>' +
+      '<td><a href="ordenes.html" style="background:#1a5276;color:white;text-decoration:none;padding:5px 10px;border-radius:5px;font-size:0.72rem;font-weight:600;white-space:nowrap">Ir a Órdenes ↗</a></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function exportTraslados() {
+  var rows = sortedTraslados();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(r) {
+    return {
+      'Fecha': r.fecha ? fmtDate(r.fecha) : '',
+      'Consecutivo': r.consecutivo,
+      'Empresa Origen': getSigla(r.origen),
+      'Empresa Destino': getSigla(r.destino),
+      'Producto': r.producto,
+      'Presentación': r.presentacion,
+      'Cantidad': r.cantidad,
+      'Ref. Pedido': r.refPedido,
+      'Observaciones': r.observaciones
+    };
+  });
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Traslados pendientes');
+  XLSX.writeFile(wb, 'traslados_pendientes_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' OC');
 }
 
 // ── Remisiones report ──

@@ -115,6 +115,8 @@
   <!-- Tabs -->
   <div style="display:flex;gap:8px;margin-bottom:16px">
     <button class="btn-export" id="tab-pendientes" onclick="switchTab('pendientes')" style="background:#1a5276">📦 Productos pendientes</button>
+    <button class="btn-export" id="tab-planta"     onclick="switchTab('planta')"     style="background:#718096">🏭 Programación de planta</button>
+    <button class="btn-export" id="tab-traslados"  onclick="switchTab('traslados')"  style="background:#718096">🚚 Traslados pendientes</button>
     <button class="btn-export" id="tab-remisiones" onclick="switchTab('remisiones')" style="background:#718096">📄 Remisiones por empresa</button>
   </div>
 
@@ -130,6 +132,61 @@
             <tr id="rpt-head"></tr>
           </thead>
           <tbody id="rpt-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-planta" style="display:none">
+    <div class="rpt-stats" id="planta-stats">
+      <div class="rpt-stat" style="border-left-color:#2980b9"><div class="num" id="st-pl-productos">0</div><div class="lbl">Productos con demanda</div></div>
+      <div class="rpt-stat" style="border-left-color:#e74c3c"><div class="num" id="st-pl-producir">0</div><div class="lbl">Unidades a producir</div></div>
+      <div class="rpt-stat" style="border-left-color:#e67e22"><div class="num" id="st-pl-traslados">0</div><div class="lbl">Unidades por traslado pend.</div></div>
+      <div class="rpt-stat" style="border-left-color:#27ae60"><div class="num" id="st-pl-cubiertos">0</div><div class="lbl">Productos cubiertos</div></div>
+    </div>
+    <div class="rpt-card">
+      <div class="rpt-card-head">
+        <h3>🏭 Programación de planta <span id="pl-count" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-export" onclick="exportPlanta()">📊 Exportar Excel</button>
+      </div>
+      <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
+        <strong>A producir</strong> = pendiente total (todos los pedidos abiertos + alistados con Cant_Pendiente&gt;0) − existencia total del holding − traslados pendientes de aprobar.
+        <span style="color:#27ae60">🟢 cubierto por stock</span> ·
+        <span style="color:#e67e22">🟡 cubierto si se aprueban traslados</span> ·
+        <span style="color:#e74c3c">🔴 requiere producción</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="rpt-table">
+          <thead>
+            <tr id="pl-head"></tr>
+          </thead>
+          <tbody id="pl-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-traslados" style="display:none">
+    <div class="rpt-stats" id="tr-stats">
+      <div class="rpt-stat" style="border-left-color:#e67e22"><div class="num" id="st-tr-total">0</div><div class="lbl">OC pendientes de aprobar</div></div>
+      <div class="rpt-stat" style="border-left-color:#8e44ad"><div class="num" id="st-tr-empresas">0</div><div class="lbl">Empresas origen</div></div>
+      <div class="rpt-stat" style="border-left-color:#c0392b"><div class="num" id="st-tr-unidades">0</div><div class="lbl">Unidades a legalizar</div></div>
+      <div class="rpt-stat" style="border-left-color:#2980b9"><div class="num" id="st-tr-pedidos">0</div><div class="lbl">Pedidos asociados</div></div>
+    </div>
+    <div class="rpt-card">
+      <div class="rpt-card-head">
+        <h3>🚚 Traslados pendientes de aprobar <span id="tr-count" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-export" onclick="exportTraslados()">📊 Exportar Excel</button>
+      </div>
+      <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
+        OC generadas automáticamente al registrar entregas con stock de otra empresa. Cargue el N° de remisión del traslado en <a href="ordenes.html" style="color:#1a5276;font-weight:700">Órdenes</a> para legalizar y afectar inventario.
+      </div>
+      <div style="overflow-x:auto">
+        <table class="rpt-table">
+          <thead>
+            <tr id="tr-head"></tr>
+          </thead>
+          <tbody id="tr-body"></tbody>
         </table>
       </div>
     </div>
@@ -208,6 +265,7 @@
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/reportes.js?v=20260724a"></script>
+<script src="js/existencias.js?v=20260801ad"></script>
+<script src="js/reportes.js?v=20260802a"></script>
 </body>
 </html>
