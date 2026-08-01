@@ -3048,26 +3048,23 @@ function _drawRemisionCopy(doc, data, palette) {
       String(p.producto || ''),
       String(p.presentacion || ''),
       Number(p.cantidad) || 0,
-      fmtMoney(p.valor_unitario),
-      fmtMoney(p.valor_total),
       esBonif ? 'Sí' : 'No'
     ];
   });
 
   doc.autoTable({
     startY: y,
-    head: [['#', 'Producto', 'Presentacion', 'Cant. Entregada', 'Val. Unitario', 'Val. Total', 'Bonif.']],
+    head: [['#', 'Producto', 'Presentacion', 'Cant. Entregada', 'Bonif.']],
     body: tableBody,
     theme: 'grid',
     headStyles: { fillColor: accent, fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
     bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 10 },
-      1: { cellWidth: 55 },
-      3: { halign: 'right', cellWidth: 22 },
-      4: { halign: 'right', cellWidth: 26 },
-      5: { halign: 'right', cellWidth: 26 },
-      6: { halign: 'center', cellWidth: 14 }
+      0: { halign: 'center', cellWidth: 12 },
+      1: { cellWidth: 90 },
+      2: { cellWidth: 36 },
+      3: { halign: 'right', cellWidth: 30 },
+      4: { halign: 'center', cellWidth: 16 }
     },
     margin: { left: 14, right: 14 },
     styles: { cellPadding: 3, lineColor: [90, 90, 90], lineWidth: 0.3 },
@@ -3076,12 +3073,6 @@ function _drawRemisionCopy(doc, data, palette) {
   });
 
   var finalY = doc.lastAutoTable.finalY + 10;
-  doc.setFillColor(totalFill[0], totalFill[1], totalFill[2]);
-  doc.roundedRect(pw - 82, finalY - 5, 68, 14, 3, 3, 'F');
-  doc.setFontSize(11);
-  doc.setTextColor(accent[0], accent[1], accent[2]);
-  doc.setFont(undefined, 'bold');
-  doc.text('Total: ' + fmtMoney(data.total), pw - 16, finalY + 4, { align: 'right' });
 
   var ph = doc.internal.pageSize.getHeight();
   var sigTop = finalY + 22;
