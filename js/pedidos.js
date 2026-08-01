@@ -589,6 +589,9 @@ function updateDetailLine(i) {
     pendEl.textContent = pendiente;
     pendEl.className = 'pend-tag ' + (pendiente > 0 ? 'pend' : 'ok');
   }
+  // Re-render de la celda de asignación: si el pendiente pasó a 0
+  // se oculta el selector; si aumentó, vuelve a aparecer.
+  if (typeof refreshAsignacionCell === 'function') refreshAsignacionCell(i);
   updateDetailTotal();
 }
 
@@ -681,6 +684,20 @@ function renderEntregasUI(lineIdx) {
 // cantidad + botón añadir, y una lista de chips con las
 // asignaciones ya cargadas (aún no persistidas).
 function renderAsignacionCell(i, l, empresaPedido) {
+  // Si la línea no tiene pendiente (Cant_Entregada ≥ Cantidad) no se
+  // permite asignar más stock. Se muestra un aviso en lugar del
+  // selector. Se sigue reservando un contenedor de chips vacío para
+  // que refreshAsignacionCell/renderAsignacionChips no fallen.
+  var pedida = Number(l.Cantidad) || 0;
+  var yaEntregada = Number(l.Cant_Entregada) || 0;
+  var pendienteBase = Math.max(0, pedida - yaEntregada);
+  if (pendienteBase <= 0) {
+    return '<div style="font-size:0.72rem;color:#276749;background:#f0fff4;border:1px solid #9ae6b4;padding:4px 8px;border-radius:4px;font-weight:700">' +
+             '✓ Línea entregada — sin pendiente por asignar' +
+           '</div>' +
+           '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
+  }
+
   var opciones = '';
   if (existSnapshot && typeof Existencias !== 'undefined') {
     var lista = Existencias.getPorEmpresa(existSnapshot, l.Producto, l.Presentacion);
@@ -710,6 +727,20 @@ function renderAsignacionCell(i, l, empresaPedido) {
         'style="background:#3498db;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700;cursor:pointer">+ Añadir</button>' +
     '</div>' +
     '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
+}
+
+// Re-renderiza la celda de asignación (por ejemplo cuando cambia la
+// cantidad pedida y ahora hay o deja de haber pendiente). Preserva
+// las asignaciones ya cargadas en memoria (dl._asignaciones).
+function refreshAsignacionCell(i) {
+  if (activeIdx == null) return;
+  var td = document.querySelector('#m-lines td[data-idx="' + i + '"]');
+  if (!td) return;
+  var c = consecs[activeIdx];
+  var l = detailWorkingLines[i];
+  if (!c || !l) return;
+  td.innerHTML = renderAsignacionCell(i, l, c.Nombre_Empresa);
+  renderAsignacionChips(i);
 }
 
 // Máximo asignable ahora mismo para la línea i:
@@ -744,8 +775,12 @@ function onAsignEmpresaChange(i) {
 }
 
 // Validación en vivo mientras el usuario tipea la cantidad.
-// Marca el input en rojo si supera el tope permitido y anota el
-// motivo en el tooltip para que el usuario vea por qué.
+// Estrategia:
+//   • Sin empresa seleccionada → borde rojo + tooltip explicativo,
+//     no se puede clampear porque no conocemos el tope.
+//   • Con empresa seleccionada → si el valor supera el tope
+//     (min pendiente, disponible libre), se recorta al tope al
+//     instante y se avisa mediante un tooltip persistente.
 function validateAsignCant(i) {
   var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
   var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
@@ -762,17 +797,24 @@ function validateAsignCant(i) {
     return;
   }
   var pendiente = _pendienteRestante(i);
-  if (cant > pendiente) {
-    inp.classList.add('error');
-    inp.title = 'La cantidad supera el pendiente por entregar (' + pendiente + ')';
-    return;
-  }
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
   var yaEnEmpresa = _sumaAsignadaEnEmpresa(i, sel.value);
   var libre = Math.max(0, disp - yaEnEmpresa);
-  if (cant > libre) {
+  var tope = Math.min(pendiente, libre);
+
+  if (cant > tope) {
+    // Auto-clamp: no dejamos que el input tenga valores fuera de rango.
+    inp.value = tope;
+    inp.max = tope;
+    var motivo = (tope === pendiente && pendiente <= libre)
+      ? 'Ajustado al pendiente por entregar (' + pendiente + ')'
+      : 'Ajustado al disponible en esa empresa (' + libre + ')';
+    inp.title = motivo;
+    // Marcamos el borde rojo brevemente como feedback visual del recorte,
+    // luego lo quitamos para no confundir con un error persistente.
     inp.classList.add('error');
-    inp.title = 'Supera el disponible en esa empresa (' + libre + ')';
+    clearTimeout(inp._clampTimer);
+    inp._clampTimer = setTimeout(function() { inp.classList.remove('error'); }, 900);
     return;
   }
   inp.classList.remove('error');
