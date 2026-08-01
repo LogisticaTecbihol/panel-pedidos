@@ -82,6 +82,8 @@ var editIdx = null;
 var editKey = null;
 var editWorkingLines = [];
 var detailWorkingLines = [];
+// Snapshot de existencias para el modal de detalle (empresa origen del stock)
+var existSnapshot = null;
 
 // ── Load from API ──
 async function loadFromAPI() {
@@ -455,10 +457,15 @@ function renderTable() {
 }
 
 // ── Detail Modal ──
-function openDetail(idx) {
+async function openDetail(idx) {
   activeIdx = idx;
   var c = consecs[idx];
   var lines = getLinesFor(c);
+
+  // Cargar snapshot de existencias para poblar los selectores de empresa origen.
+  // No bloqueamos la apertura si falla; simplemente el selector queda vacío.
+  try { existSnapshot = await Existencias.loadSnapshot(); }
+  catch (e) { existSnapshot = null; console.warn('No se pudo cargar existencias:', e); }
 
   document.getElementById('m-titulo').textContent = '[' + getSigla(c.Nombre_Empresa) + '] ' + (c.Nombre_Empresa||'—') + ' · Orden #' + (c.Consecutivo||'');
   document.getElementById('md-cliente').value = c.Cliente || '';
@@ -486,6 +493,7 @@ function openDetail(idx) {
   detailWorkingLines = lines.map(function(l) {
     var copy = Object.assign({}, l);
     copy._entregas = parseEntregas(l.Remisiones, Number(l.Cant_Entregada) || 0, l.Fecha_Ult_Entrega);
+    copy._asignaciones = []; // { empresa_stock, cantidad } — pendientes de guardar
     return copy;
   });
 
@@ -523,7 +531,7 @@ function openDetail(idx) {
         '</td>' +
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right" oninput="updateDetailLine(' + i + ')"></td>' +
         '<td class="money" style="font-size:0.78rem" id="md-vtot-' + i + '">' + fmtMoney(l.Valor_Total) + '</td>' +
-        '<td><input type="number" class="qty-input" data-row="' + l.__row + '" data-idx="' + i + '" min="0" value="0" placeholder="0"></td>' +
+        '<td data-row="' + l.__row + '" data-idx="' + i + '" style="min-width:220px">' + renderAsignacionCell(i, l, c.Nombre_Empresa) + '</td>' +
       '</tr>';
     }).join('');
   }
@@ -666,6 +674,130 @@ function renderEntregasUI(lineIdx) {
   wrap.innerHTML = renderEntregasHTML(lineIdx, detailWorkingLines[lineIdx]._entregas || []);
 }
 
+// ── Asignación de existencias a la entrega ────────────────
+// Renderiza la celda que reemplaza al viejo qty-input libre.
+// Muestra un selector de empresa origen (con las existencias
+// disponibles para el producto/presentación de la línea) + input
+// cantidad + botón añadir, y una lista de chips con las
+// asignaciones ya cargadas (aún no persistidas).
+function renderAsignacionCell(i, l, empresaPedido) {
+  var opciones = '';
+  if (existSnapshot && typeof Existencias !== 'undefined') {
+    var lista = Existencias.getPorEmpresa(existSnapshot, l.Producto, l.Presentacion);
+    // Ordenar: primero la empresa del pedido si tiene stock
+    lista.sort(function(a, b) {
+      var aEsPedido = norm(a.empresa) === norm(empresaPedido) ? 0 : 1;
+      var bEsPedido = norm(b.empresa) === norm(empresaPedido) ? 0 : 1;
+      if (aEsPedido !== bEsPedido) return aEsPedido - bEsPedido;
+      return a.sigla.localeCompare(b.sigla, 'es');
+    });
+    opciones = lista.map(function(x) {
+      var marca = norm(x.empresa) === norm(empresaPedido) ? ' ★' : '';
+      var disp = Math.round(x.disponible * 100) / 100;
+      return '<option value="' + x.empresa.replace(/"/g,'&quot;') + '" data-disp="' + disp + '">' +
+        x.sigla + marca + ' · ' + disp + ' disp.</option>';
+    }).join('');
+  }
+  var selectHTML = opciones
+    ? '<select class="asig-empresa" data-i="' + i + '" onchange="onAsignEmpresaChange(' + i + ')" style="width:100%;font-size:0.75rem;padding:2px 4px">' +
+        '<option value="">— Empresa origen —</option>' + opciones +
+      '</select>'
+    : '<div style="font-size:0.72rem;color:#a94442;background:#fdecea;border:1px solid #f5c2c0;padding:2px 6px;border-radius:4px">Sin stock disponible</div>';
+  return selectHTML +
+    '<div style="display:flex;gap:4px;margin-top:3px">' +
+      '<input type="number" class="asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right">' +
+      '<button type="button" onclick="addAsignacion(' + i + ')" ' +
+        'style="background:#3498db;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700;cursor:pointer">+ Añadir</button>' +
+    '</div>' +
+    '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
+}
+
+function onAsignEmpresaChange(i) {
+  // Ajusta el máximo del input de cantidad según el disponible de la empresa elegida.
+  var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
+  var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
+  if (!sel || !inp) return;
+  var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
+  var pendiente = _pendienteRestante(i);
+  var yaEnEmpresa = _sumaAsignadaEnEmpresa(i, sel.value);
+  var libre = Math.max(0, disp - yaEnEmpresa);
+  var tope = Math.min(pendiente, libre);
+  inp.max = tope;
+  inp.placeholder = 'máx ' + tope;
+}
+
+function _pendienteRestante(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return 0;
+  var pedida = Number(dl.Cantidad) || 0;
+  var yaEntregada = (dl._entregas || []).reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
+  var yaAsignada = (dl._asignaciones || []).reduce(function(s, a) { return s + (a.cantidad || 0); }, 0);
+  return Math.max(0, pedida - yaEntregada - yaAsignada);
+}
+
+function _sumaAsignadaEnEmpresa(i, empresa) {
+  var dl = detailWorkingLines[i];
+  if (!dl || !dl._asignaciones) return 0;
+  var n = norm(empresa);
+  return dl._asignaciones.reduce(function(s, a) {
+    return s + (norm(a.empresa_stock) === n ? (a.cantidad || 0) : 0);
+  }, 0);
+}
+
+function addAsignacion(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return;
+  var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
+  var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
+  if (!sel || !inp) return;
+  var empresa = sel.value;
+  var cant = Number(inp.value) || 0;
+  if (!empresa) { showToast('Selecciona la empresa origen', '#e67e22'); return; }
+  if (cant <= 0) { showToast('Ingresa una cantidad mayor a 0', '#e67e22'); return; }
+  var pend = _pendienteRestante(i);
+  if (cant > pend) { showToast('La cantidad supera el pendiente (' + pend + ')', '#e74c3c'); return; }
+  var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
+  var ya = _sumaAsignadaEnEmpresa(i, empresa);
+  if ((ya + cant) > disp) {
+    showToast('Supera el disponible en esa empresa (' + Math.max(0, disp - ya) + ')', '#e74c3c');
+    return;
+  }
+  dl._asignaciones.push({ empresa_stock: empresa, cantidad: cant });
+  inp.value = '';
+  sel.selectedIndex = 0;
+  inp.removeAttribute('max');
+  inp.placeholder = '0';
+  renderAsignacionChips(i);
+}
+
+function removeAsignacion(i, k) {
+  var dl = detailWorkingLines[i];
+  if (!dl || !dl._asignaciones) return;
+  dl._asignaciones.splice(k, 1);
+  renderAsignacionChips(i);
+}
+
+function renderAsignacionChips(i) {
+  var wrap = document.querySelector('.asig-chips[data-i="' + i + '"]');
+  if (!wrap) return;
+  var dl = detailWorkingLines[i];
+  var arr = (dl && dl._asignaciones) || [];
+  if (!arr.length) { wrap.innerHTML = ''; return; }
+  var c = consecs[activeIdx];
+  var empPedido = c ? norm(c.Nombre_Empresa) : '';
+  wrap.innerHTML = arr.map(function(a, k) {
+    var sigla = getSigla(a.empresa_stock);
+    var traslado = norm(a.empresa_stock) !== empPedido;
+    var tag = traslado
+      ? '<span title="Se generará OC de traslado" style="color:#c0392b;font-weight:700">↗ traslado</span>'
+      : '<span style="color:#27ae60;font-weight:700">✓ mismo origen</span>';
+    return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
+      '<span style="flex:1"><strong>' + a.cantidad + '</strong> ud · ' + sigla + ' · ' + tag + '</span>' +
+      '<button type="button" onclick="removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
+    '</div>';
+  }).join('');
+}
+
 function syncEntregaTotal(lineIdx) {
   var entregas = detailWorkingLines[lineIdx]._entregas || [];
   var total = entregas.reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
@@ -701,30 +833,49 @@ async function guardarTodo() {
 
   var fecha = document.getElementById('m-fecha').value;
   var rem = document.getElementById('m-remision').value.trim();
-  var qtyInputs = document.querySelectorAll('#m-lines input.qty-input');
+
+  // Recolectar asignaciones pendientes de todas las líneas.
+  // Cada entrada = { row, _idx, cantidad, empresa_stock, remision, fecha }.
   var entregas = [];
-  var hasError = false;
-  qtyInputs.forEach(function(inp, i) {
-    inp.classList.remove('error');
-    var cant = Number(inp.value) || 0;
-    if (cant > 0) {
-      var dl = detailWorkingLines[i];
-      var currentTotal = (dl && dl._entregas || []).reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
-      var pendiente = Math.max(0, (Number(dl && dl.Cantidad) || 0) - currentTotal);
-      if (cant > pendiente) { inp.classList.add('error'); hasError = true; return; }
-      entregas.push({ row: Number(inp.dataset.row), cantidad: cant, fecha: fecha, remision: rem, _idx: i });
-    }
+  detailWorkingLines.forEach(function(dl, i) {
+    var asigs = (dl && dl._asignaciones) || [];
+    asigs.forEach(function(a) {
+      var cant = Number(a.cantidad) || 0;
+      if (cant <= 0) return;
+      entregas.push({
+        row: dl.__row,
+        _idx: i,
+        cantidad: cant,
+        empresa_stock: a.empresa_stock,
+        remision: rem,
+        fecha: fecha
+      });
+    });
   });
 
-  if (hasError) { showToast('Verifica las cantidades en rojo', '#e74c3c'); return; }
-  if (entregas.length > 0 && !fecha) { showToast('Selecciona la fecha de entrega', '#e74c3c'); return; }
+  if (entregas.length > 0 && !rem) {
+    document.getElementById('m-remision').classList.add('error');
+    showToast('El N° de remisión es obligatorio para descontar stock', '#e74c3c');
+    return;
+  }
+  if (entregas.length > 0 && !fecha) {
+    showToast('Selecciona la fecha de entrega', '#e74c3c');
+    return;
+  }
 
+  // Volcar las asignaciones al buffer _entregas para que el resto
+  // del flujo actual (Cant_Entregada, Remisiones, Estado_Entrega,
+  // PDF de remisión) siga funcionando sin cambios.
   entregas.forEach(function(ent) {
     var dl = detailWorkingLines[ent._idx];
-    if (dl) {
-      if (!dl._entregas) dl._entregas = [];
-      dl._entregas.push({ remision: ent.remision, cantidad: ent.cantidad, fecha: ent.fecha });
-    }
+    if (!dl) return;
+    if (!dl._entregas) dl._entregas = [];
+    dl._entregas.push({
+      remision: ent.remision,
+      cantidad: ent.cantidad,
+      fecha: ent.fecha,
+      empresa_stock: ent.empresa_stock
+    });
   });
 
   var entregadaExcedida = false;
@@ -817,6 +968,13 @@ async function guardarTodo() {
       }
     }
 
+    // Registrar EntregasPedido + OCs de traslado auto para las
+    // asignaciones nuevas de esta sesión (las que estaban en
+    // _asignaciones antes de volcarlas a _entregas).
+    if (entregas.length > 0) {
+      await persistirEntregasYTraslados(entregas, c, rem, fecha, obs);
+    }
+
     if (entregas.length > 0 && rem) {
       var entregasPDF = entregas.map(function(ent) {
         var dl = detailWorkingLines[ent._idx];
@@ -865,6 +1023,78 @@ async function guardarTodo() {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
     btn.textContent = '✓ Guardar cambios';
+  }
+}
+
+// ── Persistencia de entregas + OC de traslado automáticas ──
+// Para cada asignación:
+//   • Si empresa_stock === empresa del pedido: sólo se inserta la
+//     fila en EntregasPedido; el descuento del stock lo hace el
+//     módulo Inventario al considerar EntregasPedido.
+//   • Si empresa_stock !== empresa del pedido: primero se crea una
+//     OC con Tipo='Traslado' desde empresa_stock hacia la empresa
+//     del pedido (con la misma Remision), y luego se inserta la
+//     EntregasPedido enlazada por orden_compra_id. La OC dispara
+//     el movimiento bilateral (resta a origen, suma a destino) y
+//     la EntregasPedido descuenta el destino → neto: origen pierde,
+//     destino queda igual, y el pedido queda con Cant_Entregada.
+async function persistirEntregasYTraslados(entregas, c, rem, fecha, obs) {
+  var uid = _uid();
+  var stamp = new Date();
+  var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+  var ymd = stamp.getFullYear() + pad(stamp.getMonth() + 1) + pad(stamp.getDate());
+  var hms = pad(stamp.getHours()) + pad(stamp.getMinutes()) + pad(stamp.getSeconds());
+  var counter = 0;
+
+  for (var e = 0; e < entregas.length; e++) {
+    var ent = entregas[e];
+    var dl = detailWorkingLines[ent._idx] || {};
+    var esTraslado = norm(ent.empresa_stock) !== norm(c.Nombre_Empresa);
+    var ocId = null;
+
+    if (esTraslado) {
+      counter += 1;
+      var consecTras = 'T-' + ymd + '-' + hms + (counter > 1 ? '-' + counter : '');
+      var ocRow = {
+        Fecha: fecha || ymd,
+        Empresa_Destino: c.Nombre_Empresa,
+        Empresa_Origen: ent.empresa_stock,
+        Consecutivo: consecTras,
+        Tipo: 'Traslado',
+        Ref_Pedido: c.Nombre_Empresa + ' #' + c.Consecutivo,
+        Producto: dl.Producto || '',
+        Presentacion: dl.Presentacion || '',
+        Cantidad: ent.cantidad,
+        Valor_Unitario: 0,
+        Valor_Total: 0,
+        Total_Orden: 0,
+        Estado: 'Cerrada',
+        Remision: rem,
+        Bodega: 'Productos Buenos',
+        Observaciones: 'Traslado automático por entrega de pedido ' +
+          c.Nombre_Empresa + ' #' + c.Consecutivo,
+        creado_por: uid
+      };
+      var ocRes = await _sb.from('OrdenesCompra').insert(ocRow).select('id').single();
+      if (ocRes.error) throw new Error('OC traslado: ' + ocRes.error.message);
+      ocId = ocRes.data && ocRes.data.id;
+    }
+
+    var epRow = {
+      pedido_id: ent.row,
+      empresa_pedido: c.Nombre_Empresa,
+      empresa_stock: ent.empresa_stock,
+      producto: dl.Producto || '',
+      presentacion: dl.Presentacion || '',
+      cantidad: ent.cantidad,
+      remision: rem,
+      fecha: fecha || null,
+      orden_compra_id: ocId,
+      observaciones: obs || '',
+      creado_por: uid
+    };
+    var epRes = await _sb.from('EntregasPedido').insert(epRow);
+    if (epRes.error) throw new Error('EntregasPedido: ' + epRes.error.message);
   }
 }
 

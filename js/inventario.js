@@ -7,6 +7,7 @@ var muestrasInv = [];
 var devolucionesInv = [];
 var cambiosMercInv = [];
 var ordenesCompraInv = [];
+var entregasPedidoInv = [];
 var editInvRow = null;
 var catalogoProductos = [];
 var invLineas = [];
@@ -57,122 +58,10 @@ function applySortInv(rows) {
   });
 }
 
-// ── Compute committed qty from pedidos ──
-function computeComprometido() {
-  var comp = {};
-  pedidos.forEach(function(p) {
-    var prod = norm(p.Producto);
-    if (!prod) return;
-    var pedida = Number(p.Cantidad) || 0;
-    var entregada = Number(p.Cant_Entregada) || 0;
-    var pendiente = Math.max(0, pedida - entregada);
-    var estado2 = (p.Estado_2 || '').toLowerCase();
-    if (estado2 === 'cerrado' || estado2 === 'alistado' || estado2 === 'anulado' || estado2 === 'bloqueado por cartera') return;
-    if (!comp[prod]) comp[prod] = 0;
-    comp[prod] += pendiente;
-  });
-  return comp;
-}
-
-// ── Compute net movements from all good-product modules ──
-function _esBueno(bodega) {
-  var b = (bodega || '').toLowerCase().trim();
-  return b !== 'producto no conforme';
-}
-
-function computeMovimientos() {
-  var mov = {};
-  function add(empresa, producto, cantidad) {
-    var prod = norm(producto);
-    if (!prod) return;
-    var key = norm(empresa) + '||' + prod;
-    if (!mov[key]) mov[key] = 0;
-    mov[key] += cantidad;
-  }
-
-  // 1. Reenvases (Salidas a producción) — producto sale → restar
-  reenvasesInv.forEach(function(re) {
-    if (!_esBueno(re.Bodega || 'Productos Buenos')) return;
-    add(re.Empresa, re.Producto, -(Number(re.Cantidad) || 0));
-  });
-
-  // 2. Muestras despachadas — producto sale → restar cant entregada
-  muestrasInv.forEach(function(m) {
-    var cant = Number(m.Cant_Entregada) || 0;
-    if (cant <= 0) return;
-    add(m.Empresa, m.Producto, -cant);
-  });
-
-  // 3. Ingresos (transferencias) — sale de origen, entra a destino
-  ingresosInv.forEach(function(ing) {
-    var cant = Number(ing.Cantidad) || 0;
-    if (cant <= 0) return;
-    if (ing.Empresa_Origen) add(ing.Empresa_Origen, ing.Producto, -cant);
-    if (ing.Empresa_Destino) add(ing.Empresa_Destino, ing.Producto, cant);
-  });
-
-  // 4. Órdenes de compra recibidas — producto entra → sumar
-  ordenesCompraInv.forEach(function(oc) {
-    if ((oc.Estado || '').toLowerCase() === 'anulada') return;
-    if (!String(oc.Remision || '').trim()) return;
-    if (!_esBueno(oc.Bodega)) return;
-    var cant = Number(oc.Cantidad) || 0;
-    if (cant <= 0) return;
-    add(oc.Empresa_Destino, oc.Producto, cant);
-  });
-
-  // 5. Devoluciones tramitadas
-  devolucionesInv.forEach(function(d) {
-    if ((d.Estado || '').toLowerCase() !== 'tramitada') return;
-    var cant = Number(d.Cantidad) || 0;
-    if (cant <= 0) return;
-    if (String(d.Remision_Ingreso || '').trim() && _esBueno(d.Bodega_Ingreso)) {
-      add(d.Empresa, d.Producto, cant);
-    }
-    if (String(d.Remision_Salida || '').trim() && _esBueno(d.Bodega_Salida)) {
-      add(d.Empresa, d.Producto, -cant);
-    }
-  });
-
-  // 6. Cambios de mercancía cerrados
-  var cambiosGrp = {};
-  cambiosMercInv.forEach(function(c) {
-    var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
-    if (!cambiosGrp[gk]) cambiosGrp[gk] = [];
-    cambiosGrp[gk].push(c);
-  });
-  Object.keys(cambiosGrp).forEach(function(gk) {
-    var lines = cambiosGrp[gk];
-    var hdr = lines[0];
-    if ((hdr.Estado || '').toLowerCase() !== 'cerrado') return;
-    lines.forEach(function(l) {
-      var cant = Number(l.Cantidad) || 0;
-      if (cant <= 0) return;
-      if (l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Ingreso)) {
-        add(hdr.Empresa, l.Producto, cant);
-      } else if (l.Tipo_Linea === 'ENTREGAR' && _esBueno(hdr.Bodega_Salida)) {
-        add(hdr.Empresa, l.Producto, -cant);
-      }
-    });
-  });
-
-  return mov;
-}
-
-function enrichInventario() {
-  var comp = computeComprometido();
-  var mov = computeMovimientos();
-  inventario.forEach(function(r) {
-    var prod = norm(r.Producto);
-    var emp = norm(r.Empresa);
-    var stock = Number(r.Cantidad) || 0;
-    var comprometido = comp[prod] || 0;
-    var movimiento = mov[emp + '||' + prod] || 0;
-    r._comprometido = comprometido;
-    r._movimientos = movimiento;
-    r._disponible = stock - comprometido + movimiento;
-  });
-}
+// ── Cálculo de comprometido/movimientos/enrichInventario ──
+// Implementación en js/existencias.js; expuesta como globales para
+// mantener compatibilidad con este módulo. Consume las variables
+// globales de estado declaradas arriba (pedidos, reenvasesInv, etc.).
 
 // ── Load from API ──
 async function loadInventario() {
@@ -204,7 +93,8 @@ async function loadInventario() {
       apiGet('getMuestras', { columns: 'Cant_Entregada,Empresa,Producto' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getDevoluciones', { columns: 'Estado,Cantidad,Remision_Ingreso,Bodega_Ingreso,Remision_Salida,Bodega_Salida,Empresa,Producto' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Cantidad,Tipo_Linea,Producto,Bodega_Ingreso,Bodega_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'Estado,Remision,Bodega,Cantidad,Empresa_Destino,Producto' }).catch(function() { return { ok: true, ordenes: [] }; })
+      apiGet('getOrdenesCompra', { columns: 'Estado,Remision,Bodega,Cantidad,Empresa_Origen,Empresa_Destino,Producto,Tipo' }).catch(function() { return { ok: true, ordenes: [] }; }),
+      apiGet('getEntregasPedido', { columns: 'id,pedido_id,empresa_pedido,empresa_stock,producto,presentacion,cantidad,remision,fecha' }).catch(function() { return { ok: true, entregas: [] }; })
     ]);
 
     var dataInv = results[0];
@@ -224,6 +114,7 @@ async function loadInventario() {
     devolucionesInv = results[5].devoluciones || [];
     cambiosMercInv = results[6].cambios || [];
     ordenesCompraInv = results[7].ordenes || [];
+    entregasPedidoInv = results[8].entregas || [];
 
     enrichInventario();
     populateInvFilters();

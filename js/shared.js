@@ -87,6 +87,11 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ordenes: _addRow(res.data) };
     }
+    if (action === 'getEntregasPedido') {
+      var res = await _sb.from('EntregasPedido').select(cols).order('id');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, entregas: _addRow(res.data) };
+    }
     if (action === 'getMaestroProductos') {
       var res = await _sb.from('maestro_productos').select('Producto');
       if (res.error) return { ok: false, error: res.error.message, productos: [] };

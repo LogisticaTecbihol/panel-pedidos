@@ -258,7 +258,7 @@
           <label>📄 N° Remisión</label>
           <input type="text" id="m-remision" placeholder="XXXX" style="width:160px">
         </div>
-        <div class="hint">Ingresa la fecha y remisión una sola vez. Luego indica las cantidades a entregar por producto. Deja en 0 los que no se entregan ahora.</div>
+        <div class="hint">Ingresa la fecha y N° Remisión (obligatorio para descontar stock). Luego, en cada línea, elige la empresa origen del inventario y la cantidad; añade tantas asignaciones como necesites. Si el stock sale de una empresa distinta a la del pedido, se generará automáticamente una OC de traslado.</div>
       </div>
       <div class="prod-wrap">
         <table class="prod-table">
@@ -274,7 +274,7 @@
               <th>Estado línea</th>
               <th class="money">Val. Unitario</th>
               <th class="money">Val. Total</th>
-              <th class="money">Cant. a Entregar</th>
+              <th style="min-width:220px">Asignar entrega (empresa · cant.)</th>
             </tr>
           </thead>
           <tbody id="m-lines"></tbody>
@@ -626,6 +626,7 @@
 <script src="js/shared.js?v=20260706a"></script>
 <script src="js/auth.js"></script>
 <script src="js/colombia-geo.js?v=20260708a"></script>
-<script src="js/pedidos.js?v=20260801u"></script>
+<script src="js/existencias.js?v=20260801v"></script>
+<script src="js/pedidos.js?v=20260801v"></script>
 </body>
 </html>
