@@ -542,6 +542,7 @@ function closeModal() {
   document.getElementById('overlay').classList.remove('show');
   activeIdx = null;
   destroyGeoAC('md');
+  if (typeof closeRemPicker === 'function') closeRemPicker();
 }
 
 document.getElementById('overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeModal(); });
@@ -2236,6 +2237,112 @@ function exportOrdenesExcel() {
 }
 
 // ── PDF Export ──
+function closeRemPicker() {
+  var el = document.getElementById('rem-picker');
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  document.removeEventListener('mousedown', _remPickerOutside, true);
+}
+function _remPickerOutside(ev) {
+  var picker = document.getElementById('rem-picker');
+  var btn = document.getElementById('btn-export-rem');
+  if (!picker) return;
+  if (picker.contains(ev.target) || (btn && btn.contains(ev.target))) return;
+  closeRemPicker();
+}
+
+function _buildRemisionesAgrupadas() {
+  if (activeIdx == null) return [];
+  var c = consecs[activeIdx];
+  var lines = getLinesFor(c);
+  var mapa = {};
+  lines.forEach(function(l) {
+    var vUni = Number(l.Valor_Unitario) || 0;
+    var entregas = parseEntregas(l.Remisiones, Number(l.Cant_Entregada) || 0, l.Fecha_Ult_Entrega);
+    entregas.forEach(function(e) {
+      var key = (e.remision || '(sin número)') + '|' + (e.fecha || '');
+      if (!mapa[key]) mapa[key] = { remision: e.remision || '', fecha: e.fecha || '', items: [], total: 0 };
+      var cant = Number(e.cantidad) || 0;
+      if (cant <= 0) return;
+      var vt = cant * vUni;
+      mapa[key].items.push({
+        producto: l.Producto,
+        presentacion: l.Presentacion,
+        cantidad: cant,
+        valor_unitario: vUni,
+        valor_total: vt,
+        bonificado: l.Bonificado || ''
+      });
+      mapa[key].total += vt;
+    });
+  });
+  var arr = Object.keys(mapa).map(function(k) { return mapa[k]; })
+    .filter(function(r) { return r.items.length > 0; });
+  arr.sort(function(a, b) {
+    if (a.fecha && b.fecha && a.fecha !== b.fecha) return a.fecha > b.fecha ? -1 : 1;
+    return (a.remision || '').localeCompare(b.remision || '');
+  });
+  return arr;
+}
+
+function _exportarRemisionEspecifica(rem) {
+  if (activeIdx == null) return;
+  var c = consecs[activeIdx];
+  generarRemisionPDF({
+    empresa: c.Nombre_Empresa,
+    consecutivo: c.Consecutivo,
+    fecha_pedido: c.Fecha_Pedido,
+    cliente: document.getElementById('md-cliente').value.trim() || c.Cliente,
+    nit: document.getElementById('md-nit').value.trim() || c.NIT,
+    telefono: document.getElementById('md-telefono').value.trim() || c.Telefono,
+    comercial: document.getElementById('md-comercial').value.trim() || c.Comercial,
+    municipio: document.getElementById('md-municipio').value.trim() || c.Municipio,
+    departamento: document.getElementById('md-departamento').value.trim() || c.Departamento,
+    remision: rem.remision,
+    fecha_entrega: rem.fecha,
+    entregas: rem.items,
+    total: rem.total
+  });
+}
+
+function exportarRemisionDesdeModal(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  var remisiones = _buildRemisionesAgrupadas();
+  if (!remisiones.length) {
+    showToast('No hay remisiones registradas para este pedido.', '#e67e22');
+    return;
+  }
+  if (remisiones.length === 1) {
+    _exportarRemisionEspecifica(remisiones[0]);
+    return;
+  }
+  var picker = document.getElementById('rem-picker');
+  if (!picker) { _exportarRemisionEspecifica(remisiones[0]); return; }
+  if (picker.style.display === 'block') { closeRemPicker(); return; }
+  var html = '<div style="padding:8px 12px;font-size:0.75rem;font-weight:700;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">Seleccionar remisión</div>';
+  remisiones.forEach(function(r, i) {
+    var label = (r.remision || '(sin número)');
+    var meta = (r.fecha ? r.fecha + ' · ' : '') + r.items.length + ' producto' + (r.items.length === 1 ? '' : 's');
+    html += '<div data-idx="' + i + '" class="rem-picker-item" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #edf2f7;font-size:0.82rem">' +
+      '<div style="font-weight:700;color:#1a5276">' + label.replace(/</g, '&lt;') + '</div>' +
+      '<div style="font-size:0.72rem;color:#718096;margin-top:2px">' + meta + '</div>' +
+      '</div>';
+  });
+  picker.innerHTML = html;
+  picker.style.display = 'block';
+  picker.querySelectorAll('.rem-picker-item').forEach(function(el) {
+    el.addEventListener('mouseover', function() { this.style.background = '#f0f8ff'; });
+    el.addEventListener('mouseout', function() { this.style.background = 'white'; });
+    el.addEventListener('click', function() {
+      var idx = Number(this.getAttribute('data-idx'));
+      closeRemPicker();
+      _exportarRemisionEspecifica(remisiones[idx]);
+    });
+  });
+  setTimeout(function() {
+    document.addEventListener('mousedown', _remPickerOutside, true);
+  }, 0);
+}
+
 function exportarPedidoDesdeModal() {
   if (activeIdx == null) return;
   var c = consecs[activeIdx];
