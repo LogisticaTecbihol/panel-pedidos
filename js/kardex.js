@@ -1978,9 +1978,13 @@ function calcularExistencias() {
     }
   });
 
+  var elCorteHasta = document.getElementById('ex-f-corte');
+  var corteHasta = elCorteHasta ? (elCorteHasta.value || '') : '';
+
   kxMovimientos.forEach(function(m) {
     if (!m.producto || !m.empresa) return;
     if (fechaCorte && m.fecha < fechaCorte) return;
+    if (corteHasta && m.fecha && m.fecha > corteHasta) return;
     var key = m.producto;
     if (!saldos[key]) {
       saldos[key] = { producto: m.producto };
@@ -2017,6 +2021,7 @@ function calcularExistencias() {
     document.getElementById('ex-f-buscar').addEventListener('input', renderExistencias);
     document.getElementById('ex-f-mostrar').addEventListener('change', renderExistencias);
     document.getElementById('ex-f-empresa').addEventListener('change', renderExistencias);
+    document.getElementById('ex-f-corte').addEventListener('change', calcularExistencias);
     existFiltersAttached = true;
   }
 
@@ -2027,7 +2032,8 @@ function clearExistFilters() {
   document.getElementById('ex-f-buscar').value = '';
   document.getElementById('ex-f-mostrar').value = 'todos';
   document.getElementById('ex-f-empresa').value = '';
-  renderExistencias();
+  document.getElementById('ex-f-corte').value = '';
+  calcularExistencias();
 }
 
 function renderExistencias() {
@@ -2145,7 +2151,11 @@ function exportExistExcel() {
   ws['!cols'] = colWidths;
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Existencias');
-  XLSX.writeFile(wb, 'Existencias_por_Empresa_' + today() + '.xlsx');
+  var corteEx = (document.getElementById('ex-f-corte') || {}).value || '';
+  var fnameEx = corteEx
+    ? ('Existencias_por_Empresa_corte_' + corteEx + '.xlsx')
+    : ('Existencias_por_Empresa_' + today() + '.xlsx');
+  XLSX.writeFile(wb, fnameEx);
   showToast('Excel exportado: ' + existFiltered.length + ' productos');
 }
 
@@ -2393,9 +2403,13 @@ function calcularExistenciasNC() {
     }
   });
 
+  var elCorteHastaNC = document.getElementById('exnc-f-corte');
+  var corteHastaNC = elCorteHastaNC ? (elCorteHastaNC.value || '') : '';
+
   ncMovimientos.forEach(function(m) {
     if (!m.producto || !m.empresa) return;
     if (fechaCorte && m.fecha < fechaCorte) return;
+    if (corteHastaNC && m.fecha && m.fecha > corteHastaNC) return;
     var key = m.producto;
     if (!saldos[key]) {
       saldos[key] = { producto: m.producto };
@@ -2432,6 +2446,7 @@ function calcularExistenciasNC() {
     document.getElementById('exnc-f-buscar').addEventListener('input', renderExistenciasNC);
     document.getElementById('exnc-f-mostrar').addEventListener('change', renderExistenciasNC);
     document.getElementById('exnc-f-empresa').addEventListener('change', renderExistenciasNC);
+    document.getElementById('exnc-f-corte').addEventListener('change', calcularExistenciasNC);
     existNCFiltersAttached = true;
   }
 
@@ -2442,7 +2457,8 @@ function clearExistNCFilters() {
   document.getElementById('exnc-f-buscar').value = '';
   document.getElementById('exnc-f-mostrar').value = 'todos';
   document.getElementById('exnc-f-empresa').value = '';
-  renderExistenciasNC();
+  document.getElementById('exnc-f-corte').value = '';
+  calcularExistenciasNC();
 }
 
 function renderExistenciasNC() {
@@ -2560,7 +2576,11 @@ function exportExistNCExcel() {
   ws['!cols'] = colWidths;
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Existencias NC');
-  XLSX.writeFile(wb, 'Existencias_NC_por_Empresa_' + today() + '.xlsx');
+  var corteExNC = (document.getElementById('exnc-f-corte') || {}).value || '';
+  var fnameExNC = corteExNC
+    ? ('Existencias_NC_por_Empresa_corte_' + corteExNC + '.xlsx')
+    : ('Existencias_NC_por_Empresa_' + today() + '.xlsx');
+  XLSX.writeFile(wb, fnameExNC);
   showToast('Excel exportado: ' + existFilteredNC.length + ' productos');
 }
 

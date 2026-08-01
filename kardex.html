@@ -204,6 +204,10 @@
         <option value="negativo">Solo saldo negativo</option>
       </select>
     </div>
+    <div class="fg">
+      <label>Fecha de corte</label>
+      <input type="date" id="ex-f-corte" title="Existencias a esta fecha (según fecha de la remisión)">
+    </div>
     <button onclick="clearExistFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
   </div>
 
@@ -309,6 +313,10 @@
         <option value="sin_stock">Solo sin existencia</option>
         <option value="negativo">Solo saldo negativo</option>
       </select>
+    </div>
+    <div class="fg">
+      <label>Fecha de corte</label>
+      <input type="date" id="exnc-f-corte" title="Existencias NC a esta fecha (según fecha de la remisión)">
     </div>
     <button onclick="clearExistNCFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
   </div>
@@ -700,6 +708,6 @@
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/kardex.js?v=20260728e"></script>
+<script src="js/kardex.js?v=20260801a"></script>
 </body>
 </html>
