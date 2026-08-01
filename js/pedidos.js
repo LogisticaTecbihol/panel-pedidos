@@ -2577,14 +2577,17 @@ function generarRemisionPDF(data) {
     sigTop = 40;
   }
 
-  var sigW = (pw - 28 - 12) / 3;
+  var sigGap = 5;
+  var sigCount = 4;
+  var sigW = (pw - 28 - sigGap * (sigCount - 1)) / sigCount;
   var lineY = sigTop + 18;
   var labelY = lineY + 5;
   var subY = labelY + 5;
   var cols = [
     { x: 14, label: 'Emitido por', sub: 'Nombre y firma' },
-    { x: 14 + sigW + 6, label: 'Despachado / Conductor', sub: 'Nombre y firma' },
-    { x: 14 + (sigW + 6) * 2, label: 'Recibido por el cliente', sub: 'Nombre, firma y fecha' }
+    { x: 14 + (sigW + sigGap), label: 'Despachado / Conductor', sub: 'Nombre y firma' },
+    { x: 14 + (sigW + sigGap) * 2, label: 'Contabilidad', sub: 'Nombre y firma' },
+    { x: 14 + (sigW + sigGap) * 3, label: 'Recibido por el cliente', sub: 'Nombre, firma y fecha' }
   ];
   doc.setDrawColor(darkText[0], darkText[1], darkText[2]);
   doc.setLineWidth(0.3);
@@ -2593,18 +2596,20 @@ function generarRemisionPDF(data) {
   cols.forEach(function(c) {
     doc.line(c.x, lineY, c.x + sigW, lineY);
     doc.setFont(undefined, 'bold');
+    doc.setFontSize(7.5);
     doc.text(c.label, c.x + sigW / 2, labelY, { align: 'center' });
     doc.setFont(undefined, 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(6.5);
     doc.setTextColor(grayText[0], grayText[1], grayText[2]);
     doc.text(c.sub, c.x + sigW / 2, subY, { align: 'center' });
     doc.setFontSize(8);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   });
+  var recCol = cols[cols.length - 1];
   var fechaRecY = subY + 6;
-  var fechaLabelX = cols[2].x + 2;
-  var fechaLineX1 = fechaLabelX + 20;
-  var fechaLineX2 = cols[2].x + sigW - 2;
+  var fechaLabelX = recCol.x + 2;
+  var fechaLineX1 = fechaLabelX + 14;
+  var fechaLineX2 = recCol.x + sigW - 2;
   doc.setFontSize(7);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
