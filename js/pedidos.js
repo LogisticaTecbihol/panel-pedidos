@@ -2412,12 +2412,37 @@ function _pdfPaletteFor(empresa) {
   return { accent: [39, 174, 96], light: [212, 239, 223] };
 }
 
+function _drawRemisionCopyFooter(doc, label, palette) {
+  var pw = doc.internal.pageSize.getWidth();
+  var ph = doc.internal.pageSize.getHeight();
+  doc.setFontSize(9);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(palette.accent[0], palette.accent[1], palette.accent[2]);
+  doc.text(String(label), pw / 2, ph - 5, { align: 'center' });
+}
+
 function generarRemisionPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
   var doc = new jsPDF();
-  var pw = doc.internal.pageSize.getWidth();
-
   var palette = _pdfPaletteFor(data.empresa);
+  var copias = ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD', 'CLIENTE', 'COPIA - LOGISTICA'];
+  copias.forEach(function(label, idx) {
+    if (idx > 0) doc.addPage();
+    var startPage = doc.internal.getNumberOfPages();
+    _drawRemisionCopy(doc, data, palette);
+    var endPage = doc.internal.getNumberOfPages();
+    for (var p = startPage; p <= endPage; p++) {
+      doc.setPage(p);
+      _drawRemisionCopyFooter(doc, label, palette);
+    }
+  });
+  var sigla = (typeof getSigla === 'function' ? getSigla(data.empresa) : '') || 'Remision';
+  var fileName = 'Remision_' + sigla + '_' + (data.consecutivo || '') + (data.remision ? '_' + String(data.remision) : '') + '.pdf';
+  doc.save(fileName);
+}
+
+function _drawRemisionCopy(doc, data, palette) {
+  var pw = doc.internal.pageSize.getWidth();
   var accent = palette.accent;
   var totalFill = palette.light;
   var darkText = [45, 55, 72];
@@ -2623,10 +2648,6 @@ function generarRemisionPDF(data) {
   doc.setTextColor(grayText[0], grayText[1], grayText[2]);
   doc.setFont(undefined, 'normal');
   doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, genY);
-
-  var sigla = getSigla(data.empresa) || 'Remision';
-  var fileName = 'Remision_' + sigla + '_' + (data.consecutivo || '') + (data.remision ? '_' + String(data.remision) : '') + '.pdf';
-  doc.save(fileName);
 }
 
 function generarPedidoPDF(data) {
