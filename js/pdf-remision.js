@@ -133,13 +133,13 @@ function _drawRemisionCopy(doc, data, palette) {
   var left = data.left_fields || [
     ['Cliente', data.cliente || ''],
     ['NIT', data.nit || ''],
+    ['Comercial', data.comercial || ''],
     ['Telefono', data.telefono || ''],
-    ['Municipio', data.municipio || ''],
-    ['Departamento', data.departamento || ''],
   ];
   var right = data.right_fields || [
-    ['Comercial', data.comercial || ''],
     ['Direccion', data.direccion || ''],
+    ['Municipio', data.municipio || ''],
+    ['Departamento', data.departamento || ''],
   ];
 
   function drawPageTop() {
