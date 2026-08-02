@@ -40,6 +40,13 @@ var _pdfRemisionHeaderInfo = {
     'Av. Troncal de Occidente #11E-03E, Mosquera,',
     'Cundinamarca - Parque Agroindustrial de la Sabana',
     'Bod 76  ·  Cel: 313 462 9468'
+  ],
+  GREEN: [
+    'GREEN AGRO SOLUCIONES DE COLOMBIA S.A.S',
+    'NIT: 900-511.092-5',
+    'Av. Troncal de Occidente #11E-03E, Mosquera,',
+    'Cundinamarca - Parque Agroindustrial de la Sabana',
+    'Bod 1274  ·  Cel: 3001264572'
   ]
 };
 
