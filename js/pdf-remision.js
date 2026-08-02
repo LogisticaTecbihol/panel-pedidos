@@ -276,8 +276,8 @@ function _drawRemisionCopy(doc, data, palette) {
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
       1: { cellWidth: 82 },
-      2: { cellWidth: 40 },
-      3: { halign: 'right', cellWidth: 32 },
+      2: { halign: 'center', cellWidth: 40 },
+      3: { halign: 'center', cellWidth: 32 },
       4: { halign: 'center', cellWidth: 18 }
     },
     margin: { top: pageTopY, left: 14, right: 14, bottom: 15 },
