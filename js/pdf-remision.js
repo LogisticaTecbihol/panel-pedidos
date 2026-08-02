@@ -140,7 +140,6 @@ function _drawRemisionCopy(doc, data, palette) {
   var right = data.right_fields || [
     ['Comercial', data.comercial || ''],
     ['Direccion', data.direccion || ''],
-    ['Fecha pedido', data.fecha_pedido || ''],
   ];
 
   function drawPageTop() {
