@@ -230,8 +230,8 @@ function renderIngTable() {
       '<td style="font-size:0.78rem">' + (r.Remision_Origen||'—') + '</td>' +
       '<td style="font-size:0.78rem">' + (r.Remision_Destino||'—') + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditIng(' + r.__row + ')" title="Editar">✏️</button>' +
-        '<button class="btn-del" onclick="openDeleteIng(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditIng(' + r.__row + ')" title="Editar">✏️</button>' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteIng(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');

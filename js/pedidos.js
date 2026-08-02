@@ -443,8 +443,8 @@ function renderTable() {
         '<button class="btn-ver ' + (done?'done':'') + '" onclick="openDetail(' + idx + ')">' +
           (lines.length === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
         '</button>' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' +
-        '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -3112,7 +3112,7 @@ async function loadAdjuntos(empresa, consecutivo, cliente) {
       '<div class="adjunto-actions">' +
         '<button class="btn-adj-ver" onclick="previewAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
         '<button class="btn-adj-ver" onclick="downloadAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
-        (AUTH.canEdit() ? '<button class="btn-adj-del" onclick="deleteAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
       '</div>' +
     '</div>';
   }).join('');

@@ -183,7 +183,7 @@ function renderDevGrouped(grouped) {
         '<td><div style="display:flex;gap:4px;align-items:center">' +
           '<button onclick="viewDevDetail(\'' + keyEsc + '\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:3px 8px;border-radius:4px;color:white;border:none;cursor:pointer;font-weight:700">📋</button>' +
           tramitarBtn +
-          (AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '') +
+          (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '') +
         '</div></td>' +
       '</tr>';
     });
@@ -590,7 +590,7 @@ function renderDevTable() {
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-edit" onclick="viewDevDetail(\'' + keyEsc + '\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
         tramitarBtn +
-        (AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar devolución">🗑️</button>' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar devolución">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -678,8 +678,8 @@ function viewDevDetail(key) {
       '<td style="text-align:right">' + fmtMoney(x.Valor_Unitario) + '</td>' +
       '<td style="text-align:right;font-weight:700">' + fmtMoney(x.Valor_Total) + '</td>' +
       '<td style="white-space:nowrap">' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewDev();openEditDev(' + x.__row + ')" style="font-size:0.75rem;padding:3px 8px" title="Editar línea">✏️</button> ' +
-        '<button class="btn-del" onclick="closeViewDev();openDeleteDev(0,' + (x.__row||0) + ')" style="font-size:0.75rem;padding:3px 8px" title="Eliminar línea">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewDev();openEditDev(' + x.__row + ')" style="font-size:0.75rem;padding:3px 8px" title="Editar línea">✏️</button> ' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="closeViewDev();openDeleteDev(0,' + (x.__row||0) + ')" style="font-size:0.75rem;padding:3px 8px" title="Eliminar línea">🗑️</button>' : '') +
       '</td></tr>';
   });
 

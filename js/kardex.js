@@ -557,7 +557,7 @@ function renderKardexTable() {
     var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#27ae60;font-weight:700">+' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var salidaStr = m.tipo === 'Salida' ? '<span style="color:#e74c3c;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#2c3e50';
-    var deleteBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
     var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.producto || '').replace(/"/g, '&quot;') + '">' + (m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.modulo === 'Saldo Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
@@ -1574,7 +1574,7 @@ function renderNCTable() {
     var salidaStr = m.tipo === 'Salida' ? '<span style="color:#27ae60;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#c0392b';
     var editBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditNC(' + m._ajusteId + ')" title="Editar registro" style="font-size:0.72rem;padding:3px 8px">✏️</button>' : '';
-    var deleteBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-del" onclick="openDeleteNC(' + m._ajusteId + ',\'' + (m.tipo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar registro" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteNC(' + m._ajusteId + ',\'' + (m.tipo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar registro" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
 
     return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +

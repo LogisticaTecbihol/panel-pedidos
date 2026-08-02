@@ -273,8 +273,8 @@ function renderInvTable() {
       '<td style="text-align:center;font-size:0.82rem;color:' + movColor + ';font-weight:600">' + movStr + '</td>' +
       '<td style="text-align:center"><span class="inv-disp-badge ' + dispClass + '">' + r._disponible.toLocaleString('es-CO') + '</span></td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditInv(' + r.__row + ')" title="Editar">✏️</button>' +
-        '<button class="btn-del" onclick="openDeleteInv(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditInv(' + r.__row + ')" title="Editar">✏️</button>' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteInv(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');

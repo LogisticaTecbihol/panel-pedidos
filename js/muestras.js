@@ -364,8 +364,8 @@ function renderMuTable() {
       '<td>' + (r.Solicitante || '—') + '</td>' +
       '<td>' + estadoBadge + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' +
-        '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 }
@@ -429,8 +429,8 @@ function viewMuestra(id) {
       var cantEnt = x.Cant_Entregada != null && x.Cant_Entregada !== '' ? x.Cant_Entregada : '';
       html += '<tr><td>' + (x.Producto || '—') + '</td><td>' + (x.Presentacion || '—') + '</td><td style="text-align:right">' + (x.Cantidad || 0) + '</td>' +
         '<td><input type="number" min="0" class="ef mu-view-cant-ent" data-id="' + x.id + '" value="' + cantEnt + '" style="width:70px;text-align:right;padding:4px 6px;font-size:0.82rem"></td>' +
-        '<td style="white-space:nowrap">' + (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' +
-        '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') + '</td></tr>';
+        '<td style="white-space:nowrap">' + (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') + '</td></tr>';
     });
     html += '</tbody></table>';
   }

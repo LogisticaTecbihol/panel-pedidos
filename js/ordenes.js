@@ -231,8 +231,8 @@ function renderOCTable() {
       '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision || '—') + '</td>' +
       '<td>' + estadoBadge(r.Estado) + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditOC(' + r.__row + ')" title="Editar">✏️</button>' +
-        '<button class="btn-del" onclick="openDeleteOC(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditOC(' + r.__row + ')" title="Editar">✏️</button>' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteOC(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');

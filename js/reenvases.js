@@ -336,8 +336,8 @@ function renderReTable() {
       '<td>' + escHtml(r.Remision || '—') + '</td>' +
       '<td>' + escHtml(obs || '—') + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="editReenvase(' + r.id + ')">✏️</button> ' +
-        '<button class="btn-del" onclick="deleteReenvase(' + r.id + ')">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="editReenvase(' + r.id + ')">✏️</button> ' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="deleteReenvase(' + r.id + ')">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 }

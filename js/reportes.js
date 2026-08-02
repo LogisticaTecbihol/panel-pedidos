@@ -1177,7 +1177,7 @@ function renderRemTable() {
     var modColor = MOD_COLORS[r.modulo] || '#718096';
     var empOrigCell = r.empresaOrigen ? '<span class="badge-emp" style="background:#fef9e7;color:#7d6608">' + getSigla(r.empresaOrigen) + '</span>' : '—';
     var empDestCell = r.empresaDestino ? '<span class="badge-emp" style="background:#eafaf1;color:#1e8449">' + getSigla(r.empresaDestino) + '</span>' : '—';
-    var deleteBtn = r._anulada_id ? ' <button onclick="event.stopPropagation();deleteRemAnulada(' + r._anulada_id + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button>' : '';
+    var deleteBtn = r._anulada_id && AUTH.canDelete() ? ' <button onclick="event.stopPropagation();deleteRemAnulada(' + r._anulada_id + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button>' : '';
     var hasDetalles = r.detalles && r.detalles.length > 0;
 
     var mainRow = '<tr class="rem-row-main" id="rem-row-' + idx + '" onclick="toggleRemDetail(' + idx + ')"' + (r.modulo === 'Anulada' ? ' style="background:#fdf2f2"' : '') + '>' +
