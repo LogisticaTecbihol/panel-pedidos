@@ -8,6 +8,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
 <title>Muestras – Sistema de Gestión Logística</title>
 <link rel="stylesheet" href="css/panel.css">
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
 .ac-dropdown{position:fixed;background:white;border:1px solid #cbd5e0;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .ac-item{padding:8px 12px;cursor:pointer;font-size:.84rem;border-bottom:1px solid #f7fafc}
@@ -285,7 +287,8 @@
       <button class="btn-close" onclick="closeViewMu()">✕</button>
     </div>
     <div class="mbody" id="view-mu-body"></div>
-    <div class="mftr" style="justify-content:flex-end">
+    <div class="mftr" style="justify-content:flex-end;gap:8px">
+      <button class="btn-cancel" onclick="exportarMuestraRemisionPDF()" style="background:#27ae60;color:white;border-color:#27ae60">📄 Exportar Remisión PDF</button>
       <button class="btn-cancel" onclick="closeViewMu()">Cerrar</button>
     </div>
   </div>
@@ -297,6 +300,7 @@
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/colombia-geo.js"></script>
-<script src="js/muestras.js?v=20260720a"></script>
+<script src="js/pdf-remision.js?v=20260802a"></script>
+<script src="js/muestras.js?v=20260802a"></script>
 </body>
 </html>

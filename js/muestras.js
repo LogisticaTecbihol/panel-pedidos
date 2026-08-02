@@ -10,6 +10,7 @@ var productosCache = null;
 var muProdACs = [];
 var muEditProdAC = null;
 var muGeoAC = null;
+var muViewingId = null;
 
 // ── Autocomplete engine ──
 
@@ -376,6 +377,7 @@ function viewMuestra(id) {
   if (!rows.length) return;
   var r = rows[0];
 
+  muViewingId = id;
   var consec = r.Consecutivo || '';
   var emp = r.Empresa || '';
   var sameConsec = allMuestras.filter(function(x) { return x.Consecutivo === consec && consec && (x.Empresa || '') === emp; });
@@ -501,8 +503,87 @@ function escHtml(s) {
 
 function closeViewMu() {
   document.getElementById('view-mu-overlay').classList.remove('show');
+  muViewingId = null;
 }
 document.getElementById('view-mu-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeViewMu(); });
+
+// ── Exportar Remisión PDF ──
+
+function exportarMuestraRemisionPDF() {
+  if (muViewingId == null) { showToast('No hay solicitud seleccionada.', '#e67e22'); return; }
+  if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+    showToast('El generador de PDF aún no está listo. Intenta de nuevo en unos segundos.', '#e67e22');
+    return;
+  }
+  if (typeof generarRemisionPDF !== 'function') {
+    showToast('Módulo de remisión no cargado.', '#e74c3c');
+    return;
+  }
+  var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+  if (!head) { showToast('Solicitud no encontrada.', '#e74c3c'); return; }
+  var consec = head.Consecutivo || '';
+  var emp = head.Empresa || '';
+  var sameConsec = allMuestras.filter(function(x) { return x.Consecutivo === consec && consec && (x.Empresa || '') === emp; });
+  if (!sameConsec.length) sameConsec = [head];
+
+  var remInput = document.getElementById('mu-view-remision');
+  var fdInput = document.getElementById('mu-view-fecha-despacho');
+  var remision = (remInput && remInput.value.trim()) || head.Remision || '';
+  var fechaDespacho = (fdInput && fdInput.value) || head.Fecha_Despacho || '';
+
+  var entregas = sameConsec.map(function(x) {
+    var cantEnt = Number(x.Cant_Entregada) || 0;
+    var cant = cantEnt > 0 ? cantEnt : (Number(x.Cantidad) || 0);
+    return {
+      producto: x.Producto || '',
+      presentacion: x.Presentacion || '',
+      cantidad: cant,
+      valor_unitario: 0,
+      valor_total: 0,
+      bonificado: 'Sí'
+    };
+  }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
+
+  if (!entregas.length) {
+    showToast('No hay productos para incluir en la remisión.', '#e67e22');
+    return;
+  }
+
+  var obsPartes = [];
+  if (head.Objetivo) obsPartes.push('Objetivo: ' + head.Objetivo);
+  if (head.Observaciones) obsPartes.push(head.Observaciones);
+  if (head.Tipo_Cultivo) obsPartes.push('Tipo de cultivo: ' + head.Tipo_Cultivo);
+
+  var left = [
+    ['Solicitante', head.Solicitante || ''],
+    ['Responsable', head.Responsable || ''],
+    ['Quien autoriza', head.Autoriza || ''],
+    ['Municipio', head.Municipio || ''],
+    ['Departamento', head.Departamento || ''],
+    ['Tipo de cultivo', head.Tipo_Cultivo || '']
+  ];
+  var right = [
+    ['Fecha solicitud', head.Fecha_Solicitud || ''],
+    ['Fecha despacho', fechaDespacho || ''],
+    ['Fecha aplicación', head.Fecha_Aplicacion || ''],
+    ['Fecha seguimiento', head.Fecha_Seguimiento || ''],
+    ['Estado', head.Estado || ''],
+    ['Tipo documento', 'Solicitud de muestras']
+  ];
+
+  generarRemisionPDF({
+    empresa: head.Empresa || '',
+    consecutivo: consec,
+    ref_label: 'Solicitud',
+    fecha_pedido: head.Fecha_Solicitud || '',
+    fecha_entrega: fechaDespacho || '',
+    remision: remision,
+    observaciones: obsPartes.join(' — '),
+    left_fields: left,
+    right_fields: right,
+    entregas: entregas
+  });
+}
 
 // ── New / Edit modal ──
 
