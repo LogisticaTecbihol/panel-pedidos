@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tabla TEXT NOT NULL,
   accion TEXT NOT NULL,
-  registro_id BIGINT,
+  registro_id TEXT,
   usuario_id UUID,
   usuario_email TEXT,
   datos_antes JSONB,
@@ -107,7 +107,7 @@ DECLARE
   v_user_email TEXT;
   v_old JSONB;
   v_new JSONB;
-  v_registro_id BIGINT;
+  v_registro_id TEXT;
   v_changed JSONB;
   v_key TEXT;
 BEGIN
@@ -120,7 +120,7 @@ BEGIN
 
   IF TG_OP = 'DELETE' THEN
     v_old := to_jsonb(OLD);
-    v_registro_id := OLD.id;
+    v_registro_id := OLD.id::text;
     -- Excluir columnas de auditoría del snapshot
     v_old := v_old - 'creado_por' - 'creado_en' - 'modificado_por' - 'modificado_en';
 
@@ -132,7 +132,7 @@ BEGIN
 
   IF TG_OP = 'INSERT' THEN
     v_new := to_jsonb(NEW);
-    v_registro_id := NEW.id;
+    v_registro_id := NEW.id::text;
     v_new := v_new - 'creado_por' - 'creado_en' - 'modificado_por' - 'modificado_en';
 
     INSERT INTO audit_log (tabla, accion, registro_id, usuario_id, usuario_email, datos_despues)
@@ -144,7 +144,7 @@ BEGIN
   IF TG_OP = 'UPDATE' THEN
     v_old := to_jsonb(OLD);
     v_new := to_jsonb(NEW);
-    v_registro_id := NEW.id;
+    v_registro_id := NEW.id::text;
 
     -- Solo guardar los campos que realmente cambiaron
     v_changed := '{}'::jsonb;
@@ -414,7 +414,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION get_audit_history(
   p_tabla TEXT,
-  p_registro_id BIGINT
+  p_registro_id TEXT
 ) RETURNS TABLE (
   accion TEXT,
   usuario_email TEXT,

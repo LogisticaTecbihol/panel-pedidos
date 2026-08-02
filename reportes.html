@@ -65,16 +65,16 @@
   </div>
   <nav class="navbar">
     <a href="index.html">🏠 Inicio</a>
-    <a href="pedidos.html">📋 Pedidos</a>
-    <a href="ingresos.html">📥 Ingresos</a>
-    <a href="ordenes.html">🛒 Órdenes</a>
-    <a href="devoluciones.html">🔄 Devoluciones y Cambios</a>
-    <a href="inventario.html">📊 Inventario</a>
-    <a href="kardex.html">📋 Kardex</a>
-    <a href="muestras.html">🧪 Muestras</a>
-    <a href="reenvases.html">🏭 Salidas a producción</a>
-    <a href="reportes.html" class="active">📈 Reportes</a>
-    <a href="dashboard.html">📊 Dashboard</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="reportes.html" data-modulo="reportes" class="active">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
     <a href="usuarios.html" id="nav-usuarios" class="auth-admin-only" style="display:none">👥 Usuarios</a>
     <a href="auditoria.html" id="nav-auditoria" class="auth-admin-only" style="display:none">🔍 Auditoría</a>
   </nav>
@@ -179,7 +179,7 @@
         <button class="btn-export" onclick="exportTraslados()">📊 Exportar Excel</button>
       </div>
       <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
-        OC generadas automáticamente al registrar entregas con stock de otra empresa. Cargue el N° de remisión del traslado en <a href="ordenes.html" style="color:#1a5276;font-weight:700">Órdenes</a> para legalizar y afectar inventario.
+        OC generadas automáticamente al registrar entregas con stock de otra empresa. Cargue el N° de remisión del traslado en <a href="ordenes.html" data-modulo="ordenes" style="color:#1a5276;font-weight:700">Órdenes</a> para legalizar y afectar inventario.
       </div>
       <div style="overflow-x:auto">
         <table class="rpt-table">

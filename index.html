@@ -22,16 +22,16 @@
   </div>
   <nav class="navbar">
     <a href="index.html" class="active">🏠 Inicio</a>
-    <a href="pedidos.html">📋 Pedidos</a>
-    <a href="ingresos.html">📥 Ingresos</a>
-    <a href="ordenes.html">🛒 Órdenes</a>
-    <a href="devoluciones.html">🔄 Devoluciones y Cambios</a>
-    <a href="inventario.html">📊 Inventario</a>
-    <a href="kardex.html">📋 Kardex</a>
-    <a href="muestras.html">🧪 Muestras</a>
-    <a href="reenvases.html">🏭 Salidas a producción</a>
-    <a href="reportes.html">📈 Reportes</a>
-    <a href="dashboard.html">📊 Dashboard</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
     <a href="usuarios.html" id="nav-usuarios" class="auth-admin-only" style="display:none">👥 Usuarios</a>
     <a href="auditoria.html" id="nav-auditoria" class="auth-admin-only" style="display:none">🔍 Auditoría</a>
   </nav>
@@ -43,70 +43,70 @@
   <p>Selecciona un módulo para comenzar a trabajar</p>
 
   <div class="modules-grid">
-    <a href="pedidos.html" class="module-card" id="card-pedidos">
+    <a href="pedidos.html" data-modulo="pedidos" class="module-card" id="card-pedidos">
       <div class="icon">📋</div>
       <h3>Pedidos</h3>
       <p>Gestión de pedidos, registro de entregas, importación desde Excel y seguimiento de estado.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="ingresos.html" class="module-card">
+    <a href="ingresos.html" data-modulo="ingresos" class="module-card">
       <div class="icon">📥</div>
       <h3>Ingresos de Producto</h3>
       <p>Registro de entradas de mercancía desde plantas, por empresa origen/destino y responsable.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="devoluciones.html" class="module-card" id="card-devoluciones">
+    <a href="devoluciones.html" data-modulo="devoluciones" class="module-card" id="card-devoluciones">
       <div class="icon">🔄</div>
       <h3>Devoluciones</h3>
       <p>Registro de devoluciones por motivo, empresa origen/destino, producto y responsable.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="ordenes.html" class="module-card">
+    <a href="ordenes.html" data-modulo="ordenes" class="module-card">
       <div class="icon">🛒</div>
       <h3>Órdenes de Compra</h3>
       <p>Gestión de órdenes de compra entre empresas. Carga desde Excel o digitación manual.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="inventario.html" class="module-card">
+    <a href="inventario.html" data-modulo="inventario" class="module-card">
       <div class="icon">📊</div>
       <h3>Inventario</h3>
       <p>Control de stock por producto, lote y empresa. Disponibilidad real vs. pedidos pendientes.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="kardex.html" class="module-card">
+    <a href="kardex.html" data-modulo="kardex" class="module-card">
       <div class="icon">📋</div>
       <h3>Kardex de Inventario</h3>
       <p>Trazabilidad de movimientos por empresa y producto. Entradas, salidas, ajustes y saldos desde todos los módulos.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="muestras.html" class="module-card" id="card-muestras">
+    <a href="muestras.html" data-modulo="muestras" class="module-card" id="card-muestras">
       <div class="icon">🧪</div>
       <h3>Solicitud de Muestras</h3>
       <p>Registro de solicitudes de muestras comerciales, seguimiento de despachos y responsables.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="reenvases.html" class="module-card">
+    <a href="reenvases.html" data-modulo="reenvases" class="module-card">
       <div class="icon">🏭</div>
       <h3>Salidas a producción</h3>
       <p>Registro de productos para salida a producción, con control de remisiones y cantidades por empresa.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="reportes.html" class="module-card">
+    <a href="reportes.html" data-modulo="reportes" class="module-card">
       <div class="icon">📈</div>
       <h3>Reportes</h3>
       <p>Productos pendientes por entregar, consolidado por producto y empresa.</p>
       <span class="tag active">Activo</span>
     </a>
 
-    <a href="dashboard.html" class="module-card">
+    <a href="dashboard.html" data-modulo="dashboard" class="module-card">
       <div class="icon">📊</div>
       <h3>Dashboard</h3>
       <p>Vista general con KPIs, estado de entregas, top productos, clientes y comerciales.</p>

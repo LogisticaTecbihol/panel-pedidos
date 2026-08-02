@@ -3,7 +3,23 @@ var AUTH = (function() {
   var _user = null;
   var _profile = null;
   var _companies = [];
+  var _modules = [];
   var _ready = null;
+
+  // Catálogo de módulos gestionables por permiso.
+  // Debe coincidir con el CHECK constraint de supabase/usuario_modulos.sql
+  var ALL_MODULES = [
+    { key: 'pedidos',      label: '📋 Pedidos' },
+    { key: 'ingresos',     label: '📥 Ingresos' },
+    { key: 'ordenes',      label: '🛒 Órdenes' },
+    { key: 'devoluciones', label: '🔄 Devoluciones y Cambios' },
+    { key: 'inventario',   label: '📊 Inventario' },
+    { key: 'kardex',       label: '📋 Kardex' },
+    { key: 'muestras',     label: '🧪 Muestras' },
+    { key: 'reenvases',    label: '🏭 Salidas a producción' },
+    { key: 'reportes',     label: '📈 Reportes' },
+    { key: 'dashboard',    label: '📊 Dashboard' }
+  ];
 
   function init() {
     if (_ready) return _ready;
@@ -35,6 +51,9 @@ var AUTH = (function() {
           .single(),
         _sb.from('usuario_empresas')
           .select('empresa_sigla, empresas(nombre_completo)')
+          .eq('usuario_id', _user.id),
+        _sb.from('usuario_modulos')
+          .select('modulo')
           .eq('usuario_id', _user.id)
       ]);
 
@@ -54,11 +73,14 @@ var AUTH = (function() {
         return { sigla: r.empresa_sigla, nombre: r.empresas.nombre_completo };
       });
 
+      _modules = (authResults[2].data || []).map(function(r) { return r.modulo; });
+
       if (isLoginPage) {
         location.replace('index.html');
         return new Promise(function() {});
       }
 
+      _guardCurrentPage();
       _renderAuthUI();
       _setupAuthListener();
     } finally {
@@ -87,6 +109,28 @@ var AUTH = (function() {
     var navUsuarios = document.getElementById('nav-usuarios');
     if (navUsuarios) {
       navUsuarios.style.display = canManageUsers() ? '' : 'none';
+    }
+
+    // Ocultar enlaces del navbar y tarjetas del home cuyo módulo no esté permitido
+    document.querySelectorAll('[data-modulo]').forEach(function(el) {
+      var mod = el.getAttribute('data-modulo');
+      if (!hasModule(mod)) el.style.display = 'none';
+    });
+  }
+
+  // Bloquea el acceso directo por URL cuando la página tiene <body data-modulo="…">
+  // o cuando el nombre de archivo coincide con un módulo conocido.
+  function _guardCurrentPage() {
+    var mod = document.body && document.body.getAttribute('data-modulo');
+    if (!mod) {
+      var file = (location.pathname.split('/').pop() || '').replace('.html', '');
+      var known = ALL_MODULES.map(function(m) { return m.key; });
+      if (known.indexOf(file) >= 0) mod = file;
+    }
+    if (!mod) return;
+    if (!hasModule(mod)) {
+      location.replace('index.html');
+      throw new Promise(function() {}); // detiene la ejecución del resto del script
     }
   }
 
@@ -142,6 +186,20 @@ var AUTH = (function() {
     return _user;
   }
 
+  function hasModule(mod) {
+    if (!_profile) return false;
+    if (_profile.rol === 'admin') return true;
+    return _modules.indexOf(mod) >= 0;
+  }
+
+  function getModules() {
+    return _modules.slice();
+  }
+
+  function getAllModules() {
+    return ALL_MODULES.slice();
+  }
+
   return {
     init: init,
     logout: logout,
@@ -151,7 +209,10 @@ var AUTH = (function() {
     getCompanies: getCompanies,
     getFilteredEmpresas: getFilteredEmpresas,
     getProfile: getProfile,
-    getUser: getUser
+    getUser: getUser,
+    hasModule: hasModule,
+    getModules: getModules,
+    getAllModules: getAllModules
   };
 })();
 

@@ -1,6 +1,7 @@
 // ── State ──
 var usrList = [];
 var usrEmpresas = {};
+var usrModulos = {};
 var toggleUsrId = null;
 var toggleUsrActivo = false;
 
@@ -29,12 +30,15 @@ async function loadUsuarios() {
   try {
     var _usrResults = await Promise.all([
       _sb.from('usuarios').select('*').order('created_at'),
-      _sb.from('usuario_empresas').select('usuario_id, empresa_sigla, empresas(nombre_completo)')
+      _sb.from('usuario_empresas').select('usuario_id, empresa_sigla, empresas(nombre_completo)'),
+      _sb.from('usuario_modulos').select('usuario_id, modulo')
     ]);
     var res = _usrResults[0];
     var ueRes = _usrResults[1];
+    var umRes = _usrResults[2];
     if (res.error) throw new Error(res.error.message);
     if (ueRes.error) throw new Error(ueRes.error.message);
+    if (umRes.error) throw new Error(umRes.error.message);
 
     usrList = res.data || [];
 
@@ -45,6 +49,12 @@ async function loadUsuarios() {
         sigla: r.empresa_sigla,
         nombre: r.empresas ? r.empresas.nombre_completo : r.empresa_sigla
       });
+    });
+
+    usrModulos = {};
+    (umRes.data || []).forEach(function(r) {
+      if (!usrModulos[r.usuario_id]) usrModulos[r.usuario_id] = [];
+      usrModulos[r.usuario_id].push(r.modulo);
     });
 
     renderUsuariosTable();
@@ -139,6 +149,7 @@ function openNewUser() {
   document.getElementById('btn-save-usr').disabled = false;
   document.getElementById('btn-save-usr').textContent = '✓ Crear usuario';
   renderEmpresaChecks([]);
+  renderModuloChecks([], 'editor');
   document.getElementById('usr-overlay').classList.add('show');
 }
 
@@ -157,6 +168,7 @@ function openEditUser(userId) {
   document.getElementById('btn-save-usr').textContent = '✓ Guardar cambios';
   var userEmps = (usrEmpresas[userId] || []).map(function(e) { return e.sigla; });
   renderEmpresaChecks(userEmps);
+  renderModuloChecks(usrModulos[userId] || [], u.rol || 'lector');
   document.getElementById('usr-overlay').classList.add('show');
 }
 
@@ -171,6 +183,35 @@ function renderEmpresaChecks(selectedSiglas) {
     '</label>';
   }).join('');
 }
+
+function renderModuloChecks(selectedKeys, rol) {
+  var container = document.getElementById('usr-modulos-checks');
+  var hint = document.getElementById('usr-modulos-hint');
+  var isAdmin = rol === 'admin';
+  container.innerHTML = AUTH.getAllModules().map(function(m) {
+    // Para admins pre-marcamos y deshabilitamos: no se persisten filas para admins.
+    var checked = (isAdmin || selectedKeys.indexOf(m.key) >= 0) ? ' checked' : '';
+    var disabled = isAdmin ? ' disabled' : '';
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;cursor:pointer;padding:6px 10px;background:#f7fafc;border-radius:6px;border:1px solid #e2e8f0' + (isAdmin ? ';opacity:0.6' : '') + '">' +
+      '<input type="checkbox" class="usr-mod-check" value="' + m.key + '"' + checked + disabled + '>' +
+      '<span style="font-size:0.82rem;color:#2d3748">' + m.label + '</span>' +
+    '</label>';
+  }).join('');
+  hint.style.display = isAdmin ? 'block' : 'none';
+}
+
+function toggleAllModulos(on) {
+  document.querySelectorAll('.usr-mod-check').forEach(function(cb) {
+    if (!cb.disabled) cb.checked = !!on;
+  });
+}
+
+// Al cambiar el rol en el modal, re-renderizar módulos (admin vs editor/lector)
+document.getElementById('usr-rol').addEventListener('change', function() {
+  var current = [];
+  document.querySelectorAll('.usr-mod-check:checked').forEach(function(cb) { current.push(cb.value); });
+  renderModuloChecks(current, this.value);
+});
 
 function closeUserModal() {
   document.getElementById('usr-overlay').classList.remove('show');
@@ -192,8 +233,18 @@ async function saveUser() {
     selectedEmps.push(cb.value);
   });
 
+  var selectedMods = [];
+  document.querySelectorAll('.usr-mod-check:checked').forEach(function(cb) {
+    if (!cb.disabled) selectedMods.push(cb.value);
+  });
+
   if (rol !== 'admin' && !selectedEmps.length) {
     showToast('Asigna al menos una empresa (o selecciona rol Admin)', '#e74c3c');
+    return;
+  }
+
+  if (rol !== 'admin' && !selectedMods.length) {
+    showToast('Asigna al menos un módulo (o selecciona rol Admin)', '#e74c3c');
     return;
   }
 
@@ -219,6 +270,17 @@ async function saveUser() {
         });
         var insRes = await _sb.from('usuario_empresas').insert(rows);
         if (insRes.error) throw new Error(insRes.error.message);
+      }
+
+      var delModRes = await _sb.from('usuario_modulos').delete().eq('usuario_id', editId);
+      if (delModRes.error) throw new Error(delModRes.error.message);
+
+      if (rol !== 'admin' && selectedMods.length) {
+        var modRows = selectedMods.map(function(m) {
+          return { usuario_id: editId, modulo: m };
+        });
+        var insModRes = await _sb.from('usuario_modulos').insert(modRows);
+        if (insModRes.error) throw new Error(insModRes.error.message);
       }
 
       closeUserModal();
@@ -256,6 +318,14 @@ async function saveUser() {
         });
         var ueRes = await _sb.from('usuario_empresas').insert(rows);
         if (ueRes.error) throw new Error(ueRes.error.message);
+      }
+
+      if (rol !== 'admin' && selectedMods.length) {
+        var modRows = selectedMods.map(function(m) {
+          return { usuario_id: newUserId, modulo: m };
+        });
+        var umRes = await _sb.from('usuario_modulos').insert(modRows);
+        if (umRes.error) throw new Error(umRes.error.message);
       }
 
       closeUserModal();
