@@ -250,10 +250,19 @@ function _drawRemisionCopy(doc, data, palette) {
     var vUnit = Number(p.valor_unitario) || 0;
     var textoTieneBonif = /bonificado/i.test(String(p.producto || ''));
     var esBonif = (p.bonificado || '') === 'Si' || (p.bonificado || '') === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
+    var prodName = String(p.producto || '');
+    var presName = String(p.presentacion || '');
+    if (!presName.trim()) {
+      var m = prodName.match(/^(.*?)\s+[xX]\s+(.+)$/);
+      if (m) {
+        prodName = m[1].trim();
+        presName = m[2].trim();
+      }
+    }
     return [
       i + 1,
-      String(p.producto || ''),
-      String(p.presentacion || ''),
+      prodName,
+      presName,
       Number(p.cantidad) || 0,
       esBonif ? 'Sí' : 'No'
     ];
