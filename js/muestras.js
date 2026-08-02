@@ -523,12 +523,20 @@ function _muestraContext() {
   if (!head) { showToast('Solicitud no encontrada.', '#e74c3c'); return null; }
   var consec = head.Consecutivo || '';
   var emp = head.Empresa || '';
-  var sameConsec = allMuestras.filter(function(x) { return x.Consecutivo === consec && consec && (x.Empresa || '') === emp; });
-  if (!sameConsec.length) sameConsec = [head];
+  var rows = allMuestras.filter(function(x) { return x.Consecutivo === consec && consec && (x.Empresa || '') === emp; });
+  if (!rows.length) rows = [head];
+  return { head: head, consec: consec, rows: rows };
+}
 
-  var entregas = sameConsec.map(function(x) {
-    var cantEnt = Number(x.Cant_Entregada) || 0;
-    var cant = cantEnt > 0 ? cantEnt : (Number(x.Cantidad) || 0);
+function _muestraEntregas(rows, useRequested) {
+  var out = rows.map(function(x) {
+    var cant;
+    if (useRequested) {
+      cant = Number(x.Cantidad) || 0;
+    } else {
+      var cantEnt = Number(x.Cant_Entregada) || 0;
+      cant = cantEnt > 0 ? cantEnt : (Number(x.Cantidad) || 0);
+    }
     return {
       producto: x.Producto || '',
       presentacion: x.Presentacion || '',
@@ -538,12 +546,7 @@ function _muestraContext() {
       bonificado: 'Sí'
     };
   }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
-
-  if (!entregas.length) {
-    showToast('No hay productos para incluir en el PDF.', '#e67e22');
-    return null;
-  }
-  return { head: head, consec: consec, entregas: entregas };
+  return out;
 }
 
 // ── Exportar Remisión PDF (mismo layout que Pedidos) ──
@@ -563,6 +566,12 @@ function exportarMuestraRemisionPDF() {
     return;
   }
 
+  var entregas = _muestraEntregas(ctx.rows, false);
+  if (!entregas.length) {
+    showToast('No hay productos para incluir en la remisión.', '#e67e22');
+    return;
+  }
+
   generarRemisionPDF({
     empresa: head.Empresa || '',
     consecutivo: ctx.consec,
@@ -573,7 +582,7 @@ function exportarMuestraRemisionPDF() {
     comercial: head.Responsable || '',
     municipio: head.Municipio || '',
     departamento: head.Departamento || '',
-    entregas: ctx.entregas
+    entregas: entregas
   });
 }
 
@@ -584,6 +593,12 @@ function exportarMuestraSolicitudPDF() {
   if (!ctx) return;
   var head = ctx.head;
 
+  var entregas = _muestraEntregas(ctx.rows, true);
+  if (!entregas.length) {
+    showToast('No hay productos para incluir en la solicitud.', '#e67e22');
+    return;
+  }
+
   var left = [
     ['Solicitante', head.Solicitante || ''],
     ['Responsable', head.Responsable || ''],
@@ -593,7 +608,6 @@ function exportarMuestraSolicitudPDF() {
     ['Departamento', head.Departamento || '']
   ];
   var right = [
-    ['Estado', head.Estado || ''],
     ['Fecha aplicacion', head.Fecha_Aplicacion || ''],
     ['Fecha seguimiento', head.Fecha_Seguimiento || ''],
     ['Objetivo', head.Objetivo || '']
@@ -610,7 +624,8 @@ function exportarMuestraSolicitudPDF() {
     remision: '',
     left_fields: left,
     right_fields: right,
-    entregas: ctx.entregas,
+    entregas: entregas,
+    qty_header: 'Cantidad',
     copies: [''],
     hide_signatures: true,
     file_prefix: 'Solicitud_Muestras'

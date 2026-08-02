@@ -277,7 +277,7 @@ function _drawRemisionCopy(doc, data, palette) {
 
   doc.autoTable({
     startY: pageTopY,
-    head: [['#', 'Producto', 'Presentacion', 'Cant. Entregada', 'Bonif.']],
+    head: [['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada', 'Bonif.']],
     body: tableBody,
     theme: 'grid',
     headStyles: { fillColor: accent, fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
