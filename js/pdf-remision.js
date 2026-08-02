@@ -47,6 +47,13 @@ var _pdfRemisionHeaderInfo = {
     'Av. Troncal de Occidente #11E-03E, Mosquera,',
     'Cundinamarca - Parque Agroindustrial de la Sabana',
     'Bod 1274  ·  Cel: 3001264572'
+  ],
+  IAS: [
+    'INSUMOS AGROPECUARIOS DE LA SABANA S.A.S',
+    'NIT: 900.447.393-3',
+    'Av. Troncal Occidente #11E-03E, Mosquera, Cundinamarca',
+    'Parque Agroindustrial de la Sabana - Administracion Of. 3',
+    'Cel: 310 6716741  ·  Correo: inagrosabana22@gmail.com'
   ]
 };
 
