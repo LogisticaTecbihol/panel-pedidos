@@ -575,7 +575,7 @@ function exportarMuestraRemisionPDF() {
   generarRemisionPDF({
     empresa: head.Empresa || '',
     consecutivo: ctx.consec,
-    ref_label: 'Solicitud',
+    ref_label: 'Solicitud de muestras',
     fecha_entrega: fechaDespacho || '',
     remision: remision,
     cliente: head.Solicitante || '',
