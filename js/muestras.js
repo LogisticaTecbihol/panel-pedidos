@@ -507,29 +507,24 @@ function closeViewMu() {
 }
 document.getElementById('view-mu-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeViewMu(); });
 
-// ── Exportar Remisión PDF ──
+// ── Exportar PDF (helpers) ──
 
-function exportarMuestraRemisionPDF() {
-  if (muViewingId == null) { showToast('No hay solicitud seleccionada.', '#e67e22'); return; }
+function _muestraContext() {
+  if (muViewingId == null) { showToast('No hay solicitud seleccionada.', '#e67e22'); return null; }
   if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
     showToast('El generador de PDF aún no está listo. Intenta de nuevo en unos segundos.', '#e67e22');
-    return;
+    return null;
   }
   if (typeof generarRemisionPDF !== 'function') {
     showToast('Módulo de remisión no cargado.', '#e74c3c');
-    return;
+    return null;
   }
   var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
-  if (!head) { showToast('Solicitud no encontrada.', '#e74c3c'); return; }
+  if (!head) { showToast('Solicitud no encontrada.', '#e74c3c'); return null; }
   var consec = head.Consecutivo || '';
   var emp = head.Empresa || '';
   var sameConsec = allMuestras.filter(function(x) { return x.Consecutivo === consec && consec && (x.Empresa || '') === emp; });
   if (!sameConsec.length) sameConsec = [head];
-
-  var remInput = document.getElementById('mu-view-remision');
-  var fdInput = document.getElementById('mu-view-fecha-despacho');
-  var remision = (remInput && remInput.value.trim()) || head.Remision || '';
-  var fechaDespacho = (fdInput && fdInput.value) || head.Fecha_Despacho || '';
 
   var entregas = sameConsec.map(function(x) {
     var cantEnt = Number(x.Cant_Entregada) || 0;
@@ -545,43 +540,80 @@ function exportarMuestraRemisionPDF() {
   }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
 
   if (!entregas.length) {
-    showToast('No hay productos para incluir en la remisión.', '#e67e22');
+    showToast('No hay productos para incluir en el PDF.', '#e67e22');
+    return null;
+  }
+  return { head: head, consec: consec, entregas: entregas };
+}
+
+// ── Exportar Remisión PDF (mismo layout que Pedidos) ──
+
+function exportarMuestraRemisionPDF() {
+  var ctx = _muestraContext();
+  if (!ctx) return;
+  var head = ctx.head;
+
+  var remInput = document.getElementById('mu-view-remision');
+  var fdInput = document.getElementById('mu-view-fecha-despacho');
+  var remision = (remInput && remInput.value.trim()) || head.Remision || '';
+  var fechaDespacho = (fdInput && fdInput.value) || head.Fecha_Despacho || '';
+
+  if (!remision) {
+    showToast('La remisión debe tener número asignado para imprimirse.', '#e67e22');
     return;
   }
 
-  var obsPartes = [];
-  if (head.Objetivo) obsPartes.push('Objetivo: ' + head.Objetivo);
-  if (head.Observaciones) obsPartes.push(head.Observaciones);
-  if (head.Tipo_Cultivo) obsPartes.push('Tipo de cultivo: ' + head.Tipo_Cultivo);
+  generarRemisionPDF({
+    empresa: head.Empresa || '',
+    consecutivo: ctx.consec,
+    ref_label: 'Solicitud',
+    fecha_entrega: fechaDespacho || '',
+    remision: remision,
+    cliente: head.Solicitante || '',
+    comercial: head.Responsable || '',
+    municipio: head.Municipio || '',
+    departamento: head.Departamento || '',
+    entregas: ctx.entregas
+  });
+}
+
+// ── Exportar Solicitud PDF (sin remisión, con campos originales) ──
+
+function exportarMuestraSolicitudPDF() {
+  var ctx = _muestraContext();
+  if (!ctx) return;
+  var head = ctx.head;
 
   var left = [
     ['Solicitante', head.Solicitante || ''],
     ['Responsable', head.Responsable || ''],
     ['Quien autoriza', head.Autoriza || ''],
+    ['Tipo de cultivo', head.Tipo_Cultivo || ''],
     ['Municipio', head.Municipio || ''],
-    ['Departamento', head.Departamento || ''],
-    ['Tipo de cultivo', head.Tipo_Cultivo || '']
+    ['Departamento', head.Departamento || '']
   ];
   var right = [
-    ['Fecha solicitud', head.Fecha_Solicitud || ''],
-    ['Fecha despacho', fechaDespacho || ''],
-    ['Fecha aplicación', head.Fecha_Aplicacion || ''],
-    ['Fecha seguimiento', head.Fecha_Seguimiento || ''],
     ['Estado', head.Estado || ''],
-    ['Tipo documento', 'Solicitud de muestras']
+    ['Fecha aplicacion', head.Fecha_Aplicacion || ''],
+    ['Fecha seguimiento', head.Fecha_Seguimiento || ''],
+    ['Objetivo', head.Objetivo || '']
   ];
 
   generarRemisionPDF({
     empresa: head.Empresa || '',
-    consecutivo: consec,
-    ref_label: 'Solicitud',
-    fecha_pedido: head.Fecha_Solicitud || '',
-    fecha_entrega: fechaDespacho || '',
-    remision: remision,
-    observaciones: obsPartes.join(' — '),
+    consecutivo: ctx.consec,
+    doc_title: 'SOLICITUD DE MUESTRAS',
+    doc_number: ctx.consec,
+    ref_label: '',
+    date_label: 'Fecha solicitud',
+    fecha_entrega: head.Fecha_Solicitud || '',
+    remision: '',
     left_fields: left,
     right_fields: right,
-    entregas: entregas
+    entregas: ctx.entregas,
+    copies: [''],
+    hide_signatures: true,
+    file_prefix: 'Solicitud_Muestras'
   });
 }
 

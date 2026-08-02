@@ -100,7 +100,8 @@ function generarRemisionPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
   var doc = new jsPDF();
   var palette = _pdfPaletteFor(data.empresa);
-  var copias = ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD', 'CLIENTE', 'COPIA - LOGISTICA'];
+  var copias = data.copies || ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD', 'CLIENTE', 'COPIA - LOGISTICA'];
+  if (!copias.length) copias = [''];
   var genStamp = new Date().toLocaleString('es-CO');
   copias.forEach(function(label, idx) {
     if (idx > 0) doc.addPage();
@@ -114,7 +115,8 @@ function generarRemisionPDF(data) {
     }
   });
   var sigla = (typeof getSigla === 'function' ? getSigla(data.empresa) : '') || 'Remision';
-  var fileName = 'Remision_' + sigla + '_' + (data.consecutivo || '') + (data.remision ? '_' + String(data.remision) : '') + '.pdf';
+  var filePrefix = data.file_prefix || 'Remision';
+  var fileName = filePrefix + '_' + sigla + '_' + (data.consecutivo || '') + (data.remision ? '_' + String(data.remision) : '') + '.pdf';
   doc.save(fileName);
 }
 
@@ -127,7 +129,10 @@ function _drawRemisionCopy(doc, data, palette) {
 
   var headerInfo = _pdfRemisionHeaderInfoFor(data.empresa);
   var headerH = headerInfo ? 48 : 30;
-  var refLabel = data.ref_label || 'Pedido';
+  var refLabel = (data.ref_label != null) ? data.ref_label : 'Pedido';
+  var docTitle = data.doc_title || 'REMISION';
+  var docNumber = (data.doc_number != null && data.doc_number !== '') ? String(data.doc_number) : (data.remision ? String(data.remision) : '');
+  var dateLabel = data.date_label || 'Fecha remision';
   var logo = _pdfHeaderLogoFor(data.empresa);
 
   var left = data.left_fields || [
@@ -160,7 +165,7 @@ function _drawRemisionCopy(doc, data, palette) {
     doc.setTextColor(accent[0], accent[1], accent[2]);
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('REMISION' + (data.remision ? '  N° ' + String(data.remision) : ''), titleX, 13);
+    doc.text(docTitle + (docNumber ? '  N° ' + docNumber : ''), titleX, 13);
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
@@ -168,8 +173,12 @@ function _drawRemisionCopy(doc, data, palette) {
     doc.setFontSize(9);
     doc.setTextColor(accent[0], accent[1], accent[2]);
     doc.setFont(undefined, 'bold');
-    doc.text(refLabel + ' #' + String(data.consecutivo || ''), pw - 14, 13, { align: 'right' });
-    doc.text('Fecha remision: ' + String(data.fecha_entrega || ''), pw - 14, 21, { align: 'right' });
+    if (refLabel && data.consecutivo) {
+      doc.text(refLabel + ' #' + String(data.consecutivo), pw - 14, 13, { align: 'right' });
+    }
+    if (data.fecha_entrega) {
+      doc.text(dateLabel + ': ' + String(data.fecha_entrega), pw - 14, 21, { align: 'right' });
+    }
     doc.setFont(undefined, 'normal');
 
     if (headerInfo) {
@@ -288,6 +297,8 @@ function _drawRemisionCopy(doc, data, palette) {
       if (hookData.pageNumber > 1) drawPageTop();
     }
   });
+
+  if (data.hide_signatures) return;
 
   var finalY = doc.lastAutoTable.finalY + 10;
   var sigTop = finalY + 22;
