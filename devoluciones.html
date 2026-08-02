@@ -113,10 +113,6 @@
     <div class="card-head">
       <h3>Devoluciones registradas <span id="row-ct-dev" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
-        <div style="display:flex;gap:0;border:1px solid #cbd5e0;border-radius:6px;overflow:hidden;margin-right:4px" title="Modo de vista">
-          <button id="btn-view-table" onclick="setDevView('table')" style="padding:5px 10px;font-size:0.76rem;font-weight:600;border:none;cursor:pointer;background:#e67e22;color:white;transition:all 0.2s" title="Vista tabla">📋 Tabla</button>
-          <button id="btn-view-grouped" onclick="setDevView('grouped')" style="padding:5px 10px;font-size:0.76rem;font-weight:600;border:none;cursor:pointer;background:#edf2f7;color:#718096;transition:all 0.2s" title="Vista agrupada">📊 Agrupado</button>
-        </div>
         <button id="btn-clear-sort-dev" onclick="clearSortDev()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
         <button class="btn-dl auth-edit-only" onclick="document.getElementById('dev-file-upload').click()" style="background:#2c3e50">📂 Importar Excel</button>
         <input type="file" id="dev-file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleDevExcelUpload(this)">
@@ -134,7 +130,6 @@
         </table>
       </div>
     </div>
-    <div id="dev-grouped-view" style="display:none"></div>
   </div>
   <div class="pagination" id="dev-pagination"></div>
   </div>
@@ -943,7 +938,7 @@
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/pdf-remision.js?v=20260802n"></script>
-<script src="js/devoluciones.js?v=20260802a"></script>
+<script src="js/devoluciones.js?v=20260802b"></script>
 <script src="js/cambios.js?v=20260802a"></script>
 </body>
 </html>
