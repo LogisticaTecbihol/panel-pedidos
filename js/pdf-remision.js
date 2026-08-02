@@ -1,10 +1,10 @@
 // ── PDF de Remisión (compartido: pedidos, muestras, etc.) ──
 // Depende de: window.jspdf (jsPDF + autoTable) y getSigla() de shared.js.
 
-var _pdfLogos = { PARCELAR: null, IASO: null, RESO: null };
+var _pdfLogos = { PARCELAR: null, IASO: null, RESO: null, GREEN: null };
 (function _preloadPdfLogos() {
   if (typeof document === 'undefined') return;
-  var sources = { PARCELAR: 'assets/logo_parcelar.png', IASO: 'assets/logo_iaso.png', RESO: 'assets/logo_reso.png' };
+  var sources = { PARCELAR: 'assets/logo_parcelar.png', IASO: 'assets/logo_iaso.png', RESO: 'assets/logo_reso.png', GREEN: 'assets/logo_green.png' };
   Object.keys(sources).forEach(function(key) {
     var img = new Image();
     img.onload = function() {
