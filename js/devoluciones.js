@@ -33,7 +33,6 @@ var sortLevelsDev = [
 var SORT_COLS_DEV = [
   { id:'fecha',      label:'Fecha',       fn: function(r) { return +new Date(r.Fecha||0); } },
   { id:'empresa',    label:'Empresa',     fn: function(r) { return getSiglaDev(r.Empresa); } },
-  { id:'consecutivo',label:'Consec.',     fn: function(r) { return Number(r.Consecutivo)||0; } },
   { id:'cliente',    label:'Cliente',     fn: function(r) { return (r.Cliente||'').toLowerCase(); } },
   { id:'cantidad',   label:'Cantidad',    fn: function(r) { return Number(r.Cantidad)||0; } },
   { id:'valor_total',label:'Valor Total', fn: function(r) { return Number(r.Valor_Total)||0; } },
@@ -265,11 +264,18 @@ function clearDevFilters() {
 }
 
 // ── Group devoluciones ──
+// Clave de agrupación: empresa + cliente + vendedor + fecha.
+// Todas las devoluciones (consecutivos) que compartan estos cuatro valores se
+// visualizan como una sola fila y se gestionan en bloque.
+function devGroupKey(r) {
+  return (r.Empresa || '') + '||' + (r.Cliente || '') + '||' + (r.Vendedor || '') + '||' + (r.Fecha || '');
+}
+
 function groupDevoluciones(rows) {
   var map = {};
   var order = [];
   rows.forEach(function(r) {
-    var key = (r.Empresa || '') + '||' + (r.Consecutivo || r.id);
+    var key = devGroupKey(r);
     if (!map[key]) {
       map[key] = { head: Object.assign({}, r), lines: [], key: key };
       order.push(key);
@@ -278,15 +284,20 @@ function groupDevoluciones(rows) {
   });
   return order.map(function(k) {
     var g = map[k];
+    var consecSet = {};
+    g.lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSet[l.Consecutivo] = 1; });
+    var consecs = Object.keys(consecSet).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
     g.head._key = k;
     g.head._nProds = g.lines.length;
     g.head._lines = g.lines;
     g.head._totalValor = g.lines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0);
     g.head._totalCant = g.lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
     g.head._lineIds = g.lines.map(function(l) { return l.__row || l.id; });
-    g.head._estado = g.lines.every(function(l) { return l.Estado === 'Tramitada'; }) && g.lines[0].Estado ? 'Tramitada' : (g.lines[0].Estado || 'Pendiente');
+    g.head._estado = g.lines.every(function(l) { return l.Estado === 'Tramitada'; }) ? 'Tramitada' : 'Pendiente';
     g.head._remision = g.lines[0].Remision || '';
     g.head._fechaDevolucion = g.lines[0].Fecha_Devolucion || '';
+    g.head._consecutivos = consecs;
+    g.head._nConsec = consecs.length;
     return g.head;
   });
 }
@@ -341,7 +352,7 @@ function renderDevHeader() {
     { label:'#', id:null },
     { label:'Fecha', id:'fecha' },
     { label:'Empresa', id:'empresa' },
-    { label:'Consec.', id:'consecutivo' },
+    { label:'Consec.(s)', id:null },
     { label:'Factura', id:null },
     { label:'Cliente', id:'cliente' },
     { label:'Vendedor', id:'vendedor' },
@@ -425,14 +436,14 @@ function renderDevTable() {
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
       '<td title="' + (r.Empresa||'') + '"><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + getSiglaDev(r.Empresa) + '</span></td>' +
-      '<td style="text-align:center;font-weight:600">' + (r.Consecutivo||'—') + '</td>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem" title="' + (r._consecutivos||[]).join(', ') + '">' + ((r._consecutivos||[]).length ? (r._consecutivos.length > 3 ? r._consecutivos.slice(0,3).join(', ') + ' +' + (r._consecutivos.length-3) : r._consecutivos.join(', ')) : '—') + '</td>' +
       '<td style="font-size:0.78rem">' + (function(){ var fs={}; (r._lines||[r]).forEach(function(l){ if(l.Num_Factura) fs[l.Num_Factura]=1; }); var k=Object.keys(fs); return k.length ? k.join(', ') : '—'; })() + '</td>' +
       '<td style="font-weight:600;font-size:0.82rem">' + (r.Cliente||'—') + '</td>' +
       '<td style="font-size:0.78rem">' + (r.Vendedor||'—') + '</td>' +
       '<td style="text-align:center"><span style="background:#edf2f7;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.8rem">' + (r._nProds||0) + '</span></td>' +
       '<td style="text-align:center;font-weight:600">' + (r._totalCant||0) + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(r._totalValor) + '</td>' +
-      '<td style="font-size:0.76rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.Motivo||'') + '">' + (r.Motivo||'—') + '</td>' +
+      '<td style="font-size:0.76rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (function(){ var ms={}; (r._lines||[r]).forEach(function(l){ if(l.Motivo) ms[l.Motivo]=1; }); return Object.keys(ms).join(' · '); })() + '">' + (function(){ var ms={}; (r._lines||[r]).forEach(function(l){ if(l.Motivo) ms[l.Motivo]=1; }); var k=Object.keys(ms); return k.length ? k.join(' · ') : '—'; })() + '</td>' +
       '<td style="text-align:center">' + estadoBadge + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-edit" onclick="viewDevDetail(\'' + keyEsc + '\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
@@ -449,24 +460,30 @@ function renderDevTable() {
 // ── Detail view modal ──
 function viewDevDetail(key) {
   var lines = devoluciones.filter(function(r) {
-    return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === key;
+    return devGroupKey(r) === key;
   });
   if (!lines.length) return;
   var r = lines[0];
+
+  var consecSet = {}; lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSet[l.Consecutivo] = 1; });
+  var consecList = Object.keys(consecSet).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
+  var motivoSet = {}; lines.forEach(function(l) { if (l.Motivo) motivoSet[l.Motivo] = 1; });
+  var motivoList = Object.keys(motivoSet);
+  var allTramitada = lines.every(function(l) { return l.Estado === 'Tramitada'; });
 
   function devField(label, val) {
     return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">' + label + '</span><br>' +
       '<span style="font-size:0.85rem;color:#2d3748">' + (val || '—') + '</span></div>';
   }
 
-  var estadoLabel = r.Estado === 'Tramitada'
+  var estadoLabel = allTramitada
     ? '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Tramitada</span>'
     : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Pendiente</span>';
 
   var html = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem">' +
     devField('Empresa', getSiglaDev(r.Empresa)) +
     devField('Fecha', fmtDate(r.Fecha)) +
-    devField('Consecutivo', r.Consecutivo) +
+    devField('Consecutivo(s)', consecList.length ? consecList.join(', ') : '—') +
     devField('Vendedor', r.Vendedor) +
     devField('Cliente', r.Cliente) +
     devField('NIT', r.NIT) +
@@ -474,7 +491,7 @@ function viewDevDetail(key) {
     devField('Municipio', r.Municipio) +
     devField('Departamento', r.Departamento) +
     devField('Teléfono', r.Telefono) +
-    devField('Motivo', r.Motivo) +
+    devField('Motivo', motivoList.length ? motivoList.join(' · ') : '—') +
     devField('Estado', estadoLabel) +
     '</div>' +
     (function() {
@@ -508,7 +525,7 @@ function viewDevDetail(key) {
     '</div>';
 
   html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc">' +
-    '<th>Factura</th><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th>' +
+    '<th style="text-align:center">Consec.</th><th>Factura</th><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th>' +
     '<th style="text-align:right">Cant. Devuelta</th><th style="text-align:right">V. Unitario</th>' +
     '<th style="text-align:right">V. Total</th><th style="width:80px"></th>' +
     '</tr></thead><tbody>';
@@ -517,6 +534,7 @@ function viewDevDetail(key) {
   lines.forEach(function(x) {
     totalValor += Number(x.Valor_Total) || 0;
     html += '<tr>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + (x.Consecutivo || '—') + '</td>' +
       '<td style="font-size:0.78rem">' + (x.Num_Factura || '—') + '</td>' +
       '<td style="font-weight:600">' + (x.Producto || '—') + '</td>' +
       '<td>' + (x.Presentacion || '—') + '</td>' +
@@ -531,12 +549,12 @@ function viewDevDetail(key) {
   });
 
   html += '<tr style="background:#fef9f2;font-weight:700;border-top:2px solid #e2e8f0">' +
-    '<td colspan="6" style="text-align:right">TOTAL:</td>' +
+    '<td colspan="7" style="text-align:right">TOTAL:</td>' +
     '<td style="text-align:right">' + fmtMoney(totalValor) + '</td><td></td></tr>';
   html += '</tbody></table></div>';
 
   document.getElementById('view-dev-meta').innerHTML =
-    '<span>📋 Consec: ' + (r.Consecutivo || '—') + '</span>' +
+    '<span>📋 Consec: ' + (consecList.length ? consecList.join(', ') : '—') + '</span>' +
     '<span>📅 ' + fmtDate(r.Fecha) + '</span>' +
     '<span>👤 ' + (r.Cliente || '—') + '</span>';
 
@@ -569,7 +587,7 @@ function _devViewContext() {
     return null;
   }
   var lines = devoluciones.filter(function(r) {
-    return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === devViewingKey;
+    return devGroupKey(r) === devViewingKey;
   });
   if (!lines.length) { showToast('Devolución no encontrada.', '#e74c3c'); return null; }
   return { head: lines[0], lines: lines };
@@ -698,14 +716,17 @@ document.getElementById('view-dev-overlay').addEventListener('click', function(e
 // ── Delete group ──
 function openDeleteDevGroup(key) {
   var lines = devoluciones.filter(function(r) {
-    return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === key;
+    return devGroupKey(r) === key;
   });
   if (!lines.length) return;
   var r = lines[0];
+  var consecSetD = {}; lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSetD[l.Consecutivo] = 1; });
+  var consecListD = Object.keys(consecSetD).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
   deleteDevGroupIds = lines.map(function(l) { return l.__row || l.id; });
   document.getElementById('del-dev-msg').textContent = '¿Eliminar esta devolución completa?';
   document.getElementById('del-dev-detail').innerHTML =
-    'Cliente: <strong>' + (r.Cliente||'—') + '</strong> · Consec: <strong>' + (r.Consecutivo||'—') + '</strong><br>' +
+    'Cliente: <strong>' + (r.Cliente||'—') + '</strong> · Fecha: <strong>' + fmtDate(r.Fecha) + '</strong><br>' +
+    'Consec(s): <strong>' + (consecListD.length ? consecListD.join(', ') : '—') + '</strong> · Vendedor: <strong>' + (r.Vendedor||'—') + '</strong><br>' +
     'Productos: ' + lines.length + ' · Valor: ' + fmtMoney(lines.reduce(function(s,l){return s+(Number(l.Valor_Total)||0);},0)) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminarán ' + lines.length + ' registro(s) de la base de datos.</span>';
   document.getElementById('btn-del-dev-confirm').disabled = false;
@@ -1356,17 +1377,19 @@ function prefillDevForm(data) {
 // ── Tramitar Devolución ──
 function openTramitarDev(key) {
   var lines = devoluciones.filter(function(r) {
-    return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === key;
+    return devGroupKey(r) === key;
   });
   if (!lines.length) return;
   tramitarDevKey = key;
   tramitarDevLines = lines.map(function(l) {
-    return { id: l.__row || l.id, Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada || 0 };
+    return { id: l.__row || l.id, Consecutivo: l.Consecutivo || '', Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada || 0 };
   });
 
   var r = lines[0];
+  var consecSetT = {}; lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSetT[l.Consecutivo] = 1; });
+  var consecListT = Object.keys(consecSetT).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
   document.getElementById('tramitar-dev-meta').innerHTML =
-    '<span>📋 Consec: ' + (r.Consecutivo || '—') + '</span>' +
+    '<span>📋 Consec: ' + (consecListT.length ? consecListT.join(', ') : '—') + '</span>' +
     '<span>👤 ' + (r.Cliente || '—') + '</span>' +
     '<span>' + getSiglaDev(r.Empresa) + '</span>';
 
@@ -1381,6 +1404,7 @@ function openTramitarDev(key) {
   tbody.innerHTML = tramitarDevLines.map(function(l, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + (l.Consecutivo || '—') + '</td>' +
       '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
       '<td>' + (l.Presentacion || '—') + '</td>' +
       '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
@@ -1802,7 +1826,7 @@ function openBulkTramitarDev() {
 
   keys.forEach(function(key) {
     var lines = devoluciones.filter(function(r) {
-      return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === key;
+      return devGroupKey(r) === key;
     });
     if (!lines.length) return;
     var r = lines[0];
@@ -1816,16 +1840,18 @@ function openBulkTramitarDev() {
       groupOrder.push(gKey);
     }
     var g = groupMap[gKey];
-    g.consecutivos.push(r.Consecutivo || '—');
     g.nProds += lines.length;
     g.devKeys.push(key);
     lines.forEach(function(l) {
+      if (l.Consecutivo != null && l.Consecutivo !== '' && g.consecutivos.indexOf(l.Consecutivo) < 0) {
+        g.consecutivos.push(l.Consecutivo);
+      }
       g.totalCant += Number(l.Cantidad) || 0;
       g.totalValor += Number(l.Valor_Total) || 0;
       allLines.push({
         id: l.__row || l.id, Producto: l.Producto, Presentacion: l.Presentacion,
         Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada || 0,
-        Consecutivo: r.Consecutivo || '—', Cliente: r.Cliente || '—'
+        Consecutivo: l.Consecutivo || '—', Cliente: r.Cliente || '—'
       });
     });
   });
@@ -1953,7 +1979,7 @@ async function saveBulkTramitarDev() {
   for (var ki = 0; ki < keys.length; ki++) {
     var key = keys[ki];
     var lines = devoluciones.filter(function(r) {
-      return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === key;
+      return devGroupKey(r) === key;
     });
     if (!lines.length) continue;
 
