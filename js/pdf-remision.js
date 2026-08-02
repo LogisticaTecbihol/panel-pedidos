@@ -252,12 +252,10 @@ function _drawRemisionCopy(doc, data, palette) {
     var esBonif = (p.bonificado || '') === 'Si' || (p.bonificado || '') === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
     var prodName = String(p.producto || '');
     var presName = String(p.presentacion || '');
-    if (!presName.trim()) {
-      var m = prodName.match(/^(.*?)\s+[xX]\s+(.+)$/);
-      if (m) {
-        prodName = m[1].trim();
-        presName = m[2].trim();
-      }
+    var m = prodName.match(/^(.*?)\s+[xX]\s+(.+)$/);
+    if (m) {
+      prodName = m[1].trim();
+      presName = m[2].trim();
     }
     return [
       i + 1,
