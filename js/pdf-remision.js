@@ -130,25 +130,18 @@ function _drawRemisionCopy(doc, data, palette) {
   var refLabel = data.ref_label || 'Pedido';
   var logo = _pdfHeaderLogoFor(data.empresa);
 
-  var consignVal = (data.consignacion === 'Sí' || data.consignacion === 'Si') ? 'Sí' : 'No';
   var left = data.left_fields || [
     ['Cliente', data.cliente || ''],
     ['NIT', data.nit || ''],
-    ['Facturar a', data.facturar_a || ''],
-    ['NIT Adicional', data.nit_adicional || ''],
     ['Telefono', data.telefono || ''],
     ['Municipio', data.municipio || ''],
     ['Departamento', data.departamento || ''],
   ];
   var right = data.right_fields || [
     ['Comercial', data.comercial || ''],
-    ['Plazo de Pago', data.plazo || ''],
-    ['Precio Facturacion', data.precio || ''],
     ['Direccion', data.direccion || ''],
-    ['Consignacion', consignVal],
     ['Fecha pedido', data.fecha_pedido || ''],
   ];
-  var obsText = String(data.observaciones || '');
 
   function drawPageTop() {
     doc.setFillColor(255, 255, 255);
@@ -248,21 +241,7 @@ function _drawRemisionCopy(doc, data, palette) {
     doc.setDrawColor(200, 210, 220);
     doc.line(midX, infoTop, midX, infoBottom);
 
-    y += 3;
-    var obsMaxW = pw - 28 - 48;
-    var obsLines = obsText ? doc.splitTextToSize(obsText, obsMaxW) : [''];
-    var obsH = Math.max(14, obsLines.length * 4 + 8);
-    doc.setFillColor(254, 249, 231);
-    doc.roundedRect(14, y - 4, pw - 28, obsH, 2, 2, 'F');
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(125, 102, 8);
-    doc.text('Observaciones:', 18, y + 1);
-    doc.setFont(undefined, 'normal');
-    doc.text(obsLines, 62, y + 1);
-    y += obsH;
-    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    y += 4;
-
+    y += 6;
     return y;
   }
 
