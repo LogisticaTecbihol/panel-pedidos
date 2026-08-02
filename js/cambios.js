@@ -7,6 +7,7 @@ var deleteCamGroupIds = null;
 var gestionarCamIds = null;
 var catalogoProductosCam = [];
 var catalogoClientesCam = [];
+var camViewingKey = null;
 
 // ── Constants ──
 var EMPRESAS_CAM = [
@@ -369,8 +370,17 @@ function viewCamDetail(key) {
     '<span>👤 '+(r.Cliente||'—')+'</span>';
   document.getElementById('view-cam-body').innerHTML = html;
   document.getElementById('view-cam-overlay').classList.add('show');
+
+  camViewingKey = key;
+  var btnIn = document.getElementById('btn-cam-rem-ingreso');
+  var btnOut = document.getElementById('btn-cam-rem-salida');
+  if (btnIn) btnIn.style.display = r.Remision_Ingreso ? 'inline-block' : 'none';
+  if (btnOut) btnOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
 }
-function closeViewCam() { document.getElementById('view-cam-overlay').classList.remove('show'); }
+function closeViewCam() {
+  document.getElementById('view-cam-overlay').classList.remove('show');
+  camViewingKey = null;
+}
 document.getElementById('view-cam-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeViewCam(); });
 
 // ── Render lines in form ──
@@ -724,6 +734,314 @@ async function saveGestionarCam() {
     btn.disabled = false;
     btn.textContent = '✓ Cerrar cambio';
   }
+}
+
+// ── PDF Export (Cambios) ──
+function _camViewContext() {
+  if (!camViewingKey) { showToast('No hay cambio seleccionado.', '#e67e22'); return null; }
+  if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+    showToast('El generador de PDF aún no está listo. Intenta de nuevo en unos segundos.', '#e67e22');
+    return null;
+  }
+  if (typeof generarRemisionPDF !== 'function') {
+    showToast('Módulo de remisión no cargado.', '#e74c3c');
+    return null;
+  }
+  var lines = cambios.filter(function(r) {
+    return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === camViewingKey;
+  });
+  if (!lines.length) { showToast('Cambio no encontrado.', '#e74c3c'); return null; }
+  var head = lines[0];
+  var linesCambiar = lines.filter(function(l) { return l.Tipo_Linea === 'CAMBIAR'; });
+  var linesEntregar = lines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+  return { head: head, lines: lines, cambiar: linesCambiar, entregar: linesEntregar };
+}
+
+function exportarCamSolicitudPDF() {
+  var ctx = _camViewContext();
+  if (!ctx) return;
+  var head = ctx.head;
+
+  var jsPDF = window.jspdf.jsPDF;
+  var doc = new jsPDF();
+  var pw = doc.internal.pageSize.getWidth();
+  var palette = _pdfPaletteFor(head.Empresa);
+  var accent = palette.accent;
+  var darkText = [45, 55, 72];
+  var grayText = [113, 128, 150];
+  var headerInfo = (typeof _pdfRemisionHeaderInfoFor === 'function') ? _pdfRemisionHeaderInfoFor(head.Empresa) : null;
+  var headerH = headerInfo ? 48 : 30;
+  var logo = _pdfHeaderLogoFor(head.Empresa);
+
+  // Header
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, pw, headerH, 'F');
+  doc.setDrawColor(accent[0], accent[1], accent[2]);
+  doc.setLineWidth(1.2);
+  doc.line(0, headerH, pw, headerH);
+
+  var titleX = 14;
+  if (logo) {
+    try {
+      doc.addImage(logo.data, 'PNG', 5, 4, 22, 22);
+      titleX = 34;
+    } catch (e) {}
+  }
+
+  doc.setTextColor(accent[0], accent[1], accent[2]);
+  doc.setFontSize(15);
+  doc.setFont(undefined, 'bold');
+  doc.text('SOLICITUD DE CAMBIO DE MERCANCIA  N° ' + String(head.Consecutivo || ''), titleX, 13);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+  doc.text(String(head.Empresa || ''), titleX, 21);
+  doc.setFontSize(9);
+  doc.setTextColor(accent[0], accent[1], accent[2]);
+  doc.setFont(undefined, 'bold');
+  if (head.Fecha_Solicitud) {
+    doc.text('Fecha solicitud: ' + String(head.Fecha_Solicitud), pw - 14, 21, { align: 'right' });
+  }
+  doc.setFont(undefined, 'normal');
+
+  if (headerInfo) {
+    doc.setFontSize(7);
+    doc.setTextColor(120, 132, 150);
+    var infoStartY = 30;
+    var infoLineH = 3.4;
+    headerInfo.forEach(function(line, i) {
+      var bold = i === 0;
+      if (bold) doc.setFont(undefined, 'bold');
+      doc.text(String(line), pw - 14, infoStartY + i * infoLineH, { align: 'right' });
+      if (bold) doc.setFont(undefined, 'normal');
+    });
+  }
+
+  // Client data
+  var left = [
+    ['Cliente', head.Cliente || ''],
+    ['NIT', head.NIT || ''],
+    ['Telefono', head.Telefono || ''],
+    ['Correo', head.Correo || '']
+  ];
+  var right = [
+    ['N° Factura', head.Num_Factura || ''],
+    ['Fecha compra', head.Fecha_Compra || ''],
+    ['Fecha recogida', head.Fecha_Recogida || ''],
+    ['Estado', head.Estado || 'Pendiente']
+  ];
+
+  var y = headerH + 10;
+  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+  doc.setFontSize(9);
+  var totalW = pw - 28;
+  var leftBlockW = totalW * 0.58;
+  var leftValX = 14 + 34;
+  var rightLabelX = 14 + leftBlockW + 4;
+  var rightValX = rightLabelX + 34;
+  var leftValMaxW = (14 + leftBlockW) - leftValX - 4;
+  var rightValMaxW = pw - 14 - rightValX;
+  var maxF = Math.max(left.length, right.length);
+  var infoTop = y - 5;
+  var midX = 14 + leftBlockW;
+  var rowGap = 9;
+  for (var fi = 0; fi < maxF; fi++) {
+    var rowH = 0;
+    if (fi < left.length) {
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(accent[0], accent[1], accent[2]);
+      doc.text(left[fi][0] + ':', 16, y);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+      var lVal = String(left[fi][1] || '');
+      var lLines = lVal ? doc.splitTextToSize(lVal, leftValMaxW) : [''];
+      doc.text(lLines, leftValX, y);
+      rowH = Math.max(rowH, (lLines.length - 1) * 4);
+    }
+    if (fi < right.length) {
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(accent[0], accent[1], accent[2]);
+      doc.text(right[fi][0] + ':', rightLabelX + 2, y);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+      var rVal = String(right[fi][1] || '');
+      var rLines = rVal ? doc.splitTextToSize(rVal, rightValMaxW) : [''];
+      doc.text(rLines, rightValX, y);
+      rowH = Math.max(rowH, (rLines.length - 1) * 4);
+    }
+    y += rowGap + rowH;
+    if (fi < maxF - 1) {
+      doc.setDrawColor(200, 210, 220);
+      doc.setLineWidth(0.2);
+      doc.line(14, y - 4, pw - 14, y - 4);
+    }
+  }
+  var infoBottom = y - 4;
+  doc.setDrawColor(140, 155, 175);
+  doc.setLineWidth(0.4);
+  doc.rect(14, infoTop, pw - 28, infoBottom - infoTop);
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(200, 210, 220);
+  doc.line(midX, infoTop, midX, infoBottom);
+  y += 4;
+
+  // Mercancía a Cambiar
+  if (ctx.cambiar.length) {
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(192, 57, 43);
+    doc.text('Mercancia a cambiar (devuelve el cliente)', 14, y + 4);
+    y += 6;
+    doc.autoTable({
+      startY: y,
+      head: [['#', 'Producto', 'Cantidad', 'Lote / Vencimiento', 'Razon del cambio']],
+      body: ctx.cambiar.map(function(l, i) {
+        return [ i + 1, String(l.Producto || ''), Number(l.Cantidad) || 0, String(l.Lote_Vencimiento || ''), String(l.Razon_Cambio || '') ];
+      }),
+      theme: 'grid',
+      headStyles: { fillColor: [192, 57, 43], fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
+      bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
+      columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 2: { halign: 'right', cellWidth: 22 } },
+      margin: { left: 14, right: 14 },
+      styles: { cellPadding: 3 },
+      tableLineColor: [60, 60, 60],
+      tableLineWidth: 0.5
+    });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // Mercancía a Entregar
+  if (ctx.entregar.length) {
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(39, 174, 96);
+    doc.text('Mercancia a entregar (nueva para el cliente)', 14, y + 4);
+    y += 6;
+    doc.autoTable({
+      startY: y,
+      head: [['#', 'Producto', 'Cantidad', 'Lote / Vencimiento', 'Fecha del cambio']],
+      body: ctx.entregar.map(function(l, i) {
+        return [ i + 1, String(l.Producto || ''), Number(l.Cantidad) || 0, String(l.Lote_Vencimiento || ''), String(l.Fecha_Cambio || '') ];
+      }),
+      theme: 'grid',
+      headStyles: { fillColor: [39, 174, 96], fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
+      bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
+      columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 2: { halign: 'right', cellWidth: 22 } },
+      margin: { left: 14, right: 14 },
+      styles: { cellPadding: 3 },
+      tableLineColor: [60, 60, 60],
+      tableLineWidth: 0.5
+    });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // Valores
+  var vc = Number(head.Valor_Cliente) || 0;
+  var ve = Number(head.Valor_Empresa) || 0;
+  if (vc || ve) {
+    doc.setFillColor(247, 250, 252);
+    doc.roundedRect(14, y, pw - 28, 14, 2, 2, 'F');
+    doc.setDrawColor(200, 210, 220);
+    doc.roundedRect(14, y, pw - 28, 14, 2, 2, 'S');
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+    doc.text('Valor a favor del cliente: ' + fmtMoney(vc), 18, y + 9);
+    doc.text('Valor a favor de la empresa: ' + fmtMoney(ve), pw - 18, y + 9, { align: 'right' });
+    y += 18;
+  }
+
+  // Observaciones
+  if (head.Observaciones) {
+    var obsMaxW = pw - 28 - 40;
+    var obsLines = doc.splitTextToSize(String(head.Observaciones), obsMaxW);
+    var obsH = Math.max(14, obsLines.length * 4 + 8);
+    doc.setFillColor(254, 249, 231);
+    doc.roundedRect(14, y, pw - 28, obsH, 2, 2, 'F');
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(125, 102, 8);
+    doc.setFontSize(9);
+    doc.text('Observaciones:', 18, y + 5);
+    doc.setFont(undefined, 'normal');
+    doc.text(obsLines, 54, y + 5);
+    y += obsH + 4;
+  }
+
+  // Footer generado
+  var ph = doc.internal.pageSize.getHeight();
+  doc.setFontSize(7);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(grayText[0], grayText[1], grayText[2]);
+  doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, ph - 5);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(accent[0], accent[1], accent[2]);
+  doc.text('OP-PDC-FO11', pw / 2, ph - 5, { align: 'center' });
+
+  var sigla = (typeof getSigla === 'function' ? getSigla(head.Empresa) : '') || 'Cambio';
+  doc.save('Solicitud_Cambio_' + sigla + '_' + (head.Consecutivo || 'nuevo') + '.pdf');
+}
+
+function exportarCamRemisionPDF(tipo) {
+  var ctx = _camViewContext();
+  if (!ctx) return;
+  var head = ctx.head;
+  var esIngreso = tipo === 'ingreso';
+  var remision = esIngreso ? (head.Remision_Ingreso || '') : (head.Remision_Salida || '');
+  var bodega = esIngreso ? (head.Bodega_Ingreso || '') : (head.Bodega_Salida || '');
+  var fechaRem = esIngreso ? (head.Fecha_Ingreso || '') : (head.Fecha_Salida || '');
+  if (!remision) {
+    showToast('Este cambio no tiene remisión de ' + tipo + ' registrada.', '#e67e22');
+    return;
+  }
+
+  // Ingreso = producto que devuelve el cliente (CAMBIAR)
+  // Salida  = producto nuevo para el cliente (ENTREGAR)
+  var srcLines = esIngreso ? ctx.cambiar : ctx.entregar;
+  if (!srcLines.length) {
+    showToast('No hay productos de tipo ' + (esIngreso ? 'a cambiar' : 'a entregar') + ' para incluir.', '#e67e22');
+    return;
+  }
+  var entregas = srcLines.map(function(l) {
+    return {
+      producto: l.Producto || '',
+      presentacion: l.Lote_Vencimiento || '',
+      cantidad: Number(l.Cantidad) || 0,
+      valor_unitario: 0,
+      valor_total: 0,
+      bonificado: 'No'
+    };
+  }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
+
+  var left = [
+    ['Cliente', head.Cliente || ''],
+    ['NIT', head.NIT || ''],
+    ['Telefono', head.Telefono || ''],
+    ['N° Factura', head.Num_Factura || '']
+  ];
+  var right = [
+    ['Correo', head.Correo || ''],
+    ['Bodega', bodega || ''],
+    ['Fecha compra', head.Fecha_Compra || ''],
+    ['Estado', head.Estado || 'Pendiente']
+  ];
+
+  generarRemisionPDF({
+    empresa: head.Empresa || '',
+    consecutivo: head.Consecutivo || '',
+    doc_title: esIngreso ? 'REMISION DE INGRESO' : 'REMISION DE SALIDA',
+    ref_label: 'Cambio',
+    date_label: 'Fecha remision',
+    fecha_entrega: fechaRem || '',
+    remision: remision,
+    cliente: head.Cliente || '',
+    nit: head.NIT || '',
+    telefono: head.Telefono || '',
+    left_fields: left,
+    right_fields: right,
+    entregas: entregas,
+    qty_header: 'Cantidad',
+    file_prefix: esIngreso ? 'Remision_Ingreso_Cambio' : 'Remision_Salida_Cambio'
+  });
 }
 
 // ── Init ──

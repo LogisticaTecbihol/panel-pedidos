@@ -8,6 +8,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
 <title>Devoluciones y Cambios – Sistema de Gestión Logística</title>
 <link rel="stylesheet" href="css/panel.css">
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -466,8 +468,13 @@
     </div>
     <div class="mbody" id="view-dev-body" style="max-height:70vh;overflow-y:auto"></div>
     <div class="mftr">
-      <div></div>
-      <button class="btn-cancel" onclick="closeViewDev()">Cerrar</button>
+      <div style="font-size:0.8rem;color:#718096">Exporta el documento a PDF</div>
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="exportarDevSolicitudPDF()" style="background:#e67e22;color:white;border-color:#e67e22">📄 Exportar Solicitud PDF</button>
+        <button class="btn-cancel" id="btn-dev-rem-ingreso" onclick="exportarDevRemisionPDF('ingreso')" style="background:#e65100;color:white;border-color:#e65100;display:none">📥 Remisión Ingreso PDF</button>
+        <button class="btn-cancel" id="btn-dev-rem-salida" onclick="exportarDevRemisionPDF('salida')" style="background:#2e7d32;color:white;border-color:#2e7d32;display:none">📤 Remisión Salida PDF</button>
+        <button class="btn-cancel" onclick="closeViewDev()">Cerrar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -829,8 +836,13 @@
     </div>
     <div class="mbody" id="view-cam-body" style="max-height:70vh;overflow-y:auto"></div>
     <div class="mftr">
-      <div></div>
-      <button class="btn-cancel" onclick="closeViewCam()">Cerrar</button>
+      <div style="font-size:0.8rem;color:#718096">Exporta el documento a PDF</div>
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="exportarCamSolicitudPDF()" style="background:#8e44ad;color:white;border-color:#8e44ad">📄 Exportar Solicitud PDF</button>
+        <button class="btn-cancel" id="btn-cam-rem-ingreso" onclick="exportarCamRemisionPDF('ingreso')" style="background:#e65100;color:white;border-color:#e65100;display:none">📥 Remisión Ingreso PDF</button>
+        <button class="btn-cancel" id="btn-cam-rem-salida" onclick="exportarCamRemisionPDF('salida')" style="background:#2e7d32;color:white;border-color:#2e7d32;display:none">📤 Remisión Salida PDF</button>
+        <button class="btn-cancel" onclick="closeViewCam()">Cerrar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -930,7 +942,8 @@
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/devoluciones.js"></script>
-<script src="js/cambios.js"></script>
+<script src="js/pdf-remision.js?v=20260802n"></script>
+<script src="js/devoluciones.js?v=20260802a"></script>
+<script src="js/cambios.js?v=20260802a"></script>
 </body>
 </html>

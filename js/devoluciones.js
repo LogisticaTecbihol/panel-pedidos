@@ -11,6 +11,7 @@ var devViewMode = 'table';
 var devCurrentPage = 1;
 var devPageSize = 25;
 var devDetSort = [];
+var devViewingKey = null;
 
 // ── Constants ──
 function getSiglaDev(n) { return getSigla(n); }
@@ -694,10 +695,155 @@ function viewDevDetail(key) {
 
   document.getElementById('view-dev-body').innerHTML = html;
   document.getElementById('view-dev-overlay').classList.add('show');
+
+  devViewingKey = key;
+  var btnIn = document.getElementById('btn-dev-rem-ingreso');
+  var btnOut = document.getElementById('btn-dev-rem-salida');
+  var hasIn = !!(r.Remision_Ingreso || r.Remision);
+  var hasOut = !!r.Remision_Salida;
+  if (btnIn) btnIn.style.display = hasIn ? 'inline-block' : 'none';
+  if (btnOut) btnOut.style.display = hasOut ? 'inline-block' : 'none';
 }
 
 function closeViewDev() {
   document.getElementById('view-dev-overlay').classList.remove('show');
+  devViewingKey = null;
+}
+
+// ── PDF Export (Devoluciones) ──
+function _devViewContext() {
+  if (!devViewingKey) { showToast('No hay devolución seleccionada.', '#e67e22'); return null; }
+  if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+    showToast('El generador de PDF aún no está listo. Intenta de nuevo en unos segundos.', '#e67e22');
+    return null;
+  }
+  if (typeof generarRemisionPDF !== 'function') {
+    showToast('Módulo de remisión no cargado.', '#e74c3c');
+    return null;
+  }
+  var lines = devoluciones.filter(function(r) {
+    return ((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) === devViewingKey;
+  });
+  if (!lines.length) { showToast('Devolución no encontrada.', '#e74c3c'); return null; }
+  return { head: lines[0], lines: lines };
+}
+
+function _devEntregas(lines, useEntregada) {
+  return lines.map(function(x) {
+    var cant;
+    if (useEntregada) {
+      var ce = Number(x.Cant_Entregada) || 0;
+      cant = ce > 0 ? ce : (Number(x.Cantidad) || 0);
+    } else {
+      cant = Number(x.Cantidad) || 0;
+    }
+    return {
+      producto: x.Producto || '',
+      presentacion: x.Presentacion || '',
+      cantidad: cant,
+      valor_unitario: Number(x.Valor_Unitario) || 0,
+      valor_total: Number(x.Valor_Total) || 0,
+      bonificado: 'No'
+    };
+  }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
+}
+
+function exportarDevSolicitudPDF() {
+  var ctx = _devViewContext();
+  if (!ctx) return;
+  var head = ctx.head;
+  var entregas = _devEntregas(ctx.lines, false);
+  if (!entregas.length) { showToast('No hay productos para incluir en la solicitud.', '#e67e22'); return; }
+
+  var facturas = (function() {
+    var fs = {};
+    ctx.lines.forEach(function(l) { if (l.Num_Factura) fs[l.Num_Factura] = 1; });
+    return Object.keys(fs).join(', ');
+  })();
+
+  var left = [
+    ['Cliente', head.Cliente || ''],
+    ['NIT', head.NIT || ''],
+    ['Vendedor', head.Vendedor || ''],
+    ['Telefono', head.Telefono || ''],
+    ['Municipio', head.Municipio || ''],
+    ['Departamento', head.Departamento || '']
+  ];
+  var right = [
+    ['Direccion', head.Direccion || ''],
+    ['Factura(s)', facturas || ''],
+    ['Motivo', head.Motivo || ''],
+    ['Observaciones', head.Observaciones || '']
+  ];
+
+  generarRemisionPDF({
+    empresa: head.Empresa || '',
+    consecutivo: head.Consecutivo || '',
+    doc_title: 'DEVOLUCION',
+    doc_number: head.Consecutivo || '',
+    ref_label: '',
+    date_label: 'Fecha solicitud',
+    fecha_entrega: head.Fecha || '',
+    remision: '',
+    left_fields: left,
+    right_fields: right,
+    entregas: entregas,
+    qty_header: 'Cantidad',
+    copies: [''],
+    hide_signatures: true,
+    file_prefix: 'Solicitud_Devolucion'
+  });
+}
+
+function exportarDevRemisionPDF(tipo) {
+  var ctx = _devViewContext();
+  if (!ctx) return;
+  var head = ctx.head;
+  var esIngreso = tipo === 'ingreso';
+  var remision = esIngreso ? (head.Remision_Ingreso || head.Remision || '') : (head.Remision_Salida || '');
+  var bodega = esIngreso ? (head.Bodega_Ingreso || '') : (head.Bodega_Salida || '');
+  var fechaRem = esIngreso ? (head.Fecha_Ingreso || head.Fecha_Devolucion || '') : (head.Fecha_Salida || '');
+  if (!remision) {
+    showToast('Esta devolución no tiene remisión de ' + tipo + ' registrada.', '#e67e22');
+    return;
+  }
+  var entregas = _devEntregas(ctx.lines, true);
+  if (!entregas.length) { showToast('No hay productos para incluir en la remisión.', '#e67e22'); return; }
+
+  var left = [
+    ['Cliente', head.Cliente || ''],
+    ['NIT', head.NIT || ''],
+    ['Vendedor', head.Vendedor || ''],
+    ['Telefono', head.Telefono || '']
+  ];
+  var right = [
+    ['Direccion', head.Direccion || ''],
+    ['Municipio', head.Municipio || ''],
+    ['Departamento', head.Departamento || ''],
+    ['Bodega', bodega || '']
+  ];
+
+  generarRemisionPDF({
+    empresa: head.Empresa || '',
+    consecutivo: head.Consecutivo || '',
+    doc_title: esIngreso ? 'REMISION DE INGRESO' : 'REMISION DE SALIDA',
+    ref_label: 'Devolucion',
+    date_label: 'Fecha remision',
+    fecha_entrega: fechaRem || '',
+    remision: remision,
+    cliente: head.Cliente || '',
+    nit: head.NIT || '',
+    telefono: head.Telefono || '',
+    comercial: head.Vendedor || '',
+    municipio: head.Municipio || '',
+    departamento: head.Departamento || '',
+    direccion: head.Direccion || '',
+    left_fields: left,
+    right_fields: right,
+    entregas: entregas,
+    qty_header: 'Cant. Devuelta',
+    file_prefix: esIngreso ? 'Remision_Ingreso_Devolucion' : 'Remision_Salida_Devolucion'
+  });
 }
 
 document.getElementById('view-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeViewDev(); });
