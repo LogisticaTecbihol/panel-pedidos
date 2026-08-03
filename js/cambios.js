@@ -708,9 +708,7 @@ async function saveGestionarCam() {
   var remSalida = document.getElementById('gestionar-cam-remision-salida').value.trim();
   var bodegaSalida = document.getElementById('gestionar-cam-bodega-salida').value;
   var fechaSalida = document.getElementById('gestionar-cam-fecha-salida').value;
-  if (!remIngreso) { showToast('Ingresa el N° de remisión de ingreso', '#e74c3c'); return; }
   if (!fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
-  if (!remSalida) { showToast('Ingresa el N° de remisión de salida', '#e74c3c'); return; }
   if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
   if (!gestionarCamIds || !gestionarCamIds.length) return;
 

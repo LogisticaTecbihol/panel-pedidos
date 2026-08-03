@@ -1456,9 +1456,7 @@ async function saveTramitarDev() {
   var remSalida = document.getElementById('tramitar-remision-salida').value.trim();
   var bodegaSalida = document.getElementById('tramitar-bodega-salida').value;
   var fechaSalida = document.getElementById('tramitar-fecha-salida').value;
-  if (!remIngreso) { showToast('Ingresa el N° de remisión de ingreso', '#e74c3c'); return; }
   if (!fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
-  if (!remSalida) { showToast('Ingresa el N° de remisión de salida', '#e74c3c'); return; }
   if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
 
   document.querySelectorAll('.tramitar-cant').forEach(function(inp) {
@@ -1980,9 +1978,7 @@ async function saveBulkTramitarDev() {
   var bodegaSalida = document.getElementById('bulk-tramitar-bodega-salida').value;
   var fechaSalida = document.getElementById('bulk-tramitar-fecha-salida').value;
 
-  if (!remIngreso) { showToast('Ingresa el N° de remisión de ingreso', '#e74c3c'); return; }
   if (!fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
-  if (!remSalida) { showToast('Ingresa el N° de remisión de salida', '#e74c3c'); return; }
   if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
 
   document.querySelectorAll('.bulk-cant-dev').forEach(function(inp) {
