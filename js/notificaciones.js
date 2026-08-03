@@ -52,6 +52,8 @@ var NOTIF = (function() {
       '.notif-inbox-list .row2 { font-size: 0.78rem; color: #4a5568; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }' +
       '.notif-inbox-list .row3 { font-size: 0.72rem; color: #a0aec0; margin-top: 3px; display: flex; justify-content: space-between; }' +
       '.notif-inbox-empty { padding: 32px 16px; text-align: center; color: #718096; font-size: 0.84rem; }' +
+      '.notif-inbox-ftr { display: block; padding: 10px 14px; background: #f7fafc; border-top: 1px solid #e2e8f0; text-align: center; font-weight: 700; color: #1a5276; text-decoration: none; font-size: 0.82rem; }' +
+      '.notif-inbox-ftr:hover { background: #edf2f7; }' +
 
       // Modal Enviar
       '.notif-send-users { max-height: 260px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafbfc; }' +
@@ -232,7 +234,8 @@ var NOTIF = (function() {
       }).join('') + '</ul>';
     }
 
-    _drop.innerHTML = hdr + body;
+    var ftr = '<a href="notificaciones.html" class="notif-inbox-ftr">Ver todas →</a>';
+    _drop.innerHTML = hdr + body + ftr;
 
     var markBtn = _drop.querySelector('.mark');
     if (markBtn && !markBtn.disabled) {

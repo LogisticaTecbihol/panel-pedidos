@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Bandeja de notificaciones — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔔</text></svg>">
+<title>Notificaciones – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css">
+<style>
+  .np-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 16px; background: #f7fafc; border-bottom: 1px solid #e2e8f0; }
+  .np-filters input, .np-filters select { border: 1px solid #cbd5e0; border-radius: 6px; padding: 6px 10px; font-size: 0.84rem; outline: none; background: white; }
+  .np-filters input:focus, .np-filters select:focus { border-color: #1a5276; }
+  .np-filters .grow { flex: 1; min-width: 200px; }
+  .np-filters .btn-bulk { background: #1a5276; color: white; border: none; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+  .np-filters .btn-bulk:hover { background: #154360; }
+  .np-filters .btn-bulk[disabled] { background: #a0aec0; cursor: not-allowed; }
+  .np-row { cursor: pointer; }
+  .np-row:hover { background: #f5fbff !important; }
+  .np-row.unread td { font-weight: 600; background: #ebf5fb; }
+  .np-row.unread:hover td { background: #d8ecf7; }
+  .np-badge-mod { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 700; background: #edf2f7; color: #2d3748; }
+  .np-badge-mod.pedidos      { background: #d5f5e3; color: #196f3d; }
+  .np-badge-mod.devoluciones { background: #fdebd0; color: #7e5109; }
+  .np-badge-mod.cambios      { background: #ebdef0; color: #4a235a; }
+  .np-badge-mod.muestras     { background: #d6eaf8; color: #1a5276; }
+  .np-state-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; margin-right: 6px; vertical-align: middle; }
+  .np-state-dot.unread { background: #e74c3c; }
+  .np-act-btn { background: none; border: 1px solid #cbd5e0; color: #4a5568; border-radius: 5px; padding: 4px 8px; font-size: 0.75rem; cursor: pointer; margin-right: 4px; }
+  .np-act-btn:hover { background: #edf2f7; }
+  .np-pager { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #f7fafc; border-top: 1px solid #e2e8f0; font-size: 0.82rem; color: #4a5568; }
+  .np-pager button { background: white; border: 1px solid #cbd5e0; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
+  .np-pager button[disabled] { color: #a0aec0; cursor: not-allowed; background: #f7fafc; }
+  .np-pager button:not([disabled]):hover { background: #edf2f7; }
+  .np-empty { text-align: center; padding: 40px 20px; color: #718096; font-size: 0.88rem; }
+  .np-msg-preview { color: #4a5568; font-weight: 400; font-size: 0.78rem; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
+  #np-check-all, .np-check { width: 15px; height: 15px; cursor: pointer; vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="notificaciones.html" class="active">🔔 Notificaciones</a>
+    <a href="usuarios.html" id="nav-usuarios" class="auth-admin-only" style="display:none">👥 Usuarios</a>
+    <a href="auditoria.html" id="nav-auditoria" class="auth-admin-only" style="display:none">🔍 Auditoría</a>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Cargando notificaciones...</h2>
+  <p>Verificando sesión</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadInbox()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc" style="border-color:#1a5276"><div class="num" id="s-total" style="color:#1a5276">0</div><div class="lbl">Total recibidas</div></div>
+    <div class="sc" style="border-color:#e74c3c"><div class="num" id="s-unread" style="color:#e74c3c">0</div><div class="lbl">No leídas</div></div>
+    <div class="sc" style="border-color:#27ae60"><div class="num" id="s-week" style="color:#27ae60">0</div><div class="lbl">Últimos 7 días</div></div>
+    <div class="sc" style="border-color:#8e44ad"><div class="num" id="s-senders" style="color:#8e44ad">0</div><div class="lbl">Remitentes</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>🔔 Bandeja de notificaciones <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="loadInbox()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div class="np-filters">
+      <input type="text" id="f-search" class="grow" placeholder="🔎 Buscar por título, mensaje o remitente…">
+      <select id="f-estado">
+        <option value="">Todas</option>
+        <option value="unread">No leídas</option>
+        <option value="read">Leídas</option>
+      </select>
+      <select id="f-modulo">
+        <option value="">Todos los módulos</option>
+        <option value="pedidos">📋 Pedidos</option>
+        <option value="devoluciones">🔄 Devoluciones</option>
+        <option value="cambios">🔁 Cambios</option>
+        <option value="muestras">🧪 Muestras</option>
+      </select>
+      <button class="btn-bulk" id="btn-mark-selected" disabled>Marcar seleccionadas como leídas</button>
+      <button class="btn-bulk" id="btn-mark-all" style="background:#27ae60">Marcar todas como leídas</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px"><input type="checkbox" id="np-check-all"></th>
+            <th style="width:60px">Estado</th>
+            <th style="width:140px">Fecha</th>
+            <th style="width:120px">Módulo</th>
+            <th>Título / mensaje</th>
+            <th style="width:180px">De</th>
+            <th style="width:130px">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="np-tbody"></tbody>
+      </table>
+    </div>
+    <div class="np-pager">
+      <div id="np-pager-info">—</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="np-prev">← Anterior</button>
+        <span id="np-page">1 / 1</span>
+        <button id="np-next">Siguiente →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/notificaciones.js"></script>
+<script src="js/notificaciones-page.js"></script>
+</body>
+</html>
