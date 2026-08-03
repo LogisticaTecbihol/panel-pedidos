@@ -617,20 +617,15 @@ function _devEntregas(lines, useEntregada) {
   }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
 }
 
-function exportarDevSolicitudPDF(opts) {
-  opts = opts || {};
-  var ctx = _devViewContext();
-  if (!ctx) return;
+function _dataDevSolicitud(ctx) {
   var head = ctx.head;
   var entregas = _devEntregas(ctx.lines, false);
-  if (!entregas.length) { showToast('No hay productos para incluir en la solicitud.', '#e67e22'); return; }
-
+  if (!entregas.length) return null;
   var facturas = (function() {
     var fs = {};
     ctx.lines.forEach(function(l) { if (l.Num_Factura) fs[l.Num_Factura] = 1; });
     return Object.keys(fs).join(', ');
   })();
-
   var left = [
     ['Cliente', head.Cliente || ''],
     ['NIT', head.NIT || ''],
@@ -645,8 +640,7 @@ function exportarDevSolicitudPDF(opts) {
     ['Motivo', head.Motivo || ''],
     ['Observaciones', head.Observaciones || '']
   ];
-
-  var data = {
+  return {
     empresa: head.Empresa || '',
     consecutivo: head.Consecutivo || '',
     doc_title: 'DEVOLUCION',
@@ -663,6 +657,15 @@ function exportarDevSolicitudPDF(opts) {
     hide_signatures: true,
     file_prefix: 'Solicitud_Devolucion'
   };
+}
+
+function exportarDevSolicitudPDF(opts) {
+  opts = opts || {};
+  var ctx = _devViewContext();
+  if (!ctx) return;
+  var head = ctx.head;
+  var data = _dataDevSolicitud(ctx);
+  if (!data) { showToast('No hay productos para incluir en la solicitud.', '#e67e22'); return; }
   if (opts.share) {
     enviarRemisionPDF(data, {
       modulo: 'devoluciones',
@@ -725,10 +728,33 @@ function exportarDevRemisionPDF(tipo, opts) {
     file_prefix: esIngreso ? 'Remision_Ingreso_Devolucion' : 'Remision_Salida_Devolucion'
   };
   if (opts.share) {
-    enviarRemisionPDF(data, {
+    if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+      showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
+    }
+    var solicitudData = _dataDevSolicitud(ctx);
+    var extras = [];
+    if (solicitudData) {
+      extras.push({
+        buildDoc: function() {
+          var r = generarRemisionPDF(Object.assign({}, solicitudData, { return_doc: true }));
+          return r ? r.doc : null;
+        },
+        meta: {
+          modulo: 'devoluciones',
+          referencia: head.Consecutivo || '',
+          titulo: 'Solicitud devolución #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente')
+        }
+      });
+    }
+    NOTIF.openModalEnviar({
       modulo: 'devoluciones',
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
-      titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' devolución #' + remision
+      titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' devolución #' + remision,
+      buildDoc: function() {
+        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
+        return r ? r.doc : null;
+      },
+      extras: extras
     });
     return;
   }
