@@ -982,6 +982,7 @@ function exportarCamSolicitudPDF(opts) {
 
   var sigla = (typeof getSigla === 'function' ? getSigla(head.Empresa) : '') || 'Cambio';
   var fileName = 'Solicitud_Cambio_' + sigla + '_' + (head.Consecutivo || 'nuevo') + '.pdf';
+  if (opts.return_doc) return { doc: doc, filename: fileName };
   if (opts.share) {
     if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
       showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
@@ -1060,10 +1061,28 @@ function exportarCamRemisionPDF(tipo, opts) {
     file_prefix: esIngreso ? 'Remision_Ingreso_Cambio' : 'Remision_Salida_Cambio'
   };
   if (opts.share) {
-    enviarRemisionPDF(data, {
+    if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+      showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
+    }
+    NOTIF.openModalEnviar({
       modulo: 'cambios',
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
-      titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' cambio #' + remision
+      titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' cambio #' + remision,
+      buildDoc: function() {
+        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
+        return r ? r.doc : null;
+      },
+      extras: [{
+        buildDoc: function() {
+          var r = exportarCamSolicitudPDF({ return_doc: true });
+          return r ? r.doc : null;
+        },
+        meta: {
+          modulo: 'cambios',
+          referencia: head.Consecutivo || '',
+          titulo: 'Solicitud cambio #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente')
+        }
+      }]
     });
     return;
   }
