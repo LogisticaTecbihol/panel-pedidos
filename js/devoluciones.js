@@ -564,10 +564,14 @@ function viewDevDetail(key) {
   devViewingKey = key;
   var btnIn = document.getElementById('btn-dev-rem-ingreso');
   var btnOut = document.getElementById('btn-dev-rem-salida');
+  var sendIn = document.getElementById('btn-dev-send-ingreso');
+  var sendOut = document.getElementById('btn-dev-send-salida');
   var hasIn = !!(r.Remision_Ingreso || r.Remision);
   var hasOut = !!r.Remision_Salida;
   if (btnIn) btnIn.style.display = hasIn ? 'inline-block' : 'none';
   if (btnOut) btnOut.style.display = hasOut ? 'inline-block' : 'none';
+  if (sendIn) sendIn.style.display = hasIn ? 'inline-block' : 'none';
+  if (sendOut) sendOut.style.display = hasOut ? 'inline-block' : 'none';
 }
 
 function closeViewDev() {
@@ -613,7 +617,8 @@ function _devEntregas(lines, useEntregada) {
   }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
 }
 
-function exportarDevSolicitudPDF() {
+function exportarDevSolicitudPDF(opts) {
+  opts = opts || {};
   var ctx = _devViewContext();
   if (!ctx) return;
   var head = ctx.head;
@@ -641,7 +646,7 @@ function exportarDevSolicitudPDF() {
     ['Observaciones', head.Observaciones || '']
   ];
 
-  generarRemisionPDF({
+  var data = {
     empresa: head.Empresa || '',
     consecutivo: head.Consecutivo || '',
     doc_title: 'DEVOLUCION',
@@ -657,10 +662,20 @@ function exportarDevSolicitudPDF() {
     copies: [''],
     hide_signatures: true,
     file_prefix: 'Solicitud_Devolucion'
-  });
+  };
+  if (opts.share) {
+    enviarRemisionPDF(data, {
+      modulo: 'devoluciones',
+      referencia: head.Consecutivo || '',
+      titulo: 'Solicitud devolución #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente')
+    });
+    return;
+  }
+  generarRemisionPDF(data);
 }
 
-function exportarDevRemisionPDF(tipo) {
+function exportarDevRemisionPDF(tipo, opts) {
+  opts = opts || {};
   var ctx = _devViewContext();
   if (!ctx) return;
   var head = ctx.head;
@@ -688,7 +703,7 @@ function exportarDevRemisionPDF(tipo) {
     ['Bodega', bodega || '']
   ];
 
-  generarRemisionPDF({
+  var data = {
     empresa: head.Empresa || '',
     consecutivo: head.Consecutivo || '',
     doc_title: esIngreso ? 'REMISION DE INGRESO' : 'REMISION DE SALIDA',
@@ -708,7 +723,16 @@ function exportarDevRemisionPDF(tipo) {
     entregas: entregas,
     qty_header: 'Cant. Devuelta',
     file_prefix: esIngreso ? 'Remision_Ingreso_Devolucion' : 'Remision_Salida_Devolucion'
-  });
+  };
+  if (opts.share) {
+    enviarRemisionPDF(data, {
+      modulo: 'devoluciones',
+      referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
+      titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' devolución #' + remision
+    });
+    return;
+  }
+  generarRemisionPDF(data);
 }
 
 document.getElementById('view-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeViewDev(); });

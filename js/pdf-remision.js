@@ -117,7 +117,26 @@ function generarRemisionPDF(data) {
   var sigla = (typeof getSigla === 'function' ? getSigla(data.empresa) : '') || 'Remision';
   var filePrefix = data.file_prefix || 'Remision';
   var fileName = filePrefix + '_' + sigla + '_' + (data.consecutivo || '') + (data.remision ? '_' + String(data.remision) : '') + '.pdf';
+  if (data.return_doc) return { doc: doc, filename: fileName };
   doc.save(fileName);
+}
+
+// Abre el modal de NOTIF para enviar una remisión a otros usuarios sin
+// descargarla localmente. Reutiliza los mismos parámetros de generarRemisionPDF.
+function enviarRemisionPDF(data, meta) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+    if (typeof showToast === 'function') showToast('Módulo de notificaciones no cargado.', '#e74c3c');
+    return;
+  }
+  NOTIF.openModalEnviar({
+    modulo: meta.modulo,
+    referencia: meta.referencia,
+    titulo: meta.titulo,
+    buildDoc: function() {
+      var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
+      return r ? r.doc : null;
+    }
+  });
 }
 
 function _drawRemisionCopy(doc, data, palette) {

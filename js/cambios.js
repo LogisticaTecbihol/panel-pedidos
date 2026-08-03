@@ -374,8 +374,12 @@ function viewCamDetail(key) {
   camViewingKey = key;
   var btnIn = document.getElementById('btn-cam-rem-ingreso');
   var btnOut = document.getElementById('btn-cam-rem-salida');
+  var sendIn = document.getElementById('btn-cam-send-ingreso');
+  var sendOut = document.getElementById('btn-cam-send-salida');
   if (btnIn) btnIn.style.display = r.Remision_Ingreso ? 'inline-block' : 'none';
   if (btnOut) btnOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
+  if (sendIn) sendIn.style.display = r.Remision_Ingreso ? 'inline-block' : 'none';
+  if (sendOut) sendOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
 }
 function closeViewCam() {
   document.getElementById('view-cam-overlay').classList.remove('show');
@@ -757,7 +761,8 @@ function _camViewContext() {
   return { head: head, lines: lines, cambiar: linesCambiar, entregar: linesEntregar };
 }
 
-function exportarCamSolicitudPDF() {
+function exportarCamSolicitudPDF(opts) {
+  opts = opts || {};
   var ctx = _camViewContext();
   if (!ctx) return;
   var head = ctx.head;
@@ -978,10 +983,24 @@ function exportarCamSolicitudPDF() {
   doc.text('OP-PDC-FO11', pw / 2, ph - 5, { align: 'center' });
 
   var sigla = (typeof getSigla === 'function' ? getSigla(head.Empresa) : '') || 'Cambio';
-  doc.save('Solicitud_Cambio_' + sigla + '_' + (head.Consecutivo || 'nuevo') + '.pdf');
+  var fileName = 'Solicitud_Cambio_' + sigla + '_' + (head.Consecutivo || 'nuevo') + '.pdf';
+  if (opts.share) {
+    if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+      showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
+    }
+    NOTIF.openModalEnviar({
+      modulo: 'cambios',
+      referencia: head.Consecutivo || '',
+      titulo: 'Solicitud cambio #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente'),
+      buildDoc: function() { return doc; }
+    });
+    return;
+  }
+  doc.save(fileName);
 }
 
-function exportarCamRemisionPDF(tipo) {
+function exportarCamRemisionPDF(tipo, opts) {
+  opts = opts || {};
   var ctx = _camViewContext();
   if (!ctx) return;
   var head = ctx.head;
@@ -1025,7 +1044,7 @@ function exportarCamRemisionPDF(tipo) {
     ['Estado', head.Estado || 'Pendiente']
   ];
 
-  generarRemisionPDF({
+  var data = {
     empresa: head.Empresa || '',
     consecutivo: head.Consecutivo || '',
     doc_title: esIngreso ? 'REMISION DE INGRESO' : 'REMISION DE SALIDA',
@@ -1041,7 +1060,16 @@ function exportarCamRemisionPDF(tipo) {
     entregas: entregas,
     qty_header: 'Cantidad',
     file_prefix: esIngreso ? 'Remision_Ingreso_Cambio' : 'Remision_Salida_Cambio'
-  });
+  };
+  if (opts.share) {
+    enviarRemisionPDF(data, {
+      modulo: 'cambios',
+      referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
+      titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' cambio #' + remision
+    });
+    return;
+  }
+  generarRemisionPDF(data);
 }
 
 // ── Init ──

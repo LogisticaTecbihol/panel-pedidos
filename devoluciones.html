@@ -466,8 +466,11 @@
       <div style="font-size:0.8rem;color:#718096">Exporta el documento a PDF</div>
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="exportarDevSolicitudPDF()" style="background:#e67e22;color:white;border-color:#e67e22">📄 Exportar Solicitud PDF</button>
+        <button class="btn-cancel" onclick="exportarDevSolicitudPDF({share:true})" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar la solicitud a otro usuario del panel">📨 Enviar Solicitud</button>
         <button class="btn-cancel" id="btn-dev-rem-ingreso" onclick="exportarDevRemisionPDF('ingreso')" style="background:#e65100;color:white;border-color:#e65100;display:none">📥 Remisión Ingreso PDF</button>
+        <button class="btn-cancel" id="btn-dev-send-ingreso" onclick="exportarDevRemisionPDF('ingreso',{share:true})" style="background:#7d3c98;color:white;border-color:#7d3c98;display:none" title="Enviar remisión de ingreso">📨 Enviar Ingreso</button>
         <button class="btn-cancel" id="btn-dev-rem-salida" onclick="exportarDevRemisionPDF('salida')" style="background:#2e7d32;color:white;border-color:#2e7d32;display:none">📤 Remisión Salida PDF</button>
+        <button class="btn-cancel" id="btn-dev-send-salida" onclick="exportarDevRemisionPDF('salida',{share:true})" style="background:#7d3c98;color:white;border-color:#7d3c98;display:none" title="Enviar remisión de salida">📨 Enviar Salida</button>
         <button class="btn-cancel" onclick="closeViewDev()">Cerrar</button>
       </div>
     </div>
@@ -835,8 +838,11 @@
       <div style="font-size:0.8rem;color:#718096">Exporta el documento a PDF</div>
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="exportarCamSolicitudPDF()" style="background:#8e44ad;color:white;border-color:#8e44ad">📄 Exportar Solicitud PDF</button>
+        <button class="btn-cancel" onclick="exportarCamSolicitudPDF({share:true})" style="background:#5b2c6f;color:white;border-color:#5b2c6f" title="Enviar la solicitud a otro usuario del panel">📨 Enviar Solicitud</button>
         <button class="btn-cancel" id="btn-cam-rem-ingreso" onclick="exportarCamRemisionPDF('ingreso')" style="background:#e65100;color:white;border-color:#e65100;display:none">📥 Remisión Ingreso PDF</button>
+        <button class="btn-cancel" id="btn-cam-send-ingreso" onclick="exportarCamRemisionPDF('ingreso',{share:true})" style="background:#5b2c6f;color:white;border-color:#5b2c6f;display:none" title="Enviar remisión de ingreso">📨 Enviar Ingreso</button>
         <button class="btn-cancel" id="btn-cam-rem-salida" onclick="exportarCamRemisionPDF('salida')" style="background:#2e7d32;color:white;border-color:#2e7d32;display:none">📤 Remisión Salida PDF</button>
+        <button class="btn-cancel" id="btn-cam-send-salida" onclick="exportarCamRemisionPDF('salida',{share:true})" style="background:#5b2c6f;color:white;border-color:#5b2c6f;display:none" title="Enviar remisión de salida">📨 Enviar Salida</button>
         <button class="btn-cancel" onclick="closeViewCam()">Cerrar</button>
       </div>
     </div>
@@ -938,6 +944,7 @@
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/notificaciones.js"></script>
 <script src="js/pdf-remision.js?v=20260802n"></script>
 <script src="js/devoluciones.js?v=20260802c"></script>
 <script src="js/cambios.js?v=20260802a"></script>

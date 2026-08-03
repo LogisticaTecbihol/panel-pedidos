@@ -551,7 +551,8 @@ function _muestraEntregas(rows, useRequested) {
 
 // ── Exportar Remisión PDF (mismo layout que Pedidos) ──
 
-function exportarMuestraRemisionPDF() {
+function exportarMuestraRemisionPDF(opts) {
+  opts = opts || {};
   var ctx = _muestraContext();
   if (!ctx) return;
   var head = ctx.head;
@@ -572,7 +573,7 @@ function exportarMuestraRemisionPDF() {
     return;
   }
 
-  generarRemisionPDF({
+  var data = {
     empresa: head.Empresa || '',
     consecutivo: ctx.consec,
     ref_label: 'Solicitud de muestras',
@@ -583,12 +584,22 @@ function exportarMuestraRemisionPDF() {
     municipio: head.Municipio || '',
     departamento: head.Departamento || '',
     entregas: entregas
-  });
+  };
+  if (opts.share) {
+    enviarRemisionPDF(data, {
+      modulo: 'muestras',
+      referencia: (ctx.consec || '') + ' · Rem ' + remision,
+      titulo: 'Remisión muestras #' + remision + ' — ' + (head.Solicitante || 'sin solicitante')
+    });
+    return;
+  }
+  generarRemisionPDF(data);
 }
 
 // ── Exportar Solicitud PDF (sin remisión, con campos originales) ──
 
-function exportarMuestraSolicitudPDF() {
+function exportarMuestraSolicitudPDF(opts) {
+  opts = opts || {};
   var ctx = _muestraContext();
   if (!ctx) return;
   var head = ctx.head;
@@ -613,7 +624,7 @@ function exportarMuestraSolicitudPDF() {
     ['Objetivo', head.Objetivo || '']
   ];
 
-  generarRemisionPDF({
+  var data = {
     empresa: head.Empresa || '',
     consecutivo: ctx.consec,
     doc_title: 'SOLICITUD DE MUESTRAS',
@@ -629,7 +640,16 @@ function exportarMuestraSolicitudPDF() {
     copies: [''],
     hide_signatures: true,
     file_prefix: 'Solicitud_Muestras'
-  });
+  };
+  if (opts.share) {
+    enviarRemisionPDF(data, {
+      modulo: 'muestras',
+      referencia: ctx.consec || '',
+      titulo: 'Solicitud muestras #' + (ctx.consec || '') + ' — ' + (head.Solicitante || 'sin solicitante')
+    });
+    return;
+  }
+  generarRemisionPDF(data);
 }
 
 // ── New / Edit modal ──

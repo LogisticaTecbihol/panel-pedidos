@@ -116,6 +116,11 @@ var AUTH = (function() {
       var mod = el.getAttribute('data-modulo');
       if (!hasModule(mod)) el.style.display = 'none';
     });
+
+    // Campanita de notificaciones (si el módulo está cargado en la página).
+    if (typeof NOTIF !== 'undefined' && NOTIF.mountBell) {
+      NOTIF.mountBell(el);
+    }
   }
 
   // Bloquea el acceso directo por URL cuando la página tiene <body data-modulo="…">

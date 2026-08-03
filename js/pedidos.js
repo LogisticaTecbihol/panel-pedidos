@@ -2720,7 +2720,8 @@ function _buildRemisionesAgrupadas() {
   return arr;
 }
 
-function _exportarRemisionEspecifica(rem) {
+function _exportarRemisionEspecifica(rem, opts) {
+  opts = opts || {};
   if (activeIdx == null) return;
   if (!rem || !rem.remision || !String(rem.remision).trim()) {
     showToast('La remisión debe tener número asignado para imprimirse.', '#e67e22');
@@ -2730,7 +2731,7 @@ function _exportarRemisionEspecifica(rem) {
   var obsEl = document.getElementById('m-observaciones');
   var lines = getLinesFor(c);
   var obsPed = (obsEl ? obsEl.value.trim() : '') || (lines[0] && lines[0].Observaciones) || c.Observaciones || '';
-  generarRemisionPDF({
+  var data = {
     empresa: c.Nombre_Empresa,
     consecutivo: c.Consecutivo,
     fecha_pedido: c.Fecha_Pedido,
@@ -2751,22 +2752,34 @@ function _exportarRemisionEspecifica(rem) {
     fecha_entrega: rem.fecha,
     entregas: rem.items,
     total: rem.total
-  });
+  };
+  if (opts.share) {
+    var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
+    enviarRemisionPDF(data, {
+      modulo: 'pedidos',
+      referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
+      titulo: 'Remisión #' + rem.remision + ' — ' + (data.cliente || 'sin cliente')
+    });
+    return;
+  }
+  generarRemisionPDF(data);
 }
 
-function exportarRemisionDesdeModal(ev) {
+function exportarRemisionDesdeModal(ev, opts) {
   if (ev && ev.stopPropagation) ev.stopPropagation();
+  opts = opts || {};
   var remisiones = _buildRemisionesAgrupadas();
   if (!remisiones.length) {
     showToast('No hay remisiones con número asignado para imprimir.', '#e67e22');
     return;
   }
   if (remisiones.length === 1) {
-    _exportarRemisionEspecifica(remisiones[0]);
+    _exportarRemisionEspecifica(remisiones[0], opts);
     return;
   }
-  var picker = document.getElementById('rem-picker');
-  if (!picker) { _exportarRemisionEspecifica(remisiones[0]); return; }
+  var pickerId = opts.share ? 'rem-picker-share' : 'rem-picker';
+  var picker = document.getElementById(pickerId) || document.getElementById('rem-picker');
+  if (!picker) { _exportarRemisionEspecifica(remisiones[0], opts); return; }
   if (picker.style.display === 'block') { closeRemPicker(); return; }
   var html = '<div style="padding:8px 12px;font-size:0.75rem;font-weight:700;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">Seleccionar remisión</div>';
   remisiones.forEach(function(r, i) {
@@ -2785,7 +2798,7 @@ function exportarRemisionDesdeModal(ev) {
     el.addEventListener('click', function() {
       var idx = Number(this.getAttribute('data-idx'));
       closeRemPicker();
-      _exportarRemisionEspecifica(remisiones[idx]);
+      _exportarRemisionEspecifica(remisiones[idx], opts);
     });
   });
   setTimeout(function() {
@@ -2793,13 +2806,14 @@ function exportarRemisionDesdeModal(ev) {
   }, 0);
 }
 
-function exportarPedidoDesdeModal() {
+function exportarPedidoDesdeModal(opts) {
+  opts = opts || {};
   if (activeIdx == null) return;
   var c = consecs[activeIdx];
   var lines = getLinesFor(c);
   var obsText = document.getElementById('m-observaciones').value.trim();
   var archivo = lines.length ? (lines[0].Archivo_Fuente || '') : '';
-  generarPedidoPDF({
+  var data = {
     empresa: c.Nombre_Empresa,
     consecutivo: c.Consecutivo,
     fecha: c.Fecha_Pedido,
@@ -2828,7 +2842,24 @@ function exportarPedidoDesdeModal() {
       };
     }),
     archivo: archivo
-  });
+  };
+  if (opts.share) {
+    if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+      showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
+    }
+    var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
+    NOTIF.openModalEnviar({
+      modulo: 'pedidos',
+      referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || ''),
+      titulo: 'Pedido #' + (c.Consecutivo || '') + ' — ' + (data.cliente || 'sin cliente'),
+      buildDoc: function() {
+        var r = generarPedidoPDF(Object.assign({}, data, { return_doc: true }));
+        return r ? r.doc : null;
+      }
+    });
+    return;
+  }
+  generarPedidoPDF(data);
 }
 
 // Helpers de PDF de remisión (_pdfLogos, _pdfPaletteFor, _pdfHeaderLogoFor,
@@ -3026,7 +3057,9 @@ function generarPedidoPDF(data) {
   doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, finalY);
 
   var sigla = getSigla(data.empresa) || 'Pedido';
-  doc.save('Pedido_' + sigla + '_' + (data.consecutivo || 'nuevo') + '.pdf');
+  var fileName = 'Pedido_' + sigla + '_' + (data.consecutivo || 'nuevo') + '.pdf';
+  if (data.return_doc) return { doc: doc, filename: fileName };
+  doc.save(fileName);
 }
 
 // ── Adjuntos (Supabase Storage) ──
