@@ -41,14 +41,13 @@
       if (res.error) throw new Error(res.error.message);
       _all = res.data || [];
 
-      // Resolver remitentes en un solo batch.
-      var ids = {};
-      _all.forEach(function(r) { if (r.de_usuario_id) ids[r.de_usuario_id] = true; });
-      var idList = Object.keys(ids);
+      // Resolver remitentes desde el directorio expuesto por NOTIF (RPC
+      // SECURITY DEFINER — evita el bloqueo de RLS para no-admins).
       _senders = {};
-      if (idList.length) {
-        var u = await _sb.from('usuarios').select('id, nombre, email').in('id', idList);
-        (u.data || []).forEach(function(x) { _senders[x.id] = x; });
+      var anyEmisor = _all.some(function(r) { return !!r.de_usuario_id; });
+      if (anyEmisor && NOTIF && NOTIF.getDirectorio) {
+        var dir = await NOTIF.getDirectorio();
+        (dir || []).forEach(function(x) { _senders[x.id] = x; });
       }
 
       _selected = {};

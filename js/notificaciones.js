@@ -20,7 +20,23 @@ var NOTIF = (function() {
   var _channel = null;
   var _cache = [];
   var _stylesInjected = false;
-  var _usuariosCache = null;
+  var _directorioPromise = null;
+
+  // Directorio de usuarios (id, nombre, email, rol, activo) resuelto vía
+  // RPC SECURITY DEFINER — la RLS estricta de `usuarios` sólo deja a un
+  // no-admin verse a sí mismo. Cachea la promesa por sesión.
+  function _loadDirectorio() {
+    if (_directorioPromise) return _directorioPromise;
+    _directorioPromise = _sb.rpc('list_usuarios_directorio').then(function(res) {
+      if (res.error) {
+        console.error('NOTIF list_usuarios_directorio', res.error);
+        _directorioPromise = null;
+        return [];
+      }
+      return res.data || [];
+    });
+    return _directorioPromise;
+  }
 
   // ────────────────────────────────────────────────────────────
   // Estilos (inyectados una sola vez)
@@ -121,14 +137,13 @@ var NOTIF = (function() {
     if (res.error) { console.error('NOTIF.loadUnread', res.error); return; }
     _cache = res.data || [];
 
-    // Resolver nombres de emisores (una query por lote, no por fila)
+    // Resolver nombres de emisores desde el directorio (RPC).
     var emisorIds = {};
     _cache.forEach(function(r) { if (r.de_usuario_id) emisorIds[r.de_usuario_id] = true; });
-    var ids = Object.keys(emisorIds);
-    if (ids.length) {
-      var u = await _sb.from('usuarios').select('id, nombre, email').in('id', ids);
+    if (Object.keys(emisorIds).length) {
+      var dir = await _loadDirectorio();
       var byId = {};
-      (u.data || []).forEach(function(x) { byId[x.id] = x; });
+      dir.forEach(function(x) { byId[x.id] = x; });
       _cache.forEach(function(r) {
         var em = byId[r.de_usuario_id];
         r._de_nombre = em ? (em.nombre || em.email || '—') : '—';
@@ -486,15 +501,11 @@ var NOTIF = (function() {
   }
 
   async function _loadUsuarios() {
-    if (_usuariosCache) return _usuariosCache;
-    var res = await _sb.from('usuarios')
-      .select('id, nombre, email, rol')
-      .eq('activo', true)
-      .order('nombre');
-    if (res.error) { showToast('Error cargando usuarios: ' + res.error.message, '#e74c3c'); return []; }
+    var dir = await _loadDirectorio();
     var uid = _uid;
-    _usuariosCache = (res.data || []).filter(function(u) { return u.id !== uid; });
-    return _usuariosCache;
+    return (dir || [])
+      .filter(function(u) { return u.activo && u.id !== uid; })
+      .sort(function(a, b) { return (a.nombre || '').localeCompare(b.nombre || ''); });
   }
 
   return {
@@ -503,6 +514,7 @@ var NOTIF = (function() {
     subscribe: subscribe,
     openItem: openItem,
     compartirPDF: compartirPDF,
-    openModalEnviar: openModalEnviar
+    openModalEnviar: openModalEnviar,
+    getDirectorio: _loadDirectorio
   };
 })();
