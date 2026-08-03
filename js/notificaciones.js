@@ -438,22 +438,42 @@ var NOTIF = (function() {
       if (!dests.length) return;
       btnConfirm.disabled = true;
       btnConfirm.textContent = 'Enviando…';
-      try {
-        var doc = meta.buildDoc();
-        if (!doc) throw new Error('No se pudo generar el PDF');
-        var r = await compartirPDF(doc, {
-          modulo: meta.modulo,
-          referencia: meta.referencia || null,
-          titulo: meta.titulo,
-          mensaje: (msg.value || '').trim() || null,
-          destinatarios: dests
+      var mensaje = (msg.value || '').trim() || null;
+      var totalSent = 0;
+      var errores = [];
+      var jobs = [{ buildDoc: meta.buildDoc, m: { modulo: meta.modulo, referencia: meta.referencia || null, titulo: meta.titulo } }];
+      if (meta.extras && meta.extras.length) {
+        meta.extras.forEach(function(ex) {
+          if (ex && ex.buildDoc && ex.meta && ex.meta.titulo) {
+            jobs.push({ buildDoc: ex.buildDoc, m: { modulo: ex.meta.modulo || meta.modulo, referencia: ex.meta.referencia || null, titulo: ex.meta.titulo } });
+          }
         });
-        if (r.ok) {
-          showToast('📨 Enviado a ' + r.sent + ' usuario' + (r.sent === 1 ? '' : 's'), '#27ae60');
+      }
+      try {
+        for (var i = 0; i < jobs.length; i++) {
+          var job = jobs[i];
+          var doc = job.buildDoc();
+          if (!doc) { errores.push('No se pudo generar "' + job.m.titulo + '"'); continue; }
+          var r = await compartirPDF(doc, {
+            modulo: job.m.modulo,
+            referencia: job.m.referencia,
+            titulo: job.m.titulo,
+            mensaje: mensaje,
+            destinatarios: dests
+          });
+          if (r.ok) totalSent += r.sent;
+          if (r.errors && r.errors.length) errores = errores.concat(r.errors);
+        }
+        if (totalSent > 0) {
+          var docCount = jobs.length;
+          var msgOk = '📨 ' + docCount + ' PDF' + (docCount === 1 ? '' : 's') +
+                      ' enviado' + (docCount === 1 ? '' : 's') +
+                      ' a ' + dests.length + ' usuario' + (dests.length === 1 ? '' : 's');
+          showToast(msgOk, '#27ae60');
           close();
-          if (typeof meta.onSent === 'function') meta.onSent(r);
+          if (typeof meta.onSent === 'function') meta.onSent({ ok: true, sent: totalSent, docs: docCount, errors: errores });
         } else {
-          showToast('Error: ' + (r.error || (r.errors && r.errors[0]) || 'sin enviar'), '#e74c3c');
+          showToast('Error: ' + (errores[0] || 'sin enviar'), '#e74c3c');
           btnConfirm.disabled = false;
           btnConfirm.textContent = 'Enviar';
         }

@@ -2754,11 +2754,30 @@ function _exportarRemisionEspecifica(rem, opts) {
     total: rem.total
   };
   if (opts.share) {
+    if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+      showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
+    }
     var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
-    enviarRemisionPDF(data, {
+    var dataPedido = _dataPedidoDesdeModal(c);
+    NOTIF.openModalEnviar({
       modulo: 'pedidos',
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
-      titulo: 'Remisión #' + rem.remision + ' — ' + (data.cliente || 'sin cliente')
+      titulo: 'Remisión #' + rem.remision + ' — ' + (data.cliente || 'sin cliente'),
+      buildDoc: function() {
+        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
+        return r ? r.doc : null;
+      },
+      extras: [{
+        buildDoc: function() {
+          var r = generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true }));
+          return r ? r.doc : null;
+        },
+        meta: {
+          modulo: 'pedidos',
+          referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || ''),
+          titulo: 'Pedido #' + (c.Consecutivo || '') + ' — ' + (dataPedido.cliente || 'sin cliente')
+        }
+      }]
     });
     return;
   }
@@ -2806,29 +2825,31 @@ function exportarRemisionDesdeModal(ev, opts) {
   }, 0);
 }
 
-function exportarPedidoDesdeModal(opts) {
-  opts = opts || {};
-  if (activeIdx == null) return;
-  var c = consecs[activeIdx];
+function _dataPedidoDesdeModal(c) {
   var lines = getLinesFor(c);
-  var obsText = document.getElementById('m-observaciones').value.trim();
+  var obsEl = document.getElementById('m-observaciones');
+  var obsText = (obsEl ? obsEl.value.trim() : '') || (lines[0] && lines[0].Observaciones) || c.Observaciones || '';
   var archivo = lines.length ? (lines[0].Archivo_Fuente || '') : '';
-  var data = {
+  function _v(id, fallback) {
+    var el = document.getElementById(id);
+    return (el && el.value != null && String(el.value).trim()) || fallback || '';
+  }
+  return {
     empresa: c.Nombre_Empresa,
     consecutivo: c.Consecutivo,
     fecha: c.Fecha_Pedido,
-    cliente: document.getElementById('md-cliente').value.trim() || c.Cliente,
-    nit: document.getElementById('md-nit').value.trim() || c.NIT,
-    telefono: document.getElementById('md-telefono').value.trim() || c.Telefono,
+    cliente: _v('md-cliente', c.Cliente),
+    nit: _v('md-nit', c.NIT),
+    telefono: _v('md-telefono', c.Telefono),
     direccion: c.Direccion_Envio,
-    municipio: document.getElementById('md-municipio').value.trim() || c.Municipio,
-    departamento: document.getElementById('md-departamento').value.trim() || c.Departamento,
-    comercial: document.getElementById('md-comercial').value.trim() || c.Comercial,
-    plazo: document.getElementById('md-plazo').value.trim() || c.Plazo_Pago,
-    precio: document.getElementById('md-precio').value.trim() || c.Precio_Facturacion,
-    facturar_a: document.getElementById('md-facturar-a').value.trim() || c.Facturar_A || c.Cliente,
-    nit_adicional: document.getElementById('md-nit-adicional').value.trim() || c.NIT_Adicional,
-    consignacion: document.getElementById('md-consignacion').value || c.Consignacion || 'No',
+    municipio: _v('md-municipio', c.Municipio),
+    departamento: _v('md-departamento', c.Departamento),
+    comercial: _v('md-comercial', c.Comercial),
+    plazo: _v('md-plazo', c.Plazo_Pago),
+    precio: _v('md-precio', c.Precio_Facturacion),
+    facturar_a: _v('md-facturar-a', c.Facturar_A || c.Cliente),
+    nit_adicional: _v('md-nit-adicional', c.NIT_Adicional),
+    consignacion: _v('md-consignacion', c.Consignacion || 'No'),
     observaciones: obsText,
     total: c.Total_Orden,
     productos: lines.map(function(l) {
@@ -2843,6 +2864,13 @@ function exportarPedidoDesdeModal(opts) {
     }),
     archivo: archivo
   };
+}
+
+function exportarPedidoDesdeModal(opts) {
+  opts = opts || {};
+  if (activeIdx == null) return;
+  var c = consecs[activeIdx];
+  var data = _dataPedidoDesdeModal(c);
   if (opts.share) {
     if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
       showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;

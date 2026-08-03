@@ -586,10 +586,33 @@ function exportarMuestraRemisionPDF(opts) {
     entregas: entregas
   };
   if (opts.share) {
-    enviarRemisionPDF(data, {
+    if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+      showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
+    }
+    var solicitudData = _dataMuestraSolicitud(ctx, head);
+    var extras = [];
+    if (solicitudData) {
+      extras.push({
+        buildDoc: function() {
+          var r = generarRemisionPDF(Object.assign({}, solicitudData, { return_doc: true }));
+          return r ? r.doc : null;
+        },
+        meta: {
+          modulo: 'muestras',
+          referencia: ctx.consec || '',
+          titulo: 'Solicitud muestras #' + (ctx.consec || '') + ' — ' + (head.Solicitante || 'sin solicitante')
+        }
+      });
+    }
+    NOTIF.openModalEnviar({
       modulo: 'muestras',
       referencia: (ctx.consec || '') + ' · Rem ' + remision,
-      titulo: 'Remisión muestras #' + remision + ' — ' + (head.Solicitante || 'sin solicitante')
+      titulo: 'Remisión muestras #' + remision + ' — ' + (head.Solicitante || 'sin solicitante'),
+      buildDoc: function() {
+        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
+        return r ? r.doc : null;
+      },
+      extras: extras
     });
     return;
   }
@@ -598,18 +621,9 @@ function exportarMuestraRemisionPDF(opts) {
 
 // ── Exportar Solicitud PDF (sin remisión, con campos originales) ──
 
-function exportarMuestraSolicitudPDF(opts) {
-  opts = opts || {};
-  var ctx = _muestraContext();
-  if (!ctx) return;
-  var head = ctx.head;
-
+function _dataMuestraSolicitud(ctx, head) {
   var entregas = _muestraEntregas(ctx.rows, true);
-  if (!entregas.length) {
-    showToast('No hay productos para incluir en la solicitud.', '#e67e22');
-    return;
-  }
-
+  if (!entregas.length) return null;
   var left = [
     ['Solicitante', head.Solicitante || ''],
     ['Responsable', head.Responsable || ''],
@@ -623,8 +637,7 @@ function exportarMuestraSolicitudPDF(opts) {
     ['Fecha seguimiento', head.Fecha_Seguimiento || ''],
     ['Objetivo', head.Objetivo || '']
   ];
-
-  var data = {
+  return {
     empresa: head.Empresa || '',
     consecutivo: ctx.consec,
     doc_title: 'SOLICITUD DE MUESTRAS',
@@ -641,6 +654,19 @@ function exportarMuestraSolicitudPDF(opts) {
     hide_signatures: true,
     file_prefix: 'Solicitud_Muestras'
   };
+}
+
+function exportarMuestraSolicitudPDF(opts) {
+  opts = opts || {};
+  var ctx = _muestraContext();
+  if (!ctx) return;
+  var head = ctx.head;
+
+  var data = _dataMuestraSolicitud(ctx, head);
+  if (!data) {
+    showToast('No hay productos para incluir en la solicitud.', '#e67e22');
+    return;
+  }
   if (opts.share) {
     enviarRemisionPDF(data, {
       modulo: 'muestras',
