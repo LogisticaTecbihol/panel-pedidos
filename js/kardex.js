@@ -1967,6 +1967,64 @@ async function saveNCSaldo() {
 
 var EMPRESAS_EXIST = [];
 
+// ── Productos de PARCELAR cuyo proveedor es CARVAL ──
+// Se muestran en una columna virtual "PARCELAR (CARVAL)" separada
+// dentro del módulo "Existencias por Empresa".
+var PARCELAR_EMPRESA_VAL = 'PARCELAR DE COLOMBIA SAS';
+var PARCELAR_CARVAL_VAL  = 'PARCELAR - CARVAL';
+var PARCELAR_CARVAL_SIGLA = 'PARCELAR (CARVAL)';
+
+var CARVAL_PRODUCTS = (function() {
+  var list = [
+    'CERTUS 70 WS X 100 GR CV',
+    'CERTUS 70 WS X 50 GR',
+    'CERTUS 70 WS 50 GM',
+    'CERTUS 70 WS X 500 GR CV',
+    'CONTRA 200 SC X 200 ML',
+    'CUFIGA 80 WP X 500 GR CV',
+    'DIRVO 60% WG X KILO ( METSULFURON) CV',
+    'FICLORAM LITRO',
+    'FICLORAM X BIDON 20 LITROS',
+    'FIPRID 75 SC 100ML CV',
+    'FOSTAL 80 WP X 500 GR CV',
+    'GRADUS 43 SC X LITRO CV',
+    'GRADUS 43 X 500 ML CV',
+    'LAMBDA CIHALOTRINA X 500 ML',
+    'LAMBDA CIHALOTRINA X LITRO',
+    'RUDOWN X 1 KG',
+    'RUDOWN X1KG',
+    'RUDOWN X 50 GR',
+    'RUDOWN X50GR',
+    'SAGUM 25 SC X 500 ML CV',
+    'SAGUM X LITRO CV',
+    'SHOCK UPI 36 EG X 500G',
+    'TABUS 50 WG X 40 GR CV'
+  ];
+  var set = {};
+  list.forEach(function(p) { set[_normProd(p).toUpperCase()] = true; });
+  return set;
+})();
+
+function _esCarval(producto) {
+  return !!CARVAL_PRODUCTS[_normProd(producto).toUpperCase()];
+}
+
+function _empresaExistKey(empresa, producto) {
+  if (empresa === PARCELAR_EMPRESA_VAL && _esCarval(producto)) return PARCELAR_CARVAL_VAL;
+  return empresa;
+}
+
+function _empresasExistView() {
+  var out = [];
+  EMPRESAS_EXIST.forEach(function(e) {
+    out.push(e);
+    if (e.value === PARCELAR_EMPRESA_VAL) {
+      out.push({ value: PARCELAR_CARVAL_VAL, sigla: PARCELAR_CARVAL_SIGLA });
+    }
+  });
+  return out;
+}
+
 var existData = [];
 var existFiltered = [];
 var existFiltersAttached = false;
@@ -1984,6 +2042,8 @@ function calcularExistencias() {
   var elCorteHasta = document.getElementById('ex-f-corte');
   var corteHasta = elCorteHasta ? (elCorteHasta.value || '') : '';
 
+  var empresasView = _empresasExistView();
+
   kxMovimientos.forEach(function(m) {
     if (!m.producto || !m.empresa) return;
     if (fechaCorte && m.fecha < fechaCorte) return;
@@ -1991,22 +2051,23 @@ function calcularExistencias() {
     var key = m.producto;
     if (!saldos[key]) {
       saldos[key] = { producto: m.producto };
-      EMPRESAS_EXIST.forEach(function(e) { saldos[key][e.value] = 0; });
+      empresasView.forEach(function(e) { saldos[key][e.value] = 0; });
     }
-    if (typeof saldos[key][m.empresa] === 'undefined') {
-      saldos[key][m.empresa] = 0;
+    var bucket = _empresaExistKey(m.empresa, m.producto);
+    if (typeof saldos[key][bucket] === 'undefined') {
+      saldos[key][bucket] = 0;
     }
     if (m.tipo === 'Entrada') {
-      saldos[key][m.empresa] += m.cantidad;
+      saldos[key][bucket] += m.cantidad;
     } else {
-      saldos[key][m.empresa] -= m.cantidad;
+      saldos[key][bucket] -= m.cantidad;
     }
   });
 
   existData = Object.keys(saldos).sort().map(function(k) {
     var row = saldos[k];
     var total = 0;
-    EMPRESAS_EXIST.forEach(function(e) { total += (row[e.value] || 0); });
+    empresasView.forEach(function(e) { total += (row[e.value] || 0); });
     row._total = total;
     return row;
   });
@@ -2014,10 +2075,10 @@ function calcularExistencias() {
   var selEmp = document.getElementById('ex-f-empresa');
   var prevEmp = selEmp.value;
   selEmp.innerHTML = '<option value="">— Todas —</option>' +
-    EMPRESAS_EXIST.map(function(e) {
+    empresasView.map(function(e) {
       return '<option value="' + e.value + '">' + e.sigla + '</option>';
     }).join('');
-  var stillExists = EMPRESAS_EXIST.some(function(e) { return e.value === prevEmp; });
+  var stillExists = empresasView.some(function(e) { return e.value === prevEmp; });
   selEmp.value = stillExists ? prevEmp : '';
 
   if (!existFiltersAttached) {
@@ -2044,9 +2105,10 @@ function renderExistencias() {
   var mostrar = document.getElementById('ex-f-mostrar').value;
   var empresaSel = document.getElementById('ex-f-empresa').value;
 
+  var empresasAll = _empresasExistView();
   var empresasView = empresaSel
-    ? EMPRESAS_EXIST.filter(function(e) { return e.value === empresaSel; })
-    : EMPRESAS_EXIST;
+    ? empresasAll.filter(function(e) { return e.value === empresaSel; })
+    : empresasAll;
 
   existFiltered = existData.filter(function(row) {
     if (buscar && row.producto.toLowerCase().indexOf(buscar) < 0) return false;
@@ -2078,7 +2140,7 @@ function renderExistencias() {
 }
 
 function renderExistTable(empresasView) {
-  empresasView = empresasView || EMPRESAS_EXIST;
+  empresasView = empresasView || _empresasExistView();
   var showTotal = empresasView.length > 1;
   var tbl = document.getElementById('tbl-ex');
   if (tbl) tbl.classList.toggle('single', empresasView.length === 1);
@@ -2141,9 +2203,10 @@ function exportExistExcel() {
   if (!existFiltered.length) { showToast('No hay datos para exportar.', '#e74c3c'); return; }
 
   var empresaSel = document.getElementById('ex-f-empresa').value;
+  var empresasAll = _empresasExistView();
   var empresasView = empresaSel
-    ? EMPRESAS_EXIST.filter(function(e) { return e.value === empresaSel; })
-    : EMPRESAS_EXIST;
+    ? empresasAll.filter(function(e) { return e.value === empresaSel; })
+    : empresasAll;
 
   var showTotal = empresasView.length > 1;
   var data = existFiltered.map(function(row, i) {
