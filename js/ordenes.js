@@ -86,7 +86,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Estado,Observaciones,Municipio,Bodega,Direccion' });
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {
@@ -170,7 +170,8 @@ function renderOCHeader() {
     { label:'Cantidad', id:'cantidad' },
     { label:'Valor Unit.', id:null },
     { label:'Valor Total', id:'valor_total' },
-    { label:'Remisión', id:null },
+    { label:'Remisión Destino', id:null },
+    { label:'Remisión Origen', id:null },
     { label:'Estado', id:'estado' },
     { label:'Acción', id:null },
   ];
@@ -212,7 +213,7 @@ function renderOCTable() {
 
   var tbody = document.getElementById('t-body-oc');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="13"><div class="empty">No hay órdenes de compra con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14"><div class="empty">No hay órdenes de compra con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
@@ -229,6 +230,7 @@ function renderOCTable() {
       '<td style="text-align:right;font-size:0.82rem">' + fmtMoney(r.Valor_Unitario) + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(r.Valor_Total) + '</td>' +
       '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision || '—') + '</td>' +
+      '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision_Origen || '—') + '</td>' +
       '<td>' + estadoBadge(r.Estado) + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditOC(' + r.__row + ')" title="Editar">✏️</button>' : '') +
@@ -517,6 +519,7 @@ function openNewOC() {
   document.getElementById('oc-bodega').value = '';
   document.getElementById('oc-municipio').value = '';
   document.getElementById('oc-remision').value = '';
+  document.getElementById('oc-remision-origen').value = '';
   document.getElementById('oc-estado').value = 'Abierta';
   document.getElementById('oc-observaciones').value = '';
   document.getElementById('btn-save-oc').disabled = false;
@@ -563,6 +566,7 @@ function openEditOC(row) {
   document.getElementById('oc-bodega').value = r.Bodega || '';
   document.getElementById('oc-municipio').value = r.Municipio || '';
   document.getElementById('oc-remision').value = r.Remision || '';
+  document.getElementById('oc-remision-origen').value = r.Remision_Origen || '';
   document.getElementById('oc-estado').value = r.Estado || 'Abierta';
   document.getElementById('oc-observaciones').value = r.Observaciones || '';
   document.getElementById('btn-save-oc').disabled = false;
@@ -590,6 +594,7 @@ async function saveOC() {
   var bodega = document.getElementById('oc-bodega').value.trim();
   var municipio = document.getElementById('oc-municipio').value.trim();
   var remision = document.getElementById('oc-remision').value.trim();
+  var remision_origen = document.getElementById('oc-remision-origen').value.trim();
   var estado = document.getElementById('oc-estado').value;
   var observaciones = document.getElementById('oc-observaciones').value.trim();
 
@@ -618,7 +623,7 @@ async function saveOC() {
         Consecutivo: consecutivo, Direccion: direccion, Bodega: bodega, Municipio: municipio,
         Producto: prod, Presentacion: pres, Cantidad: cant,
         Valor_Unitario: vunit, Valor_Total: vtotal || (cant * vunit),
-        Total_Orden: '', Observaciones: observaciones, Estado: estado, Remision: remision,
+        Total_Orden: '', Observaciones: observaciones, Estado: estado, Remision: remision, Remision_Origen: remision_origen,
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
       closeOCModal();
@@ -646,7 +651,7 @@ async function saveOC() {
       action: 'agregarOrdenCompra',
       Fecha: fecha, Empresa_Destino: empresa_destino, Empresa_Origen: empresa_origen,
       Consecutivo: consecutivo, Direccion: direccion, Bodega: bodega, Municipio: municipio,
-      Total_Orden: totalOrden, Observaciones: observaciones, Estado: estado, Remision: remision,
+      Total_Orden: totalOrden, Observaciones: observaciones, Estado: estado, Remision: remision, Remision_Origen: remision_origen,
       lineas: validLines,
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');

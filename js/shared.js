@@ -531,6 +531,7 @@ async function apiPost(body) {
           Valor_Total: Number(lin.Valor_Total) || (cant * vU),
           Total_Orden: Number(body.Total_Orden) || 0, Observaciones: body.Observaciones || '',
           Estado: body.Estado || 'Abierta', Fecha_Registro: now, Remision: body.Remision || '',
+          Remision_Origen: body.Remision_Origen || '',
           creado_por: _uid()
         };
       });
@@ -553,6 +554,7 @@ async function apiPost(body) {
         Estado: body.Estado || 'Abierta'
       };
       if (body.Remision !== undefined) upd.Remision = body.Remision || '';
+      if (body.Remision_Origen !== undefined) upd.Remision_Origen = body.Remision_Origen || '';
       upd.modificado_por = _uid();
       var res = await _sb.from('OrdenesCompra').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };

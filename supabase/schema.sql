@@ -127,7 +127,8 @@ CREATE TABLE "OrdenesCompra" (
   "Observaciones" text default '',
   "Estado" text default 'Abierta',
   "Fecha_Registro" text,
-  "Remision" text default ''
+  "Remision" text default '',
+  "Remision_Origen" text default ''
 );
 
 -- ══════════════════════════════════════════════════════════════
