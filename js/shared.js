@@ -195,6 +195,23 @@ async function apiPost(body) {
         p_delete_ids: deleteIds
       });
       if (res.error) return { ok: false, error: res.error.message };
+      // Marca la modificación (cantidad cambiada o línea nueva) en todas las
+      // filas del pedido, para que otros usuarios la vean resaltada en la
+      // vista principal. La marca "vista" es local por usuario.
+      var modTipo = body.modificacionTipo;
+      var hdr = body.header || {};
+      if (modTipo && hdr.Nombre_Empresa && (hdr.Consecutivo !== null && hdr.Consecutivo !== undefined && hdr.Consecutivo !== '')) {
+        try {
+          await _sb.from('Pedidos')
+            .update({
+              Fecha_Modificacion_Cant: new Date().toISOString(),
+              Tipo_Modificacion_Cant: modTipo,
+              modificado_por: _uid()
+            })
+            .eq('Nombre_Empresa', hdr.Nombre_Empresa)
+            .eq('Consecutivo', String(hdr.Consecutivo));
+        } catch (e) { /* no bloquea la operación principal */ }
+      }
       return res.data;
     }
 

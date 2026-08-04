@@ -156,6 +156,20 @@ thead th {
 tbody tr { transition: background 0.12s; }
 tbody tr:hover { background: #f0f8ff; }
 
+/* ── Pedidos modificados (cantidad cambiada o líneas nuevas agregadas) ── */
+tbody tr.row-modificada > td { background: #fffbeb; }
+tbody tr.row-modificada > td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
+tbody tr.row-modificada:hover > td { background: #fef3c7; }
+.mod-badge {
+  display: inline-block; margin-left: 6px;
+  background: #f59e0b; color: white;
+  border-radius: 10px; padding: 1px 7px;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.3px;
+  cursor: pointer; vertical-align: middle;
+  transition: background 0.15s;
+}
+.mod-badge:hover { background: #d97706; }
+
 /* ── Solicitudes de compra pendientes (OC de traslado abierta por pedido) ── */
 .sol-badge {
   display: inline-block; margin-left: 6px;
