@@ -288,6 +288,13 @@ tbody tr:last-child td { border-bottom: none; }
   text-transform: uppercase; letter-spacing: 0.3px;
   border-bottom: 2px solid #aed6f1; white-space: nowrap;
 }
+.prod-table th.sticky-prod,
+.prod-table td.sticky-prod {
+  position: sticky; left: 0; z-index: 3;
+  background: #fff; box-shadow: 2px 0 4px -2px rgba(0,0,0,0.12);
+}
+.prod-table thead th.sticky-prod { background: #eaf4fb; z-index: 4; }
+.prod-table tbody tr:hover td.sticky-prod { background: #f5fbff; }
 .prod-table tbody tr { border-bottom: 1px solid #e8f4fb; }
 .prod-table tbody tr:hover { background: #f5fbff; }
 .prod-table tbody td { padding: 8px 11px; vertical-align: middle; }
