@@ -342,10 +342,12 @@ function buildMovimientos() {
   // Excepciones (el producto no sale de Productos Buenos, así que no afecta Kardex General):
   //   - Devolucion_cliente: el producto llega de afuera (cliente).
   //   - Retorno_conforme:   el producto viene de otra bodega NC (traslado entre empresas).
+  //   - Traslado_NC:        traslado explícito entre bodegas NC de distintas empresas.
   ncAjustes.forEach(function(a) {
     if (a.Tipo !== 'Ingreso_NC') return;
     if (a.Motivo === 'Devolucion_cliente') return;
     if (a.Motivo === 'Retorno_conforme') return;
+    if (a.Motivo === 'Traslado_NC') return;
     var cant = Number(a.Cantidad) || 0;
     if (cant <= 0) return;
     var motivoLbl = NC_MOTIVO_LABELS[a.Motivo] || a.Motivo || '';
@@ -1531,6 +1533,7 @@ var NC_MOTIVO_LABELS = {
   'Devolucion_proveedor': 'Dev. proveedor',
   'Reacondicionamiento': 'Reacondicionamiento',
   'Retorno_conforme': 'Retorno conforme',
+  'Traslado_NC': 'Traslado entre bodegas NC',
   'Produccion_NC': 'Salida Producción',
   'Devolucion_NC': 'Devolución',
   'Cambio_NC': 'Cambio',
@@ -1549,6 +1552,7 @@ var NC_MOTIVO_COLORS = {
   'Devolucion_proveedor': '#1abc9c',
   'Reacondicionamiento': '#27ae60',
   'Retorno_conforme': '#0e6655',
+  'Traslado_NC': '#16a085',
   'Produccion_NC': '#d35400',
   'Devolucion_NC': '#e67e22',
   'Cambio_NC': '#2980b9',
