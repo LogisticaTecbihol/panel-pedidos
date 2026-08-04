@@ -369,3 +369,198 @@ function _drawRemisionCopy(doc, data, palette) {
   doc.setDrawColor(160, 174, 192);
   doc.line(fechaLineX1, fechaRecY + 0.5, fechaLineX2, fechaRecY + 0.5);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// PDFs para Órdenes de Compra (Solicitud + Remisiones Origen/Destino)
+// ═══════════════════════════════════════════════════════════════
+//
+// Todos reciben un ARRAY de filas de OrdenesCompra que comparten
+// (Consecutivo, Empresa_Destino, Empresa_Origen, Fecha, Ref_Pedido)
+// — es decir, todos los productos de una misma solicitud/orden — y
+// generan UN documento con la tabla de productos agrupada.
+//
+// Reutilizan _drawRemisionCopy/_drawRemisionCopyFooter para
+// mantener el mismo estilo visual que las remisiones de pedidos.
+
+function _ocFmtDate(v) {
+  if (!v) return '';
+  var s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    var parts = s.slice(0, 10).split('-');
+    return parts[2] + '/' + parts[1] + '/' + parts[0];
+  }
+  return s;
+}
+
+// Construye la lista de "entregas" (productos) para las tablas
+// PDF a partir del grupo de OCs. Cada fila = un producto.
+function _ocProductosParaPDF(ocs) {
+  return (ocs || []).filter(function(oc) { return oc; }).map(function(oc) {
+    return {
+      producto: oc.Producto || '',
+      presentacion: oc.Presentacion || '',
+      cantidad: Number(oc.Cantidad) || 0,
+      valor_unitario: Number(oc.Valor_Unitario) || 0,
+      valor_total: Number(oc.Valor_Total) || 0,
+      bonificado: ''
+    };
+  });
+}
+
+// Solicitud de OC — documento tipo "orden de compra emitida".
+// Header con Empresa Destino (quien solicita), listado de productos,
+// info de origen/destino/fecha/ref pedido/estado. Sin firmas.
+function generarSolicitudOCPDF(ocs) {
+  if (!ocs || !ocs.length) return;
+  var jsPDF = window.jspdf.jsPDF;
+  var doc = new jsPDF();
+  var hdr = ocs[0];
+  var palette = _pdfPaletteFor(hdr.Empresa_Destino);
+  var siglaOrig = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Origen) : '') || hdr.Empresa_Origen || '';
+  var siglaDest = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Destino) : '') || hdr.Empresa_Destino || '';
+  var totalOrden = (ocs || []).reduce(function(s, r) { return s + (Number(r.Valor_Total) || 0); }, 0);
+  var data = {
+    empresa: hdr.Empresa_Destino,
+    consecutivo: hdr.Consecutivo,
+    fecha_entrega: _ocFmtDate(hdr.Fecha),
+    doc_title: 'SOLICITUD DE OC',
+    doc_number: hdr.Consecutivo,
+    date_label: 'Fecha OC',
+    ref_label: hdr.Ref_Pedido ? 'Pedido origen' : null,
+    file_prefix: 'Solicitud_OC',
+    copies: ['ORIGINAL - SOLICITUD DE OC'],
+    hide_signatures: true,
+    qty_header: 'Cantidad',
+    entregas: _ocProductosParaPDF(ocs),
+    left_fields: [
+      ['Empresa Destino', siglaDest + (hdr.Empresa_Destino && siglaDest !== hdr.Empresa_Destino ? ' · ' + hdr.Empresa_Destino : '')],
+      ['Empresa Origen', siglaOrig + (hdr.Empresa_Origen && siglaOrig !== hdr.Empresa_Origen ? ' · ' + hdr.Empresa_Origen : '')],
+      ['Tipo', hdr.Tipo || 'Compra'],
+      ['Ref. Pedido', hdr.Ref_Pedido || '—'],
+    ],
+    right_fields: [
+      ['Fecha OC', _ocFmtDate(hdr.Fecha)],
+      ['Municipio', hdr.Municipio || '—'],
+      ['Bodega', hdr.Bodega || '—'],
+      ['Estado', hdr.Estado || 'Abierta'],
+      ['Total', totalOrden > 0 ? '$ ' + totalOrden.toLocaleString('es-CO') : '—'],
+    ]
+  };
+  var genStamp = new Date().toLocaleString('es-CO');
+  var startPage = doc.internal.getNumberOfPages();
+  _drawRemisionCopy(doc, data, palette);
+  var endPage = doc.internal.getNumberOfPages();
+  var total = endPage - startPage + 1;
+  for (var p = startPage; p <= endPage; p++) {
+    doc.setPage(p);
+    _drawRemisionCopyFooter(doc, 'SOLICITUD DE OC', palette, p - startPage + 1, total, genStamp);
+  }
+  var fname = 'Solicitud_OC_' + (siglaDest || 'DEST') + '_' + (siglaOrig || 'ORIG') + '_' + (hdr.Consecutivo || '') + '.pdf';
+  if (data.return_doc) return { doc: doc, filename: fname };
+  doc.save(fname);
+}
+
+// Remisiones del traslado — PDF de 2 páginas:
+//   • Página 1: Remisión Destino (header = Empresa Destino,
+//     N° remisión = Remision del OC). Es el "recibí" del destino.
+//   • Página 2: Remisión Origen (header = Empresa Origen,
+//     N° remisión = Remision_Origen del OC). Es el "despacho" del
+//     origen.
+// Si una de las remisiones aún no está cargada, esa página se omite.
+// Si NINGUNA está cargada, avisa y no genera nada.
+function generarRemisionesTrasladoPDF(ocs) {
+  if (!ocs || !ocs.length) return;
+  var hdr = ocs[0];
+  var remDest = String(hdr.Remision || '').trim();
+  var remOrig = String(hdr.Remision_Origen || '').trim();
+  if (!remDest && !remOrig) {
+    if (typeof showToast === 'function') {
+      showToast('La OC no tiene remisiones cargadas todavía (ni Destino ni Origen).', '#e67e22');
+    }
+    return;
+  }
+  var jsPDF = window.jspdf.jsPDF;
+  var doc = new jsPDF();
+  var siglaOrig = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Origen) : '') || hdr.Empresa_Origen || '';
+  var siglaDest = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Destino) : '') || hdr.Empresa_Destino || '';
+  var entregas = _ocProductosParaPDF(ocs);
+  var fechaFmt = _ocFmtDate(hdr.Fecha);
+  var refShow = hdr.Ref_Pedido || ('OC ' + (hdr.Consecutivo || ''));
+  var genStamp = new Date().toLocaleString('es-CO');
+
+  function drawSide(data, palette, footerLabel) {
+    var startPage = doc.internal.getNumberOfPages();
+    _drawRemisionCopy(doc, data, palette);
+    var endPage = doc.internal.getNumberOfPages();
+    var total = endPage - startPage + 1;
+    for (var p = startPage; p <= endPage; p++) {
+      doc.setPage(p);
+      _drawRemisionCopyFooter(doc, footerLabel, palette, p - startPage + 1, total, genStamp);
+    }
+  }
+
+  var firstPageAdded = false;
+
+  if (remDest) {
+    var paletteD = _pdfPaletteFor(hdr.Empresa_Destino);
+    var dataDest = {
+      empresa: hdr.Empresa_Destino,
+      consecutivo: hdr.Consecutivo,
+      remision: remDest,
+      fecha_entrega: fechaFmt,
+      doc_title: 'REMISION DESTINO',
+      doc_number: remDest,
+      date_label: 'Fecha OC',
+      ref_label: 'Ref',
+      qty_header: 'Cantidad',
+      entregas: entregas,
+      left_fields: [
+        ['Empresa Destino', siglaDest + (hdr.Empresa_Destino && siglaDest !== hdr.Empresa_Destino ? ' · ' + hdr.Empresa_Destino : '')],
+        ['Empresa Origen', siglaOrig + (hdr.Empresa_Origen && siglaOrig !== hdr.Empresa_Origen ? ' · ' + hdr.Empresa_Origen : '')],
+        ['Tipo', hdr.Tipo || 'Traslado'],
+        ['Ref. Pedido', hdr.Ref_Pedido || '—'],
+      ],
+      right_fields: [
+        ['N° OC', hdr.Consecutivo || '—'],
+        ['Fecha', fechaFmt],
+        ['Bodega', hdr.Bodega || '—'],
+        ['Municipio', hdr.Municipio || '—'],
+      ]
+    };
+    drawSide(dataDest, paletteD, 'REMISION DESTINO - ' + (siglaDest || 'DEST'));
+    firstPageAdded = true;
+  }
+
+  if (remOrig) {
+    if (firstPageAdded) doc.addPage();
+    var paletteO = _pdfPaletteFor(hdr.Empresa_Origen);
+    var dataOrig = {
+      empresa: hdr.Empresa_Origen,
+      consecutivo: hdr.Consecutivo,
+      remision: remOrig,
+      fecha_entrega: fechaFmt,
+      doc_title: 'REMISION ORIGEN',
+      doc_number: remOrig,
+      date_label: 'Fecha OC',
+      ref_label: 'Ref',
+      qty_header: 'Cantidad',
+      entregas: entregas,
+      left_fields: [
+        ['Empresa Origen', siglaOrig + (hdr.Empresa_Origen && siglaOrig !== hdr.Empresa_Origen ? ' · ' + hdr.Empresa_Origen : '')],
+        ['Empresa Destino', siglaDest + (hdr.Empresa_Destino && siglaDest !== hdr.Empresa_Destino ? ' · ' + hdr.Empresa_Destino : '')],
+        ['Tipo', hdr.Tipo || 'Traslado'],
+        ['Ref. Pedido', hdr.Ref_Pedido || '—'],
+      ],
+      right_fields: [
+        ['N° OC', hdr.Consecutivo || '—'],
+        ['Fecha', fechaFmt],
+        ['Bodega', hdr.Bodega || '—'],
+        ['Municipio', hdr.Municipio || '—'],
+      ]
+    };
+    drawSide(dataOrig, paletteO, 'REMISION ORIGEN - ' + (siglaOrig || 'ORIG'));
+  }
+
+  var fname = 'Remisiones_Traslado_' + (siglaDest || 'DEST') + '_' + (siglaOrig || 'ORIG') + '_' + (hdr.Consecutivo || '') + '.pdf';
+  doc.save(fname);
+}

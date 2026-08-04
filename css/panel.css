@@ -281,6 +281,12 @@ tbody tr:last-child td { border-bottom: none; }
   font-weight: 700; transition: background 0.2s;
 }
 .btn-del:hover { background: #fde8e8; }
+.btn-pdf-oc {
+  background: #f0f4f8; color: #1a5276; border: 1px solid #7fb3d3;
+  padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+  font-weight: 700; transition: background 0.2s; line-height: 1;
+}
+.btn-pdf-oc:hover { background: #d6eaf8; }
 
 /* ── EDIT FIELDS ── */
 .ef {

@@ -1449,37 +1449,58 @@ async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, 
     if (epRes.error) throw new Error('EntregasPedido: ' + epRes.error.message);
   }
 
-  // 2) Solicitudes de compra → sólo OC de traslado, sin EntregasPedido.
-  for (var s = 0; s < solicitudesCompra.length; s++) {
-    var sol = solicitudesCompra[s];
-    var dls = detailWorkingLines[sol._idx] || {};
+  // 2) Solicitudes de compra → OC de traslado, sin EntregasPedido.
+  //
+  // Se agrupan por empresa_origen para que una sola "solicitud de
+  // orden de compra" contenga TODAS las líneas de producto que van
+  // desde esa misma empresa origen. Todas las líneas del grupo
+  // comparten Consecutivo, Fecha, Empresa_Destino, Empresa_Origen y
+  // Ref_Pedido — sólo cambia Producto/Presentación/Cantidad. Así el
+  // PDF de la solicitud y el PDF de las remisiones agrupan todos los
+  // productos relacionados.
+  var solPorOrigen = {};
+  solicitudesCompra.forEach(function(sol) {
+    var key = _normSC(sol.empresa_stock);
+    if (!solPorOrigen[key]) solPorOrigen[key] = { empresa_stock: sol.empresa_stock, items: [] };
+    solPorOrigen[key].items.push(sol);
+  });
+  var origenKeys = Object.keys(solPorOrigen);
+  for (var gi = 0; gi < origenKeys.length; gi++) {
+    var grupo = solPorOrigen[origenKeys[gi]];
     counter += 1;
-    var consecTras = 'T-' + ymd + '-' + hms + (counter > 1 ? '-' + counter : '');
-    var ocRow = {
-      Fecha: fecha || ymd,
-      Empresa_Destino: c.Nombre_Empresa,
-      Empresa_Origen: sol.empresa_stock,
-      Consecutivo: consecTras,
-      Tipo: 'Traslado',
-      Ref_Pedido: c.Nombre_Empresa + ' #' + c.Consecutivo,
-      Producto: dls.Producto || '',
-      Presentacion: dls.Presentacion || '',
-      Cantidad: sol.cantidad,
-      Valor_Unitario: 0,
-      Valor_Total: 0,
-      Total_Orden: 0,
-      Estado: 'Abierta',
-      Remision: '',
-      Bodega: 'Productos Buenos',
-      Observaciones: 'Solicitud de compra automática por pedido ' +
-        c.Nombre_Empresa + ' #' + c.Consecutivo +
-        ' — legalizar en Órdenes (Remisión Destino + Origen) para ' +
-        'que el stock entre a ' + c.Nombre_Empresa + ' y poder emitir ' +
-        'la remisión al cliente.',
-      creado_por: uid
-    };
-    var ocRes = await _sb.from('OrdenesCompra').insert(ocRow);
-    if (ocRes.error) throw new Error('OC solicitud compra: ' + ocRes.error.message);
+    var siglaOrig = (typeof getSigla === 'function' ? getSigla(grupo.empresa_stock) : '') || '';
+    var consecTras = 'T-' + ymd + '-' + hms + (siglaOrig ? '-' + siglaOrig : '') +
+                     (counter > 1 && !siglaOrig ? '-' + counter : '');
+    var obsGrupo = 'Solicitud de compra automática por pedido ' +
+      c.Nombre_Empresa + ' #' + c.Consecutivo +
+      ' — legalizar en Órdenes (Remisión Destino + Origen) para ' +
+      'que el stock entre a ' + c.Nombre_Empresa + ' y poder emitir ' +
+      'la remisión al cliente.';
+    for (var li = 0; li < grupo.items.length; li++) {
+      var sol = grupo.items[li];
+      var dls = detailWorkingLines[sol._idx] || {};
+      var ocRow = {
+        Fecha: fecha || ymd,
+        Empresa_Destino: c.Nombre_Empresa,
+        Empresa_Origen: grupo.empresa_stock,
+        Consecutivo: consecTras,
+        Tipo: 'Traslado',
+        Ref_Pedido: c.Nombre_Empresa + ' #' + c.Consecutivo,
+        Producto: dls.Producto || '',
+        Presentacion: dls.Presentacion || '',
+        Cantidad: sol.cantidad,
+        Valor_Unitario: 0,
+        Valor_Total: 0,
+        Total_Orden: 0,
+        Estado: 'Abierta',
+        Remision: '',
+        Bodega: 'Productos Buenos',
+        Observaciones: obsGrupo,
+        creado_por: uid
+      };
+      var ocRes = await _sb.from('OrdenesCompra').insert(ocRow);
+      if (ocRes.error) throw new Error('OC solicitud compra: ' + ocRes.error.message);
+    }
   }
 }
 
