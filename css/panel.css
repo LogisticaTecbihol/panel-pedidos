@@ -208,6 +208,20 @@ tbody tr.row-modificada:hover > td { background: #fef3c7; }
   padding: 2px 8px; border-radius: 10px;
   font-size: 0.72rem; font-weight: 700; text-align: center;
 }
+
+/* ── Solicitudes de compra pendientes (vista Órdenes) ── */
+.sc.sol-pend { border-color: #c0392b; }
+.sc.sol-pend .num { color: #922b21; }
+tbody tr.row-sol-pendiente > td { background: #fdecea; }
+tbody tr.row-sol-pendiente > td:first-child { box-shadow: inset 4px 0 0 #c0392b; }
+tbody tr.row-sol-pendiente:hover > td { background: #fadbd8; }
+.sol-pend-badge {
+  display: inline-block; margin-left: 6px;
+  background: #c0392b; color: white;
+  border-radius: 10px; padding: 2px 8px;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.4px;
+  vertical-align: middle; cursor: help; white-space: nowrap;
+}
 tbody td { padding: 9px 12px; vertical-align: middle; border-right: 1px solid #cbd5e0; border-bottom: 1px solid #cbd5e0; }
 tfoot td { border-right: 1px solid #cbd5e0; border-top: 1px solid #cbd5e0; }
 thead th:last-child, tbody td:last-child, tfoot td:last-child { border-right: none; }

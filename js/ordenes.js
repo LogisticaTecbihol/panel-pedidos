@@ -86,7 +86,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion' });
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {
@@ -140,9 +140,11 @@ function filteredOC() {
   return ordenes.filter(function(r) {
     if (fed && r.Empresa_Destino !== fed) return false;
     if (feo && r.Empresa_Origen !== feo) return false;
-    if (fst && r.Estado !== fst) return false;
+    if (fst === '__solicitud_pendiente') {
+      if (!_esSolicitudPedidoPendiente(r)) return false;
+    } else if (fst && r.Estado !== fst) return false;
     if (ft) {
-      var hay = [r.Producto, r.Presentacion, r.Consecutivo, r.Municipio, r.Observaciones, r.Bodega].join(' ').toLowerCase();
+      var hay = [r.Producto, r.Presentacion, r.Consecutivo, r.Municipio, r.Observaciones, r.Bodega, r.Ref_Pedido].join(' ').toLowerCase();
       if (hay.indexOf(ft) < 0) return false;
     }
     return true;
@@ -195,6 +197,20 @@ function estadoBadge(estado) {
   return '<span class="badge b-abierto">Abierta</span>';
 }
 
+// Solicitud de compra automática pendiente por legalizar:
+// OC generada desde el flujo de asignación de entrega en Pedidos
+// (Tipo='Traslado', con Ref_Pedido) donde aún no se ha cargado la
+// Remisión Destino. Ver js/pedidos.js:persistirEntregasYTraslados.
+function _esSolicitudPedidoPendiente(r) {
+  if (!r) return false;
+  if (String(r.Tipo || '').toLowerCase() !== 'traslado') return false;
+  if (!String(r.Ref_Pedido || '').trim()) return false;
+  if (String(r.Remision || '').trim()) return false;
+  var est = String(r.Estado || '').toLowerCase();
+  if (est === 'cerrada' || est === 'anulada') return false;
+  return true;
+}
+
 function renderOCTable() {
   var rows = applySortOC(filteredOC());
 
@@ -202,11 +218,14 @@ function renderOCTable() {
   var valorTotal = ordenes.reduce(function(s, r) { return s + (Number(r.Valor_Total)||0); }, 0);
   var abiertas = ordenes.filter(function(r) { return (r.Estado||'Abierta') === 'Abierta'; }).length;
   var cerradas = ordenes.filter(function(r) { return r.Estado === 'Cerrada'; }).length;
+  var solicitudes = ordenes.filter(_esSolicitudPedidoPendiente).length;
 
   document.getElementById('s-total').textContent = totalLines;
   document.getElementById('s-valor').textContent = fmtMoney(valorTotal);
   document.getElementById('s-abiertas').textContent = abiertas;
   document.getElementById('s-cerradas').textContent = cerradas;
+  var solEl = document.getElementById('s-solicitudes');
+  if (solEl) solEl.textContent = solicitudes;
   document.getElementById('row-ct-oc').textContent = '(' + rows.length + ' mostrados)';
 
   renderOCHeader();
@@ -218,12 +237,19 @@ function renderOCTable() {
   }
 
   tbody.innerHTML = rows.map(function(r, i) {
-    return '<tr>' +
+    var esSol = _esSolicitudPedidoPendiente(r);
+    var trClass = esSol ? ' class="row-sol-pendiente"' : '';
+    var solBadge = '';
+    if (esSol) {
+      var refEsc = String(r.Ref_Pedido || '').replace(/"/g, '&quot;');
+      solBadge = ' <span class="sol-pend-badge" title="Solicitud de compra pendiente por legalizar. Origen: pedido ' + refEsc + '. Cargar Remisión Destino + Remisión Origen para que el stock entre a ' + (r.Empresa_Destino || '') + ' y se pueda emitir la remisión al cliente.">🛒 SOL. PEDIDO</span>';
+    }
+    return '<tr' + trClass + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
       '<td title="' + (r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassOC(r.Empresa_Destino) + '">' + getSiglaOC(r.Empresa_Destino) + '</span></td>' +
       '<td title="' + (r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassOC(r.Empresa_Origen) + '">' + getSiglaOC(r.Empresa_Origen) + '</span></td>' +
-      '<td style="font-weight:600;font-size:0.82rem">' + (r.Consecutivo||'—') + '</td>' +
+      '<td style="font-weight:600;font-size:0.82rem">' + (r.Consecutivo||'—') + solBadge + '</td>' +
       '<td style="font-weight:700">' + (r.Producto||'—') + '</td>' +
       '<td>' + (r.Presentacion||'—') + '</td>' +
       '<td style="text-align:center;font-weight:700">' + (r.Cantidad||0) + '</td>' +

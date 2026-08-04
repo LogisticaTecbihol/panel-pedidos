@@ -60,6 +60,7 @@
     <div class="sc entregado"><div class="num" id="s-valor">$0</div><div class="lbl">Valor total</div></div>
     <div class="sc parcial"><div class="num" id="s-abiertas">0</div><div class="lbl">Abiertas</div></div>
     <div class="sc recibido"><div class="num" id="s-cerradas">0</div><div class="lbl">Cerradas</div></div>
+    <div class="sc sol-pend" title="Solicitudes de compra generadas desde Pedidos que aún no se han legalizado (falta cargar Remisión Destino)"><div class="num" id="s-solicitudes">0</div><div class="lbl">🛒 Solic. de pedido</div></div>
   </div>
 
   <div class="filters">
@@ -82,6 +83,7 @@
         <option value="Abierta">Abierta</option>
         <option value="Cerrada">Cerrada</option>
         <option value="Anulada">Anulada</option>
+        <option value="__solicitud_pendiente">🛒 Solic. compra pendiente</option>
       </select>
     </div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="producto, consecutivo…" style="width:160px"></div>
