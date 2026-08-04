@@ -339,11 +339,13 @@ function buildMovimientos() {
   });
 
   // Ingresos a Bodega NC — SALIDA de la bodega de productos buenos
-  // Excepción: devoluciones de cliente directas a NC — el producto llega de afuera,
-  // no sale de productos buenos, así que no afecta Kardex General ni Existencias.
+  // Excepciones (el producto no sale de Productos Buenos, así que no afecta Kardex General):
+  //   - Devolucion_cliente: el producto llega de afuera (cliente).
+  //   - Retorno_conforme:   el producto viene de otra bodega NC (traslado entre empresas).
   ncAjustes.forEach(function(a) {
     if (a.Tipo !== 'Ingreso_NC') return;
     if (a.Motivo === 'Devolucion_cliente') return;
+    if (a.Motivo === 'Retorno_conforme') return;
     var cant = Number(a.Cantidad) || 0;
     if (cant <= 0) return;
     var motivoLbl = NC_MOTIVO_LABELS[a.Motivo] || a.Motivo || '';
