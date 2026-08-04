@@ -85,6 +85,90 @@ var detailWorkingLines = [];
 // Snapshot de existencias para el modal de detalle (empresa origen del stock)
 var existSnapshot = null;
 
+// Índice de solicitudes de compra abiertas (OCs Tipo='Traslado' con
+// Ref_Pedido apuntando a un pedido y Remisión Destino aún vacía).
+// Clave: normSC(Nombre_Empresa) + '||' + String(Consecutivo).trim()
+// Valor: array de OCs { id, Consecutivo, Producto, Presentacion,
+//                       Cantidad, Empresa_Origen, Fecha, Estado }.
+// Se reconstruye en cada loadFromAPI().
+var solicitudesCompraPorPedido = {};
+
+function _normSC(s) { return String(s || '').toLowerCase().trim(); }
+function _keySC(empresa, consecutivo) {
+  return _normSC(empresa) + '||' + String(consecutivo == null ? '' : consecutivo).trim();
+}
+// "CARVAL #123" → { empresa: 'CARVAL', consecutivo: '123' }
+function _parseRefPedido(ref) {
+  var s = String(ref || '').trim();
+  if (!s) return null;
+  var idx = s.lastIndexOf(' #');
+  if (idx < 0) return null;
+  var empresa = s.slice(0, idx).trim();
+  var consecutivo = s.slice(idx + 2).trim();
+  if (!empresa || !consecutivo) return null;
+  return { empresa: empresa, consecutivo: consecutivo };
+}
+// Renderiza la sección de solicitudes de compra pendientes dentro
+// del modal detalle. Se oculta si no hay OCs abiertas para ese
+// pedido. Fuente de verdad: solicitudesCompraPorPedido (indexado
+// desde OrdenesCompra en cada loadFromAPI).
+function renderSolicitudesCompraSection(c) {
+  var host = document.getElementById('solicitudes-compra-section');
+  if (!host) return;
+  var list = solicitudesCompraPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+  if (!list.length) {
+    host.style.display = 'none';
+    host.innerHTML = '';
+    return;
+  }
+  var items = list.map(function(s) {
+    var esc = function(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) {
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch];
+    }); };
+    return '<div class="sol-item">' +
+      '<span class="sol-oc" title="Consecutivo de la OC">' + esc(s.Consecutivo) + '</span>' +
+      '<span class="sol-prod">' + esc(s.Producto) + (s.Presentacion ? ' <span style="color:#718096;font-weight:400">· ' + esc(s.Presentacion) + '</span>' : '') + '</span>' +
+      '<span class="sol-cant">' + s.Cantidad + ' ud</span>' +
+      '<span class="sol-origen" title="Empresa origen del traslado">desde ' + esc(getSigla(s.Empresa_Origen) || s.Empresa_Origen) + '</span>' +
+      '<span class="sol-estado">' + esc(s.Estado) + '</span>' +
+    '</div>';
+  }).join('');
+  host.style.display = 'block';
+  host.className = 'sol-panel';
+  host.innerHTML =
+    '<label class="sol-title">🛒 ' + list.length + ' solicitud' + (list.length === 1 ? '' : 'es') +
+      ' de compra pendiente' + (list.length === 1 ? '' : 's') + ' para este pedido</label>' +
+    '<div style="font-size:0.76rem;color:#7d2820;margin-bottom:8px">' +
+      'Estas OC deben legalizarse en el módulo <strong>Órdenes de Compra</strong> (cargar Remisión Destino y Origen) ' +
+      'para que el producto entre como existencia en <strong>' + (c.Nombre_Empresa || '') + '</strong> y se pueda emitir la remisión al cliente.' +
+    '</div>' +
+    '<div class="sol-list">' + items + '</div>';
+}
+
+function _buildSolicitudesMap(ordenes) {
+  var map = {};
+  (ordenes || []).forEach(function(oc) {
+    if (String(oc.Tipo || '').toLowerCase() !== 'traslado') return;
+    // "Legalizada" = tiene Remisión Destino cargada.
+    if (String(oc.Remision || '').trim()) return;
+    var ref = _parseRefPedido(oc.Ref_Pedido);
+    if (!ref) return;
+    var k = _keySC(ref.empresa, ref.consecutivo);
+    if (!map[k]) map[k] = [];
+    map[k].push({
+      id: oc.id,
+      Consecutivo: oc.Consecutivo || '',
+      Producto: oc.Producto || '',
+      Presentacion: oc.Presentacion || '',
+      Cantidad: Number(oc.Cantidad) || 0,
+      Empresa_Origen: oc.Empresa_Origen || '',
+      Fecha: oc.Fecha || '',
+      Estado: oc.Estado || 'Abierta'
+    });
+  });
+  return map;
+}
+
 // ── Load from API ──
 async function loadFromAPI() {
   await _authReady;
@@ -105,8 +189,20 @@ async function loadFromAPI() {
   }
 
   try {
-    var data = await apiGet('getPedidos');
+    // Cargamos pedidos + OCs de traslado abiertas en paralelo. Las
+    // OCs las usamos para el índice de "solicitudes de compra
+    // pendientes" que se muestran como badge en la lista y como
+    // sección en el modal detalle. Si getOrdenesCompra falla, seguimos
+    // sin badges (los pedidos siguen cargando).
+    var pedidosPromise = apiGet('getPedidos');
+    var ordenesPromise = apiGet('getOrdenesCompra', {
+      columns: 'id,Consecutivo,Tipo,Estado,Remision,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Fecha,Ref_Pedido'
+    }).catch(function() { return { ok: true, ordenes: [] }; });
+    var results = await Promise.all([pedidosPromise, ordenesPromise]);
+    var data = results[0];
+    var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
+    solicitudesCompraPorPedido = _buildSolicitudesMap((ocData && ocData.ok && ocData.ordenes) || []);
 
     var EXPECTED = ['Fecha_Procesamiento','Nombre_Empresa','Consecutivo','Fecha_Pedido',
       'Cliente','NIT','Telefono','Direccion_Envio','Municipio','Departamento',
@@ -479,10 +575,18 @@ function renderTable() {
       var tsAttr = String(c._ModTs).replace(/'/g, "\\'");
       modBadge = '<span class="mod-badge" title="' + modTitle + '" onclick="dismissPedidoModificado(\'' + keyAttr + '\', \'' + tsAttr + '\', event)">✏️ ' + modLabel + '</span>';
     }
+    var solList = solicitudesCompraPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+    var solBadge = '';
+    if (solList.length > 0) {
+      var solTitle = solList.length === 1
+        ? '1 solicitud de compra pendiente — legalizar la OC en Órdenes para poder emitir la remisión'
+        : solList.length + ' solicitudes de compra pendientes — legalizar las OC en Órdenes para poder emitir la remisión';
+      solBadge = '<span class="sol-badge" title="' + solTitle + '">🛒 ' + solList.length + '</span>';
+    }
     return '<tr' + trClass + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (c['N°']||'') + '</td>' +
       '<td title="' + (c.Nombre_Empresa||'') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + getSigla(c.Nombre_Empresa) + '</span></td>' +
-      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + modBadge + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
+      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + modBadge + solBadge + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
       '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (c.Cliente||'') + '">' + (c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
       '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
@@ -538,6 +642,7 @@ async function openDetail(idx) {
   document.getElementById('m-total').textContent = fmtMoney(c.Total_Orden);
   var obsText = c.Observaciones || lines.reduce(function(a, l) { return a || l.Observaciones; }, '') || '';
   document.getElementById('m-observaciones').value = obsText ? String(obsText).trim() : '';
+  renderSolicitudesCompraSection(c);
   document.getElementById('m-fecha').value = today();
   document.getElementById('m-remision').value = '';
   document.getElementById('m-remision').classList.remove('error');

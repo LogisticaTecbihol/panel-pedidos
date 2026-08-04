@@ -230,6 +230,8 @@
         <label style="font-weight:700;color:#7d6608;font-size:0.76rem;text-transform:uppercase;display:block;margin-bottom:6px">📝 Observaciones</label>
         <textarea id="m-observaciones" rows="2" placeholder="Agregar observaciones del pedido..." style="width:100%;border:1px solid #f9e79f;border-radius:6px;padding:8px 10px;font-size:0.84rem;font-family:inherit;resize:vertical;background:white;outline:none;color:#4a5568;transition:border-color 0.2s" onfocus="this.style.borderColor='#d4ac0d'" onblur="this.style.borderColor='#f9e79f'"></textarea>
       </div>
+      <!-- Solicitudes de compra (OCs de traslado abiertas por este pedido) -->
+      <div id="solicitudes-compra-section" style="display:none"></div>
       <!-- Adjuntos -->
       <div class="adjuntos-section" id="adjuntos-section">
         <div class="adjuntos-header">
@@ -258,7 +260,7 @@
           <label>📄 N° Remisión</label>
           <input type="text" id="m-remision" placeholder="XXXX" style="width:160px">
         </div>
-        <div class="hint">Ingresa la fecha y N° Remisión (obligatorio para descontar stock). Luego, en cada línea, elige la empresa origen del inventario y la cantidad; añade tantas asignaciones como necesites. Si el stock sale de una empresa distinta a la del pedido, se generará automáticamente una OC de traslado.</div>
+        <div class="hint">Ingresa la fecha y N° Remisión (obligatorio si asignas stock de la misma empresa del pedido). Luego, en cada línea, elige la empresa origen del inventario y la cantidad. Si el stock sale de la empresa del pedido se emite la remisión al cliente; si sale de otra empresa se genera SOLO una solicitud de compra (OC de traslado) y la remisión se emitirá después, cuando esa OC se legalice en el módulo Órdenes.</div>
       </div>
       <div class="prod-wrap">
         <table class="prod-table">

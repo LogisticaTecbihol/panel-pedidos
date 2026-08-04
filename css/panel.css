@@ -155,6 +155,45 @@ thead th {
 }
 tbody tr { transition: background 0.12s; }
 tbody tr:hover { background: #f0f8ff; }
+
+/* ── Solicitudes de compra pendientes (OC de traslado abierta por pedido) ── */
+.sol-badge {
+  display: inline-block; margin-left: 6px;
+  background: #c0392b; color: white;
+  border-radius: 10px; padding: 1px 7px;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.3px;
+  vertical-align: middle; cursor: help;
+}
+.sol-panel {
+  background: #fdecea; border: 1px solid #f5c2c0;
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
+  font-size: 0.84rem;
+}
+.sol-panel .sol-title {
+  font-weight: 700; color: #922b21; font-size: 0.76rem;
+  text-transform: uppercase; display: block; margin-bottom: 8px;
+}
+.sol-panel .sol-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.sol-panel .sol-item {
+  background: white; border: 1px solid #f5c2c0;
+  border-radius: 6px; padding: 6px 10px;
+  display: grid; grid-template-columns: 80px 1fr 90px 110px 90px;
+  gap: 10px; align-items: center;
+  font-size: 0.78rem; color: #4a5568;
+}
+.sol-panel .sol-item .sol-oc {
+  font-weight: 700; color: #922b21; font-family: monospace;
+}
+.sol-panel .sol-item .sol-prod { font-weight: 600; color: #2d3748; }
+.sol-panel .sol-item .sol-cant { text-align: right; font-weight: 700; }
+.sol-panel .sol-item .sol-origen { color: #6b7280; }
+.sol-panel .sol-item .sol-estado {
+  background: #fef3c7; color: #92400e;
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 0.72rem; font-weight: 700; text-align: center;
+}
 tbody td { padding: 9px 12px; vertical-align: middle; border-right: 1px solid #cbd5e0; border-bottom: 1px solid #cbd5e0; }
 tfoot td { border-right: 1px solid #cbd5e0; border-top: 1px solid #cbd5e0; }
 thead th:last-child, tbody td:last-child, tfoot td:last-child { border-right: none; }
