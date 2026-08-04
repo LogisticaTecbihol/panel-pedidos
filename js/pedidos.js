@@ -151,6 +151,11 @@ function _buildSolicitudesMap(ordenes) {
     if (String(oc.Tipo || '').toLowerCase() !== 'traslado') return;
     // "Legalizada" = tiene Remisión Destino cargada.
     if (String(oc.Remision || '').trim()) return;
+    // Anulada o Cerrada (sin remisión, edge case manual) no cuentan
+    // como solicitud viva. Mantiene la semántica idéntica al
+    // predicado _esSolicitudPedidoPendiente de ordenes.js.
+    var est = String(oc.Estado || '').toLowerCase();
+    if (est === 'anulada' || est === 'cerrada') return;
     var ref = _parseRefPedido(oc.Ref_Pedido);
     if (!ref) return;
     var k = _keySC(ref.empresa, ref.consecutivo);
