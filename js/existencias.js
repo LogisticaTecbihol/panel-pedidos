@@ -175,24 +175,24 @@
       });
     });
 
-    // Órdenes de Compra — ENTRADA destino + SALIDA origen
+    // Órdenes de Compra — Remisión Destino dispara ENTRADA destino; Remisión Origen dispara SALIDA origen
     (src.ordenes || []).forEach(function(oc) {
       var cant = Number(oc.Cantidad) || 0;
       if (cant <= 0) return;
-      var rem = String(oc.Remision || '').trim();
-      if (!rem) return;
-      if (oc.Empresa_Destino) {
+      var remDest = String(oc.Remision || '').trim();
+      var remOrig = String(oc.Remision_Origen || '').trim();
+      if (remDest && oc.Empresa_Destino) {
         movs.push({
           fecha: oc.Fecha || '', tipo: 'Entrada', modulo: 'Órdenes de Compra',
-          remision: rem, empresa: oc.Empresa_Destino,
+          remision: remDest, empresa: oc.Empresa_Destino,
           producto: _normProd(oc.Producto),
           presentacion: oc.Presentacion || '', cantidad: cant
         });
       }
-      if (oc.Empresa_Origen && oc.Empresa_Origen !== oc.Empresa_Destino) {
+      if (remOrig && oc.Empresa_Origen && oc.Empresa_Origen !== oc.Empresa_Destino) {
         movs.push({
           fecha: oc.Fecha || '', tipo: 'Salida', modulo: 'Órdenes de Compra',
-          remision: rem, empresa: oc.Empresa_Origen,
+          remision: remOrig, empresa: oc.Empresa_Origen,
           producto: _normProd(oc.Producto),
           presentacion: oc.Presentacion || '', cantidad: cant
         });
@@ -309,7 +309,7 @@
         .catch(function() { return { ok: true, pedidos: [] }; }),
       apiGet('getIngresos',    { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion' })
         .catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion' })
+      apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega' })
         .catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, muestras: [] }; }),
@@ -436,16 +436,22 @@
     });
     (sources.ordenes || []).forEach(function(oc) {
       if ((oc.Estado || '').toLowerCase() === 'anulada') return;
-      if (!String(oc.Remision || '').trim()) return;
       var cant = Number(oc.Cantidad) || 0;
       if (cant <= 0) return;
+      var remDest = String(oc.Remision || '').trim();
+      var remOrig = String(oc.Remision_Origen || '').trim();
+      if (!remDest && !remOrig) return;
       var tipo = (oc.Tipo || 'Compra');
       if (tipo === 'Traslado') {
-        if (oc.Empresa_Origen)  add(oc.Empresa_Origen,  oc.Producto, -cant);
-        if (oc.Empresa_Destino) add(oc.Empresa_Destino, oc.Producto,  cant);
+        if (remOrig && oc.Empresa_Origen)  add(oc.Empresa_Origen,  oc.Producto, -cant);
+        if (remDest && oc.Empresa_Destino) add(oc.Empresa_Destino, oc.Producto,  cant);
       } else {
-        if (!_esBueno(oc.Bodega)) return;
-        add(oc.Empresa_Destino, oc.Producto, cant);
+        if (remOrig && oc.Empresa_Origen && oc.Empresa_Origen !== oc.Empresa_Destino) {
+          add(oc.Empresa_Origen, oc.Producto, -cant);
+        }
+        if (remDest && _esBueno(oc.Bodega)) {
+          add(oc.Empresa_Destino, oc.Producto, cant);
+        }
       }
     });
     (sources.devoluciones || []).forEach(function(d) {
