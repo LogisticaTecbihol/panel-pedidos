@@ -217,7 +217,16 @@ function rebuildConsecs() {
       Telefono: p.Telefono, Direccion_Envio: p.Direccion_Envio,
       Comercial: p.Comercial, Municipio: p.Municipio, Departamento: p.Departamento,
       Plazo_Pago: p.Plazo_Pago, Precio_Facturacion: p.Precio_Facturacion, Total_Orden: p.Total_Orden,
+      _ModTs: null, _ModTipo: null,
     };
+    var pts = p.Fecha_Modificacion_Cant;
+    if (pts) {
+      var cur = seen[k]._ModTs;
+      if (!cur || new Date(pts).getTime() > new Date(cur).getTime()) {
+        seen[k]._ModTs = pts;
+        seen[k]._ModTipo = p.Tipo_Modificacion_Cant || 'ambos';
+      }
+    }
   });
   consecs = Object.values(seen).sort(function(a, b) {
     var da = +new Date(a.Fecha_Pedido), db = +new Date(b.Fecha_Pedido);
@@ -227,6 +236,35 @@ function rebuildConsecs() {
 
 // ── Helpers ──
 function keyOf(emp, con, cli) { return (emp||'') + '||' + String(con||'').trim() + '||' + (cli||''); }
+
+// ── Modificaciones (server-side + dismissal local por usuario) ──
+// El servidor marca cada pedido con Fecha_Modificacion_Cant + Tipo_Modificacion_Cant
+// cuando cambia la cantidad pedida o se agregan líneas. Todos los usuarios
+// autorizados ven la marca. Cada usuario descarta su vista guardando la
+// fecha "vista" en localStorage; si el servidor registra una modificación
+// posterior, el resalte reaparece.
+var MOD_SEEN_KEY = 'pedidos_mod_vistos_v1';
+function _loadModSeen() {
+  try { return JSON.parse(localStorage.getItem(MOD_SEEN_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function _saveModSeen(m) {
+  try { localStorage.setItem(MOD_SEEN_KEY, JSON.stringify(m)); } catch (e) {}
+}
+function isPedidoModificadoPendiente(key, serverTs) {
+  if (!key || !serverTs) return false;
+  var dis = _loadModSeen()[key];
+  if (!dis) return true;
+  return new Date(serverTs).getTime() > new Date(dis).getTime();
+}
+function dismissPedidoModificado(key, serverTs, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  if (!key || !serverTs) return;
+  var m = _loadModSeen();
+  m[key] = serverTs;
+  _saveModSeen(m);
+  renderTable();
+}
 
 function getLinesFor(c) {
   var k = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
@@ -425,10 +463,26 @@ function renderTable() {
     var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
     var done = est === 'Entregado' || est === 'Alistado';
     var idx = consecs.indexOf(c);
-    return '<tr>' +
+    var rowKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+    var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
+    var trClass = modPend ? ' class="row-modificada"' : '';
+    var modBadge = '';
+    if (modPend) {
+      var tipo = c._ModTipo || 'ambos';
+      var modLabel = tipo === 'linea_nueva' ? 'NUEVO' : tipo === 'cantidad' ? 'CANT.' : 'MOD.';
+      var modTitle = tipo === 'linea_nueva'
+        ? 'Se agregó una línea nueva a este pedido — clic para descartar'
+        : tipo === 'cantidad'
+          ? 'Se modificó la cantidad pedida — clic para descartar'
+          : 'Se modificó cantidad y se agregaron líneas — clic para descartar';
+      var keyAttr = rowKey.replace(/"/g, '&quot;').replace(/'/g, "\\'");
+      var tsAttr = String(c._ModTs).replace(/'/g, "\\'");
+      modBadge = '<span class="mod-badge" title="' + modTitle + '" onclick="dismissPedidoModificado(\'' + keyAttr + '\', \'' + tsAttr + '\', event)">✏️ ' + modLabel + '</span>';
+    }
+    return '<tr' + trClass + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (c['N°']||'') + '</td>' +
       '<td title="' + (c.Nombre_Empresa||'') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + getSigla(c.Nombre_Empresa) + '</span></td>' +
-      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
+      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + modBadge + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
       '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (c.Cliente||'') + '">' + (c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
       '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
@@ -973,8 +1027,8 @@ function renderAsignacionChips(i) {
     var sigla = getSigla(a.empresa_stock);
     var traslado = norm(a.empresa_stock) !== empPedido;
     var tag = traslado
-      ? '<span title="Se generará una OC de traslado pendiente de legalizar (cargar N° remisión en Órdenes para afectar inventario)" style="color:#c0392b;font-weight:700">↗ traslado (pend. aprobar)</span>'
-      : '<span style="color:#27ae60;font-weight:700">✓ mismo origen</span>';
+      ? '<span title="Genera SOLO una solicitud de compra (OC de traslado, Estado Abierta). La remisión al cliente NO se emite ahora: primero hay que legalizar la OC en Órdenes para que el stock quede en la empresa del pedido." style="color:#c0392b;font-weight:700">🛒 solicitud de compra (remisión pendiente)</span>'
+      : '<span style="color:#27ae60;font-weight:700">✓ mismo origen — genera remisión</span>';
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
       '<span style="flex:1"><strong>' + a.cantidad + '</strong> ud · ' + sigla + ' · ' + tag + '</span>' +
       '<button type="button" onclick="removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
@@ -1020,20 +1074,36 @@ async function guardarTodo() {
 
   // Recolectar asignaciones pendientes de todas las líneas.
   // Cada entrada = { row, _idx, cantidad, empresa_stock, remision, fecha }.
+  //
+  // Se separan en dos buckets según la regla de negocio:
+  //   • entregasDirectas:   empresa_stock === empresa del pedido →
+  //     generan remisión al cliente + EntregasPedido + descuento
+  //     de inventario ya mismo.
+  //   • solicitudesCompra:  empresa_stock !== empresa del pedido →
+  //     SOLO generan la OC de traslado (Estado='Abierta') como
+  //     "solicitud de compra". NO se crea EntregasPedido, NO se
+  //     actualiza Cant_Entregada/Remisiones, NO se genera PDF.
+  //     La remisión al cliente se emite después, cuando la OC se
+  //     legalice en el módulo Órdenes y el producto quede como
+  //     existencia en la empresa del pedido.
   var entregas = [];
+  var solicitudesCompra = [];
+  var empPedidoN = norm(c.Nombre_Empresa);
   detailWorkingLines.forEach(function(dl, i) {
     var asigs = (dl && dl._asignaciones) || [];
     asigs.forEach(function(a) {
       var cant = Number(a.cantidad) || 0;
       if (cant <= 0) return;
-      entregas.push({
+      var item = {
         row: dl.__row,
         _idx: i,
         cantidad: cant,
         empresa_stock: a.empresa_stock,
         remision: rem,
         fecha: fecha
-      });
+      };
+      if (norm(a.empresa_stock) === empPedidoN) entregas.push(item);
+      else solicitudesCompra.push(item);
     });
   });
 
@@ -1042,14 +1112,17 @@ async function guardarTodo() {
     showToast('El N° de remisión es obligatorio para descontar stock', '#e74c3c');
     return;
   }
-  if (entregas.length > 0 && !fecha) {
-    showToast('Selecciona la fecha de entrega', '#e74c3c');
+  if ((entregas.length > 0 || solicitudesCompra.length > 0) && !fecha) {
+    showToast('Selecciona la fecha', '#e74c3c');
     return;
   }
 
-  // Volcar las asignaciones al buffer _entregas para que el resto
-  // del flujo actual (Cant_Entregada, Remisiones, Estado_Entrega,
-  // PDF de remisión) siga funcionando sin cambios.
+  // Volcar SOLO las entregas directas al buffer _entregas para que
+  // el resto del flujo (Cant_Entregada, Remisiones, Estado_Entrega,
+  // PDF de remisión) opere únicamente sobre lo que realmente se
+  // entrega al cliente. Los traslados no cuentan como entrega hasta
+  // que la OC se legalice y se registre la entrega desde la empresa
+  // del pedido en una sesión posterior.
   entregas.forEach(function(ent) {
     var dl = detailWorkingLines[ent._idx];
     if (!dl) return;
@@ -1152,11 +1225,11 @@ async function guardarTodo() {
       }
     }
 
-    // Registrar EntregasPedido + OCs de traslado auto para las
-    // asignaciones nuevas de esta sesión (las que estaban en
-    // _asignaciones antes de volcarlas a _entregas).
-    if (entregas.length > 0) {
-      await persistirEntregasYTraslados(entregas, c, rem, fecha, obs);
+    // Registrar EntregasPedido de las entregas directas + OCs de
+    // "solicitud de compra" para los traslados. Ver la regla en el
+    // encabezado del bucket splitting arriba.
+    if (entregas.length > 0 || solicitudesCompra.length > 0) {
+      await persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs);
     }
 
     if (entregas.length > 0 && rem) {
@@ -1198,15 +1271,15 @@ async function guardarTodo() {
     }
 
     closeModal();
-    var trasladosPend = entregas.filter(function(e) {
-      return norm(e.empresa_stock) !== norm(c.Nombre_Empresa);
-    }).length;
-    var msg = entregas.length > 0
-      ? '✅ Cambios guardados + ' + entregas.length + ' entrega(s) registrada(s)'
+    var partes = [];
+    if (entregas.length > 0) partes.push(entregas.length + ' entrega(s) registrada(s)');
+    if (solicitudesCompra.length > 0) partes.push(solicitudesCompra.length + ' solicitud(es) de compra creada(s)');
+    var msg = partes.length > 0
+      ? '✅ Cambios guardados + ' + partes.join(' + ')
       : '✅ Cambios guardados en la nube';
     showToast(msg);
-    if (trasladosPend > 0) {
-      showToast('⚠ ' + trasladosPend + ' OC de traslado creada(s) — cargar N° remisión en Órdenes para legalizar y afectar inventario', '#e67e22');
+    if (solicitudesCompra.length > 0) {
+      showToast('⚠ ' + solicitudesCompra.length + ' solicitud(es) de compra pendiente(s) — legalizar la OC en Órdenes para que el stock quede en ' + c.Nombre_Empresa + ' y poder emitir la remisión', '#e67e22');
     }
     await loadFromAPI();
   } catch (err) {
@@ -1216,20 +1289,28 @@ async function guardarTodo() {
   }
 }
 
-// ── Persistencia de entregas + OC de traslado automáticas ──
-// Para cada asignación:
-//   • Si empresa_stock === empresa del pedido: sólo se inserta la
-//     fila en EntregasPedido; el descuento del stock lo hace el
-//     módulo Inventario al considerar EntregasPedido.
-//   • Si empresa_stock !== empresa del pedido: se crea una OC con
-//     Tipo='Traslado', Estado='Abierta' y Remision='' (pendiente de
-//     legalizar), y luego la EntregasPedido enlazada por
-//     orden_compra_id. La OC NO afecta inventario hasta que un
-//     usuario abra la OC en el módulo Órdenes y le cargue el N°
-//     de remisión — recién ahí Existencias.js y Kardex la cuentan
-//     como movimiento bilateral (Salida del origen, Entrada al
-//     destino) y el traslado queda legalizado.
-async function persistirEntregasYTraslados(entregas, c, rem, fecha, obs) {
+// ── Persistencia de entregas + OC de "solicitud de compra" ──
+//
+// Se reciben dos buckets ya separados por guardarTodo():
+//
+//   • entregas (empresa_stock === empresa del pedido):
+//     Se inserta la fila en EntregasPedido; el descuento del stock
+//     lo hace Existencias/Kardex al considerar EntregasPedido +
+//     la Remisiones del pedido.
+//
+//   • solicitudesCompra (empresa_stock !== empresa del pedido):
+//     Se crea SOLO una OC con Tipo='Traslado', Estado='Abierta' y
+//     Remision='' — es una "solicitud de compra". NO se crea
+//     EntregasPedido y NO se toca el pedido (Cant_Entregada,
+//     Remisiones, Estado_Entrega). La OC no afecta inventario
+//     hasta que un usuario la abra en el módulo Órdenes y cargue
+//     Remisión Destino + Remisión Origen — recién ahí Existencias
+//     y Kardex la cuentan como movimiento bilateral y el producto
+//     queda como existencia en la empresa del pedido. Sólo
+//     entonces el usuario puede volver a este pedido y registrar
+//     la entrega al cliente desde esa empresa para emitir la
+//     remisión correspondiente.
+async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs) {
   var uid = _uid();
   var stamp = new Date();
   var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
@@ -1237,46 +1318,10 @@ async function persistirEntregasYTraslados(entregas, c, rem, fecha, obs) {
   var hms = pad(stamp.getHours()) + pad(stamp.getMinutes()) + pad(stamp.getSeconds());
   var counter = 0;
 
+  // 1) Entregas directas → sólo EntregasPedido, sin OC.
   for (var e = 0; e < entregas.length; e++) {
     var ent = entregas[e];
     var dl = detailWorkingLines[ent._idx] || {};
-    var esTraslado = norm(ent.empresa_stock) !== norm(c.Nombre_Empresa);
-    var ocId = null;
-
-    if (esTraslado) {
-      counter += 1;
-      var consecTras = 'T-' + ymd + '-' + hms + (counter > 1 ? '-' + counter : '');
-      // OC de traslado pendiente de aprobación: se crea sin Remisión
-      // y como 'Abierta'. Sólo cuando alguien la abra en el módulo
-      // Órdenes y le cargue el N° de Remisión del traslado se hará
-      // efectiva y afectará el inventario (tanto existencias.js como
-      // Kardex requieren Remision no-vacía en OC para contarla).
-      var ocRow = {
-        Fecha: fecha || ymd,
-        Empresa_Destino: c.Nombre_Empresa,
-        Empresa_Origen: ent.empresa_stock,
-        Consecutivo: consecTras,
-        Tipo: 'Traslado',
-        Ref_Pedido: c.Nombre_Empresa + ' #' + c.Consecutivo,
-        Producto: dl.Producto || '',
-        Presentacion: dl.Presentacion || '',
-        Cantidad: ent.cantidad,
-        Valor_Unitario: 0,
-        Valor_Total: 0,
-        Total_Orden: 0,
-        Estado: 'Abierta',
-        Remision: '',
-        Bodega: 'Productos Buenos',
-        Observaciones: 'Traslado automático por entrega de pedido ' +
-          c.Nombre_Empresa + ' #' + c.Consecutivo +
-          ' — pendiente de legalizar (cargar N° remisión).',
-        creado_por: uid
-      };
-      var ocRes = await _sb.from('OrdenesCompra').insert(ocRow).select('id').single();
-      if (ocRes.error) throw new Error('OC traslado: ' + ocRes.error.message);
-      ocId = ocRes.data && ocRes.data.id;
-    }
-
     var epRow = {
       pedido_id: ent.row,
       empresa_pedido: c.Nombre_Empresa,
@@ -1286,12 +1331,45 @@ async function persistirEntregasYTraslados(entregas, c, rem, fecha, obs) {
       cantidad: ent.cantidad,
       remision: rem,
       fecha: fecha || null,
-      orden_compra_id: ocId,
+      orden_compra_id: null,
       observaciones: obs || '',
       creado_por: uid
     };
     var epRes = await _sb.from('EntregasPedido').insert(epRow);
     if (epRes.error) throw new Error('EntregasPedido: ' + epRes.error.message);
+  }
+
+  // 2) Solicitudes de compra → sólo OC de traslado, sin EntregasPedido.
+  for (var s = 0; s < solicitudesCompra.length; s++) {
+    var sol = solicitudesCompra[s];
+    var dls = detailWorkingLines[sol._idx] || {};
+    counter += 1;
+    var consecTras = 'T-' + ymd + '-' + hms + (counter > 1 ? '-' + counter : '');
+    var ocRow = {
+      Fecha: fecha || ymd,
+      Empresa_Destino: c.Nombre_Empresa,
+      Empresa_Origen: sol.empresa_stock,
+      Consecutivo: consecTras,
+      Tipo: 'Traslado',
+      Ref_Pedido: c.Nombre_Empresa + ' #' + c.Consecutivo,
+      Producto: dls.Producto || '',
+      Presentacion: dls.Presentacion || '',
+      Cantidad: sol.cantidad,
+      Valor_Unitario: 0,
+      Valor_Total: 0,
+      Total_Orden: 0,
+      Estado: 'Abierta',
+      Remision: '',
+      Bodega: 'Productos Buenos',
+      Observaciones: 'Solicitud de compra automática por pedido ' +
+        c.Nombre_Empresa + ' #' + c.Consecutivo +
+        ' — legalizar en Órdenes (Remisión Destino + Origen) para ' +
+        'que el stock entre a ' + c.Nombre_Empresa + ' y poder emitir ' +
+        'la remisión al cliente.',
+      creado_por: uid
+    };
+    var ocRes = await _sb.from('OrdenesCompra').insert(ocRow);
+    if (ocRes.error) throw new Error('OC solicitud compra: ' + ocRes.error.message);
   }
 }
 
@@ -1375,7 +1453,8 @@ async function agregarNuevaLinea() {
       action: 'editarPedido',
       header: hdr,
       lineas: [newLine],
-      deleteRows: []
+      deleteRows: [],
+      modificacionTipo: 'linea_nueva'
     });
     if (!result || !result.ok) throw new Error((result && result.error) || 'Error al guardar');
 
@@ -1536,6 +1615,16 @@ async function saveEdit() {
   var keepRows = editWorkingLines.filter(function(l) { return l.__row; }).map(function(l) { return l.__row; });
   var deleteRows = originalRows.filter(function(r) { return keepRows.indexOf(r) < 0; });
 
+  // Detectar cambios que ameriten resaltar el pedido como modificado.
+  var origCantMap = {};
+  originalLines.forEach(function(ol) { if (ol.__row) origCantMap[ol.__row] = Number(ol.Cantidad) || 0; });
+  var cantChanged = false, lineaNueva = false;
+  editWorkingLines.forEach(function(l) {
+    if (!l.__row) lineaNueva = true;
+    else if ((Number(l.Cantidad) || 0) !== (origCantMap[l.__row] || 0)) cantChanged = true;
+  });
+  var tipoMod = (cantChanged && lineaNueva) ? 'ambos' : cantChanged ? 'cantidad' : lineaNueva ? 'linea_nueva' : null;
+
   var btn = document.getElementById('btn-saveEdit');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
@@ -1545,7 +1634,8 @@ async function saveEdit() {
       action: 'editarPedido',
       header: Object.assign({}, hdr, { Nombre_Empresa: c.Nombre_Empresa, Consecutivo: c.Consecutivo }),
       lineas: editWorkingLines,
-      deleteRows: deleteRows
+      deleteRows: deleteRows,
+      modificacionTipo: tipoMod
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
 
