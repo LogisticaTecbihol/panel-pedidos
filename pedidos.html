@@ -328,10 +328,20 @@
     <div class="mftr">
       <div class="total-tag">Total orden: <strong id="m-total">$0</strong></div>
       <div class="mftr-btns">
-        <button class="btn-cancel" onclick="exportarPedidoDesdeModal()" style="background:#1a5276;color:white;border-color:#1a5276">📄 Exportar Pedido PDF</button>
+        <div style="position:relative;display:inline-block">
+          <button class="btn-cancel" onclick="toggleFmtPicker('fmt-pedido',event)" style="background:#1a5276;color:white;border-color:#1a5276">📄 Exportar Pedido ▾</button>
+          <div id="fmt-pedido" class="fmt-picker" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;min-width:170px;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:210;overflow:hidden">
+            <div onclick="closeFmtPickers();exportarPedidoDesdeModal()" style="padding:10px 14px;cursor:pointer;font-size:0.85rem;font-weight:600;border-bottom:1px solid #edf2f7" onmouseover="this.style.background='#edf2f7'" onmouseout="this.style.background='white'">📄 PDF</div>
+            <div onclick="closeFmtPickers();exportarPedidoExcelDesdeModal()" style="padding:10px 14px;cursor:pointer;font-size:0.85rem;font-weight:600" onmouseover="this.style.background='#edf2f7'" onmouseout="this.style.background='white'">📊 Excel</div>
+          </div>
+        </div>
         <button class="btn-cancel" onclick="exportarPedidoDesdeModal({share:true})" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar el PDF del pedido a otro usuario del panel">📨 Enviar Pedido</button>
         <div style="position:relative;display:inline-block">
-          <button class="btn-cancel" id="btn-export-rem" onclick="exportarRemisionDesdeModal(event)" style="background:#27ae60;color:white;border-color:#27ae60">📄 Exportar Remisión PDF ▾</button>
+          <button class="btn-cancel" id="btn-export-rem" onclick="toggleFmtPicker('fmt-rem',event)" style="background:#27ae60;color:white;border-color:#27ae60">📄 Exportar Remisión ▾</button>
+          <div id="fmt-rem" class="fmt-picker" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;min-width:170px;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:210;overflow:hidden">
+            <div onclick="closeFmtPickers();exportarRemisionDesdeModal(event)" style="padding:10px 14px;cursor:pointer;font-size:0.85rem;font-weight:600;border-bottom:1px solid #edf2f7" onmouseover="this.style.background='#edf2f7'" onmouseout="this.style.background='white'">📄 PDF</div>
+            <div onclick="closeFmtPickers();exportarRemisionExcelDesdeModal()" style="padding:10px 14px;cursor:pointer;font-size:0.85rem;font-weight:600" onmouseover="this.style.background='#edf2f7'" onmouseout="this.style.background='white'">📊 Excel</div>
+          </div>
           <div id="rem-picker" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;min-width:260px;max-height:280px;overflow-y:auto;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:200"></div>
         </div>
         <div style="position:relative;display:inline-block">

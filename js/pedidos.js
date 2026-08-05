@@ -824,6 +824,7 @@ function closeModal() {
   activeIdx = null;
   destroyGeoAC('md');
   if (typeof closeRemPicker === 'function') closeRemPicker();
+  if (typeof closeFmtPickers === 'function') closeFmtPickers();
 }
 
 document.getElementById('overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeModal(); });
@@ -3051,6 +3052,167 @@ function _remPickerOutside(ev) {
   if (!picker) return;
   if (picker.contains(ev.target) || (btn && btn.contains(ev.target))) return;
   closeRemPicker();
+}
+
+// ── Format picker (PDF / Excel) ──
+function toggleFmtPicker(id, ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  var el = document.getElementById(id);
+  if (!el) return;
+  var showing = el.style.display === 'block';
+  closeFmtPickers();
+  if (!showing) {
+    el.style.display = 'block';
+    setTimeout(function() { document.addEventListener('mousedown', _fmtPickerOutside, true); }, 0);
+  }
+}
+function closeFmtPickers() {
+  document.querySelectorAll('.fmt-picker').forEach(function(p) { p.style.display = 'none'; });
+  document.removeEventListener('mousedown', _fmtPickerOutside, true);
+}
+function _fmtPickerOutside(ev) {
+  var inside = false;
+  document.querySelectorAll('.fmt-picker').forEach(function(p) {
+    if (p.contains(ev.target)) inside = true;
+  });
+  if (!inside) closeFmtPickers();
+}
+
+// ── Excel export: Pedido ──
+function exportarPedidoExcelDesdeModal() {
+  if (activeIdx == null) return;
+  var c = consecs[activeIdx];
+  var data = _dataPedidoDesdeModal(c);
+  var sigla = (typeof getSigla === 'function' ? getSigla(data.empresa) : '') || '';
+
+  var rows = [];
+  rows.push(['PEDIDO #' + (data.consecutivo || '')]);
+  rows.push(['Empresa', data.empresa]);
+  rows.push(['Fecha', data.fecha || '']);
+  rows.push([]);
+  rows.push(['Cliente', data.cliente]);
+  rows.push(['NIT', data.nit]);
+  if (data.facturar_a && data.facturar_a !== data.cliente) rows.push(['Facturar a', data.facturar_a]);
+  if (data.nit_adicional) rows.push(['NIT Adicional', data.nit_adicional]);
+  rows.push(['Telefono', data.telefono]);
+  rows.push(['Comercial', data.comercial]);
+  rows.push(['Municipio', data.municipio]);
+  rows.push(['Departamento', data.departamento]);
+  if (data.plazo) rows.push(['Plazo de Pago', data.plazo]);
+  if (data.precio) rows.push(['Precio Facturacion', data.precio]);
+  if (data.consignacion === 'Si' || data.consignacion === 'Sí') rows.push(['Consignacion', 'Si']);
+  if (data.observaciones) rows.push(['Observaciones', data.observaciones]);
+  rows.push([]);
+
+  rows.push(['#', 'Producto', 'Presentacion', 'Cantidad', 'Val. Unitario', 'Val. Total', 'Bonif.']);
+  (data.productos || []).forEach(function(p, i) {
+    var vUnit = Number(p.valor_unitario) || 0;
+    var textoTieneBonif = /bonificado/i.test(String(p.producto || ''));
+    var esBonif = (p.bonificado || '').trim() === 'Si' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
+    rows.push([
+      i + 1,
+      p.producto || '',
+      p.presentacion || '',
+      Number(p.cantidad) || 0,
+      Number(p.valor_unitario) || 0,
+      Number(p.valor_total) || 0,
+      esBonif ? 'Si' : 'No'
+    ]);
+  });
+  rows.push([]);
+  rows.push(['', '', '', '', 'TOTAL', Number(data.total) || 0]);
+
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:4},{wch:36},{wch:18},{wch:12},{wch:14},{wch:14},{wch:8}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pedido');
+  XLSX.writeFile(wb, 'Pedido_' + (sigla || 'EMP') + '_' + (data.consecutivo || 'nuevo') + '.xlsx');
+  showToast('Excel del pedido exportado', '#27ae60');
+}
+
+// ── Excel export: Remision ──
+function _exportarRemisionExcelEspecifica(rem) {
+  if (activeIdx == null) return;
+  if (!rem || !rem.remision || !String(rem.remision).trim()) {
+    showToast('La remision debe tener numero asignado para exportarse.', '#e67e22');
+    return;
+  }
+  var c = consecs[activeIdx];
+  var sigla = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
+
+  var rows = [];
+  rows.push(['REMISION N° ' + rem.remision]);
+  rows.push(['Empresa', c.Nombre_Empresa || '']);
+  rows.push(['Pedido #', c.Consecutivo || '']);
+  rows.push(['Fecha remision', rem.fecha || '']);
+  rows.push([]);
+  rows.push(['Cliente', document.getElementById('md-cliente').value.trim() || c.Cliente || '']);
+  rows.push(['NIT', document.getElementById('md-nit').value.trim() || c.NIT || '']);
+  rows.push(['Comercial', document.getElementById('md-comercial').value.trim() || c.Comercial || '']);
+  rows.push(['Telefono', document.getElementById('md-telefono').value.trim() || c.Telefono || '']);
+  rows.push(['Direccion', c.Direccion_Envio || '']);
+  rows.push(['Municipio', document.getElementById('md-municipio').value.trim() || c.Municipio || '']);
+  rows.push(['Departamento', document.getElementById('md-departamento').value.trim() || c.Departamento || '']);
+  rows.push([]);
+
+  rows.push(['#', 'Producto', 'Presentacion', 'Cant. Entregada', 'Bonif.']);
+  (rem.items || []).forEach(function(p, i) {
+    var vUnit = Number(p.valor_unitario) || 0;
+    var textoTieneBonif = /bonificado/i.test(String(p.producto || ''));
+    var esBonif = (p.bonificado || '') === 'Si' || (p.bonificado || '') === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
+    rows.push([
+      i + 1,
+      p.producto || '',
+      p.presentacion || '',
+      Number(p.cantidad) || 0,
+      esBonif ? 'Si' : 'No'
+    ]);
+  });
+
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:4},{wch:36},{wch:18},{wch:16},{wch:8}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Remision');
+  XLSX.writeFile(wb, 'Remision_' + (sigla || 'EMP') + '_' + (c.Consecutivo || '') + '_' + rem.remision + '.xlsx');
+  showToast('Excel de remision exportado', '#27ae60');
+}
+
+function exportarRemisionExcelDesdeModal() {
+  var remisiones = _buildRemisionesAgrupadas();
+  if (!remisiones.length) {
+    showToast('No hay remisiones con numero asignado para exportar.', '#e67e22');
+    return;
+  }
+  if (remisiones.length === 1) {
+    _exportarRemisionExcelEspecifica(remisiones[0]);
+    return;
+  }
+  var picker = document.getElementById('rem-picker');
+  if (!picker) { _exportarRemisionExcelEspecifica(remisiones[0]); return; }
+  if (picker.style.display === 'block') { closeRemPicker(); return; }
+  var html = '<div style="padding:8px 12px;font-size:0.75rem;font-weight:700;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">Seleccionar remision (Excel)</div>';
+  remisiones.forEach(function(r, i) {
+    var label = (r.remision || '(sin numero)');
+    var meta = (r.fecha ? r.fecha + ' · ' : '') + r.items.length + ' producto' + (r.items.length === 1 ? '' : 's');
+    html += '<div data-idx="' + i + '" class="rem-picker-item" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #edf2f7;font-size:0.82rem">' +
+      '<div style="font-weight:700;color:#1a5276">' + label.replace(/</g, '&lt;') + '</div>' +
+      '<div style="font-size:0.72rem;color:#718096;margin-top:2px">' + meta + '</div>' +
+      '</div>';
+  });
+  picker.innerHTML = html;
+  picker.style.display = 'block';
+  picker.querySelectorAll('.rem-picker-item').forEach(function(el) {
+    el.addEventListener('mouseover', function() { this.style.background = '#f0f8ff'; });
+    el.addEventListener('mouseout', function() { this.style.background = 'white'; });
+    el.addEventListener('click', function() {
+      var idx = Number(this.getAttribute('data-idx'));
+      closeRemPicker();
+      _exportarRemisionExcelEspecifica(remisiones[idx]);
+    });
+  });
+  setTimeout(function() {
+    document.addEventListener('mousedown', _remPickerOutside, true);
+  }, 0);
 }
 
 function _buildRemisionesAgrupadas() {
