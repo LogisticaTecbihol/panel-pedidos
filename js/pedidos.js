@@ -34,11 +34,39 @@ async function _resolveComercialId(valor) {
 // ── Sorting ──
 var sortLevels = [];
 
+// Días transcurridos desde Fecha_Pedido hasta hoy (por día calendario UTC).
+// null si no hay fecha válida.
+function _diasDesdePedido(f) {
+  if (!f) return null;
+  var s = String(f).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  var p = s.split('-');
+  var d = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+  var n = new Date();
+  var today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+  return Math.floor((today - d) / 86400000);
+}
+
+// True si el pedido debe mostrar el indicador de días (activo y no cerrado).
+function _mostrarDias(c) {
+  var lines = getLinesFor(c);
+  var est = derivedStatus(lines);
+  var est2 = derivedEstado2(lines);
+  return (est === 'Recibido' || est === 'Alistado' || est === 'Parcial') && est2 !== 'Cerrado';
+}
+
 var SORT_COLS = [
   { id:'empresa',     label:'Empresa',      fn: function(c) { return getSigla(c.Nombre_Empresa); } },
   { id:'consecutivo', label:'Consecutivo',  fn: function(c) { return Number(c.Consecutivo)||0; } },
   { id:'cliente',     label:'Cliente',      fn: function(c) { return (c.Cliente||'').toLowerCase(); } },
   { id:'fecha',       label:'Fecha Pedido', fn: function(c) { return +new Date(c.Fecha_Pedido||0); } },
+  { id:'dias',        label:'Días',         fn: function(c) {
+      // Al ordenar, filas sin indicador van al fondo (valor -1).
+      if (!_mostrarDias(c)) return -1;
+      var d = _diasDesdePedido(c.Fecha_Pedido);
+      return d == null ? -1 : d;
+    }
+  },
   { id:'comercial',   label:'Comercial',    fn: function(c) { return (c.Comercial||'').toLowerCase(); } },
   { id:'total',       label:'Total Orden',  fn: function(c) { return Number(c.Total_Orden)||0; } },
   { id:'productos',   label:'Productos',    fn: function(c) { return getLinesFor(c).length; } },
@@ -77,7 +105,7 @@ function applySort(rows) {
 function renderHeader() {
   var cols = [
     { label:'#', id:null }, { label:'Empresa', id:'empresa' }, { label:'Consecutivo', id:'consecutivo' },
-    { label:'Cliente', id:'cliente' }, { label:'Fecha Pedido', id:'fecha' }, { label:'Comercial', id:'comercial' },
+    { label:'Cliente', id:'cliente' }, { label:'Fecha Pedido', id:'fecha' }, { label:'Días', id:'dias' }, { label:'Comercial', id:'comercial' },
     { label:'Total Orden', id:'total' }, { label:'Productos', id:'productos' }, { label:'Avance', id:'avance' },
     { label:'Estado', id:'estado' }, { label:'Estado 2', id:'estado2' }, { label:'Acción', id:null },
   ];
@@ -613,7 +641,7 @@ function renderTable() {
 
   var tbody = document.getElementById('t-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="12"><div class="empty">No hay órdenes con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13"><div class="empty">No hay órdenes con los filtros seleccionados.</div></td></tr>';
     renderPagination(0);
     return;
   }
@@ -660,6 +688,16 @@ function renderTable() {
       '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + modBadge + solBadge + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
       '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (c.Cliente||'') + '">' + (c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
+      (function() {
+        if (!_mostrarDias(c)) return '<td style="text-align:center;color:#cbd5e0">—</td>';
+        var d = _diasDesdePedido(c.Fecha_Pedido);
+        if (d == null) return '<td style="text-align:center;color:#cbd5e0">—</td>';
+        // Semaforo: <=3 verde, 4-7 amarillo, >7 rojo. Solo pinta si es pertinente.
+        var bg = d <= 3 ? '#dcfce7' : d <= 7 ? '#fef3c7' : '#fee2e2';
+        var fg = d <= 3 ? '#166534' : d <= 7 ? '#92400e' : '#991b1b';
+        var title = 'Días transcurridos desde la fecha del pedido';
+        return '<td style="text-align:center"><span title="' + title + '" style="background:' + bg + ';color:' + fg + ';padding:2px 9px;border-radius:12px;font-size:0.78rem;font-weight:700">' + d + ' d</span></td>';
+      })() +
       '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
       '<td class="money">' + fmtMoney(c.Total_Orden) + '</td>' +
       '<td style="text-align:center">' +
