@@ -18,7 +18,8 @@ var AUTH = (function() {
     { key: 'muestras',     label: '🧪 Muestras' },
     { key: 'reenvases',    label: '🏭 Salidas a producción' },
     { key: 'reportes',     label: '📈 Reportes' },
-    { key: 'dashboard',    label: '📊 Dashboard' }
+    { key: 'dashboard',    label: '📊 Dashboard' },
+    { key: 'muestras_aprobar', label: '✅ Aprobar solicitudes de muestras' }
   ];
 
   function init() {
@@ -166,7 +167,9 @@ var AUTH = (function() {
   }
 
   function canApprove() {
-    return _profile && _profile.rol === 'admin';
+    if (!_profile) return false;
+    if (_profile.rol === 'admin') return true;
+    return _modules.indexOf('muestras_aprobar') >= 0;
   }
 
   function hasCompany(nombre) {
