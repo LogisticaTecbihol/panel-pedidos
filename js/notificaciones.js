@@ -297,12 +297,14 @@ var NOTIF = (function() {
   // ────────────────────────────────────────────────────────────
   async function openItem(row) {
     if (!row) return;
-    var sig = await _sb.storage.from(BUCKET).createSignedUrl(row.storage_path, 3600);
-    if (sig.error || !sig.data || !sig.data.signedUrl) {
-      showToast('No se pudo abrir el PDF: ' + (sig.error ? sig.error.message : 'sin URL'), '#e74c3c');
-      return;
+    if (row.storage_path) {
+      var sig = await _sb.storage.from(BUCKET).createSignedUrl(row.storage_path, 3600);
+      if (sig.error || !sig.data || !sig.data.signedUrl) {
+        showToast('No se pudo abrir el PDF: ' + (sig.error ? sig.error.message : 'sin URL'), '#e74c3c');
+        return;
+      }
+      window.open(sig.data.signedUrl, '_blank', 'noopener');
     }
-    window.open(sig.data.signedUrl, '_blank', 'noopener');
     if (!row.leida) {
       var upd = await _sb.from('notificaciones')
         .update({ leida: true, leida_at: new Date().toISOString() })
@@ -500,6 +502,41 @@ var NOTIF = (function() {
     });
   }
 
+  // ────────────────────────────────────────────────────────────
+  // Notificación de sólo texto (sin PDF).
+  // meta: { para_ids:[uuid,...], modulo, referencia, titulo, mensaje }
+  //   modulo debe estar en el CHECK de notificaciones.sql
+  //   ('pedidos'|'devoluciones'|'cambios'|'muestras').
+  // ────────────────────────────────────────────────────────────
+  async function notifyUsers(meta) {
+    if (!meta || !meta.modulo || !meta.titulo) return { ok: false, error: 'meta incompleta' };
+    var dests = (meta.para_ids || []).filter(Boolean);
+    if (!dests.length) return { ok: false, error: 'sin destinatarios' };
+    if (!_uid && typeof AUTH !== 'undefined' && AUTH.getUser) {
+      var u = AUTH.getUser(); if (u) _uid = u.id;
+    }
+    if (!_uid) return { ok: false, error: 'sin sesión' };
+
+    // Evitar auto-notificarse.
+    dests = dests.filter(function(id) { return id !== _uid; });
+    if (!dests.length) return { ok: true, sent: 0 };
+
+    var rows = dests.map(function(destId) {
+      return {
+        para_usuario_id: destId,
+        de_usuario_id: _uid,
+        modulo: meta.modulo,
+        referencia: meta.referencia || null,
+        titulo: meta.titulo,
+        mensaje: meta.mensaje || null,
+        storage_path: null
+      };
+    });
+    var ins = await _sb.from('notificaciones').insert(rows);
+    if (ins.error) return { ok: false, error: ins.error.message };
+    return { ok: true, sent: rows.length };
+  }
+
   async function _loadUsuarios() {
     var dir = await _loadDirectorio();
     var uid = _uid;
@@ -515,6 +552,7 @@ var NOTIF = (function() {
     openItem: openItem,
     compartirPDF: compartirPDF,
     openModalEnviar: openModalEnviar,
-    getDirectorio: _loadDirectorio
+    getDirectorio: _loadDirectorio,
+    notifyUsers: notifyUsers
   };
 })();

@@ -603,6 +603,7 @@ async function apiPost(body) {
           Cantidad: Number(lin.Cantidad) || 0, Cant_Entregada: Number(lin.Cant_Entregada) || 0,
           Fecha_Entrega: lin.Fecha_Entrega || '', Solicitante: body.Solicitante || '',
           Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
+          Estado_Aprobacion: 'Por aprobar',
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
           creado_por: _uid()
         };
@@ -610,6 +611,54 @@ async function apiPost(body) {
       var res = await _sb.from('SolicitudMuestras').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };
+    }
+
+    if (action === 'aprobarMuestra') {
+      if (!AUTH.canApprove || !AUTH.canApprove()) {
+        return { ok: false, error: 'No tienes permiso para aprobar solicitudes de muestras.' };
+      }
+      var prof = AUTH.getProfile();
+      var aprobador = (prof && (prof.nombre || prof.email)) || '';
+      var payload = {
+        Estado_Aprobacion: 'Aprobada',
+        Aprobada_Por: aprobador,
+        Fecha_Aprobacion: new Date().toISOString(),
+        Motivo_Rechazo: null,
+        modificado_por: _uid()
+      };
+      var q = _sb.from('SolicitudMuestras').update(payload);
+      if (Array.isArray(body.ids) && body.ids.length) {
+        q = q.in('id', body.ids);
+      } else {
+        q = q.eq('Empresa', body.Empresa || '').eq('Consecutivo', body.Consecutivo || '');
+      }
+      var res = await q.select('id');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, updated: (res.data || []).length };
+    }
+
+    if (action === 'rechazarMuestra') {
+      if (!AUTH.canApprove || !AUTH.canApprove()) {
+        return { ok: false, error: 'No tienes permiso para rechazar solicitudes de muestras.' };
+      }
+      var prof2 = AUTH.getProfile();
+      var aprobador2 = (prof2 && (prof2.nombre || prof2.email)) || '';
+      var payload2 = {
+        Estado_Aprobacion: 'Rechazada',
+        Aprobada_Por: aprobador2,
+        Fecha_Aprobacion: new Date().toISOString(),
+        Motivo_Rechazo: body.Motivo_Rechazo || '',
+        modificado_por: _uid()
+      };
+      var q2 = _sb.from('SolicitudMuestras').update(payload2);
+      if (Array.isArray(body.ids) && body.ids.length) {
+        q2 = q2.in('id', body.ids);
+      } else {
+        q2 = q2.eq('Empresa', body.Empresa || '').eq('Consecutivo', body.Consecutivo || '');
+      }
+      var res2 = await q2.select('id');
+      if (res2.error) return { ok: false, error: res2.error.message };
+      return { ok: true, updated: (res2.data || []).length };
     }
 
     if (action === 'editarMuestra') {

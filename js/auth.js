@@ -165,6 +165,10 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'admin';
   }
 
+  function canApprove() {
+    return _profile && _profile.rol === 'admin';
+  }
+
   function hasCompany(nombre) {
     if (!_profile) return false;
     if (_profile.rol === 'admin') return true;
@@ -214,6 +218,7 @@ var AUTH = (function() {
     logout: logout,
     canEdit: canEdit,
     canDelete: canDelete,
+    canApprove: canApprove,
     canManageUsers: canManageUsers,
     hasCompany: hasCompany,
     getCompanies: getCompanies,

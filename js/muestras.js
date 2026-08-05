@@ -145,6 +145,7 @@ var MU_COLS = [
   { key: '_nProds', label: 'Productos', sortable: true, cls: 'money' },
   { key: 'Remision', label: 'Remisión', sortable: true },
   { key: 'Solicitante', label: 'Solicitante', sortable: true },
+  { key: 'Estado_Aprobacion', label: 'Aprobación', sortable: true },
   { key: 'Estado', label: 'Estado', sortable: true },
   { key: '_actions', label: 'Acciones' }
 ];
@@ -230,12 +231,14 @@ function applyMuFilters() {
   var fResp = document.getElementById('f-responsable').value;
   var fMun = document.getElementById('f-municipio').value;
   var fEst = document.getElementById('f-estado').value;
+  var fApr = document.getElementById('f-aprobacion').value;
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
 
   filteredMu = allMuestras.filter(function(r) {
     if (fResp && r.Responsable !== fResp) return false;
     if (fMun && r.Municipio !== fMun) return false;
     if (fEst && r.Estado !== fEst) return false;
+    if (fApr && (r.Estado_Aprobacion || 'Por aprobar') !== fApr) return false;
     if (fTxt) {
       var hay = [r.Empresa, r.Consecutivo, r.Responsable, r.Municipio, r.Producto, r.Presentacion,
                  r.Tipo_Cultivo, r.Solicitante, r.Autoriza, r.Objetivo, r.Remision]
@@ -255,6 +258,7 @@ function clearMuestraFilters() {
   document.getElementById('f-responsable').value = '';
   document.getElementById('f-municipio').value = '';
   document.getElementById('f-estado').value = '';
+  document.getElementById('f-aprobacion').value = '';
   document.getElementById('f-txt').value = '';
   applyMuFilters();
 }
@@ -262,6 +266,7 @@ function clearMuestraFilters() {
 document.getElementById('f-responsable').addEventListener('change', applyMuFilters);
 document.getElementById('f-municipio').addEventListener('change', applyMuFilters);
 document.getElementById('f-estado').addEventListener('change', applyMuFilters);
+document.getElementById('f-aprobacion').addEventListener('change', applyMuFilters);
 document.getElementById('f-txt').addEventListener('input', applyMuFilters);
 
 // ── Stats ──
@@ -270,13 +275,16 @@ function updateMuStats() {
   var allGrouped = groupMuestras(allMuestras);
   var despachadas = 0;
   var pendientes = 0;
+  var porAprobar = 0;
   var totalProd = 0;
   allGrouped.forEach(function(r) {
+    if ((r.Estado_Aprobacion || 'Por aprobar') === 'Por aprobar') porAprobar++;
     if (r.Estado === 'Despachada') despachadas++;
     else pendientes++;
   });
   allMuestras.forEach(function(r) { totalProd += Number(r.Cantidad) || 0; });
   document.getElementById('s-total').textContent = allGrouped.length;
+  document.getElementById('s-por-aprobar').textContent = porAprobar;
   document.getElementById('s-despachadas').textContent = despachadas;
   document.getElementById('s-pendientes').textContent = pendientes;
   document.getElementById('s-productos').textContent = totalProd;
@@ -349,8 +357,27 @@ function renderMuTable() {
       ? '<span class="badge b-ent">Despachada</span>'
       : '<span class="badge b-rec">Pendiente</span>';
 
+    var apr = r.Estado_Aprobacion || 'Por aprobar';
+    var aprBadge;
+    if (apr === 'Aprobada') {
+      aprBadge = '<span class="badge b-ent" title="' + escHtml(r.Aprobada_Por || '') + '">✅ Aprobada</span>';
+    } else if (apr === 'Rechazada') {
+      aprBadge = '<span class="badge b-anu" title="' + escHtml(r.Motivo_Rechazo || '') + '">❌ Rechazada</span>';
+    } else {
+      aprBadge = '<span class="badge b-par">⏳ Por aprobar</span>';
+    }
+
     var sigla = EMPRESAS_SIGLA[r.Empresa] || r.Empresa || '—';
     var siglaCls = 'sigla-' + (EMPRESAS_SIGLA[r.Empresa] || 'DEFAULT');
+
+    var canApr = AUTH.canApprove && AUTH.canApprove();
+    var aprBtns = '';
+    if (canApr && apr === 'Por aprobar') {
+      var argsAR = "'" + escHtml((r.Empresa || '').replace(/'/g, "\\'")) + "','" + escHtml(String(r.Consecutivo || '').replace(/'/g, "\\'")) + "'";
+      aprBtns =
+        '<button class="btn-edit" style="background:#27ae60;color:white;border-color:#27ae60" title="Aprobar" onclick="approveMuestra(' + argsAR + ')">✅</button> ' +
+        '<button class="btn-del" style="background:#e74c3c;color:white;border-color:#e74c3c" title="Rechazar" onclick="askRejectMuestra(' + argsAR + ')">❌</button> ';
+    }
 
     return '<tr style="cursor:pointer" onclick="viewMuestra(' + r.id + ')">' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
@@ -362,8 +389,10 @@ function renderMuTable() {
       '<td class="money">' + (r._nProds || 0) + '</td>' +
       '<td>' + (r.Remision || '—') + '</td>' +
       '<td>' + (r.Solicitante || '—') + '</td>' +
+      '<td>' + aprBadge + '</td>' +
       '<td>' + estadoBadge + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
+        aprBtns +
         (AUTH.canEdit() ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
         (AUTH.canDelete() ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
       '</td></tr>';
@@ -382,10 +411,13 @@ function viewMuestra(id) {
   var emp = r.Empresa || '';
   var sameConsec = allMuestras.filter(function(x) { return x.Consecutivo === consec && consec && (x.Empresa || '') === emp; });
 
+  var aprEstado = r.Estado_Aprobacion || 'Por aprobar';
+  var aprIcon = aprEstado === 'Aprobada' ? '✅' : (aprEstado === 'Rechazada' ? '❌' : '⏳');
   document.getElementById('view-mu-meta').innerHTML =
     '<span>📋 Consecutivo: ' + (consec || '—') + '</span>' +
     '<span>📅 ' + fmtDate(r.Fecha_Solicitud) + '</span>' +
-    '<span>👤 ' + (r.Responsable || '—') + '</span>';
+    '<span>👤 ' + (r.Responsable || '—') + '</span>' +
+    '<span>' + aprIcon + ' ' + aprEstado + '</span>';
 
   var remVal = (r.Remision || '').replace(/"/g, '&quot;');
   var fDespachoVal = r.Fecha_Despacho ? toDateInput(r.Fecha_Despacho) : '';
@@ -396,7 +428,37 @@ function viewMuestra(id) {
       ' style="padding:4px 8px;font-size:0.85rem;width:90%;margin-top:2px"></div>';
   };
 
-  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem">' +
+  var canApr = AUTH.canApprove && AUTH.canApprove();
+  var aprBoxColor = aprEstado === 'Aprobada' ? '#f0fdf4;border-color:#bbf7d0' :
+                    aprEstado === 'Rechazada' ? '#fef2f2;border-color:#fecaca' :
+                                                '#fffbeb;border-color:#fde68a';
+  var aprBox = '<div style="background:' + aprBoxColor + ';border:1px solid;padding:12px 14px;border-radius:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">' +
+    '<div style="font-size:0.85rem">' +
+      '<div style="font-weight:700;color:#2d3748">' + aprIcon + ' Estado de aprobación: ' + aprEstado + '</div>';
+  if (aprEstado === 'Aprobada') {
+    aprBox += '<div style="font-size:0.78rem;color:#4a5568;margin-top:3px">Aprobada por <strong>' + escHtml(r.Aprobada_Por || '—') + '</strong>' +
+              (r.Fecha_Aprobacion ? ' el ' + fmtDate(r.Fecha_Aprobacion) : '') + '</div>';
+  } else if (aprEstado === 'Rechazada') {
+    aprBox += '<div style="font-size:0.78rem;color:#4a5568;margin-top:3px">Rechazada por <strong>' + escHtml(r.Aprobada_Por || '—') + '</strong>' +
+              (r.Fecha_Aprobacion ? ' el ' + fmtDate(r.Fecha_Aprobacion) : '') + '</div>';
+    if (r.Motivo_Rechazo) {
+      aprBox += '<div style="font-size:0.78rem;color:#c0392b;margin-top:3px"><strong>Motivo:</strong> ' + escHtml(r.Motivo_Rechazo) + '</div>';
+    }
+  } else {
+    aprBox += '<div style="font-size:0.78rem;color:#92400e;margin-top:3px">Requiere aprobación de un administrador antes de despacharse.</div>';
+  }
+  aprBox += '</div>';
+  if (canApr && aprEstado === 'Por aprobar') {
+    var argsAR2 = "'" + escHtml((r.Empresa || '').replace(/'/g, "\\'")) + "','" + escHtml(String(consec || '').replace(/'/g, "\\'")) + "'";
+    aprBox += '<div style="display:flex;gap:8px">' +
+      '<button onclick="approveMuestra(' + argsAR2 + ',true)" style="background:#27ae60;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700">✅ Aprobar</button>' +
+      '<button onclick="askRejectMuestra(' + argsAR2 + ',true)" style="background:#e74c3c;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700">❌ Rechazar</button>' +
+      '</div>';
+  }
+  aprBox += '</div>';
+
+  var html = aprBox +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem">' +
     field('Empresa', EMPRESAS_SIGLA[r.Empresa] || r.Empresa) +
     field('Fecha Solicitud', fmtDate(r.Fecha_Solicitud)) +
     field('Responsable', r.Responsable) +
@@ -420,15 +482,20 @@ function viewMuestra(id) {
   }
 
   if (sameConsec.length) {
+    var despachoDisabled = aprEstado !== 'Aprobada';
+    var saveBtn = despachoDisabled
+      ? '<button disabled title="Requiere aprobación previa" style="background:#cbd5e0;color:#4a5568;border:none;padding:6px 14px;border-radius:6px;cursor:not-allowed;font-size:0.8rem;font-weight:700">🔒 Aprobación requerida</button>'
+      : '<button onclick="saveEntregas()" style="background:#27ae60;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700" id="btn-save-entregas">💾 Guardar entregas</button>';
     html += '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">' +
       '<div style="font-weight:700;font-size:0.84rem;color:#2d3748">📦 Productos solicitados (' + sameConsec.length + ')</div>' +
-      '<button onclick="saveEntregas()" style="background:#27ae60;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700" id="btn-save-entregas">💾 Guardar entregas</button>' +
+      saveBtn +
       '</div>';
     html += '<table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc"><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th><th style="text-align:right;width:90px">Entregada</th><th></th></tr></thead><tbody>';
     sameConsec.forEach(function(x) {
       var cantEnt = x.Cant_Entregada != null && x.Cant_Entregada !== '' ? x.Cant_Entregada : '';
+      var inpDis = despachoDisabled ? ' disabled' : '';
       html += '<tr><td>' + (x.Producto || '—') + '</td><td>' + (x.Presentacion || '—') + '</td><td style="text-align:right">' + (x.Cantidad || 0) + '</td>' +
-        '<td><input type="number" min="0" class="ef mu-view-cant-ent" data-id="' + x.id + '" value="' + cantEnt + '" style="width:70px;text-align:right;padding:4px 6px;font-size:0.82rem"></td>' +
+        '<td><input type="number" min="0" class="ef mu-view-cant-ent" data-id="' + x.id + '" value="' + cantEnt + '"' + inpDis + ' style="width:70px;text-align:right;padding:4px 6px;font-size:0.82rem' + (despachoDisabled ? ';background:#f1f5f9;color:#94a3b8' : '') + '"></td>' +
         '<td style="white-space:nowrap">' + (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' : '') +
         (AUTH.canDelete() ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') + '</td></tr>';
     });
@@ -962,12 +1029,38 @@ async function saveMuestra() {
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     closeMuModal();
     showToast('✅ Solicitud creada: ' + (result.added || 0) + ' línea(s)');
+    _notifyAdminsNuevaSolicitud({
+      empresa: empresa, consecutivo: consecutivo,
+      solicitante: document.getElementById('mu-solicitante').value.trim(),
+      responsable: responsable, nLineas: productosValidos.length
+    });
     await loadMuestras();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
     btn.textContent = '✓ Registrar solicitud';
   }
+}
+
+async function _notifyAdminsNuevaSolicitud(info) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers || !NOTIF.getDirectorio) return;
+  try {
+    var dir = await NOTIF.getDirectorio();
+    var adminIds = (dir || [])
+      .filter(function(u) { return u.activo && u.rol === 'admin'; })
+      .map(function(u) { return u.id; });
+    if (!adminIds.length) return;
+    var sigla = EMPRESAS_SIGLA[info.empresa] || info.empresa || '—';
+    await NOTIF.notifyUsers({
+      para_ids: adminIds,
+      modulo: 'muestras',
+      referencia: info.consecutivo || '',
+      titulo: '🧪 Solicitud de muestras por aprobar: ' + sigla + ' #' + (info.consecutivo || ''),
+      mensaje: (info.responsable || 'Sin responsable') +
+               ' registró ' + info.nLineas + ' línea(s)' +
+               (info.solicitante ? ' para ' + info.solicitante : '') + '.'
+    });
+  } catch (e) { /* la notificación no debe bloquear el flujo */ }
 }
 
 // ── Delete ──
@@ -1023,6 +1116,104 @@ async function confirmDeleteMu() {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
     btn.textContent = '🗑️ Sí, eliminar';
+  }
+}
+
+// ── Aprobación / rechazo (admin-only) ──
+
+var muRejectCtx = null;
+
+async function approveMuestra(empresa, consecutivo, closeAfter) {
+  if (!AUTH.canApprove || !AUTH.canApprove()) {
+    showToast('No tienes permiso para aprobar.', '#e74c3c');
+    return;
+  }
+  var rows = allMuestras
+    .filter(function(r) { return (r.Empresa || '') === empresa && String(r.Consecutivo || '') === String(consecutivo); });
+  if (!rows.length) { showToast('Solicitud no encontrada.', '#e67e22'); return; }
+  var ids = rows.map(function(r) { return r.id; });
+  if (!confirm('¿Aprobar esta solicitud de muestras (' + ids.length + ' línea(s))?')) return;
+  var res = await apiPost({ action: 'aprobarMuestra', Empresa: empresa, Consecutivo: consecutivo, ids: ids });
+  if (!res.ok) { showToast('❌ ' + (res.error || 'Error al aprobar'), '#e74c3c'); return; }
+  showToast('✅ Solicitud aprobada');
+  _notifyCreadorAprobacion(rows[0], 'Aprobada', '');
+  if (closeAfter) closeViewMu();
+  await loadMuestras();
+}
+
+async function _notifyCreadorAprobacion(row, estado, motivo) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
+  if (!row || !row.creado_por) return;
+  try {
+    var sigla = EMPRESAS_SIGLA[row.Empresa] || row.Empresa || '—';
+    var ref = String(row.Consecutivo || '');
+    var titulo, mensaje;
+    if (estado === 'Aprobada') {
+      titulo = '✅ Solicitud de muestras aprobada: ' + sigla + ' #' + ref;
+      mensaje = 'Tu solicitud fue aprobada y ya puede despacharse.';
+    } else {
+      titulo = '❌ Solicitud de muestras rechazada: ' + sigla + ' #' + ref;
+      mensaje = 'Motivo: ' + (motivo || 'sin motivo');
+    }
+    await NOTIF.notifyUsers({
+      para_ids: [row.creado_por],
+      modulo: 'muestras',
+      referencia: ref,
+      titulo: titulo,
+      mensaje: mensaje
+    });
+  } catch (e) { /* silencioso */ }
+}
+
+function askRejectMuestra(empresa, consecutivo, closeAfter) {
+  if (!AUTH.canApprove || !AUTH.canApprove()) {
+    showToast('No tienes permiso para rechazar.', '#e74c3c');
+    return;
+  }
+  var ids = allMuestras
+    .filter(function(r) { return (r.Empresa || '') === empresa && String(r.Consecutivo || '') === String(consecutivo); })
+    .map(function(r) { return r.id; });
+  if (!ids.length) { showToast('Solicitud no encontrada.', '#e67e22'); return; }
+  muRejectCtx = { empresa: empresa, consecutivo: consecutivo, ids: ids, closeAfter: !!closeAfter };
+  document.getElementById('rej-mu-detail').textContent =
+    'Consecutivo ' + (consecutivo || '—') + ' · ' + ids.length + ' línea(s)';
+  document.getElementById('rej-mu-motivo').value = '';
+  document.getElementById('btn-rej-mu-confirm').disabled = false;
+  document.getElementById('reject-mu-overlay').classList.add('show');
+  setTimeout(function() { document.getElementById('rej-mu-motivo').focus(); }, 50);
+}
+
+function closeRejectMu() {
+  document.getElementById('reject-mu-overlay').classList.remove('show');
+  muRejectCtx = null;
+}
+document.getElementById('reject-mu-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeRejectMu(); });
+
+async function confirmRejectMu() {
+  if (!muRejectCtx) return;
+  var motivo = document.getElementById('rej-mu-motivo').value.trim();
+  if (!motivo) { showToast('Escribe el motivo del rechazo.', '#e67e22'); return; }
+  var ctx = muRejectCtx;
+  var btn = document.getElementById('btn-rej-mu-confirm');
+  btn.disabled = true;
+  btn.textContent = '⏳ Rechazando...';
+  try {
+    var res = await apiPost({
+      action: 'rechazarMuestra',
+      Empresa: ctx.empresa, Consecutivo: ctx.consecutivo, ids: ctx.ids,
+      Motivo_Rechazo: motivo
+    });
+    if (!res.ok) throw new Error(res.error || 'Error al rechazar');
+    var creatorRow = allMuestras.filter(function(r) { return ctx.ids.indexOf(r.id) >= 0; })[0];
+    closeRejectMu();
+    if (ctx.closeAfter) closeViewMu();
+    showToast('✅ Solicitud rechazada');
+    _notifyCreadorAprobacion(creatorRow, 'Rechazada', motivo);
+    await loadMuestras();
+  } catch (err) {
+    showToast('❌ ' + err.message, '#e74c3c');
+    btn.disabled = false;
+    btn.textContent = '❌ Rechazar';
   }
 }
 
