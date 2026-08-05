@@ -437,29 +437,39 @@ function derivedPct(lines) {
 // ── Filters ──
 var filtersAttached = false;
 function populateFilters() {
-  var emps = []; var clis = []; var coms = [];
+  var emps = []; var clis = []; var coms = []; var prods = {};
   consecs.forEach(function(c) {
     if (c.Nombre_Empresa && emps.indexOf(c.Nombre_Empresa) < 0) emps.push(c.Nombre_Empresa);
     if (c.Cliente && clis.indexOf(c.Cliente) < 0) clis.push(c.Cliente);
     var com = (c.Comercial || '').trim();
     if (com && coms.indexOf(com) < 0) coms.push(com);
+    getLinesFor(c).forEach(function(l) {
+      var p = (l.Producto || '').trim();
+      if (p) prods[p] = 1;
+    });
   });
   emps.sort(); clis.sort(); coms.sort(function(a, b) { return a.localeCompare(b, 'es'); });
+  var prodList = Object.keys(prods).sort(function(a, b) { return a.localeCompare(b, 'es'); });
   var fe = document.getElementById('f-emp');
   var fc = document.getElementById('f-cli');
   var fcom = document.getElementById('f-com');
+  var fp = document.getElementById('f-prod');
   var prevEmp = fe.value;
   var prevCli = fc.value;
   var prevCom = fcom ? fcom.value : '';
+  var prevProd = fp ? fp.value : '';
   fe.innerHTML = '<option value="">Todas</option>' + emps.map(function(e) { return '<option value="' + e + '">' + getSigla(e) + ' — ' + e + '</option>'; }).join('');
   document.getElementById('dl-f-cli').innerHTML = clis.map(function(c) { return '<option value="' + c + '">'; }).join('');
   if (fcom) fcom.innerHTML = '<option value="">Todos</option>' + coms.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+  var dlProd = document.getElementById('dl-f-prod');
+  if (dlProd) dlProd.innerHTML = prodList.map(function(p) { return '<option value="' + p.replace(/"/g, '&quot;') + '">'; }).join('');
   if (prevEmp) fe.value = prevEmp;
   if (prevCli) fc.value = prevCli;
   if (fcom && prevCom) fcom.value = prevCom;
+  if (fp && prevProd) fp.value = prevProd;
   if (!filtersAttached) {
     function onFilterChange() { currentPage = 1; renderTable(); }
-    ['f-emp','f-com','f-cli','f-est','f-est2','f-txt'].forEach(function(id) {
+    ['f-emp','f-com','f-cli','f-est','f-est2','f-prod','f-fec-desde','f-fec-hasta','f-txt'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', onFilterChange);
@@ -476,12 +486,32 @@ function filtered() {
   var fc = document.getElementById('f-cli').value;
   var fs = document.getElementById('f-est').value;
   var fs2 = document.getElementById('f-est2').value;
+  var fpEl = document.getElementById('f-prod');
+  var fp = fpEl ? fpEl.value.trim().toLowerCase() : '';
+  var fdEl = document.getElementById('f-fec-desde');
+  var fhEl = document.getElementById('f-fec-hasta');
+  var fdesde = fdEl ? fdEl.value : '';   // ISO YYYY-MM-DD
+  var fhasta = fhEl ? fhEl.value : '';
   var ft = document.getElementById('f-txt').value.toLowerCase();
   return consecs.filter(function(c) {
     if (fe && c.Nombre_Empresa !== fe) return false;
     if (fcom && (c.Comercial||'').trim() !== fcom) return false;
     if (fc && (c.Cliente||'').toLowerCase().indexOf(fc.toLowerCase()) < 0) return false;
+    if (fdesde || fhasta) {
+      // Fecha_Pedido puede venir como 'YYYY-MM-DD' o ISO con hora; comparar por prefijo YYYY-MM-DD.
+      var fp10 = String(c.Fecha_Pedido || '').slice(0, 10);
+      if (!fp10) return false;
+      if (fdesde && fp10 < fdesde) return false;
+      if (fhasta && fp10 > fhasta) return false;
+    }
     var lines = getLinesFor(c);
+    if (fp) {
+      // El pedido pasa si al menos una línea contiene el producto buscado.
+      var any = lines.some(function(l) {
+        return String(l.Producto || '').toLowerCase().indexOf(fp) >= 0;
+      });
+      if (!any) return false;
+    }
     var est = derivedStatus(lines);
     if (fs && norm(est) !== norm(fs)) return false;
     if (fs2) { var e2 = derivedEstado2(lines); if (e2 !== fs2) return false; }
@@ -501,6 +531,9 @@ function clearFilters() {
   document.getElementById('f-est').value = '';
   document.getElementById('f-est2').value = '';
   document.getElementById('f-txt').value = '';
+  var fp = document.getElementById('f-prod');   if (fp) fp.value = '';
+  var fd = document.getElementById('f-fec-desde'); if (fd) fd.value = '';
+  var fh = document.getElementById('f-fec-hasta'); if (fh) fh.value = '';
   currentPage = 1;
   renderTable();
 }
