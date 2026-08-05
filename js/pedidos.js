@@ -47,12 +47,13 @@ function _diasDesdePedido(f) {
   return Math.floor((today - d) / 86400000);
 }
 
-// True si el pedido debe mostrar el indicador de días (activo y no cerrado).
+// True si el pedido debe mostrar el indicador de días (activo, no cerrado y no anulado).
 function _mostrarDias(c) {
   var lines = getLinesFor(c);
   var est = derivedStatus(lines);
   var est2 = derivedEstado2(lines);
-  return (est === 'Recibido' || est === 'Alistado' || est === 'Parcial') && est2 !== 'Cerrado';
+  return (est === 'Recibido' || est === 'Alistado' || est === 'Parcial')
+      && est2 !== 'Cerrado' && est2 !== 'Anulado';
 }
 
 var SORT_COLS = [
