@@ -184,6 +184,11 @@ function renderEmpresaChecks(selectedSiglas) {
   }).join('');
 }
 
+// Dependencias: si se marca la clave, también deben quedar marcadas las de la lista.
+var MODULE_DEPENDS_ON = {
+  muestras_aprobar: ['muestras']
+};
+
 function renderModuloChecks(selectedKeys, rol) {
   var container = document.getElementById('usr-modulos-checks');
   var hint = document.getElementById('usr-modulos-hint');
@@ -198,6 +203,36 @@ function renderModuloChecks(selectedKeys, rol) {
     '</label>';
   }).join('');
   hint.style.display = isAdmin ? 'block' : 'none';
+  _wireModuleDependencies();
+}
+
+// Aplica MODULE_DEPENDS_ON: marcar un dependiente marca automáticamente sus requisitos;
+// desmarcar un requisito desmarca a quienes dependen de él.
+function _wireModuleDependencies() {
+  var checks = {};
+  document.querySelectorAll('.usr-mod-check').forEach(function(cb) { checks[cb.value] = cb; });
+
+  Object.keys(MODULE_DEPENDS_ON).forEach(function(depKey) {
+    var depCb = checks[depKey];
+    if (!depCb) return;
+    var requiredKeys = MODULE_DEPENDS_ON[depKey];
+
+    depCb.addEventListener('change', function() {
+      if (depCb.checked) {
+        requiredKeys.forEach(function(req) {
+          if (checks[req] && !checks[req].checked) checks[req].checked = true;
+        });
+      }
+    });
+
+    requiredKeys.forEach(function(req) {
+      var reqCb = checks[req];
+      if (!reqCb) return;
+      reqCb.addEventListener('change', function() {
+        if (!reqCb.checked && depCb.checked) depCb.checked = false;
+      });
+    });
+  });
 }
 
 function toggleAllModulos(on) {
@@ -246,6 +281,17 @@ async function saveUser() {
   if (rol !== 'admin' && !selectedMods.length) {
     showToast('Asigna al menos un módulo (o selecciona rol Admin)', '#e74c3c');
     return;
+  }
+
+  if (rol !== 'admin') {
+    for (var depKey in MODULE_DEPENDS_ON) {
+      if (selectedMods.indexOf(depKey) < 0) continue;
+      var faltan = MODULE_DEPENDS_ON[depKey].filter(function(req) { return selectedMods.indexOf(req) < 0; });
+      if (faltan.length) {
+        showToast('El módulo "' + depKey + '" requiere: ' + faltan.join(', '), '#e74c3c');
+        return;
+      }
+    }
   }
 
   var btn = document.getElementById('btn-save-usr');
