@@ -779,6 +779,9 @@ async function openDetail(idx) {
       var estL = (!rawEst || norm(rawEst) === 'recibido') ? (orderHasDeliveries ? 'Parcial' : 'Recibido') : rawEst;
       var badgeL = norm(estL) === 'recibido' ? 'b-rec' : norm(estL) === 'parcial' ? 'b-par' : norm(estL) === 'alistado' ? 'b-alistado' : 'b-ent';
       var done = norm(estL) === 'entregado' || norm(estL) === 'alistado';
+      var lockEntregado = norm(rawEst) === 'entregado' && !AUTH.isAdmin();
+      var lockAttr = lockEntregado ? ' disabled' : '';
+      var lockStyle = lockEntregado ? ';background:#f7fafc;opacity:0.7' : '';
       var prodNombre = l.Producto || '';
       var textoTieneBonif = /bonificado/i.test(prodNombre);
       var prodLimpio = textoTieneBonif ? prodNombre.replace(/\s*bonificado\s*/gi, ' ').trim() : prodNombre;
@@ -787,18 +790,19 @@ async function openDetail(idx) {
       var esBonif = bonif === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
       var prodEsc = prodLimpio.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
       var presEsc = (l.Presentacion||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      var lockBadge = lockEntregado ? '<div style="font-size:0.68rem;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;padding:2px 6px;border-radius:4px;margin-top:2px;font-weight:600">🔒 Solo administrador puede modificar</div>' : '';
       return '<tr>' +
         '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
-        '<td class="sticky-prod"><input class="ef md-prod" data-i="' + i + '" type="text" value="' + prodEsc + '" style="min-width:260px;font-weight:700"></td>' +
-        '<td><input class="ef md-pres" data-i="' + i + '" type="text" value="' + presEsc + '" style="width:90px"></td>' +
+        '<td class="sticky-prod"><input class="ef md-prod" data-i="' + i + '" type="text" value="' + prodEsc + '" style="min-width:260px;font-weight:700' + lockStyle + '"' + lockAttr + '></td>' +
+        '<td><input class="ef md-pres" data-i="' + i + '" type="text" value="' + presEsc + '" style="width:90px' + lockStyle + '"' + lockAttr + '></td>' +
         '<td style="text-align:center">' + (esBonif ? '<span style="background:#d5f5e3;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:700">Sí</span>' : '<span style="color:#718096;font-size:0.75rem">No</span>') + '</td>' +
-        '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right" oninput="updateDetailLine(' + i + ')"></td>' +
+        '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td><input class="ef md-ent" data-i="' + i + '" type="number" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700;background:#f0fff4" readonly tabindex="-1"></td>' +
         '<td class="money"><span class="pend-tag ' + (pendiente > 0 ? 'pend' : 'ok') + '" id="md-pend-' + i + '">' + pendiente + '</span></td>' +
-        '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + estL + '</span>' +
+        '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + estL + '</span>' + lockBadge +
           '<div class="entregas-wrap" data-i="' + i + '">' + renderEntregasHTML(i, l._entregas || []) + '</div>' +
         '</td>' +
-        '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right" oninput="updateDetailLine(' + i + ')"></td>' +
+        '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td class="money" style="font-size:0.78rem" id="md-vtot-' + i + '">' + fmtMoney(l.Valor_Total) + '</td>' +
         '<td data-row="' + l.__row + '" data-idx="' + i + '" style="min-width:220px">' + renderAsignacionCell(i, l, c.Nombre_Empresa) + '</td>' +
       '</tr>';
@@ -826,6 +830,8 @@ document.getElementById('overlay').addEventListener('click', function(e) { if (i
 
 // ── Detail line helpers ──
 function updateDetailLine(i) {
+  var dl = detailWorkingLines[i];
+  if (dl && norm(dl.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) return;
   var cants = document.querySelectorAll('.md-cant');
   var vunis = document.querySelectorAll('.md-vuni');
   var ents = document.querySelectorAll('.md-ent');
@@ -1277,6 +1283,7 @@ async function guardarTodo() {
   var cants = [].slice.call(document.querySelectorAll('.md-cant'));
   var vunis = [].slice.call(document.querySelectorAll('.md-vuni'));
   detailWorkingLines.forEach(function(l, i) {
+    if (norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) return;
     l.Producto = prods[i] ? prods[i].value.trim() : l.Producto;
     l.Presentacion = press[i] ? press[i].value.trim() : l.Presentacion;
     l.Cantidad = Number(cants[i] && cants[i].value) || 0;
@@ -1755,20 +1762,25 @@ function renderEditLines() {
   var tbody = document.getElementById('ed-lines');
   tbody.innerHTML = editWorkingLines.map(function(l, i) {
     var locked = (Number(l.Cant_Entregada)||0) > 0;
+    var lockEntregado = norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin();
+    var disAttr = lockEntregado ? ' disabled' : '';
+    var disBg = lockEntregado ? ';background:#f7fafc;opacity:0.7' : '';
     var prod = (l.Producto||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     var pres = (l.Presentacion||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
-      '<td><input class="ef ed-prod" data-i="' + i + '" type="text" value="' + prod + '" style="min-width:260px' + (locked ? ';background:#f7fafc' : '') + '"></td>' +
-      '<td><input class="ef ed-pres" data-i="' + i + '" type="text" value="' + pres + '"' + (locked ? ' style="background:#f7fafc"' : '') + '></td>' +
-      '<td><input class="ef ed-cant" data-i="' + i + '" type="number" min="0" value="' + (l.Cantidad||0) + '" style="width:80px;text-align:right" oninput="updateLineTotal(' + i + ')"></td>' +
-      '<td><input class="ef ed-vuni" data-i="' + i + '" type="number" min="0" value="' + (l.Valor_Unitario||0) + '" style="width:100px;text-align:right" oninput="updateLineTotal(' + i + ')"></td>' +
+      '<td><input class="ef ed-prod" data-i="' + i + '" type="text" value="' + prod + '" style="min-width:260px' + (locked || lockEntregado ? ';background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
+      '<td><input class="ef ed-pres" data-i="' + i + '" type="text" value="' + pres + '" style="' + (locked || lockEntregado ? 'background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
+      '<td><input class="ef ed-cant" data-i="' + i + '" type="number" min="0" value="' + (l.Cantidad||0) + '" style="width:80px;text-align:right' + disBg + '"' + disAttr + (lockEntregado ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
+      '<td><input class="ef ed-vuni" data-i="' + i + '" type="number" min="0" value="' + (l.Valor_Unitario||0) + '" style="width:100px;text-align:right' + disBg + '"' + disAttr + (lockEntregado ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
       '<td><input class="ef ed-vtot" data-i="' + i + '" type="number" value="' + (l.Valor_Total||0) + '" style="width:100px;text-align:right;background:#f7fafc" readonly></td>' +
-      '<td><input class="ef ed-rem" data-i="' + i + '" type="text" value="' + (l.Remisiones||'').replace(/"/g,'&quot;') + '" placeholder="' + (locked ? 'Ej: REM-001' : '') + '" style="width:120px;font-size:0.78rem"></td>' +
+      '<td><input class="ef ed-rem" data-i="' + i + '" type="text" value="' + (l.Remisiones||'').replace(/"/g,'&quot;') + '" placeholder="' + (locked ? 'Ej: REM-001' : '') + '" style="width:120px;font-size:0.78rem' + disBg + '"' + disAttr + '></td>' +
       '<td style="text-align:center">' +
-        (locked
-          ? '<span style="font-size:0.85rem;color:#a0aec0" title="Tiene entregas registradas">🔒</span>'
-          : '<button onclick="removeEditLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>') +
+        (lockEntregado
+          ? '<span style="font-size:0.85rem;color:#92400e" title="Entregado — solo administrador puede modificar">🔒</span>'
+          : locked
+            ? '<span style="font-size:0.85rem;color:#a0aec0" title="Tiene entregas registradas">🔒</span>'
+            : '<button onclick="removeEditLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>') +
       '</td></tr>';
   }).join('');
   updateEditTotal();
@@ -1807,6 +1819,11 @@ function addEditLine() {
 }
 
 function removeEditLine(i) {
+  var l = editWorkingLines[i];
+  if (l && norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) {
+    showToast('Solo el administrador puede modificar líneas entregadas', '#e74c3c');
+    return;
+  }
   editWorkingLines.splice(i, 1);
   renderEditLines();
 }
@@ -1821,6 +1838,7 @@ async function saveEdit() {
   var vtots = [].slice.call(document.querySelectorAll('.ed-vtot'));
   var rems = [].slice.call(document.querySelectorAll('.ed-rem'));
   editWorkingLines.forEach(function(l, i) {
+    if (norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) return;
     l.Producto = prods[i] ? prods[i].value.trim() : '';
     l.Presentacion = press[i] ? press[i].value.trim() : '';
     l.Cantidad = Number(cants[i] && cants[i].value) || 0;

@@ -162,6 +162,10 @@ var AUTH = (function() {
 
   // El rol 'comercial' solo puede crear/ver/editar sus propios pedidos
   // (RLS lo restringe en el servidor; en cliente se usa para autofill y bloqueos).
+  function isAdmin() {
+    return _profile && _profile.rol === 'admin';
+  }
+
   function isComercial() {
     return _profile && _profile.rol === 'comercial';
   }
@@ -238,6 +242,7 @@ var AUTH = (function() {
     canApprove: canApprove,
     canApproveOC: canApproveOC,
     canManageUsers: canManageUsers,
+    isAdmin: isAdmin,
     isComercial: isComercial,
     hasCompany: hasCompany,
     getCompanies: getCompanies,
