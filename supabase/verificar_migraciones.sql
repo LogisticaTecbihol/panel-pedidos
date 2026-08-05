@@ -89,6 +89,23 @@ WITH checks AS (
     ),
     'EntregasPedido_select debe referenciar Pedidos.comercial_id'
 
+  UNION ALL
+
+  -- 7. add_comercial_codigo_usuarios.sql
+  SELECT
+    7, 'add_comercial_codigo_usuarios',
+    (
+      EXISTS(SELECT 1 FROM information_schema.columns
+              WHERE table_name='usuarios' AND column_name='comercial_codigo')
+      AND EXISTS(SELECT 1 FROM pg_indexes
+                  WHERE indexname='ux_usuarios_comercial_codigo')
+      AND EXISTS(SELECT 1 FROM pg_proc p
+                  JOIN pg_type t ON t.oid = p.prorettype
+                  WHERE p.proname='list_usuarios_directorio'
+                    AND pg_get_function_result(p.oid) LIKE '%comercial_codigo%')
+    ),
+    'usuarios.comercial_codigo + unique index + list_usuarios_directorio devuelve el campo'
+
 )
 SELECT
   n           AS "#",

@@ -1,10 +1,15 @@
-// ── Resolución de comercial (nombre → uuid) contra el directorio de usuarios ──
+// ── Resolución de comercial (valor del campo → uuid) contra el directorio ──
 // Se llama antes de cada agregar/editar Pedido para poblar comercial_id, que es
-// el campo que usa la RLS. Si el nombre no matchea a ningún usuario activo,
-// comercial_id queda null (y sólo admin/editor/lector podrán ver ese pedido).
-async function _resolveComercialId(nombre) {
-  var n = String(nombre || '').trim().toLowerCase();
-  if (!n) return null;
+// el campo que usa la RLS.
+//
+// El campo Pedidos.Comercial guarda el CÓDIGO del comercial (formato tipo
+// "PDC-C08"), no el nombre. Por eso matcheamos primero por comercial_codigo;
+// si no hay match, caemos por nombre para retrocompatibilidad con datos
+// anteriores donde el usuario no tiene código asignado.
+async function _resolveComercialId(valor) {
+  var v = String(valor || '').trim();
+  if (!v) return null;
+  var vLow = v.toLowerCase();
   if (typeof AUTH !== 'undefined' && AUTH.isComercial && AUTH.isComercial()) {
     var u = AUTH.getUser();
     return u ? u.id : null;
@@ -12,10 +17,17 @@ async function _resolveComercialId(nombre) {
   if (typeof NOTIF === 'undefined' || !NOTIF.getDirectorio) return null;
   try {
     var dir = await NOTIF.getDirectorio();
-    var hit = (dir || []).filter(function(x) {
-      return x.activo && String(x.nombre || '').trim().toLowerCase() === n;
+    var activos = (dir || []).filter(function(x) { return x.activo; });
+    // 1) Match exacto por código de comercial (case-insensitive, trim).
+    var byCod = activos.filter(function(x) {
+      return String(x.comercial_codigo || '').trim().toLowerCase() === vLow;
     })[0];
-    return hit ? hit.id : null;
+    if (byCod) return byCod.id;
+    // 2) Fallback: match por nombre.
+    var byName = activos.filter(function(x) {
+      return String(x.nombre || '').trim().toLowerCase() === vLow;
+    })[0];
+    return byName ? byName.id : null;
   } catch (e) { return null; }
 }
 
@@ -2482,16 +2494,21 @@ async function openNuevoPedido() {
   });
   populateNuevoDataLists();
   renderNuevoLines();
-  // Rol 'comercial': fija el campo Comercial a su propio nombre y lo bloquea.
-  // La RLS del backend valida que comercial_id = auth.uid() al insertar.
+  // Rol 'comercial': fija el campo Comercial a su código (o nombre si no tiene
+  // código cargado) y lo bloquea. La RLS del backend valida además que
+  // comercial_id = auth.uid() al insertar.
   if (AUTH.isComercial && AUTH.isComercial()) {
     var prof = AUTH.getProfile();
     var nvC = document.getElementById('nv-comercial');
     if (nvC && prof) {
-      nvC.value = prof.nombre || prof.email || '';
+      var val = (prof.comercial_codigo && prof.comercial_codigo.trim())
+                || prof.nombre || prof.email || '';
+      nvC.value = val;
       nvC.readOnly = true;
       nvC.style.background = '#f1f5f9';
-      nvC.title = 'Los pedidos que crees quedan asignados a tu usuario';
+      nvC.title = prof.comercial_codigo
+        ? 'Los pedidos que crees quedan asignados a tu usuario (código ' + prof.comercial_codigo + ')'
+        : 'Tu usuario no tiene código de comercial cargado — pedí al admin que lo asigne para que puedas ver los pedidos históricos';
     }
   }
   document.getElementById('nuevo-overlay').classList.add('show');

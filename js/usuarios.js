@@ -146,6 +146,7 @@ function openNewUser() {
   document.getElementById('usr-password').value = '';
   document.getElementById('usr-pass-group').style.display = '';
   document.getElementById('usr-rol').value = 'editor';
+  document.getElementById('usr-comercial-codigo').value = '';
   document.getElementById('btn-save-usr').disabled = false;
   document.getElementById('btn-save-usr').textContent = '✓ Crear usuario';
   renderEmpresaChecks([]);
@@ -164,6 +165,7 @@ function openEditUser(userId) {
   document.getElementById('usr-password').value = '';
   document.getElementById('usr-pass-group').style.display = 'none';
   document.getElementById('usr-rol').value = u.rol || 'lector';
+  document.getElementById('usr-comercial-codigo').value = u.comercial_codigo || '';
   document.getElementById('btn-save-usr').disabled = false;
   document.getElementById('btn-save-usr').textContent = '✓ Guardar cambios';
   var userEmps = (usrEmpresas[userId] || []).map(function(e) { return e.sigla; });
@@ -295,6 +297,11 @@ async function saveUser() {
     }
   }
 
+  // Código de comercial (opcional): sólo tiene sentido para rol comercial pero
+  // se persiste en cualquier rol; NULL cuando el input está vacío.
+  var comercialCodigoRaw = document.getElementById('usr-comercial-codigo').value.trim();
+  var comercialCodigo = comercialCodigoRaw ? comercialCodigoRaw : null;
+
   var btn = document.getElementById('btn-save-usr');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
@@ -304,6 +311,7 @@ async function saveUser() {
       var res = await _sb.from('usuarios').update({
         nombre: nombre,
         rol: rol,
+        comercial_codigo: comercialCodigo,
         modificado_por: _uid()
       }).eq('id', editId);
       if (res.error) throw new Error(res.error.message);
@@ -354,6 +362,7 @@ async function saveUser() {
         email: email,
         nombre: nombre,
         rol: rol,
+        comercial_codigo: comercialCodigo,
         activo: true,
         creado_por: _uid()
       }]);
