@@ -1,3 +1,24 @@
+// ── Resolución de comercial (nombre → uuid) contra el directorio de usuarios ──
+// Se llama antes de cada agregar/editar Pedido para poblar comercial_id, que es
+// el campo que usa la RLS. Si el nombre no matchea a ningún usuario activo,
+// comercial_id queda null (y sólo admin/editor/lector podrán ver ese pedido).
+async function _resolveComercialId(nombre) {
+  var n = String(nombre || '').trim().toLowerCase();
+  if (!n) return null;
+  if (typeof AUTH !== 'undefined' && AUTH.isComercial && AUTH.isComercial()) {
+    var u = AUTH.getUser();
+    return u ? u.id : null;
+  }
+  if (typeof NOTIF === 'undefined' || !NOTIF.getDirectorio) return null;
+  try {
+    var dir = await NOTIF.getDirectorio();
+    var hit = (dir || []).filter(function(x) {
+      return x.activo && String(x.nombre || '').trim().toLowerCase() === n;
+    })[0];
+    return hit ? hit.id : null;
+  } catch (e) { return null; }
+}
+
 // ── Sorting ──
 var sortLevels = [];
 
@@ -1303,6 +1324,7 @@ async function guardarTodo() {
     Nombre_Empresa: c.Nombre_Empresa,
     Consecutivo: c.Consecutivo
   };
+  hdr.comercial_id = await _resolveComercialId(hdr.Comercial);
 
   var btn = document.getElementById('btn-confirmar');
   btn.disabled = true;
@@ -1572,6 +1594,7 @@ async function agregarNuevaLinea() {
     Nombre_Empresa: c.Nombre_Empresa, Consecutivo: c.Consecutivo,
     Total_Orden: (Number(c.Total_Orden) || 0) + vtotal
   };
+  hdr.comercial_id = c.comercial_id || await _resolveComercialId(hdr.Comercial);
 
   var btn = document.getElementById('btn-add-newline');
   btn.disabled = true;
@@ -1739,6 +1762,7 @@ async function saveEdit() {
     Total_Orden: editWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('ed-estado2').value,
   };
+  hdr.comercial_id = await _resolveComercialId(hdr.Comercial);
 
   var c = consecs[editIdx];
   var originalLines = getLinesFor(c);
@@ -2148,6 +2172,7 @@ async function confirmUpload() {
   btn.textContent = '⏳ Cargando...';
 
   try {
+    var comercialIdUp = await _resolveComercialId(uploadData.comercial);
     var result = await apiPost({
       action: 'agregarPedido',
       nombre_empresa: uploadData.nombre_empresa,
@@ -2160,6 +2185,7 @@ async function confirmUpload() {
       municipio: uploadData.municipio,
       departamento: uploadData.departamento,
       comercial: uploadData.comercial,
+      comercial_id: comercialIdUp,
       plazo_pago: uploadData.plazo_pago,
       precio_facturacion: uploadData.precio_facturacion,
       total_orden: uploadData.total_orden,
@@ -2456,6 +2482,18 @@ async function openNuevoPedido() {
   });
   populateNuevoDataLists();
   renderNuevoLines();
+  // Rol 'comercial': fija el campo Comercial a su propio nombre y lo bloquea.
+  // La RLS del backend valida que comercial_id = auth.uid() al insertar.
+  if (AUTH.isComercial && AUTH.isComercial()) {
+    var prof = AUTH.getProfile();
+    var nvC = document.getElementById('nv-comercial');
+    if (nvC && prof) {
+      nvC.value = prof.nombre || prof.email || '';
+      nvC.readOnly = true;
+      nvC.style.background = '#f1f5f9';
+      nvC.title = 'Los pedidos que crees quedan asignados a tu usuario';
+    }
+  }
   document.getElementById('nuevo-overlay').classList.add('show');
 
   await loadAutocompleteData();
@@ -2615,6 +2653,8 @@ async function guardarNuevoPedido() {
 
     var totalOrden = productosValidos.reduce(function(s, p) { return s + (Number(p.valor_total)||0); }, 0);
 
+    var nvComercial = document.getElementById('nv-comercial').value.trim();
+    var comercialIdNv = await _resolveComercialId(nvComercial);
     var result = await apiPost({
       action: 'agregarPedido',
       nombre_empresa: empresa,
@@ -2626,7 +2666,8 @@ async function guardarNuevoPedido() {
       direccion_envio: document.getElementById('nv-direccion').value.trim(),
       municipio: document.getElementById('nv-municipio').value.trim(),
       departamento: document.getElementById('nv-departamento').value.trim(),
-      comercial: document.getElementById('nv-comercial').value.trim(),
+      comercial: nvComercial,
+      comercial_id: comercialIdNv,
       plazo_pago: document.getElementById('nv-plazo').value.trim(),
       precio_facturacion: document.getElementById('nv-precio').value.trim(),
       facturar_a: document.getElementById('nv-facturar-a').value.trim() || cliente,

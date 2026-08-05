@@ -156,7 +156,14 @@ var AUTH = (function() {
   }
 
   function canEdit() {
-    return _profile && (_profile.rol === 'admin' || _profile.rol === 'editor');
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'comercial';
+  }
+
+  // El rol 'comercial' solo puede crear/ver/editar sus propios pedidos
+  // (RLS lo restringe en el servidor; en cliente se usa para autofill y bloqueos).
+  function isComercial() {
+    return _profile && _profile.rol === 'comercial';
   }
 
   function canManageUsers() {
@@ -231,6 +238,7 @@ var AUTH = (function() {
     canApprove: canApprove,
     canApproveOC: canApproveOC,
     canManageUsers: canManageUsers,
+    isComercial: isComercial,
     hasCompany: hasCompany,
     getCompanies: getCompanies,
     getFilteredEmpresas: getFilteredEmpresas,

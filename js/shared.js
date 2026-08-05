@@ -212,6 +212,16 @@ async function apiPost(body) {
             .eq('Consecutivo', String(hdr.Consecutivo));
         } catch (e) { /* no bloquea la operación principal */ }
       }
+      // La RPC editar_pedido_completo no conoce la columna comercial_id;
+      // la seteamos aparte cuando el cliente la envía en el header.
+      if (hdr.comercial_id !== undefined && hdr.Nombre_Empresa && (hdr.Consecutivo !== null && hdr.Consecutivo !== undefined && hdr.Consecutivo !== '')) {
+        try {
+          await _sb.from('Pedidos')
+            .update({ comercial_id: hdr.comercial_id || null })
+            .eq('Nombre_Empresa', hdr.Nombre_Empresa)
+            .eq('Consecutivo', String(hdr.Consecutivo));
+        } catch (e) { /* no bloquea */ }
+      }
       return res.data;
     }
 
@@ -251,6 +261,7 @@ async function apiPost(body) {
           Facturar_A: body.facturar_a || body.cliente || '',
           NIT_Adicional: body.nit_adicional || '',
           Consignacion: body.consignacion || 'No',
+          comercial_id: body.comercial_id || null,
           creado_por: _uid()
         });
       }
