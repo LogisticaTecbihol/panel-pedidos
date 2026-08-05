@@ -549,12 +549,65 @@ async function apiPost(body) {
           Total_Orden: Number(body.Total_Orden) || 0, Observaciones: body.Observaciones || '',
           Estado: body.Estado || 'Abierta', Fecha_Registro: now, Remision: body.Remision || '',
           Remision_Origen: body.Remision_Origen || '',
+          Estado_Aprobacion: 'Por aprobar',
           creado_por: _uid()
         };
       });
       var res = await _sb.from('OrdenesCompra').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };
+    }
+
+    if (action === 'aprobarOrdenCompra') {
+      if (!AUTH.canApproveOC || !AUTH.canApproveOC()) {
+        return { ok: false, error: 'No tienes permiso para aprobar órdenes de compra.' };
+      }
+      var profOC = AUTH.getProfile();
+      var aprOC = (profOC && (profOC.nombre || profOC.email)) || '';
+      var payloadOC = {
+        Estado_Aprobacion: 'Aprobada',
+        Aprobada_Por: aprOC,
+        Fecha_Aprobacion: new Date().toISOString(),
+        Motivo_Rechazo: null,
+        modificado_por: _uid()
+      };
+      var qOC = _sb.from('OrdenesCompra').update(payloadOC);
+      if (Array.isArray(body.ids) && body.ids.length) {
+        qOC = qOC.in('id', body.ids);
+      } else {
+        qOC = qOC.eq('Empresa_Destino', body.Empresa_Destino || '')
+                 .eq('Empresa_Origen',  body.Empresa_Origen  || '')
+                 .eq('Consecutivo',     body.Consecutivo     || '');
+      }
+      var resOC = await qOC.select('id');
+      if (resOC.error) return { ok: false, error: resOC.error.message };
+      return { ok: true, updated: (resOC.data || []).length };
+    }
+
+    if (action === 'rechazarOrdenCompra') {
+      if (!AUTH.canApproveOC || !AUTH.canApproveOC()) {
+        return { ok: false, error: 'No tienes permiso para rechazar órdenes de compra.' };
+      }
+      var profOC2 = AUTH.getProfile();
+      var aprOC2 = (profOC2 && (profOC2.nombre || profOC2.email)) || '';
+      var payloadOC2 = {
+        Estado_Aprobacion: 'Rechazada',
+        Aprobada_Por: aprOC2,
+        Fecha_Aprobacion: new Date().toISOString(),
+        Motivo_Rechazo: body.Motivo_Rechazo || '',
+        modificado_por: _uid()
+      };
+      var qOC2 = _sb.from('OrdenesCompra').update(payloadOC2);
+      if (Array.isArray(body.ids) && body.ids.length) {
+        qOC2 = qOC2.in('id', body.ids);
+      } else {
+        qOC2 = qOC2.eq('Empresa_Destino', body.Empresa_Destino || '')
+                   .eq('Empresa_Origen',  body.Empresa_Origen  || '')
+                   .eq('Consecutivo',     body.Consecutivo     || '');
+      }
+      var resOC2 = await qOC2.select('id');
+      if (resOC2.error) return { ok: false, error: resOC2.error.message };
+      return { ok: true, updated: (resOC2.data || []).length };
     }
 
     if (action === 'editarOrdenCompra') {

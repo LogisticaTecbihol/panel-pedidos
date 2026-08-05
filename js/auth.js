@@ -19,7 +19,8 @@ var AUTH = (function() {
     { key: 'reenvases',    label: '🏭 Salidas a producción' },
     { key: 'reportes',     label: '📈 Reportes' },
     { key: 'dashboard',    label: '📊 Dashboard' },
-    { key: 'muestras_aprobar', label: '✅ Aprobar solicitudes de muestras' }
+    { key: 'muestras_aprobar', label: '✅ Aprobar solicitudes de muestras' },
+    { key: 'ordenes_aprobar',  label: '✅ Aprobar órdenes de compra' }
   ];
 
   function init() {
@@ -172,6 +173,12 @@ var AUTH = (function() {
     return _modules.indexOf('muestras_aprobar') >= 0;
   }
 
+  function canApproveOC() {
+    if (!_profile) return false;
+    if (_profile.rol === 'admin') return true;
+    return _modules.indexOf('ordenes_aprobar') >= 0;
+  }
+
   function hasCompany(nombre) {
     if (!_profile) return false;
     if (_profile.rol === 'admin') return true;
@@ -222,6 +229,7 @@ var AUTH = (function() {
     canEdit: canEdit,
     canDelete: canDelete,
     canApprove: canApprove,
+    canApproveOC: canApproveOC,
     canManageUsers: canManageUsers,
     hasCompany: hasCompany,
     getCompanies: getCompanies,

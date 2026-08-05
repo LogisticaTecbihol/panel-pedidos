@@ -186,7 +186,8 @@ function renderEmpresaChecks(selectedSiglas) {
 
 // Dependencias: si se marca la clave, también deben quedar marcadas las de la lista.
 var MODULE_DEPENDS_ON = {
-  muestras_aprobar: ['muestras']
+  muestras_aprobar: ['muestras'],
+  ordenes_aprobar:  ['ordenes']
 };
 
 function renderModuloChecks(selectedKeys, rol) {

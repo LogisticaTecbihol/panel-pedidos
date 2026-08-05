@@ -86,7 +86,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido' });
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,creado_por' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {
@@ -124,9 +124,11 @@ async function loadCatalogo() {
 var ocFiltersAttached = false;
 function populateOCFilters() {
   if (!ocFiltersAttached) {
-    ['f-emp-dest','f-emp-orig','f-estado','f-txt'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', renderOCTable);
-      document.getElementById(id).addEventListener('input', renderOCTable);
+    ['f-emp-dest','f-emp-orig','f-estado','f-aprobacion-oc','f-txt'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', renderOCTable);
+      el.addEventListener('input', renderOCTable);
     });
     ocFiltersAttached = true;
   }
@@ -136,6 +138,7 @@ function filteredOC() {
   var fed = document.getElementById('f-emp-dest').value;
   var feo = document.getElementById('f-emp-orig').value;
   var fst = document.getElementById('f-estado').value;
+  var fap = (document.getElementById('f-aprobacion-oc') || {}).value || '';
   var ft = document.getElementById('f-txt').value.toLowerCase();
   return ordenes.filter(function(r) {
     if (fed && r.Empresa_Destino !== fed) return false;
@@ -143,6 +146,7 @@ function filteredOC() {
     if (fst === '__solicitud_pendiente') {
       if (!_esSolicitudPedidoPendiente(r)) return false;
     } else if (fst && r.Estado !== fst) return false;
+    if (fap && (r.Estado_Aprobacion || 'Por aprobar') !== fap) return false;
     if (ft) {
       var hay = [r.Producto, r.Presentacion, r.Consecutivo, r.Municipio, r.Observaciones, r.Bodega, r.Ref_Pedido].join(' ').toLowerCase();
       if (hay.indexOf(ft) < 0) return false;
@@ -155,6 +159,8 @@ function clearOCFilters() {
   document.getElementById('f-emp-dest').value = '';
   document.getElementById('f-emp-orig').value = '';
   document.getElementById('f-estado').value = '';
+  var fap = document.getElementById('f-aprobacion-oc');
+  if (fap) fap.value = '';
   document.getElementById('f-txt').value = '';
   renderOCTable();
 }
@@ -174,6 +180,7 @@ function renderOCHeader() {
     { label:'Valor Total', id:'valor_total' },
     { label:'Remisión Destino', id:null },
     { label:'Remisión Origen', id:null },
+    { label:'Aprobación', id:null },
     { label:'Estado', id:'estado' },
     { label:'Acción', id:null },
   ];
@@ -260,11 +267,22 @@ function renderOCTable() {
   var abiertas = ordenes.filter(function(r) { return (r.Estado||'Abierta') === 'Abierta'; }).length;
   var cerradas = ordenes.filter(function(r) { return r.Estado === 'Cerrada'; }).length;
   var solicitudes = ordenes.filter(_esSolicitudPedidoPendiente).length;
+  // Contamos "por aprobar" a nivel de OC (empresa_destino+empresa_origen+consecutivo),
+  // no de línea, para que coincida con lo que el aprobador realmente decide.
+  var seenOC = {}, porAprobarOC = 0;
+  ordenes.forEach(function(r) {
+    var key = (r.Empresa_Destino || '') + '|' + (r.Empresa_Origen || '') + '|' + (r.Consecutivo || r.id);
+    if (seenOC[key]) return;
+    seenOC[key] = true;
+    if ((r.Estado_Aprobacion || 'Por aprobar') === 'Por aprobar') porAprobarOC++;
+  });
 
   document.getElementById('s-total').textContent = totalLines;
   document.getElementById('s-valor').textContent = fmtMoney(valorTotal);
   document.getElementById('s-abiertas').textContent = abiertas;
   document.getElementById('s-cerradas').textContent = cerradas;
+  var paEl = document.getElementById('s-por-aprobar-oc');
+  if (paEl) paEl.textContent = porAprobarOC;
   var solEl = document.getElementById('s-solicitudes');
   if (solEl) solEl.textContent = solicitudes;
   document.getElementById('row-ct-oc').textContent = '(' + rows.length + ' mostrados)';
@@ -273,9 +291,11 @@ function renderOCTable() {
 
   var tbody = document.getElementById('t-body-oc');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="14"><div class="empty">No hay órdenes de compra con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15"><div class="empty">No hay órdenes de compra con los filtros seleccionados.</div></td></tr>';
     return;
   }
+
+  var canApprOC = AUTH.canApproveOC && AUTH.canApproveOC();
 
   tbody.innerHTML = rows.map(function(r, i) {
     var esSol = _esSolicitudPedidoPendiente(r);
@@ -288,6 +308,25 @@ function renderOCTable() {
     var tieneRems = String(r.Remision || '').trim() || String(r.Remision_Origen || '').trim();
     var btnPdfSol = '<button class="btn-pdf-oc" onclick="exportarSolicitudOC(' + (r.__row||0) + ')" title="Descargar Solicitud de OC (PDF, agrupa todos los productos)">📄</button>';
     var btnPdfRem = '<button class="btn-pdf-oc" onclick="exportarRemisionesOC(' + (r.__row||0) + ')" title="' + (tieneRems ? 'Descargar Remisiones Destino y Origen (PDF)' : 'Aún no hay remisiones cargadas — legalizar primero') + '"' + (tieneRems ? '' : ' style="opacity:0.4"') + '>📦</button>';
+
+    var apr = r.Estado_Aprobacion || 'Por aprobar';
+    var aprBadge;
+    if (apr === 'Aprobada') {
+      aprBadge = '<span class="badge b-ent" title="' + escapeAttr(r.Aprobada_Por || '') + '">✅ Aprobada</span>';
+    } else if (apr === 'Rechazada') {
+      aprBadge = '<span class="badge b-anulado" title="' + escapeAttr(r.Motivo_Rechazo || '') + '">❌ Rechazada</span>';
+    } else {
+      aprBadge = '<span class="badge b-par">⏳ Por aprobar</span>';
+    }
+
+    var aprBtns = '';
+    if (canApprOC && apr === 'Por aprobar') {
+      var argsAR = "'" + escapeJs(r.Empresa_Destino || '') + "','" + escapeJs(r.Empresa_Origen || '') + "','" + escapeJs(String(r.Consecutivo || '')) + "'";
+      aprBtns =
+        '<button class="btn-edit" style="background:#27ae60;color:white;border-color:#27ae60" title="Aprobar OC" onclick="approveOC(' + argsAR + ')">✅</button>' +
+        '<button class="btn-del" style="background:#e74c3c;color:white;border-color:#e74c3c" title="Rechazar OC" onclick="askRejectOC(' + argsAR + ')">❌</button>';
+    }
+
     return '<tr' + trClass + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
@@ -301,8 +340,10 @@ function renderOCTable() {
       '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(r.Valor_Total) + '</td>' +
       '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision || '—') + '</td>' +
       '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision_Origen || '—') + '</td>' +
+      '<td>' + aprBadge + '</td>' +
       '<td>' + estadoBadge(r.Estado) + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
+        aprBtns +
         btnPdfSol +
         btnPdfRem +
         (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditOC(' + r.__row + ')" title="Editar">✏️</button>' : '') +
@@ -310,6 +351,13 @@ function renderOCTable() {
       '</div></td>' +
     '</tr>';
   }).join('');
+}
+
+function escapeAttr(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escapeJs(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 // ── Product search/autocomplete ──
@@ -608,7 +656,35 @@ function openNewOC() {
   var btnRem = document.getElementById('btn-oc-pdf-remisiones');
   if (btnSol) btnSol.style.display = 'none';
   if (btnRem) btnRem.style.display = 'none';
+  // OC nueva siempre nace "Por aprobar": bloquear remisión y opción Cerrada.
+  _applyAprobacionLockOC({ Estado_Aprobacion: 'Por aprobar' });
   document.getElementById('oc-overlay').classList.add('show');
+}
+
+// Bloquea inputs de remisión y la opción "Cerrada" cuando la OC no está aprobada.
+// El check constraint SQL 'oc_legalizacion_requiere_aprobacion' respalda esta regla.
+function _applyAprobacionLockOC(r) {
+  var apr = (r && r.Estado_Aprobacion) || 'Por aprobar';
+  var locked = apr !== 'Aprobada';
+  var rem = document.getElementById('oc-remision');
+  var remO = document.getElementById('oc-remision-origen');
+  var est = document.getElementById('oc-estado');
+  if (rem) {
+    rem.disabled = locked;
+    rem.title = locked ? 'Requiere aprobación previa de la OC' : '';
+    rem.style.background = locked ? '#f1f5f9' : '';
+  }
+  if (remO) {
+    remO.disabled = locked;
+    remO.title = locked ? 'Requiere aprobación previa de la OC' : '';
+    remO.style.background = locked ? '#f1f5f9' : '';
+  }
+  if (est) {
+    // La opción "Cerrada" queda deshabilitada mientras no esté aprobada.
+    var optCerrada = est.querySelector('option[value="Cerrada"]');
+    if (optCerrada) optCerrada.disabled = locked;
+    if (locked && est.value === 'Cerrada') est.value = 'Abierta';
+  }
 }
 
 function closeOCModal() {
@@ -652,6 +728,7 @@ function openEditOC(row) {
   document.getElementById('oc-observaciones').value = r.Observaciones || '';
   document.getElementById('btn-save-oc').disabled = false;
   document.getElementById('btn-save-oc').textContent = '✓ Guardar cambios';
+  _applyAprobacionLockOC(r);
 
   document.getElementById('oc-multi-lines').style.display = 'none';
   document.getElementById('oc-upload-section').style.display = 'none';
@@ -767,6 +844,10 @@ async function saveOC() {
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     closeOCModal();
     showToast('✅ ' + result.added + ' línea(s) registradas en la nube');
+    _notifyAprobadoresNuevaOC({
+      empresaDest: empresa_destino, empresaOrig: empresa_origen, consecutivo: consecutivo,
+      nLineas: validLines.length, total: fmtMoney(totalOrden)
+    });
     await loadOrdenes();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -816,6 +897,136 @@ async function confirmDeleteOC() {
     btn.disabled = false;
     btn.textContent = '🗑️ Sí, eliminar';
   }
+}
+
+// ── Aprobación / rechazo (admin o módulo ordenes_aprobar) ──
+
+var ocRejectCtx = null;
+
+function _ocGrupoIds(empresaDest, empresaOrig, consecutivo) {
+  return ordenes
+    .filter(function(r) {
+      return (r.Empresa_Destino || '') === empresaDest
+          && (r.Empresa_Origen  || '') === empresaOrig
+          && String(r.Consecutivo || '') === String(consecutivo);
+    })
+    .map(function(r) { return r.id; });
+}
+
+async function approveOC(empresaDest, empresaOrig, consecutivo) {
+  if (!AUTH.canApproveOC || !AUTH.canApproveOC()) {
+    showToast('No tienes permiso para aprobar órdenes de compra.', '#e74c3c'); return;
+  }
+  var ids = _ocGrupoIds(empresaDest, empresaOrig, consecutivo);
+  if (!ids.length) { showToast('OC no encontrada.', '#e67e22'); return; }
+  if (!confirm('¿Aprobar esta OC (' + ids.length + ' línea(s))?')) return;
+  var res = await apiPost({
+    action: 'aprobarOrdenCompra',
+    Empresa_Destino: empresaDest, Empresa_Origen: empresaOrig, Consecutivo: consecutivo,
+    ids: ids
+  });
+  if (!res.ok) { showToast('❌ ' + (res.error || 'Error al aprobar'), '#e74c3c'); return; }
+  showToast('✅ OC aprobada');
+  var creatorRow = ordenes.filter(function(r) { return ids.indexOf(r.id) >= 0; })[0];
+  _notifyCreadorAprobacionOC(creatorRow, 'Aprobada', '');
+  await loadOrdenes();
+}
+
+function askRejectOC(empresaDest, empresaOrig, consecutivo) {
+  if (!AUTH.canApproveOC || !AUTH.canApproveOC()) {
+    showToast('No tienes permiso para rechazar órdenes de compra.', '#e74c3c'); return;
+  }
+  var ids = _ocGrupoIds(empresaDest, empresaOrig, consecutivo);
+  if (!ids.length) { showToast('OC no encontrada.', '#e67e22'); return; }
+  ocRejectCtx = { empresaDest: empresaDest, empresaOrig: empresaOrig, consecutivo: consecutivo, ids: ids };
+  document.getElementById('rej-oc-detail').textContent =
+    'OC ' + (consecutivo || '—') + ' · ' + ids.length + ' línea(s)';
+  document.getElementById('rej-oc-motivo').value = '';
+  document.getElementById('btn-rej-oc-confirm').disabled = false;
+  document.getElementById('reject-oc-overlay').classList.add('show');
+  setTimeout(function() { document.getElementById('rej-oc-motivo').focus(); }, 50);
+}
+
+function closeRejectOC() {
+  document.getElementById('reject-oc-overlay').classList.remove('show');
+  ocRejectCtx = null;
+}
+document.getElementById('reject-oc-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeRejectOC(); });
+
+async function confirmRejectOC() {
+  if (!ocRejectCtx) return;
+  var motivo = document.getElementById('rej-oc-motivo').value.trim();
+  if (!motivo) { showToast('Escribe el motivo del rechazo.', '#e67e22'); return; }
+  var ctx = ocRejectCtx;
+  var btn = document.getElementById('btn-rej-oc-confirm');
+  btn.disabled = true;
+  btn.textContent = '⏳ Rechazando...';
+  try {
+    var res = await apiPost({
+      action: 'rechazarOrdenCompra',
+      Empresa_Destino: ctx.empresaDest, Empresa_Origen: ctx.empresaOrig, Consecutivo: ctx.consecutivo,
+      ids: ctx.ids, Motivo_Rechazo: motivo
+    });
+    if (!res.ok) throw new Error(res.error || 'Error al rechazar');
+    var creatorRow = ordenes.filter(function(r) { return ctx.ids.indexOf(r.id) >= 0; })[0];
+    closeRejectOC();
+    showToast('✅ OC rechazada');
+    _notifyCreadorAprobacionOC(creatorRow, 'Rechazada', motivo);
+    await loadOrdenes();
+  } catch (err) {
+    showToast('❌ ' + err.message, '#e74c3c');
+    btn.disabled = false;
+    btn.textContent = '❌ Rechazar';
+  }
+}
+
+// ── Notificaciones ──
+
+async function _notifyAprobadoresNuevaOC(info) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers || !NOTIF.getDirectorio) return;
+  try {
+    var dir = await NOTIF.getDirectorio();
+    // Sólo admins reciben aviso (no expandimos a titulares del módulo hasta que
+    // la RPC list_usuarios_directorio devuelva usuario_modulos, o consultemos aparte).
+    var adminIds = (dir || [])
+      .filter(function(u) { return u.activo && u.rol === 'admin'; })
+      .map(function(u) { return u.id; });
+    if (!adminIds.length) return;
+    var siglaD = getSiglaOC(info.empresaDest);
+    var siglaO = getSiglaOC(info.empresaOrig);
+    await NOTIF.notifyUsers({
+      para_ids: adminIds,
+      modulo: 'ordenes',
+      referencia: info.consecutivo || '',
+      titulo: '🛒 Orden de compra por aprobar: ' + siglaD + ' ← ' + siglaO + ' #' + (info.consecutivo || ''),
+      mensaje: info.nLineas + ' línea(s)' + (info.total ? ' · Total: ' + info.total : '')
+    });
+  } catch (e) { /* la notificación no debe bloquear el flujo */ }
+}
+
+async function _notifyCreadorAprobacionOC(row, estado, motivo) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
+  if (!row || !row.creado_por) return;
+  try {
+    var siglaD = getSiglaOC(row.Empresa_Destino);
+    var siglaO = getSiglaOC(row.Empresa_Origen);
+    var ref = String(row.Consecutivo || '');
+    var titulo, mensaje;
+    if (estado === 'Aprobada') {
+      titulo = '✅ OC aprobada: ' + siglaD + ' ← ' + siglaO + ' #' + ref;
+      mensaje = 'Tu OC fue aprobada y ya puede legalizarse.';
+    } else {
+      titulo = '❌ OC rechazada: ' + siglaD + ' ← ' + siglaO + ' #' + ref;
+      mensaje = 'Motivo: ' + (motivo || 'sin motivo');
+    }
+    await NOTIF.notifyUsers({
+      para_ids: [row.creado_por],
+      modulo: 'ordenes',
+      referencia: ref,
+      titulo: titulo,
+      mensaje: mensaje
+    });
+  } catch (e) { /* silencioso */ }
 }
 
 // ── Auto-load ──
