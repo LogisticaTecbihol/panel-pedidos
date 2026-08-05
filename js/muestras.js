@@ -1,5 +1,33 @@
 // ── Solicitud de Muestras ──
 
+// Resuelve el nombre del Responsable contra el directorio de usuarios y
+// devuelve el uuid a guardar en responsable_id (usado por la RLS para que
+// un usuario con rol=comercial vea sólo sus propias solicitudes).
+// Primero matchea por nombre (que es lo que se escribe en Responsable);
+// si no hay match, cae por comercial_codigo.
+async function _resolveResponsableId(valor) {
+  var v = String(valor || '').trim();
+  if (!v) return null;
+  var vLow = v.toLowerCase();
+  if (typeof AUTH !== 'undefined' && AUTH.isComercial && AUTH.isComercial()) {
+    var uSelf = AUTH.getUser();
+    return uSelf ? uSelf.id : null;
+  }
+  if (typeof NOTIF === 'undefined' || !NOTIF.getDirectorio) return null;
+  try {
+    var dir = await NOTIF.getDirectorio();
+    var activos = (dir || []).filter(function(x) { return x.activo; });
+    var byName = activos.filter(function(x) {
+      return String(x.nombre || '').trim().toLowerCase() === vLow;
+    })[0];
+    if (byName) return byName.id;
+    var byCod = activos.filter(function(x) {
+      return String(x.comercial_codigo || '').trim().toLowerCase() === vLow;
+    })[0];
+    return byCod ? byCod.id : null;
+  } catch (e) { return null; }
+}
+
 var allMuestras = [];
 var filteredMu = [];
 var muSortCols = [];
@@ -807,6 +835,18 @@ async function openNewMuestra() {
 
   muLines = [{ producto: '', presentacion: '', cantidad: 0 }];
   renderMuLines();
+  // Rol 'comercial': fija el Responsable a su nombre (o código) y lo bloquea.
+  // La RLS del backend valida que responsable_id = auth.uid() al insertar.
+  if (AUTH.isComercial && AUTH.isComercial()) {
+    var profM = AUTH.getProfile();
+    var muR = document.getElementById('mu-responsable');
+    if (muR && profM) {
+      muR.value = profM.nombre || profM.email || '';
+      muR.readOnly = true;
+      muR.style.background = '#f1f5f9';
+      muR.title = 'Las solicitudes que crees quedan asignadas a tu usuario';
+    }
+  }
   document.getElementById('mu-overlay').classList.add('show');
   if (muGeoAC) { if (muGeoAC.deptAC) muGeoAC.deptAC.destroy(); if (muGeoAC.muniAC) muGeoAC.muniAC.destroy(); muGeoAC = null; }
   muGeoAC = setupGeoAutocomplete(document.getElementById('mu-departamento'), document.getElementById('mu-municipio'));
@@ -1003,6 +1043,7 @@ async function saveMuestra() {
   btn.textContent = '⏳ Guardando...';
 
   try {
+    var responsableId = await _resolveResponsableId(responsable);
     var result = await apiPost({
       action: 'agregarMuestra',
       Empresa: empresa,
@@ -1010,6 +1051,7 @@ async function saveMuestra() {
       Fecha_Solicitud: fechaSol,
       Fecha_Despacho: document.getElementById('mu-fecha-despacho').value,
       Responsable: responsable,
+      responsable_id: responsableId,
       Departamento: document.getElementById('mu-departamento').value.trim(),
       Municipio: document.getElementById('mu-municipio').value.trim(),
       Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),

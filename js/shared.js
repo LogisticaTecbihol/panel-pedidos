@@ -669,6 +669,7 @@ async function apiPost(body) {
           Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
           Estado_Aprobacion: 'Por aprobar',
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          responsable_id: body.responsable_id || null,
           creado_por: _uid()
         };
       });

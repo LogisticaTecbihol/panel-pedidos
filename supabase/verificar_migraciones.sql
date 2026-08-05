@@ -106,6 +106,27 @@ WITH checks AS (
     ),
     'usuarios.comercial_codigo + unique index + list_usuarios_directorio devuelve el campo'
 
+  UNION ALL
+
+  -- 8. add_comercial_muestras.sql
+  SELECT
+    8, 'add_comercial_muestras',
+    (
+      EXISTS(SELECT 1 FROM information_schema.columns
+              WHERE table_name='SolicitudMuestras' AND column_name='responsable_id')
+      AND EXISTS(
+        SELECT 1 FROM pg_policies
+         WHERE tablename='SolicitudMuestras' AND policyname='SolicitudMuestras_select'
+           AND qual LIKE '%responsable_id%'
+      )
+      AND EXISTS(
+        SELECT 1 FROM pg_policies
+         WHERE tablename='SolicitudMuestras' AND policyname='SolicitudMuestras_insert'
+           AND with_check LIKE '%responsable_id%'
+      )
+    ),
+    'SolicitudMuestras.responsable_id + policies SELECT/INSERT con responsable_id'
+
 )
 SELECT
   n           AS "#",
