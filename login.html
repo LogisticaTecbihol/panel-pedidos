@@ -25,7 +25,10 @@
       </div>
       <div class="login-field">
         <label for="login-pass">Contraseña</label>
-        <input type="password" id="login-pass" required placeholder="••••••••" autocomplete="current-password">
+        <div style="position:relative">
+          <input type="password" id="login-pass" required placeholder="••••••••" autocomplete="current-password" style="padding-right:42px;width:100%;box-sizing:border-box">
+          <button type="button" id="btn-toggle-pass" onclick="togglePass()" aria-label="Mostrar contraseña" title="Mostrar contraseña" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1.05rem;padding:4px 6px;color:#4a5568;line-height:1">👁️</button>
+        </div>
       </div>
       <div id="login-error" class="login-error"></div>
       <button type="submit" class="btn-login" id="btn-login">Iniciar sesión</button>
@@ -66,6 +69,16 @@ async function doLogin(e) {
   }
 
   location.replace('index.html');
+}
+
+function togglePass() {
+  var inp = document.getElementById('login-pass');
+  var btn = document.getElementById('btn-toggle-pass');
+  var visible = inp.type === 'text';
+  inp.type = visible ? 'password' : 'text';
+  btn.textContent = visible ? '👁️' : '🙈';
+  btn.title = visible ? 'Mostrar contraseña' : 'Ocultar contraseña';
+  btn.setAttribute('aria-label', btn.title);
 }
 
 async function doReset(e) {
