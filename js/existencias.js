@@ -175,7 +175,9 @@
       });
     });
 
-    // Órdenes de Compra — Remisión Destino dispara ENTRADA destino; Remisión Origen dispara SALIDA origen
+    // Órdenes de Compra — Remisión Destino dispara ENTRADA destino;
+    // Salida origen se dispara con Remisión Origen, o con Remisión
+    // Destino si el origen es distinto (misma lógica que kardex.js).
     (src.ordenes || []).forEach(function(oc) {
       var cant = Number(oc.Cantidad) || 0;
       if (cant <= 0) return;
@@ -189,10 +191,11 @@
           presentacion: oc.Presentacion || '', cantidad: cant
         });
       }
-      if (remOrig && oc.Empresa_Origen && oc.Empresa_Origen !== oc.Empresa_Destino) {
+      var remSalida = remOrig || remDest;
+      if (remSalida && oc.Empresa_Origen && oc.Empresa_Origen !== oc.Empresa_Destino) {
         movs.push({
           fecha: oc.Fecha || '', tipo: 'Salida', modulo: 'Órdenes de Compra',
-          remision: remOrig, empresa: oc.Empresa_Origen,
+          remision: remSalida, empresa: oc.Empresa_Origen,
           producto: _normProd(oc.Producto),
           presentacion: oc.Presentacion || '', cantidad: cant
         });
