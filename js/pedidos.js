@@ -18,8 +18,12 @@ async function _resolveComercialId(valor) {
   try {
     var dir = await NOTIF.getDirectorio();
     var activos = (dir || []).filter(function(x) { return x.activo; });
-    // 1) Match exacto por código de comercial (case-insensitive, trim).
+    // 1) Match por códigos de comercial por empresa (codigos_comercial jsonb array).
     var byCod = activos.filter(function(x) {
+      var codes = x.codigos_comercial || [];
+      for (var j = 0; j < codes.length; j++) {
+        if (String(codes[j].codigo || '').trim().toLowerCase() === vLow) return true;
+      }
       return String(x.comercial_codigo || '').trim().toLowerCase() === vLow;
     })[0];
     if (byCod) return byCod.id;
@@ -2585,22 +2589,33 @@ async function openNuevoPedido() {
   });
   populateNuevoDataLists();
   renderNuevoLines();
-  // Rol 'comercial': fija el campo Comercial a su código (o nombre si no tiene
-  // código cargado) y lo bloquea. La RLS del backend valida además que
-  // comercial_id = auth.uid() al insertar.
+  // Rol 'comercial': fija el campo Comercial al código por empresa y lo bloquea.
   if (AUTH.isComercial && AUTH.isComercial()) {
-    var prof = AUTH.getProfile();
-    var nvC = document.getElementById('nv-comercial');
-    if (nvC && prof) {
-      var val = (prof.comercial_codigo && prof.comercial_codigo.trim())
-                || prof.nombre || prof.email || '';
+    var _setComercialPorEmpresa = function() {
+      var emp = document.getElementById('nv-empresa').value;
+      var nvC = document.getElementById('nv-comercial');
+      if (!nvC) return;
+      var sigla = (typeof getSigla === 'function') ? getSigla(emp) : emp;
+      var code = AUTH.getComercialCodigo(sigla) || AUTH.getComercialCodigo(emp);
+      var prof = AUTH.getProfile();
+      var val = code || (prof && prof.nombre) || '';
       nvC.value = val;
       nvC.readOnly = true;
       nvC.style.background = '#f1f5f9';
-      nvC.title = prof.comercial_codigo
-        ? 'Los pedidos que crees quedan asignados a tu usuario (código ' + prof.comercial_codigo + ')'
-        : 'Tu usuario no tiene código de comercial cargado — pedí al admin que lo asigne para que puedas ver los pedidos históricos';
+      nvC.title = code
+        ? 'Código de comercial para esta empresa: ' + code
+        : 'No tienes código de comercial para esta empresa — pedí al admin que lo asigne';
+    };
+    var _nvEmpEl = document.getElementById('nv-empresa');
+    if (_nvEmpEl) {
+      var _prevOnChange = _nvEmpEl.onchange;
+      _nvEmpEl.onchange = function() {
+        if (_prevOnChange) _prevOnChange.call(this);
+        _setComercialPorEmpresa();
+        actualizarConsecutivoNuevo();
+      };
     }
+    _setComercialPorEmpresa();
   }
   document.getElementById('nuevo-overlay').classList.add('show');
 

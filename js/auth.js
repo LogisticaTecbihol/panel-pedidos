@@ -52,7 +52,7 @@ var AUTH = (function() {
           .eq('activo', true)
           .single(),
         _sb.from('usuario_empresas')
-          .select('empresa_sigla, empresas(nombre_completo)')
+          .select('empresa_sigla, codigo_comercial, empresas(nombre_completo)')
           .eq('usuario_id', _user.id),
         _sb.from('usuario_modulos')
           .select('modulo')
@@ -72,7 +72,11 @@ var AUTH = (function() {
       _profile = res.data;
 
       _companies = (authResults[1].data || []).map(function(r) {
-        return { sigla: r.empresa_sigla, nombre: r.empresas.nombre_completo };
+        return {
+          sigla: r.empresa_sigla,
+          nombre: r.empresas.nombre_completo,
+          codigo_comercial: r.codigo_comercial || null
+        };
       });
 
       _modules = (authResults[2].data || []).map(function(r) { return r.modulo; });
@@ -234,6 +238,25 @@ var AUTH = (function() {
     return ALL_MODULES.slice();
   }
 
+  function getComercialCodigo(empresaSiglaOrNombre) {
+    var v = (empresaSiglaOrNombre || '').trim();
+    if (!v) return null;
+    for (var i = 0; i < _companies.length; i++) {
+      if (_companies[i].sigla === v || _companies[i].nombre === v) {
+        return _companies[i].codigo_comercial || null;
+      }
+    }
+    return null;
+  }
+
+  function getComercialCodigos() {
+    var result = {};
+    _companies.forEach(function(c) {
+      if (c.codigo_comercial) result[c.sigla] = c.codigo_comercial;
+    });
+    return result;
+  }
+
   return {
     init: init,
     logout: logout,
@@ -251,7 +274,9 @@ var AUTH = (function() {
     getUser: getUser,
     hasModule: hasModule,
     getModules: getModules,
-    getAllModules: getAllModules
+    getAllModules: getAllModules,
+    getComercialCodigo: getComercialCodigo,
+    getComercialCodigos: getComercialCodigos
   };
 })();
 

@@ -30,7 +30,7 @@ async function loadUsuarios() {
   try {
     var _usrResults = await Promise.all([
       _sb.from('usuarios').select('*').order('created_at'),
-      _sb.from('usuario_empresas').select('usuario_id, empresa_sigla, empresas(nombre_completo)'),
+      _sb.from('usuario_empresas').select('usuario_id, empresa_sigla, codigo_comercial, empresas(nombre_completo)'),
       _sb.from('usuario_modulos').select('usuario_id, modulo')
     ]);
     var res = _usrResults[0];
@@ -47,7 +47,8 @@ async function loadUsuarios() {
       if (!usrEmpresas[r.usuario_id]) usrEmpresas[r.usuario_id] = [];
       usrEmpresas[r.usuario_id].push({
         sigla: r.empresa_sigla,
-        nombre: r.empresas ? r.empresas.nombre_completo : r.empresa_sigla
+        nombre: r.empresas ? r.empresas.nombre_completo : r.empresa_sigla,
+        codigo_comercial: r.codigo_comercial || ''
       });
     });
 
@@ -109,7 +110,8 @@ function renderUsuariosTable() {
   tbody.innerHTML = usrList.map(function(u, i) {
     var emps = usrEmpresas[u.id] || [];
     var empBadges = emps.map(function(e) {
-      return '<span class="sigla-badge sigla-' + e.sigla + '" style="font-size:0.7rem;padding:1px 7px;margin:1px">' + e.sigla + '</span>';
+      var tip = e.codigo_comercial ? ' title="Código: ' + e.codigo_comercial.replace(/"/g, '&quot;') + '"' : '';
+      return '<span class="sigla-badge sigla-' + e.sigla + '" style="font-size:0.7rem;padding:1px 7px;margin:1px"' + tip + '>' + e.sigla + (e.codigo_comercial ? ' <span style="font-size:0.62rem;opacity:0.8">(' + e.codigo_comercial + ')</span>' : '') + '</span>';
     }).join(' ');
     if (!empBadges) empBadges = '<span style="color:#a0aec0;font-size:0.78rem">Sin asignar</span>';
 
@@ -146,10 +148,9 @@ function openNewUser() {
   document.getElementById('usr-password').value = '';
   document.getElementById('usr-pass-group').style.display = '';
   document.getElementById('usr-rol').value = 'editor';
-  document.getElementById('usr-comercial-codigo').value = '';
   document.getElementById('btn-save-usr').disabled = false;
   document.getElementById('btn-save-usr').textContent = '✓ Crear usuario';
-  renderEmpresaChecks([]);
+  renderEmpresaChecks([], {});
   renderModuloChecks([], 'editor');
   document.getElementById('usr-overlay').classList.add('show');
 }
@@ -165,25 +166,43 @@ function openEditUser(userId) {
   document.getElementById('usr-password').value = '';
   document.getElementById('usr-pass-group').style.display = 'none';
   document.getElementById('usr-rol').value = u.rol || 'lector';
-  document.getElementById('usr-comercial-codigo').value = u.comercial_codigo || '';
   document.getElementById('btn-save-usr').disabled = false;
   document.getElementById('btn-save-usr').textContent = '✓ Guardar cambios';
-  var userEmps = (usrEmpresas[userId] || []).map(function(e) { return e.sigla; });
-  renderEmpresaChecks(userEmps);
+  var userEmps = usrEmpresas[userId] || [];
+  var userEmpSiglas = userEmps.map(function(e) { return e.sigla; });
+  var userEmpCodes = {};
+  userEmps.forEach(function(e) { if (e.codigo_comercial) userEmpCodes[e.sigla] = e.codigo_comercial; });
+  renderEmpresaChecks(userEmpSiglas, userEmpCodes);
   renderModuloChecks(usrModulos[userId] || [], u.rol || 'lector');
   document.getElementById('usr-overlay').classList.add('show');
 }
 
-function renderEmpresaChecks(selectedSiglas) {
+function renderEmpresaChecks(selectedSiglas, codigosPorEmpresa) {
+  var codes = codigosPorEmpresa || {};
   var container = document.getElementById('usr-empresas-checks');
   container.innerHTML = EMPRESAS_HOLDING.map(function(e) {
     var checked = selectedSiglas.indexOf(e.sigla) >= 0 ? ' checked' : '';
-    return '<label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;cursor:pointer;padding:6px 10px;background:#f7fafc;border-radius:6px;border:1px solid #e2e8f0">' +
-      '<input type="checkbox" class="usr-emp-check" value="' + e.sigla + '"' + checked + '>' +
-      '<span class="sigla-badge sigla-' + e.sigla + '" style="font-size:0.72rem;padding:1px 7px">' + e.sigla + '</span> ' +
-      '<span style="font-size:0.78rem;color:#4a5568">' + e.value.split(' ')[0] + '</span>' +
-    '</label>';
+    var code = codes[e.sigla] || '';
+    var codeVisible = checked ? '' : ' style="display:none"';
+    return '<div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;padding:6px 10px;background:#f7fafc;border-radius:6px;border:1px solid #e2e8f0">' +
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:0">' +
+        '<input type="checkbox" class="usr-emp-check" value="' + e.sigla + '"' + checked + ' onchange="toggleEmpCode(this)">' +
+        '<span class="sigla-badge sigla-' + e.sigla + '" style="font-size:0.72rem;padding:1px 7px">' + e.sigla + '</span> ' +
+        '<span style="font-size:0.78rem;color:#4a5568">' + e.value.split(' ')[0] + '</span>' +
+      '</label>' +
+      '<input type="text" class="usr-emp-code ef" data-sigla="' + e.sigla + '" placeholder="Cód. comercial" value="' + code.replace(/"/g, '&quot;') + '"' +
+        ' style="width:120px;font-size:0.78rem;padding:4px 8px;margin:0' + (checked ? '' : ';display:none') + '">' +
+    '</div>';
   }).join('');
+}
+
+function toggleEmpCode(cb) {
+  var row = cb.closest('div');
+  var codeInput = row.querySelector('.usr-emp-code');
+  if (codeInput) {
+    codeInput.style.display = cb.checked ? '' : 'none';
+    if (!cb.checked) codeInput.value = '';
+  }
 }
 
 // Dependencias: si se marca la clave, también deben quedar marcadas las de la lista.
@@ -297,10 +316,11 @@ async function saveUser() {
     }
   }
 
-  // Código de comercial (opcional): sólo tiene sentido para rol comercial pero
-  // se persiste en cualquier rol; NULL cuando el input está vacío.
-  var comercialCodigoRaw = document.getElementById('usr-comercial-codigo').value.trim();
-  var comercialCodigo = comercialCodigoRaw ? comercialCodigoRaw : null;
+  var empCodes = {};
+  document.querySelectorAll('.usr-emp-code').forEach(function(inp) {
+    var v = inp.value.trim();
+    if (v) empCodes[inp.dataset.sigla] = v;
+  });
 
   var btn = document.getElementById('btn-save-usr');
   btn.disabled = true;
@@ -311,7 +331,6 @@ async function saveUser() {
       var res = await _sb.from('usuarios').update({
         nombre: nombre,
         rol: rol,
-        comercial_codigo: comercialCodigo,
         modificado_por: _uid()
       }).eq('id', editId);
       if (res.error) throw new Error(res.error.message);
@@ -321,7 +340,7 @@ async function saveUser() {
 
       if (selectedEmps.length) {
         var rows = selectedEmps.map(function(s) {
-          return { usuario_id: editId, empresa_sigla: s };
+          return { usuario_id: editId, empresa_sigla: s, codigo_comercial: empCodes[s] || null };
         });
         var insRes = await _sb.from('usuario_empresas').insert(rows);
         if (insRes.error) throw new Error(insRes.error.message);
@@ -362,7 +381,6 @@ async function saveUser() {
         email: email,
         nombre: nombre,
         rol: rol,
-        comercial_codigo: comercialCodigo,
         activo: true,
         creado_por: _uid()
       }]);
@@ -370,7 +388,7 @@ async function saveUser() {
 
       if (selectedEmps.length) {
         var rows = selectedEmps.map(function(s) {
-          return { usuario_id: newUserId, empresa_sigla: s };
+          return { usuario_id: newUserId, empresa_sigla: s, codigo_comercial: empCodes[s] || null };
         });
         var ueRes = await _sb.from('usuario_empresas').insert(rows);
         if (ueRes.error) throw new Error(ueRes.error.message);

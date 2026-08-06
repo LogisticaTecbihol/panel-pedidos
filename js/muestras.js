@@ -22,6 +22,10 @@ async function _resolveResponsableId(valor) {
     })[0];
     if (byName) return byName.id;
     var byCod = activos.filter(function(x) {
+      var codes = x.codigos_comercial || [];
+      for (var j = 0; j < codes.length; j++) {
+        if (String(codes[j].codigo || '').trim().toLowerCase() === vLow) return true;
+      }
       return String(x.comercial_codigo || '').trim().toLowerCase() === vLow;
     })[0];
     return byCod ? byCod.id : null;
