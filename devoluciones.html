@@ -8,6 +8,44 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
 <title>Devoluciones y Cambios – Sistema de Gestión Logística</title>
 <link rel="stylesheet" href="css/panel.css">
+<style>
+/* ── Adjuntos Cambios ── */
+.adjuntos-section{background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin-top:14px}
+.adjuntos-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.adjuntos-header h4{font-size:0.84rem;font-weight:700;color:#1a5276;margin:0}
+.adjuntos-count{font-size:0.72rem;color:#718096;font-weight:400}
+.btn-adjuntar{background:#1a5276;color:white;border:none;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600;display:flex;align-items:center;gap:4px;transition:background 0.2s}
+.btn-adjuntar:hover{background:#154360}
+.adjuntos-list{display:flex;flex-direction:column;gap:6px}
+.adjunto-item{display:flex;align-items:center;gap:10px;background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;transition:box-shadow 0.2s}
+.adjunto-item:hover{box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+.adjunto-icon{font-size:1.3rem;flex-shrink:0}
+.adjunto-info{flex:1;min-width:0}
+.adjunto-name{font-size:0.82rem;font-weight:600;color:#2d3748;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adjunto-meta{font-size:0.7rem;color:#a0aec0;margin-top:2px}
+.adjunto-actions{display:flex;gap:4px;flex-shrink:0}
+.adjunto-actions button{background:none;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:0.72rem;transition:all 0.2s}
+.adjunto-actions .btn-adj-ver{color:#1a5276;border-color:#aed6f1}
+.adjunto-actions .btn-adj-ver:hover{background:#ebf5fb}
+.adjunto-actions .btn-adj-del{color:#e53e3e;border-color:#feb2b2}
+.adjunto-actions .btn-adj-del:hover{background:#fff5f5}
+.adjuntos-empty{text-align:center;padding:14px;color:#a0aec0;font-size:0.8rem}
+.adjuntos-loading{text-align:center;padding:10px;color:#718096;font-size:0.8rem}
+.adjunto-dropzone{border:2px dashed #aed6f1;border-radius:6px;padding:18px;text-align:center;color:#718096;font-size:0.8rem;cursor:pointer;transition:all 0.2s;margin-top:8px}
+.adjunto-dropzone:hover,.adjunto-dropzone.drag-over{border-color:#1a5276;background:#ebf5fb;color:#1a5276}
+.adjunto-dropzone input{display:none}
+.adjunto-preview-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:10001;display:none;align-items:center;justify-content:center}
+.adjunto-preview-overlay.show{display:flex}
+.adjunto-preview-box{background:white;border-radius:12px;max-width:90vw;max-height:90vh;overflow:auto;position:relative;box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+.adjunto-preview-box .btn-close-preview{position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.5);color:white;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:1rem;z-index:1;display:flex;align-items:center;justify-content:center}
+.adjunto-preview-box .btn-close-preview:hover{background:rgba(0,0,0,0.7)}
+.adjunto-preview-box img{max-width:85vw;max-height:85vh;display:block}
+.adjunto-preview-box iframe{width:85vw;height:85vh;border:none}
+.adjunto-upload-progress{margin-top:8px;display:none}
+.adjunto-upload-progress .prog-bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
+.adjunto-upload-progress .prog-fill{height:100%;background:#1a5276;border-radius:3px;transition:width 0.3s}
+.adjunto-upload-progress .prog-text{font-size:0.72rem;color:#718096;margin-top:4px;text-align:center}
+</style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
@@ -935,6 +973,14 @@
         <button class="btn-confirm" id="btn-gestionar-cam" onclick="saveGestionarCam()" style="background:#27ae60">✓ Cerrar cambio</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ADJUNTO PREVIEW OVERLAY -->
+<div class="adjunto-preview-overlay" id="cam-adjunto-preview-overlay" onclick="if(event.target===this)closeCamAdjuntoPreview()">
+  <div class="adjunto-preview-box">
+    <button class="btn-close-preview" onclick="closeCamAdjuntoPreview()">✕</button>
+    <div id="cam-adjunto-preview-content"></div>
   </div>
 </div>
 

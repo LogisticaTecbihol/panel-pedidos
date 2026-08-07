@@ -365,6 +365,22 @@ function viewCamDetail(key) {
       '<div style="font-size:0.85rem;color:#2d3748;background:#f7fafc;padding:10px 14px;border-radius:6px">'+(r.Observaciones||'')+'</div></div>';
   }
 
+  html += '<div class="adjuntos-section" id="cam-adjuntos-section">' +
+    '<div class="adjuntos-header">' +
+      '<h4>📎 Archivos adjuntos <span class="adjuntos-count" id="cam-adjuntos-count"></span></h4>' +
+      (AUTH.canEdit() ? '<button class="btn-adjuntar" onclick="document.getElementById(\'cam-adjunto-input\').click()">📤 Adjuntar archivo</button>' : '') +
+    '</div>' +
+    '<div class="adjuntos-list" id="cam-adjuntos-list"><div class="adjuntos-empty">Sin archivos adjuntos</div></div>' +
+    (AUTH.canEdit() ? '<div class="adjunto-dropzone" id="cam-adjunto-dropzone" onclick="document.getElementById(\'cam-adjunto-input\').click()">' +
+      'Arrastra un archivo aquí o haz clic para seleccionar · PDF, JPG, PNG (máx. 5 MB)' +
+      '<input type="file" id="cam-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleCamAdjuntoUpload(this)">' +
+    '</div>' : '') +
+    '<div class="adjunto-upload-progress" id="cam-adjunto-progress">' +
+      '<div class="prog-bar"><div class="prog-fill" id="cam-adjunto-prog-fill" style="width:0%"></div></div>' +
+      '<div class="prog-text" id="cam-adjunto-prog-text">Subiendo...</div>' +
+    '</div>' +
+  '</div>';
+
   document.getElementById('view-cam-meta').innerHTML =
     '<span>📋 Consec: '+(r.Consecutivo||'—')+'</span>' +
     '<span>👤 '+(r.Cliente||'—')+'</span>';
@@ -372,6 +388,8 @@ function viewCamDetail(key) {
   document.getElementById('view-cam-overlay').classList.add('show');
 
   camViewingKey = key;
+  initCamDropzone();
+  loadCamAdjuntos(r.Empresa, r.Consecutivo || r.id, r.Cliente);
   var btnIn = document.getElementById('btn-cam-rem-ingreso');
   var btnOut = document.getElementById('btn-cam-rem-salida');
   var sendIn = document.getElementById('btn-cam-send-ingreso');
@@ -1087,6 +1105,204 @@ function exportarCamRemisionPDF(tipo, opts) {
     return;
   }
   generarRemisionPDF(data);
+}
+
+// ── Adjuntos Cambios (Supabase Storage) ──
+var CAM_ADJUNTOS_BUCKET = 'cambios-adjuntos';
+var camAdjuntosCache = {};
+
+function camSanitizeForPath(s) {
+  return (s || '').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+}
+
+function camAdjuntoFolder(empresa, consecutivo, cliente) {
+  var emp = getSiglaCam(empresa).replace(/[^a-zA-Z0-9_-]/g, '_');
+  return emp + '/' + consecutivo + '_' + camSanitizeForPath(cliente);
+}
+
+function camAdjuntoPath(empresa, consecutivo, cliente, filename) {
+  return camAdjuntoFolder(empresa, consecutivo, cliente) + '/' + filename;
+}
+
+function camFormatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+async function loadCamAdjuntos(empresa, consecutivo, cliente) {
+  var listEl = document.getElementById('cam-adjuntos-list');
+  var countEl = document.getElementById('cam-adjuntos-count');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="adjuntos-loading">Cargando adjuntos...</div>';
+
+  var folder = camAdjuntoFolder(empresa, consecutivo, cliente);
+  var res2 = await _sb.storage.from(CAM_ADJUNTOS_BUCKET).list(folder, { limit: 50 });
+
+  var files = (res2.data || []).filter(function(f) { return f.name && f.id; });
+  var cacheKey = folder;
+  camAdjuntosCache[cacheKey] = files;
+
+  if (!files.length) {
+    listEl.innerHTML = '<div class="adjuntos-empty">Sin archivos adjuntos</div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  if (countEl) countEl.textContent = '(' + files.length + ')';
+  listEl.innerHTML = files.map(function(f) {
+    var ext = (f.name.split('.').pop() || '').toLowerCase();
+    var icon = ext === 'pdf' ? '📄' : '🖼️';
+    var size = f.metadata && f.metadata.size ? camFormatFileSize(f.metadata.size) : '';
+    var path = folder + '/' + f.name;
+    var nameEsc = f.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    var pathEsc = path.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return '<div class="adjunto-item">' +
+      '<div class="adjunto-icon">' + icon + '</div>' +
+      '<div class="adjunto-info">' +
+        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
+      '</div>' +
+      '<div class="adjunto-actions">' +
+        '<button class="btn-adj-ver" onclick="previewCamAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
+        '<button class="btn-adj-ver" onclick="downloadCamAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
+        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteCamAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function handleCamAdjuntoUpload(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  var maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    showToast('El archivo excede 5 MB. Selecciona un archivo más pequeño.', '#e74c3c');
+    return;
+  }
+
+  var allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (allowed.indexOf(file.type) < 0) {
+    showToast('Tipo de archivo no permitido. Usa PDF, JPG, PNG o WEBP.', '#e74c3c');
+    return;
+  }
+
+  if (!camViewingKey) return;
+  var lines = cambios.filter(function(r) {
+    return ((r.Empresa||'') + '||' + (r.Consecutivo || r.id)) === camViewingKey;
+  });
+  if (!lines.length) return;
+  var r = lines[0];
+
+  var timestamp = Date.now();
+  var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var finalName = timestamp + '_' + safeName;
+  var path = camAdjuntoPath(r.Empresa, r.Consecutivo || r.id, r.Cliente, finalName);
+
+  var progWrap = document.getElementById('cam-adjunto-progress');
+  var progFill = document.getElementById('cam-adjunto-prog-fill');
+  var progText = document.getElementById('cam-adjunto-prog-text');
+  if (progWrap) progWrap.style.display = 'block';
+  if (progFill) progFill.style.width = '30%';
+  if (progText) progText.textContent = 'Subiendo ' + file.name + '...';
+
+  var res = await _sb.storage.from(CAM_ADJUNTOS_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    upsert: false
+  });
+
+  if (progFill) progFill.style.width = '100%';
+
+  if (res.error) {
+    if (progWrap) progWrap.style.display = 'none';
+    showToast('Error al subir: ' + res.error.message, '#e74c3c');
+    return;
+  }
+
+  if (progText) progText.textContent = 'Listo';
+  setTimeout(function() { if (progWrap) progWrap.style.display = 'none'; if (progFill) progFill.style.width = '0%'; }, 1200);
+
+  showToast('Archivo adjuntado correctamente', '#27ae60');
+  await loadCamAdjuntos(r.Empresa, r.Consecutivo || r.id, r.Cliente);
+}
+
+async function previewCamAdjunto(path, ext) {
+  var res = _sb.storage.from(CAM_ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(CAM_ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+
+  var contentEl = document.getElementById('cam-adjunto-preview-content');
+  if (ext === 'pdf') {
+    contentEl.innerHTML = '<iframe src="' + url + '"></iframe>';
+  } else {
+    contentEl.innerHTML = '<img src="' + url + '" alt="Preview">';
+  }
+  document.getElementById('cam-adjunto-preview-overlay').classList.add('show');
+}
+
+function closeCamAdjuntoPreview() {
+  document.getElementById('cam-adjunto-preview-overlay').classList.remove('show');
+  document.getElementById('cam-adjunto-preview-content').innerHTML = '';
+}
+
+async function downloadCamAdjunto(path, filename) {
+  var res = _sb.storage.from(CAM_ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(CAM_ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'archivo';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function deleteCamAdjunto(path) {
+  if (!confirm('¿Eliminar este archivo adjunto?')) return;
+  var res = await _sb.storage.from(CAM_ADJUNTOS_BUCKET).remove([path]);
+  if (res.error) {
+    showToast('Error al eliminar: ' + res.error.message, '#e74c3c');
+    return;
+  }
+  showToast('Archivo eliminado', '#e67e22');
+  if (camViewingKey) {
+    var lines = cambios.filter(function(r) {
+      return ((r.Empresa||'') + '||' + (r.Consecutivo || r.id)) === camViewingKey;
+    });
+    if (lines.length) {
+      var r = lines[0];
+      await loadCamAdjuntos(r.Empresa, r.Consecutivo || r.id, r.Cliente);
+    }
+  }
+}
+
+function initCamDropzone() {
+  var dz = document.getElementById('cam-adjunto-dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    var input = document.getElementById('cam-adjunto-input');
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    handleCamAdjuntoUpload(input);
+  });
 }
 
 // ── Init ──
