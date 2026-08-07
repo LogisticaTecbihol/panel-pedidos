@@ -2031,16 +2031,18 @@ function _empresaExistKey(empresa, producto) {
   return empresa;
 }
 
+var PARCELAR_BUCKETS = [
+  { key: PARCELAR_EMPRESA_VAL, label: 'Propio' },
+  { key: PARCELAR_CARVAL_VAL,  label: 'Carval' },
+  { key: PARCELAR_GERMI_VAL,   label: 'Germisemillas' }
+];
+
 function _empresasExistView() {
-  var out = [];
-  EMPRESAS_EXIST.forEach(function(e) {
-    out.push(e);
-    if (e.value === PARCELAR_EMPRESA_VAL) {
-      out.push({ value: PARCELAR_CARVAL_VAL, sigla: PARCELAR_CARVAL_SIGLA });
-      out.push({ value: PARCELAR_GERMI_VAL, sigla: PARCELAR_GERMI_SIGLA });
-    }
-  });
-  return out;
+  return EMPRESAS_EXIST.slice();
+}
+
+function _allParcelarKeys() {
+  return [PARCELAR_EMPRESA_VAL, PARCELAR_CARVAL_VAL, PARCELAR_GERMI_VAL];
 }
 
 var existData = [];
@@ -2082,10 +2084,17 @@ function calcularExistencias() {
     }
   });
 
+  var parcelarKeys = _allParcelarKeys();
   existData = Object.keys(saldos).sort().map(function(k) {
     var row = saldos[k];
     var total = 0;
-    empresasView.forEach(function(e) { total += (row[e.value] || 0); });
+    empresasView.forEach(function(e) {
+      if (e.value === PARCELAR_EMPRESA_VAL) {
+        parcelarKeys.forEach(function(pk) { total += (row[pk] || 0); });
+      } else {
+        total += (row[e.value] || 0);
+      }
+    });
     row._total = total;
     return row;
   });
@@ -2128,10 +2137,20 @@ function renderExistencias() {
     ? empresasAll.filter(function(e) { return e.value === empresaSel; })
     : empresasAll;
 
+  var parcelarKeys = _allParcelarKeys();
+  function _existEmpVal(row, eValue) {
+    if (eValue === PARCELAR_EMPRESA_VAL) {
+      var s = 0;
+      parcelarKeys.forEach(function(pk) { s += (row[pk] || 0); });
+      return s;
+    }
+    return row[eValue] || 0;
+  }
+
   existFiltered = existData.filter(function(row) {
     if (buscar && row.producto.toLowerCase().indexOf(buscar) < 0) return false;
     var totalView = 0;
-    empresasView.forEach(function(e) { totalView += (row[e.value] || 0); });
+    empresasView.forEach(function(e) { totalView += _existEmpVal(row, e.value); });
     row._totalView = totalView;
     if (mostrar === 'con_stock' && totalView <= 0) return false;
     if (mostrar === 'sin_stock' && totalView !== 0) return false;
@@ -2143,7 +2162,7 @@ function renderExistencias() {
   var empresasConStock = {};
   existFiltered.forEach(function(row) {
     empresasView.forEach(function(e) {
-      var val = row[e.value] || 0;
+      var val = _existEmpVal(row, e.value);
       if (val > 0) empresasConStock[e.value] = true;
     });
     totalUnidades += row._totalView;
@@ -2157,15 +2176,33 @@ function renderExistencias() {
   renderExistTable(empresasView);
 }
 
+function _existCellVal(row, eValue) {
+  if (eValue === PARCELAR_EMPRESA_VAL) {
+    var s = 0;
+    _allParcelarKeys().forEach(function(pk) { s += (row[pk] || 0); });
+    return s;
+  }
+  return row[eValue] || 0;
+}
+
+function _hasParcelarSubRows(row) {
+  var count = 0;
+  PARCELAR_BUCKETS.forEach(function(b) { if (row[b.key]) count++; });
+  return count > 0;
+}
+
 function renderExistTable(empresasView) {
   empresasView = empresasView || _empresasExistView();
   var showTotal = empresasView.length > 1;
+  var hasParcelarCol = empresasView.some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
+  var parcelarColIdx = -1;
   var tbl = document.getElementById('tbl-ex');
   if (tbl) tbl.classList.toggle('single', empresasView.length === 1);
   var thead = document.getElementById('t-head-ex');
   var headerCols = '<th style="position:sticky;left:0;background:#f0f4f8;z-index:2">#</th>' +
     '<th style="position:sticky;left:30px;background:#f0f4f8;z-index:2;min-width:220px">Producto</th>';
-  empresasView.forEach(function(e) {
+  empresasView.forEach(function(e, idx) {
+    if (e.value === PARCELAR_EMPRESA_VAL) parcelarColIdx = idx;
     headerCols += '<th style="text-align:right;min-width:90px">' + e.sigla + '</th>';
   });
   if (showTotal) headerCols += '<th style="text-align:right;min-width:90px;background:#edf2f7;font-weight:800">TOTAL</th>';
@@ -2179,12 +2216,13 @@ function renderExistTable(empresasView) {
     return;
   }
 
-  tbody.innerHTML = existFiltered.map(function(row, i) {
+  var rows = [];
+  existFiltered.forEach(function(row, i) {
     var html = '<tr>' +
       '<td style="color:#718096;font-size:0.78rem;position:sticky;left:0;background:white;z-index:1">' + (i + 1) + '</td>' +
       '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + row.producto.replace(/"/g, '&quot;') + '">' + row.producto + '</td>';
     empresasView.forEach(function(e) {
-      var val = row[e.value] || 0;
+      var val = _existCellVal(row, e.value);
       var color = val > 0 ? '#27ae60' : val < 0 ? '#e74c3c' : '#cbd5e0';
       var weight = val !== 0 ? '700' : '400';
       html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + val.toLocaleString('es-CO') + '</td>';
@@ -2195,14 +2233,36 @@ function renderExistTable(empresasView) {
       html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#f7fafc;font-size:0.88rem">' + totalView.toLocaleString('es-CO') + '</td>';
     }
     html += '</tr>';
-    return html;
-  }).join('');
+    rows.push(html);
+
+    if (hasParcelarCol && _hasParcelarSubRows(row)) {
+      PARCELAR_BUCKETS.forEach(function(b) {
+        var bVal = row[b.key] || 0;
+        if (bVal === 0) return;
+        var subHtml = '<tr style="background:#f8f9fa">' +
+          '<td style="position:sticky;left:0;background:#f8f9fa;z-index:1"></td>' +
+          '<td style="font-size:0.76rem;color:#6c757d;padding-left:20px;font-style:italic;position:sticky;left:30px;background:#f8f9fa;z-index:1">↳ ' + b.label + '</td>';
+        empresasView.forEach(function(e, idx) {
+          if (idx === parcelarColIdx) {
+            var bColor = bVal > 0 ? '#2980b9' : bVal < 0 ? '#e74c3c' : '#cbd5e0';
+            subHtml += '<td style="text-align:right;font-size:0.76rem;color:' + bColor + ';font-weight:600">' + bVal.toLocaleString('es-CO') + '</td>';
+          } else {
+            subHtml += '<td></td>';
+          }
+        });
+        if (showTotal) subHtml += '<td></td>';
+        subHtml += '</tr>';
+        rows.push(subHtml);
+      });
+    }
+  });
+  tbody.innerHTML = rows.join('');
 
   var totales = {};
   empresasView.forEach(function(e) { totales[e.value] = 0; });
   var granTotal = 0;
   existFiltered.forEach(function(row) {
-    empresasView.forEach(function(e) { totales[e.value] += (row[e.value] || 0); });
+    empresasView.forEach(function(e) { totales[e.value] += _existCellVal(row, e.value); });
     granTotal += (row._totalView != null ? row._totalView : row._total);
   });
 
@@ -2227,11 +2287,25 @@ function exportExistExcel() {
     : empresasAll;
 
   var showTotal = empresasView.length > 1;
-  var data = existFiltered.map(function(row, i) {
+  var hasParcelarCol = empresasView.some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
+  var data = [];
+  existFiltered.forEach(function(row, i) {
     var obj = { '#': i + 1, 'Producto': row.producto };
-    empresasView.forEach(function(e) { obj[e.sigla] = row[e.value] || 0; });
+    empresasView.forEach(function(e) { obj[e.sigla] = _existCellVal(row, e.value); });
     if (showTotal) obj['TOTAL'] = (row._totalView != null ? row._totalView : row._total);
-    return obj;
+    data.push(obj);
+    if (hasParcelarCol && _hasParcelarSubRows(row)) {
+      PARCELAR_BUCKETS.forEach(function(b) {
+        var bVal = row[b.key] || 0;
+        if (bVal === 0) return;
+        var sub = { '#': '', 'Producto': '  ↳ ' + b.label };
+        empresasView.forEach(function(e) {
+          sub[e.sigla] = e.value === PARCELAR_EMPRESA_VAL ? bVal : '';
+        });
+        if (showTotal) sub['TOTAL'] = '';
+        data.push(sub);
+      });
+    }
   });
 
   var corteEx = (document.getElementById('ex-f-corte') || {}).value || '';
