@@ -2728,7 +2728,16 @@ function actualizarConsecutivoNuevo() {
 async function openNuevoPedido() {
   document.getElementById('nv-empresa').value = '';
   document.getElementById('nv-consecutivo').value = '';
-  document.getElementById('nv-fecha').value = today();
+  var nvFecha = document.getElementById('nv-fecha');
+  nvFecha.value = today();
+  nvFecha.min = today();
+  if (!AUTH.isAdmin()) {
+    nvFecha.readOnly = true;
+    nvFecha.style.background = '#f0f0f0';
+  } else {
+    nvFecha.readOnly = false;
+    nvFecha.style.background = '';
+  }
   document.getElementById('nv-cliente').value = '';
   document.getElementById('nv-nit').value = '';
   document.getElementById('nv-comercial').value = '';
@@ -2928,6 +2937,7 @@ async function guardarNuevoPedido() {
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!consecutivo) { showToast('Selecciona un comercial para generar el consecutivo', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha del pedido', '#e74c3c'); return; }
+  if (!AUTH.isAdmin() && fecha < today()) { showToast('La fecha del pedido no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
 
   var productosValidos = nuevoProductos.filter(function(p) { return p.producto && p.cantidad > 0; });
