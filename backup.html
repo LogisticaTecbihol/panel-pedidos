@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Backup — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<title>Backup – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css">
+<style>
+.backup-info { background:#edf2f7; border-radius:8px; padding:18px 22px; margin-bottom:20px; color:#2d3748; font-size:0.88rem; line-height:1.6; }
+.backup-tables { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin:18px 0; }
+.backup-table-item { background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; }
+.backup-table-item .tname { font-weight:600; color:#2d3748; }
+.backup-table-item .tcount { color:#718096; font-size:0.82rem; }
+.backup-table-item.done { border-color:#27ae60; background:#f0fff4; }
+.backup-table-item.error { border-color:#e74c3c; background:#fff5f5; }
+.backup-table-item .status-icon { margin-left:8px; }
+.backup-progress { margin:18px 0; }
+.backup-progress .bar-bg { background:#e2e8f0; border-radius:8px; height:24px; overflow:hidden; }
+.backup-progress .bar-fill { background:linear-gradient(90deg,#1a5276,#2471a3); height:100%; border-radius:8px; transition:width 0.3s; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.78rem; font-weight:600; }
+.backup-progress .bar-label { text-align:center; margin-top:6px; color:#718096; font-size:0.82rem; }
+.btn-backup { background:linear-gradient(135deg,#1a5276,#2471a3); color:#fff; border:none; padding:14px 32px; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; transition:opacity 0.2s; }
+.btn-backup:hover { opacity:0.9; }
+.btn-backup:disabled { opacity:0.5; cursor:not-allowed; }
+.backup-result { margin-top:18px; padding:14px 18px; border-radius:8px; font-size:0.88rem; display:none; }
+.backup-result.success { background:#f0fff4; border:1px solid #27ae60; color:#22543d; display:block; }
+.backup-result.error { background:#fff5f5; border:1px solid #e74c3c; color:#742a2a; display:block; }
+</style>
+</head>
+<body>
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="usuarios.html" id="nav-usuarios" class="auth-admin-only" style="display:none">👥 Usuarios</a>
+    <a href="auditoria.html" id="nav-auditoria" class="auth-admin-only" style="display:none">🔍 Auditoría</a>
+    <a href="backup.html" id="nav-backup" class="auth-admin-only active" style="display:none">💾 Backup</a>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Cargando backup...</h2>
+  <p>Verificando permisos de administrador</p>
+  <div id="load-error"></div>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div class="card">
+    <div class="card-head">
+      <h3>💾 Backup de Base de Datos</h3>
+    </div>
+
+    <div class="backup-info">
+      Descarga todas las tablas del sistema en un archivo Excel (.xlsx) con una hoja por tabla.
+      El archivo incluye todos los registros actuales y puede usarse para restaurar datos manualmente si es necesario.
+    </div>
+
+    <h4 style="color:#2d3748;margin-bottom:8px">Tablas incluidas en el backup:</h4>
+    <div class="backup-tables" id="backup-tables"></div>
+
+    <div class="backup-progress" id="backup-progress" style="display:none">
+      <div class="bar-bg"><div class="bar-fill" id="bar-fill" style="width:0%"></div></div>
+      <div class="bar-label" id="bar-label">Preparando...</div>
+    </div>
+
+    <div style="text-align:center;margin:24px 0">
+      <button class="btn-backup" id="btn-backup" onclick="startBackup()">💾 Descargar Backup Completo</button>
+    </div>
+
+    <div class="backup-result" id="backup-result"></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="js/shared.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/notificaciones.js"></script>
+<script src="js/backup.js"></script>
+</body>
+</html>
