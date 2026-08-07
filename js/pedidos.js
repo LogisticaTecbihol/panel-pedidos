@@ -38,17 +38,25 @@ async function _resolveComercialId(valor) {
 // ── Sorting ──
 var sortLevels = [];
 
-// Días transcurridos desde Fecha_Pedido hasta hoy (por día calendario UTC).
+// Días hábiles (lun-vie) transcurridos desde Fecha_Pedido hasta hoy.
 // null si no hay fecha válida.
 function _diasDesdePedido(f) {
   if (!f) return null;
   var s = String(f).slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   var p = s.split('-');
-  var d = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+  var start = new Date(+p[0], +p[1] - 1, +p[2]);
   var n = new Date();
-  var today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
-  return Math.floor((today - d) / 86400000);
+  var end = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  var count = 0;
+  var cur = new Date(start.getTime());
+  cur.setDate(cur.getDate() + 1);
+  while (cur <= end) {
+    var dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
 }
 
 // True si el pedido debe mostrar el indicador de días (activo, no cerrado y no anulado).
@@ -700,7 +708,7 @@ function renderTable() {
         // Semaforo: <=3 verde, 4-7 amarillo, >7 rojo. Solo pinta si es pertinente.
         var bg = d <= 3 ? '#dcfce7' : d <= 7 ? '#fef3c7' : '#fee2e2';
         var fg = d <= 3 ? '#166534' : d <= 7 ? '#92400e' : '#991b1b';
-        var title = 'Días transcurridos desde la fecha del pedido';
+        var title = 'Días hábiles transcurridos desde la fecha del pedido';
         return '<td style="text-align:center"><span title="' + title + '" style="background:' + bg + ';color:' + fg + ';padding:2px 9px;border-radius:12px;font-size:0.78rem;font-weight:700">' + d + ' d</span></td>';
       })() +
       '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
