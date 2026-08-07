@@ -145,6 +145,7 @@
   <div style="display:flex;gap:8px;margin-bottom:16px">
     <button class="btn-export" id="tab-ordenes" onclick="switchPedidoTab('ordenes')" style="background:#1a5276">📋 Órdenes</button>
     <button class="btn-export" id="tab-detalle" onclick="switchPedidoTab('detalle')" style="background:#718096">📑 Vista detallada</button>
+    <button class="btn-export" id="tab-despachos" onclick="switchPedidoTab('despachos')" style="background:#718096;display:none">🚚 Despachos</button>
   </div>
 
   <div id="panel-ordenes">
@@ -186,6 +187,58 @@
           </thead>
           <tbody id="det-body"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel Despachos -->
+  <div id="panel-despachos" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>🚚 Despachos <span id="desp-count" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="desp-f-empresa" onchange="renderDespachos()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+            <option value="">— Todas —</option>
+          </select>
+          <input type="text" id="desp-f-buscar" placeholder="Buscar cliente o remisión…" oninput="renderDespachos()" style="padding:5px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem;width:200px">
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px">#</th>
+              <th>Empresa</th>
+              <th>Remisión</th>
+              <th>Cliente</th>
+              <th>Fecha</th>
+              <th style="width:60px;text-align:center">📎</th>
+              <th style="width:90px">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="desp-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Panel adjuntos inline para despachos -->
+    <div class="card" id="desp-adjuntos-panel" style="display:none;margin-top:16px">
+      <div class="card-head">
+        <h3 id="desp-adj-title">📎 Adjuntos</h3>
+        <button onclick="closeDespachoAdjuntos()" style="background:none;border:1px solid #cbd5e0;color:#4a5568;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:0.82rem">✕ Cerrar</button>
+      </div>
+      <div class="adjuntos-section" style="border:none;margin-top:0">
+        <div class="adjuntos-list" id="desp-adjuntos-list">
+          <div class="adjuntos-empty">Sin archivos adjuntos</div>
+        </div>
+        <div id="desp-adjunto-dropzone" class="adjunto-dropzone" onclick="document.getElementById('desp-adjunto-input').click()" style="margin-top:8px">
+          Arrastra un archivo aquí o haz clic para seleccionar · PDF, JPG, PNG (máx. 5 MB)
+          <input type="file" id="desp-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleDespachoUpload(this)">
+        </div>
+        <div class="adjunto-upload-progress" id="desp-adjunto-progress">
+          <div class="prog-bar"><div class="prog-fill" id="desp-adjunto-prog-fill" style="width:0%"></div></div>
+          <div class="prog-text" id="desp-adjunto-prog-text">Subiendo...</div>
+        </div>
       </div>
     </div>
   </div>

@@ -175,6 +175,15 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'comercial';
   }
 
+  function isDespachador() {
+    return _profile && _profile.rol === 'despachador';
+  }
+
+  function canUploadAdjuntos() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'comercial' || _profile.rol === 'despachador';
+  }
+
   function canManageUsers() {
     return _profile && _profile.rol === 'admin';
   }
@@ -268,6 +277,8 @@ var AUTH = (function() {
     canManageUsers: canManageUsers,
     isAdmin: isAdmin,
     isComercial: isComercial,
+    isDespachador: isDespachador,
+    canUploadAdjuntos: canUploadAdjuntos,
     hasCompany: hasCompany,
     getCompanies: getCompanies,
     getFilteredEmpresas: getFilteredEmpresas,

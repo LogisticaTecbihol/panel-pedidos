@@ -364,6 +364,7 @@ async function loadFromAPI() {
     populateFilters();
     renderTable();
     loadAdjuntosIndex();
+    initDespachosTab();
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
@@ -3026,11 +3027,32 @@ async function guardarNuevoPedido() {
 
 // ── Tab switching ──
 function switchPedidoTab(tab) {
-  document.getElementById('panel-ordenes').style.display = tab === 'ordenes' ? 'block' : 'none';
-  document.getElementById('panel-detalle').style.display = tab === 'detalle' ? 'block' : 'none';
-  document.getElementById('tab-ordenes').style.background = tab === 'ordenes' ? '#1a5276' : '#718096';
-  document.getElementById('tab-detalle').style.background = tab === 'detalle' ? '#1a5276' : '#718096';
+  var tabs = ['ordenes', 'detalle', 'despachos'];
+  tabs.forEach(function(t) {
+    var panel = document.getElementById('panel-' + t);
+    var btn = document.getElementById('tab-' + t);
+    if (panel) panel.style.display = t === tab ? 'block' : 'none';
+    if (btn) btn.style.background = t === tab ? '#1a5276' : '#718096';
+  });
   if (tab === 'detalle') renderDetalle();
+  if (tab === 'despachos') buildDespachos();
+}
+
+function initDespachosTab() {
+  var btn = document.getElementById('tab-despachos');
+  if (!btn) return;
+  if (AUTH.isAdmin() || AUTH.isDespachador() || (AUTH.getProfile() && AUTH.getProfile().rol === 'editor')) {
+    btn.style.display = 'inline-block';
+  }
+  if (AUTH.isDespachador()) {
+    document.getElementById('tab-ordenes').style.display = 'none';
+    document.getElementById('tab-detalle').style.display = 'none';
+    var stats = document.querySelector('.stats');
+    if (stats) stats.style.display = 'none';
+    var filters = document.querySelector('.filters');
+    if (filters) filters.style.display = 'none';
+    switchPedidoTab('despachos');
+  }
 }
 
 // ── Vista Detallada (read-only) ──
@@ -4043,6 +4065,231 @@ async function deleteAdjunto(path) {
     dt.items.add(file);
     input.files = dt.files;
     handleAdjuntoUpload(input);
+  });
+})();
+
+// ══════════════════════════════════════════
+// ── DESPACHOS ──
+// ══════════════════════════════════════════
+
+var despachosData = [];
+var despachosFiltered = [];
+var _despActivo = null;
+
+function buildDespachos() {
+  var remMap = {};
+  pedidos.forEach(function(p) {
+    if (!p.Remisiones) return;
+    var segs = String(p.Remisiones).split(',');
+    segs.forEach(function(s) {
+      var parts = s.split('|');
+      var rem = (parts[0] || '').trim();
+      if (!rem) return;
+      var fecha = parts[2] || p.Fecha_Ult_Entrega || '';
+      var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '') + '||' + (p.Cliente || '') + '||' + rem;
+      if (!remMap[key]) {
+        remMap[key] = {
+          empresa: p.Nombre_Empresa || '',
+          consecutivo: p.Consecutivo || '',
+          cliente: p.Cliente || '',
+          remision: rem,
+          fecha: fecha
+        };
+      }
+    });
+  });
+  despachosData = Object.keys(remMap).sort(function(a, b) {
+    return remMap[b].fecha.localeCompare(remMap[a].fecha) || a.localeCompare(b);
+  }).map(function(k) { return remMap[k]; });
+
+  var selEmp = document.getElementById('desp-f-empresa');
+  var prev = selEmp.value;
+  var emps = {};
+  despachosData.forEach(function(d) { if (d.empresa) emps[d.empresa] = 1; });
+  selEmp.innerHTML = '<option value="">— Todas —</option>' +
+    Object.keys(emps).sort().map(function(e) {
+      var sig = getSigla(e) || e;
+      return '<option value="' + e.replace(/"/g, '&quot;') + '">' + sig + '</option>';
+    }).join('');
+  selEmp.value = prev || '';
+
+  renderDespachos();
+}
+
+function renderDespachos() {
+  var buscar = (document.getElementById('desp-f-buscar').value || '').toLowerCase().trim();
+  var empresa = document.getElementById('desp-f-empresa').value;
+
+  despachosFiltered = despachosData.filter(function(d) {
+    if (empresa && d.empresa !== empresa) return false;
+    if (buscar) {
+      var txt = (d.cliente + ' ' + d.remision + ' ' + d.consecutivo).toLowerCase();
+      if (txt.indexOf(buscar) < 0) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('desp-count').textContent = '(' + despachosFiltered.length + ' remisiones)';
+
+  var tbody = document.getElementById('desp-body');
+  if (!despachosFiltered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:#718096">No hay despachos con los filtros seleccionados.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = despachosFiltered.map(function(d, i) {
+    var sig = getSigla(d.empresa) || d.empresa;
+    var key = adjuntoKey(d.empresa, d.consecutivo, d.cliente);
+    var badge = adjuntosIndex[key] ? '📎' : '';
+    var fechaFmt = d.fecha ? formatDateShort(d.fecha) : '';
+    return '<tr>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+      '<td style="font-size:0.82rem;font-weight:600">' + sig + '</td>' +
+      '<td style="font-size:0.82rem">' + d.remision + '</td>' +
+      '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + d.cliente.replace(/"/g, '&quot;') + '">' + d.cliente + '</td>' +
+      '<td style="font-size:0.82rem">' + fechaFmt + '</td>' +
+      '<td style="text-align:center;font-size:0.9rem">' + badge + '</td>' +
+      '<td><button class="btn-export" style="background:#1a5276;font-size:0.76rem;padding:4px 10px" onclick="openDespachoAdjuntos(' + i + ')">📤 Adjuntos</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function openDespachoAdjuntos(idx) {
+  var d = despachosFiltered[idx];
+  if (!d) return;
+  _despActivo = { empresa: d.empresa, consecutivo: d.consecutivo, cliente: d.cliente, remision: d.remision };
+
+  document.getElementById('desp-adj-title').textContent = '📎 Adjuntos — ' + getSigla(d.empresa) + ' / ' + d.remision + ' / ' + d.cliente;
+  document.getElementById('desp-adjuntos-panel').style.display = 'block';
+
+  var canUpload = AUTH.canUploadAdjuntos();
+  document.getElementById('desp-adjunto-dropzone').style.display = canUpload ? 'block' : 'none';
+
+  loadDespachoAdjuntos();
+}
+
+function closeDespachoAdjuntos() {
+  document.getElementById('desp-adjuntos-panel').style.display = 'none';
+  _despActivo = null;
+}
+
+async function loadDespachoAdjuntos() {
+  if (!_despActivo) return;
+  var listEl = document.getElementById('desp-adjuntos-list');
+  listEl.innerHTML = '<div class="adjuntos-loading">Cargando adjuntos...</div>';
+
+  var folder = adjuntoFolder(_despActivo.empresa, _despActivo.consecutivo, _despActivo.cliente);
+  var res2 = await _sb.storage.from(ADJUNTOS_BUCKET).list(folder, { limit: 50 });
+
+  var files = (res2.data || []).filter(function(f) { return f.name && f.id; });
+
+  if (!files.length) {
+    listEl.innerHTML = '<div class="adjuntos-empty">Sin archivos adjuntos</div>';
+    return;
+  }
+
+  listEl.innerHTML = files.map(function(f) {
+    var ext = (f.name.split('.').pop() || '').toLowerCase();
+    var icon = ext === 'pdf' ? '📄' : '🖼️';
+    var size = f.metadata && f.metadata.size ? formatFileSize(f.metadata.size) : '';
+    var path = folder + '/' + f.name;
+    var nameEsc = f.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    var pathEsc = path.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return '<div class="adjunto-item">' +
+      '<div class="adjunto-icon">' + icon + '</div>' +
+      '<div class="adjunto-info">' +
+        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
+      '</div>' +
+      '<div class="adjunto-actions">' +
+        '<button class="btn-adj-ver" onclick="previewAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
+        '<button class="btn-adj-ver" onclick="downloadAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
+        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteDespachoAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function handleDespachoUpload(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  var maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    showToast('El archivo excede 5 MB. Selecciona un archivo más pequeño.', '#e74c3c');
+    return;
+  }
+
+  var allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (allowed.indexOf(file.type) < 0) {
+    showToast('Tipo de archivo no permitido. Usa PDF, JPG, PNG o WEBP.', '#e74c3c');
+    return;
+  }
+
+  if (!_despActivo) return;
+
+  var timestamp = Date.now();
+  var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var finalName = timestamp + '_' + safeName;
+  var path = adjuntoPath(_despActivo.empresa, _despActivo.consecutivo, _despActivo.cliente, finalName);
+
+  var progWrap = document.getElementById('desp-adjunto-progress');
+  var progFill = document.getElementById('desp-adjunto-prog-fill');
+  var progText = document.getElementById('desp-adjunto-prog-text');
+  progWrap.style.display = 'block';
+  progFill.style.width = '30%';
+  progText.textContent = 'Subiendo ' + file.name + '...';
+
+  var res = await _sb.storage.from(ADJUNTOS_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    upsert: false
+  });
+
+  progFill.style.width = '100%';
+
+  if (res.error) {
+    progWrap.style.display = 'none';
+    showToast('Error al subir: ' + res.error.message, '#e74c3c');
+    return;
+  }
+
+  progText.textContent = 'Listo';
+  setTimeout(function() { progWrap.style.display = 'none'; progFill.style.width = '0%'; }, 1200);
+
+  showToast('Archivo adjuntado correctamente', '#27ae60');
+  adjuntosIndex[adjuntoKey(_despActivo.empresa, _despActivo.consecutivo, _despActivo.cliente)] = true;
+  renderDespachos();
+  await loadDespachoAdjuntos();
+}
+
+async function deleteDespachoAdjunto(path) {
+  if (!confirm('¿Eliminar este archivo adjunto?')) return;
+  var res = await _sb.storage.from(ADJUNTOS_BUCKET).remove([path]);
+  if (res.error) {
+    showToast('Error al eliminar: ' + res.error.message, '#e74c3c');
+    return;
+  }
+  showToast('Archivo eliminado', '#e67e22');
+  await loadDespachoAdjuntos();
+}
+
+// Drag & drop para despachos
+(function() {
+  var dz = document.getElementById('desp-adjunto-dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    var input = document.getElementById('desp-adjunto-input');
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    handleDespachoUpload(input);
   });
 })();
 
