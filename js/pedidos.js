@@ -1008,7 +1008,12 @@ function renderAsignacionCell(i, l, empresaPedido) {
         '<option value="">— Empresa origen —</option>' + opciones +
       '</select>'
     : '<div style="font-size:0.72rem;color:#a94442;background:#fdecea;border:1px solid #f5c2c0;padding:2px 6px;border-radius:4px">Sin stock disponible</div>';
-  return selectHTML +
+  var refBar = '<div class="asig-ref-bar" style="display:flex;gap:8px;font-size:0.70rem;margin-bottom:4px;padding:2px 6px;background:#eef6fc;border-radius:4px;color:#1a5276;font-weight:600">' +
+    '<span>Pedida: <b>' + pedida + '</b></span>' +
+    '<span style="color:#b0bec5">|</span>' +
+    '<span>Pend: <b style="color:' + (pendienteBase > 0 ? '#e67e22' : '#27ae60') + '">' + pendienteBase + '</b></span>' +
+  '</div>';
+  return refBar + selectHTML +
     '<div style="display:flex;gap:4px;margin-top:3px">' +
       '<input type="number" class="asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right" oninput="validateAsignCant(' + i + ')">' +
       '<button type="button" onclick="addAsignacion(' + i + ')" ' +
