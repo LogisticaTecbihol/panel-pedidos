@@ -784,6 +784,7 @@ async function openDetail(idx) {
       var badgeL = norm(estL) === 'recibido' ? 'b-rec' : norm(estL) === 'parcial' ? 'b-par' : norm(estL) === 'alistado' ? 'b-alistado' : 'b-ent';
       var done = norm(estL) === 'entregado' || norm(estL) === 'alistado';
       var lockEntregado = norm(rawEst) === 'entregado' && !AUTH.isAdmin();
+      var lockCant = !AUTH.hasModule('pedidos_editar_cantidad');
       var lockAttr = lockEntregado ? ' disabled' : '';
       var lockStyle = lockEntregado ? ';background:#f7fafc;opacity:0.7' : '';
       var prodNombre = l.Producto || '';
@@ -800,7 +801,7 @@ async function openDetail(idx) {
         '<td class="sticky-prod"><input class="ef md-prod" data-i="' + i + '" type="text" value="' + prodEsc + '" style="min-width:260px;font-weight:700' + lockStyle + '"' + lockAttr + '></td>' +
         '<td><input class="ef md-pres" data-i="' + i + '" type="text" value="' + presEsc + '" style="width:90px' + lockStyle + '"' + lockAttr + '></td>' +
         '<td style="text-align:center">' + (esBonif ? '<span style="background:#d5f5e3;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:700">Sí</span>' : '<span style="color:#718096;font-size:0.75rem">No</span>') + '</td>' +
-        '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
+        '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right' + (lockEntregado || lockCant ? ';background:#f7fafc;opacity:0.7' : '') + '"' + (lockEntregado || lockCant ? ' disabled' : '') + (lockEntregado || lockCant ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td><input class="ef md-ent" data-i="' + i + '" type="number" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700;background:#f0fff4" readonly tabindex="-1"></td>' +
         '<td class="money"><span class="pend-tag ' + (pendiente > 0 ? 'pend' : 'ok') + '" id="md-pend-' + i + '">' + pendiente + '</span></td>' +
         '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + estL + '</span>' + lockBadge +
@@ -837,6 +838,7 @@ document.getElementById('overlay').addEventListener('click', function(e) { if (i
 function updateDetailLine(i) {
   var dl = detailWorkingLines[i];
   if (dl && norm(dl.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) return;
+  if (!AUTH.hasModule('pedidos_editar_cantidad')) return;
   var cants = document.querySelectorAll('.md-cant');
   var vunis = document.querySelectorAll('.md-vuni');
   var ents = document.querySelectorAll('.md-ent');
@@ -1773,15 +1775,18 @@ function renderEditLines() {
   tbody.innerHTML = editWorkingLines.map(function(l, i) {
     var locked = (Number(l.Cant_Entregada)||0) > 0;
     var lockEntregado = norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin();
+    var lockCant = !AUTH.hasModule('pedidos_editar_cantidad');
     var disAttr = lockEntregado ? ' disabled' : '';
     var disBg = lockEntregado ? ';background:#f7fafc;opacity:0.7' : '';
+    var cantDisAttr = (lockEntregado || lockCant) ? ' disabled' : '';
+    var cantDisBg = (lockEntregado || lockCant) ? ';background:#f7fafc;opacity:0.7' : '';
     var prod = (l.Producto||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     var pres = (l.Presentacion||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
       '<td><input class="ef ed-prod" data-i="' + i + '" type="text" value="' + prod + '" style="min-width:260px' + (locked || lockEntregado ? ';background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
       '<td><input class="ef ed-pres" data-i="' + i + '" type="text" value="' + pres + '" style="' + (locked || lockEntregado ? 'background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
-      '<td><input class="ef ed-cant" data-i="' + i + '" type="number" min="0" value="' + (l.Cantidad||0) + '" style="width:80px;text-align:right' + disBg + '"' + disAttr + (lockEntregado ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
+      '<td><input class="ef ed-cant" data-i="' + i + '" type="number" min="0" value="' + (l.Cantidad||0) + '" style="width:80px;text-align:right' + cantDisBg + '"' + cantDisAttr + (lockEntregado || lockCant ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
       '<td><input class="ef ed-vuni" data-i="' + i + '" type="number" min="0" value="' + (l.Valor_Unitario||0) + '" style="width:100px;text-align:right' + disBg + '"' + disAttr + (lockEntregado ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
       '<td><input class="ef ed-vtot" data-i="' + i + '" type="number" value="' + (l.Valor_Total||0) + '" style="width:100px;text-align:right;background:#f7fafc" readonly></td>' +
       '<td><input class="ef ed-rem" data-i="' + i + '" type="text" value="' + (l.Remisiones||'').replace(/"/g,'&quot;') + '" placeholder="' + (locked ? 'Ej: REM-001' : '') + '" style="width:120px;font-size:0.78rem' + disBg + '"' + disAttr + '></td>' +

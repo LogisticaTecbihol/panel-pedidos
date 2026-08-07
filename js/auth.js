@@ -19,8 +19,9 @@ var AUTH = (function() {
     { key: 'reenvases',    label: '🏭 Salidas a producción' },
     { key: 'reportes',     label: '📈 Reportes' },
     { key: 'dashboard',    label: '📊 Dashboard' },
-    { key: 'muestras_aprobar', label: '✅ Aprobar solicitudes de muestras' },
-    { key: 'ordenes_aprobar',  label: '✅ Aprobar órdenes de compra' }
+    { key: 'muestras_aprobar',       label: '✅ Aprobar solicitudes de muestras' },
+    { key: 'ordenes_aprobar',        label: '✅ Aprobar órdenes de compra' },
+    { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' }
   ];
 
   function init() {
