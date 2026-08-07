@@ -448,12 +448,14 @@ function getLinesFor(c) {
 
 function derivedStatus(lines) {
   if (!lines.length) return 'Recibido';
+  var fac = lines.filter(function(l) { return norm(l.Estado_Entrega) === 'facturado'; }).length;
   var ent = lines.filter(function(l) { return norm(l.Estado_Entrega) === 'entregado'; }).length;
   var ali = lines.filter(function(l) { return norm(l.Estado_Entrega) === 'alistado'; }).length;
   var par = lines.filter(function(l) { return norm(l.Estado_Entrega) === 'parcial'; }).length;
-  if (ent === lines.length) return 'Entregado';
-  if ((ent + ali) === lines.length) return 'Alistado';
-  if (ent > 0 || ali > 0 || par > 0) return 'Parcial';
+  if (fac === lines.length) return 'Facturado';
+  if ((fac + ent) === lines.length) return 'Entregado';
+  if ((fac + ent + ali) === lines.length) return 'Alistado';
+  if (fac > 0 || ent > 0 || ali > 0 || par > 0) return 'Parcial';
   return 'Recibido';
 }
 
@@ -667,7 +669,7 @@ function renderTable() {
     var est = derivedStatus(lines);
     var est2 = derivedEstado2(lines);
     var pct = derivedPct(lines);
-    var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : est === 'Alistado' ? 'b-alistado' : 'b-ent';
+    var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : est === 'Alistado' ? 'b-alistado' : est === 'Facturado' ? 'b-fac' : 'b-ent';
     var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
     var done = est === 'Entregado' || est === 'Alistado';
     var idx = consecs.indexOf(c);
@@ -780,7 +782,7 @@ async function openDetail(idx) {
 
   var tbody = document.getElementById('m-lines');
   if (!lines.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
   } else {
     var orderHasDeliveries = lines.some(function(l) { return (Number(l.Cant_Entregada)||0) > 0; });
     tbody.innerHTML = detailWorkingLines.map(function(l, i) {
@@ -789,7 +791,7 @@ async function openDetail(idx) {
       var pendiente = Math.max(0, pedida - entregada);
       var rawEst = (l.Estado_Entrega || '').trim();
       var estL = (!rawEst || norm(rawEst) === 'recibido') ? (orderHasDeliveries ? 'Parcial' : 'Recibido') : rawEst;
-      var badgeL = norm(estL) === 'recibido' ? 'b-rec' : norm(estL) === 'parcial' ? 'b-par' : norm(estL) === 'alistado' ? 'b-alistado' : 'b-ent';
+      var badgeL = norm(estL) === 'recibido' ? 'b-rec' : norm(estL) === 'parcial' ? 'b-par' : norm(estL) === 'alistado' ? 'b-alistado' : norm(estL) === 'facturado' ? 'b-fac' : 'b-ent';
       var done = norm(estL) === 'entregado' || norm(estL) === 'alistado';
       var lockEntregado = norm(rawEst) === 'entregado' && !AUTH.isAdmin();
       var lockCant = !AUTH.hasModule('pedidos_editar_cantidad');
@@ -817,6 +819,8 @@ async function openDetail(idx) {
         '</td>' +
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td class="money" style="font-size:0.78rem" id="md-vtot-' + i + '">' + fmtMoney(l.Valor_Total) + '</td>' +
+        '<td><input class="ef md-nfac" data-i="' + i + '" type="text" value="' + ((l.Num_Factura||'').replace(/"/g,'&quot;')) + '" placeholder="Factura" style="width:100px;font-size:0.78rem" oninput="onFacturaChange(' + i + ')"></td>' +
+        '<td><input class="ef md-ffac" data-i="' + i + '" type="date" value="' + (l.Fecha_Factura||'') + '" style="width:130px;font-size:0.78rem" oninput="onFacturaChange(' + i + ')"></td>' +
         '<td data-row="' + l.__row + '" data-idx="' + i + '" style="min-width:220px">' + renderAsignacionCell(i, l, c.Nombre_Empresa) + '</td>' +
       '</tr>';
     }).join('');
@@ -883,6 +887,15 @@ function updateDetailLine(i) {
   // se oculta el selector; si aumentó, vuelve a aparecer.
   if (typeof refreshAsignacionCell === 'function') refreshAsignacionCell(i);
   updateDetailTotal();
+}
+
+function onFacturaChange(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return;
+  var nfacs = document.querySelectorAll('.md-nfac');
+  var ffacs = document.querySelectorAll('.md-ffac');
+  dl.Num_Factura = (nfacs[i] && nfacs[i].value || '').trim();
+  dl.Fecha_Factura = (ffacs[i] && ffacs[i].value || '').trim();
 }
 
 function updateDeliveryMax(i) {
@@ -1405,6 +1418,7 @@ async function guardarTodo() {
   detailWorkingLines.forEach(function(l) {
     var pedida = Number(l.Cantidad) || 0;
     var entregada = Number(l.Cant_Entregada) || 0;
+    var tieneFactura = (l.Num_Factura || '').trim() !== '' && (l.Fecha_Factura || '').trim() !== '';
     if (pedida > 0 && entregada >= pedida) {
       var todasRemision = (l._entregas || []).length > 0 && (l._entregas || []).every(function(e) { return (e.remision || '').trim() !== ''; });
       l.Estado_Entrega = todasRemision ? 'Entregado' : 'Alistado';
@@ -1414,6 +1428,9 @@ async function guardarTodo() {
       l.Estado_Entrega = 'Parcial';
     } else {
       l.Estado_Entrega = 'Recibido';
+    }
+    if (tieneFactura && (l.Estado_Entrega === 'Entregado' || l.Estado_Entrega === 'Alistado')) {
+      l.Estado_Entrega = 'Facturado';
     }
   });
 
@@ -1460,6 +1477,8 @@ async function guardarTodo() {
         upd.Remisiones = dl.Remisiones || null;
         upd.Cant_Entregada = dl.Cant_Entregada || 0;
         upd.Cant_Pendiente = dl.Cant_Pendiente || 0;
+        upd.Num_Factura = dl.Num_Factura || '';
+        upd.Fecha_Factura = dl.Fecha_Factura || '';
         if (obs) upd.Observaciones = obs;
         if (Object.keys(upd).length > 0) {
           upd.modificado_por = _uid();
