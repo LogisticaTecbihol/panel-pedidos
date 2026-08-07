@@ -983,19 +983,15 @@ async function confirmRejectOC() {
 // ── Notificaciones ──
 
 async function _notifyAprobadoresNuevaOC(info) {
-  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers || !NOTIF.getDirectorio) return;
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
   try {
-    var dir = await NOTIF.getDirectorio();
-    // Sólo admins reciben aviso (no expandimos a titulares del módulo hasta que
-    // la RPC list_usuarios_directorio devuelva usuario_modulos, o consultemos aparte).
-    var adminIds = (dir || [])
-      .filter(function(u) { return u.activo && u.rol === 'admin'; })
-      .map(function(u) { return u.id; });
-    if (!adminIds.length) return;
+    var res = await _sb.rpc('find_oc_approvers', { p_empresa: info.empresaOrig });
+    var ids = (res.data || []).map(function(r) { return r.usuario_id; });
+    if (!ids.length) return;
     var siglaD = getSiglaOC(info.empresaDest);
     var siglaO = getSiglaOC(info.empresaOrig);
     await NOTIF.notifyUsers({
-      para_ids: adminIds,
+      para_ids: ids,
       modulo: 'ordenes',
       referencia: info.consecutivo || '',
       titulo: '🛒 Orden de compra por aprobar: ' + siglaD + ' ← ' + siglaO + ' #' + (info.consecutivo || ''),

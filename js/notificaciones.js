@@ -9,7 +9,8 @@ var NOTIF = (function() {
     pedidos:      '📋 Pedido',
     devoluciones: '🔄 Devolución',
     cambios:      '🔁 Cambio',
-    muestras:     '🧪 Muestra'
+    muestras:     '🧪 Muestra',
+    ordenes:      '🛒 Orden de compra'
   };
 
   var _uid = null;

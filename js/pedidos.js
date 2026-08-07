@@ -1765,7 +1765,33 @@ async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, 
       var ocRes = await _sb.from('OrdenesCompra').insert(ocRow);
       if (ocRes.error) throw new Error('OC solicitud compra: ' + ocRes.error.message);
     }
+    // Notificar aprobadores de OC para la empresa origen
+    _notifyAprobadoresOCDesdePedido({
+      empresaOrig: grupo.empresa_stock,
+      empresaDest: c.Nombre_Empresa,
+      consecutivo: consecTras,
+      nLineas: grupo.items.length,
+      refPedido: c.Nombre_Empresa + ' #' + c.Consecutivo
+    });
   }
+}
+
+async function _notifyAprobadoresOCDesdePedido(info) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
+  try {
+    var res = await _sb.rpc('find_oc_approvers', { p_empresa: info.empresaOrig });
+    var ids = (res.data || []).map(function(r) { return r.usuario_id; });
+    if (!ids.length) return;
+    var siglaD = getSigla(info.empresaDest);
+    var siglaO = getSigla(info.empresaOrig);
+    await NOTIF.notifyUsers({
+      para_ids: ids,
+      modulo: 'ordenes',
+      referencia: info.consecutivo || '',
+      titulo: '🛒 Solicitud de compra por aprobar: ' + siglaD + ' ← ' + siglaO + ' #' + (info.consecutivo || ''),
+      mensaje: info.nLineas + ' línea(s) · Ref: ' + info.refPedido
+    });
+  } catch (e) { console.warn('No se pudo notificar aprobadores OC:', e); }
 }
 
 // ── Add new line from detail modal ──
