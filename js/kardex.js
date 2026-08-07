@@ -2015,8 +2015,19 @@ function _esCarval(producto) {
   return !!CARVAL_PRODUCTS[_normProd(producto).toUpperCase()];
 }
 
+// ── Productos de PARCELAR cuyo proveedor es GERMISEMILLAS ──
+var PARCELAR_GERMI_VAL   = 'PARCELAR - GERMISEMILLAS';
+var PARCELAR_GERMI_SIGLA = 'PARCELAR (GERMISEMILLAS)';
+
+function _esGermisemillas(producto) {
+  return /maxi\s*pasto/i.test(producto);
+}
+
 function _empresaExistKey(empresa, producto) {
-  if (empresa === PARCELAR_EMPRESA_VAL && _esCarval(producto)) return PARCELAR_CARVAL_VAL;
+  if (empresa === PARCELAR_EMPRESA_VAL) {
+    if (_esCarval(producto)) return PARCELAR_CARVAL_VAL;
+    if (_esGermisemillas(producto)) return PARCELAR_GERMI_VAL;
+  }
   return empresa;
 }
 
@@ -2026,6 +2037,7 @@ function _empresasExistView() {
     out.push(e);
     if (e.value === PARCELAR_EMPRESA_VAL) {
       out.push({ value: PARCELAR_CARVAL_VAL, sigla: PARCELAR_CARVAL_SIGLA });
+      out.push({ value: PARCELAR_GERMI_VAL, sigla: PARCELAR_GERMI_SIGLA });
     }
   });
   return out;
