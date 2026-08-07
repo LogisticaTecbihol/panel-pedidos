@@ -749,6 +749,21 @@ async function openDetail(idx) {
   try { existSnapshot = await Existencias.loadSnapshot(); }
   catch (e) { existSnapshot = null; console.warn('No se pudo cargar existencias:', e); }
 
+  // Cargar datos de factura de entregas existentes (por remisión).
+  var _facturaMap = {};
+  try {
+    var lineIds = lines.map(function(l) { return l.__row; }).filter(Boolean);
+    if (lineIds.length) {
+      var epRes = await _sb.from('EntregasPedido').select('pedido_id,remision,num_factura,fecha_factura').in('pedido_id', lineIds);
+      if (epRes.data) epRes.data.forEach(function(r) {
+        if ((r.num_factura || '').trim() || (r.fecha_factura || '').trim()) {
+          _facturaMap[r.remision] = { num_factura: r.num_factura || '', fecha_factura: r.fecha_factura || '' };
+        }
+      });
+    }
+  } catch (e) { console.warn('No se pudo cargar factura de entregas:', e); }
+  window._facturaMapDetail = _facturaMap;
+
   document.getElementById('m-titulo').textContent = '[' + getSigla(c.Nombre_Empresa) + '] ' + (c.Nombre_Empresa||'—') + ' · Orden #' + (c.Consecutivo||'');
   document.getElementById('md-cliente').value = c.Cliente || '';
   document.getElementById('md-nit').value = c.NIT || '';
@@ -782,7 +797,7 @@ async function openDetail(idx) {
 
   var tbody = document.getElementById('m-lines');
   if (!lines.length) {
-    tbody.innerHTML = '<tr><td colspan="13"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
   } else {
     var orderHasDeliveries = lines.some(function(l) { return (Number(l.Cant_Entregada)||0) > 0; });
     tbody.innerHTML = detailWorkingLines.map(function(l, i) {
@@ -819,8 +834,6 @@ async function openDetail(idx) {
         '</td>' +
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td class="money" style="font-size:0.78rem" id="md-vtot-' + i + '">' + fmtMoney(l.Valor_Total) + '</td>' +
-        '<td><input class="ef md-nfac" data-i="' + i + '" type="text" value="' + ((l.Num_Factura||'').replace(/"/g,'&quot;')) + '" placeholder="Factura" style="width:100px;font-size:0.78rem" oninput="onFacturaChange(' + i + ')"></td>' +
-        '<td><input class="ef md-ffac" data-i="' + i + '" type="date" value="' + (l.Fecha_Factura||'') + '" style="width:130px;font-size:0.78rem" oninput="onFacturaChange(' + i + ')"></td>' +
         '<td data-row="' + l.__row + '" data-idx="' + i + '" style="min-width:220px">' + renderAsignacionCell(i, l, c.Nombre_Empresa) + '</td>' +
       '</tr>';
     }).join('');
@@ -889,15 +902,6 @@ function updateDetailLine(i) {
   updateDetailTotal();
 }
 
-function onFacturaChange(i) {
-  var dl = detailWorkingLines[i];
-  if (!dl) return;
-  var nfacs = document.querySelectorAll('.md-nfac');
-  var ffacs = document.querySelectorAll('.md-ffac');
-  dl.Num_Factura = (nfacs[i] && nfacs[i].value || '').trim();
-  dl.Fecha_Factura = (ffacs[i] && ffacs[i].value || '').trim();
-}
-
 function updateDeliveryMax(i) {
   var qtyInput = document.querySelectorAll('.qty-input')[i];
   if (!qtyInput || !detailWorkingLines[i]) return;
@@ -950,6 +954,7 @@ function formatEntregas(entries) {
 
 function renderEntregasHTML(lineIdx, entregas) {
   if (!entregas.length) return '';
+  var fmap = window._facturaMapDetail || {};
   var html = '';
   html += entregas.map(function(e, ei) {
     var fechaFmt = e.fecha ? formatDateShort(e.fecha) : '';
@@ -959,9 +964,23 @@ function renderEntregasHTML(lineIdx, entregas) {
     if (cantTxt) parts.push('<strong>' + cantTxt + '</strong> ud');
     if (remTxt) parts.push('Rem: ' + remTxt.replace(/</g,'&lt;'));
     if (fechaFmt) parts.push(fechaFmt);
-    return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:#f7fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0">' +
-      '<span style="flex:1">' + parts.join(' · ') + '</span>' +
-      '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>' +
+    var facData = remTxt ? (fmap[remTxt] || {}) : {};
+    var nfVal = (e._num_factura != null ? e._num_factura : facData.num_factura) || '';
+    var ffVal = (e._fecha_factura != null ? e._fecha_factura : facData.fecha_factura) || '';
+    var facRow = remTxt
+      ? '<div style="display:flex;gap:3px;margin-top:2px;align-items:center">' +
+          '<span style="font-size:0.65rem;color:#6b7280;white-space:nowrap">Fac:</span>' +
+          '<input type="text" class="fac-num" data-line="' + lineIdx + '" data-ei="' + ei + '" value="' + nfVal.replace(/"/g,'&quot;') + '" placeholder="N° factura" style="width:80px;font-size:0.68rem;padding:1px 4px;border:1px solid #d1d5db;border-radius:3px" onchange="onFacturaRemChange(' + lineIdx + ',' + ei + ')">' +
+          '<input type="date" class="fac-fecha" data-line="' + lineIdx + '" data-ei="' + ei + '" value="' + ffVal + '" style="width:110px;font-size:0.68rem;padding:1px 3px;border:1px solid #d1d5db;border-radius:3px" onchange="onFacturaRemChange(' + lineIdx + ',' + ei + ')">' +
+          (nfVal && ffVal ? '<span style="color:#3730a3;font-weight:700" title="Facturado">✓</span>' : '') +
+        '</div>'
+      : '';
+    return '<div style="margin-top:2px;font-size:0.7rem;color:#4a5568;background:#f7fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0">' +
+      '<div style="display:flex;align-items:center;gap:4px">' +
+        '<span style="flex:1">' + parts.join(' · ') + '</span>' +
+        '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>' +
+      '</div>' +
+      facRow +
     '</div>';
   }).join('');
   return html;
@@ -978,6 +997,73 @@ function renderEntregasUI(lineIdx) {
   var wrap = document.querySelector('.entregas-wrap[data-i="' + lineIdx + '"]');
   if (!wrap) return;
   wrap.innerHTML = renderEntregasHTML(lineIdx, detailWorkingLines[lineIdx]._entregas || []);
+}
+
+function onFacturaRemChange(lineIdx, ei) {
+  var dl = detailWorkingLines[lineIdx];
+  if (!dl || !dl._entregas || !dl._entregas[ei]) return;
+  var e = dl._entregas[ei];
+  var numEl = document.querySelector('.fac-num[data-line="' + lineIdx + '"][data-ei="' + ei + '"]');
+  var fechaEl = document.querySelector('.fac-fecha[data-line="' + lineIdx + '"][data-ei="' + ei + '"]');
+  var nf = numEl ? numEl.value.trim() : '';
+  var ff = fechaEl ? fechaEl.value.trim() : '';
+  e._num_factura = nf;
+  e._fecha_factura = ff;
+  var rem = (e.remision || '').trim();
+  if (!rem) return;
+  // Propagar a todas las entregas con la misma remisión en todas las líneas
+  var fmap = window._facturaMapDetail || {};
+  fmap[rem] = { num_factura: nf, fecha_factura: ff };
+  window._facturaMapDetail = fmap;
+  detailWorkingLines.forEach(function(l, li) {
+    if (!l._entregas) return;
+    l._entregas.forEach(function(oe, oei) {
+      if ((oe.remision || '').trim() === rem) {
+        oe._num_factura = nf;
+        oe._fecha_factura = ff;
+      }
+    });
+    if (li !== lineIdx) renderEntregasUI(li);
+  });
+  // Guardar en EntregasPedido
+  _guardarFacturaRemision(rem, nf, ff);
+}
+
+async function _guardarFacturaRemision(remision, numFactura, fechaFactura) {
+  try {
+    var lineIds = detailWorkingLines.map(function(l) { return l.__row; }).filter(Boolean);
+    if (!lineIds.length) return;
+    await _sb.from('EntregasPedido').update({ num_factura: numFactura, fecha_factura: fechaFactura }).eq('remision', remision).in('pedido_id', lineIds);
+    for (var i = 0; i < detailWorkingLines.length; i++) {
+      var dl = detailWorkingLines[i];
+      if (!dl._entregas || !dl._entregas.length) continue;
+      var tieneEntregas = dl._entregas.some(function(e) { return (e.remision || '').trim(); });
+      if (!tieneEntregas) continue;
+      var todasFacturadas = dl._entregas.every(function(e) {
+        if (!(e.remision || '').trim()) return true;
+        return (e._num_factura || '').trim() !== '' && (e._fecha_factura || '').trim() !== '';
+      });
+      var estadoActual = norm(dl.Estado_Entrega);
+      if (todasFacturadas && (estadoActual === 'entregado' || estadoActual === 'alistado')) {
+        dl.Estado_Entrega = 'Facturado';
+        await _sb.from('Pedidos').update({ Estado_Entrega: 'Facturado', modificado_por: _uid() }).eq('id', dl.__row);
+      } else if (!todasFacturadas && estadoActual === 'facturado') {
+        var todasRem = dl._entregas.every(function(e) { return (e.remision || '').trim() !== ''; });
+        dl.Estado_Entrega = todasRem ? 'Entregado' : 'Alistado';
+        await _sb.from('Pedidos').update({ Estado_Entrega: dl.Estado_Entrega, modificado_por: _uid() }).eq('id', dl.__row);
+      }
+      // Refresh badge
+      var badgeEl = document.querySelector('#m-lines tr:nth-child(' + (i+1) + ') .badge');
+      if (badgeEl) {
+        var est = (dl.Estado_Entrega || '').trim();
+        badgeEl.textContent = est;
+        badgeEl.className = 'badge ' + (norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : norm(est) === 'alistado' ? 'b-alistado' : norm(est) === 'facturado' ? 'b-fac' : 'b-ent');
+      }
+    }
+  } catch (e) {
+    console.error('Error guardando factura:', e);
+    showToast('Error al guardar factura: ' + e.message, '#e74c3c');
+  }
 }
 
 // ── Asignación de existencias a la entrega ────────────────
@@ -1418,7 +1504,6 @@ async function guardarTodo() {
   detailWorkingLines.forEach(function(l) {
     var pedida = Number(l.Cantidad) || 0;
     var entregada = Number(l.Cant_Entregada) || 0;
-    var tieneFactura = (l.Num_Factura || '').trim() !== '' && (l.Fecha_Factura || '').trim() !== '';
     if (pedida > 0 && entregada >= pedida) {
       var todasRemision = (l._entregas || []).length > 0 && (l._entregas || []).every(function(e) { return (e.remision || '').trim() !== ''; });
       l.Estado_Entrega = todasRemision ? 'Entregado' : 'Alistado';
@@ -1428,9 +1513,6 @@ async function guardarTodo() {
       l.Estado_Entrega = 'Parcial';
     } else {
       l.Estado_Entrega = 'Recibido';
-    }
-    if (tieneFactura && (l.Estado_Entrega === 'Entregado' || l.Estado_Entrega === 'Alistado')) {
-      l.Estado_Entrega = 'Facturado';
     }
   });
 
@@ -1477,8 +1559,6 @@ async function guardarTodo() {
         upd.Remisiones = dl.Remisiones || null;
         upd.Cant_Entregada = dl.Cant_Entregada || 0;
         upd.Cant_Pendiente = dl.Cant_Pendiente || 0;
-        upd.Num_Factura = dl.Num_Factura || '';
-        upd.Fecha_Factura = dl.Fecha_Factura || '';
         if (obs) upd.Observaciones = obs;
         if (Object.keys(upd).length > 0) {
           upd.modificado_por = _uid();

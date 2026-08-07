@@ -1,6 +1,13 @@
--- Agrega campos de facturación a nivel de línea de pedido.
--- Cuando ambos campos están llenos, el estado de la línea pasa a 'Facturado'.
+-- Agrega campos de facturación a nivel de entrega (remisión).
+-- Cuando todas las entregas de una línea tienen factura,
+-- el estado pasa a 'Facturado'.
 
+-- Campos en EntregasPedido (por remisión)
+ALTER TABLE "EntregasPedido"
+  ADD COLUMN IF NOT EXISTS "num_factura"   text DEFAULT '',
+  ADD COLUMN IF NOT EXISTS "fecha_factura" text DEFAULT '';
+
+-- Limpiar columnas que se agregaron por error en Pedidos (por línea)
 ALTER TABLE "Pedidos"
-  ADD COLUMN IF NOT EXISTS "Num_Factura"   text DEFAULT '',
-  ADD COLUMN IF NOT EXISTS "Fecha_Factura" text DEFAULT '';
+  DROP COLUMN IF EXISTS "Num_Factura",
+  DROP COLUMN IF EXISTS "Fecha_Factura";
