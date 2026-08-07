@@ -515,7 +515,16 @@ function openNewCambio() {
   document.getElementById('cam-modal-title').textContent = '🔁 Registrar Cambio de Mercancía';
   document.getElementById('cam-empresa').value = '';
   document.getElementById('cam-empresa').onchange = onCamEmpresaChange;
-  document.getElementById('cam-fecha-solicitud').value = today();
+  var camFecha = document.getElementById('cam-fecha-solicitud');
+  camFecha.value = today();
+  camFecha.min = today();
+  if (!AUTH.isAdmin()) {
+    camFecha.readOnly = true;
+    camFecha.style.background = '#f0f0f0';
+  } else {
+    camFecha.readOnly = false;
+    camFecha.style.background = '';
+  }
   document.getElementById('cam-fecha-recogida').value = '';
   document.getElementById('cam-consecutivo').value = '';
   document.getElementById('cam-cliente').value = '';
@@ -601,6 +610,7 @@ async function saveCambio() {
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!fechaSolicitud) { showToast('Selecciona la fecha de solicitud', '#e74c3c'); return; }
+  if (!AUTH.isAdmin() && fechaSolicitud < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
 
   readCamLines();

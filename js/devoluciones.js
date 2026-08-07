@@ -991,7 +991,16 @@ function openNewDev() {
   editDev = null;
   document.getElementById('dev-modal-title').textContent = '🔄 Registrar Devolución';
   document.getElementById('dev-empresa').value = '';
-  document.getElementById('dev-fecha').value = today();
+  var devFecha = document.getElementById('dev-fecha');
+  devFecha.value = today();
+  devFecha.min = today();
+  if (!AUTH.isAdmin()) {
+    devFecha.readOnly = true;
+    devFecha.style.background = '#f0f0f0';
+  } else {
+    devFecha.readOnly = false;
+    devFecha.style.background = '';
+  }
   document.getElementById('dev-consecutivo').value = '';
   document.getElementById('dev-vendedor').value = '';
   document.getElementById('dev-cliente').value = '';
@@ -1088,6 +1097,7 @@ async function saveDevolucion() {
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
+  if (!AUTH.isAdmin() && fecha < today()) { showToast('La fecha no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
 
   var btn = document.getElementById('btn-save-dev');

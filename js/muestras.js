@@ -819,7 +819,16 @@ async function openNewMuestra() {
 
   document.getElementById('mu-empresa').value = '';
   document.getElementById('mu-consecutivo').value = '';
-  document.getElementById('mu-fecha-solicitud').value = today();
+  var muFecha = document.getElementById('mu-fecha-solicitud');
+  muFecha.value = today();
+  muFecha.min = today();
+  if (!AUTH.isAdmin()) {
+    muFecha.readOnly = true;
+    muFecha.style.background = '#f0f0f0';
+  } else {
+    muFecha.readOnly = false;
+    muFecha.style.background = '';
+  }
   document.getElementById('mu-fecha-despacho').value = '';
   document.getElementById('mu-responsable').value = '';
   document.getElementById('mu-departamento').value = '';
@@ -1038,6 +1047,7 @@ async function saveMuestra() {
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!consecutivo) { showToast('Ingresa el consecutivo', '#e74c3c'); return; }
   if (!fechaSol) { showToast('Selecciona la fecha de solicitud', '#e74c3c'); return; }
+  if (!AUTH.isAdmin() && fechaSol < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!responsable) { showToast('Ingresa el responsable', '#e74c3c'); return; }
 
   var productosValidos = muLines.filter(function(p) { return p.producto && p.cantidad > 0; });
