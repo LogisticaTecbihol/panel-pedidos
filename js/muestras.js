@@ -831,6 +831,11 @@ async function openNewMuestra() {
   }
   document.getElementById('mu-fecha-despacho').value = '';
   document.getElementById('mu-responsable').value = '';
+  var respSet = {};
+  allMuestras.forEach(function(r) { if (r.Responsable) respSet[r.Responsable] = 1; });
+  document.getElementById('dl-mu-responsable').innerHTML = Object.keys(respSet).sort().map(function(v) {
+    return '<option value="' + v.replace(/"/g, '&quot;') + '">';
+  }).join('');
   document.getElementById('mu-departamento').value = '';
   document.getElementById('mu-municipio').value = '';
   document.getElementById('mu-tipo-cultivo').value = '';
