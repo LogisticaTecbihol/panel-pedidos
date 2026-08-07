@@ -73,7 +73,7 @@ var SORT_COLS = [
   { id:'consecutivo', label:'Consecutivo',  fn: function(c) { return Number(c.Consecutivo)||0; } },
   { id:'cliente',     label:'Cliente',      fn: function(c) { return (c.Cliente||'').toLowerCase(); } },
   { id:'fecha',       label:'Fecha Pedido', fn: function(c) { return +new Date(c.Fecha_Pedido||0); } },
-  { id:'dias',        label:'Días',         fn: function(c) {
+  { id:'dias',        label:'Días Háb.',         fn: function(c) {
       // Al ordenar, filas sin indicador van al fondo (valor -1).
       if (!_mostrarDias(c)) return -1;
       var d = _diasDesdePedido(c.Fecha_Pedido);
@@ -118,7 +118,7 @@ function applySort(rows) {
 function renderHeader() {
   var cols = [
     { label:'#', id:null }, { label:'Empresa', id:'empresa' }, { label:'Consecutivo', id:'consecutivo' },
-    { label:'Cliente', id:'cliente' }, { label:'Fecha Pedido', id:'fecha' }, { label:'Días', id:'dias' }, { label:'Comercial', id:'comercial' },
+    { label:'Cliente', id:'cliente' }, { label:'Fecha Pedido', id:'fecha' }, { label:'Días Háb.', id:'dias' }, { label:'Comercial', id:'comercial' },
     { label:'Total Orden', id:'total' }, { label:'Productos', id:'productos' }, { label:'Avance', id:'avance' },
     { label:'Estado', id:'estado' }, { label:'Estado 2', id:'estado2' }, { label:'Acción', id:null },
   ];
@@ -709,7 +709,7 @@ function renderTable() {
         var bg = d <= 3 ? '#dcfce7' : d <= 7 ? '#fef3c7' : '#fee2e2';
         var fg = d <= 3 ? '#166534' : d <= 7 ? '#92400e' : '#991b1b';
         var title = 'Días hábiles transcurridos desde la fecha del pedido';
-        return '<td style="text-align:center"><span title="' + title + '" style="background:' + bg + ';color:' + fg + ';padding:2px 9px;border-radius:12px;font-size:0.78rem;font-weight:700">' + d + ' d</span></td>';
+        return '<td style="text-align:center"><span title="' + title + '" style="background:' + bg + ';color:' + fg + ';padding:2px 9px;border-radius:12px;font-size:0.78rem;font-weight:700">' + d + ' dh</span></td>';
       })() +
       '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
       '<td class="money">' + fmtMoney(c.Total_Orden) + '</td>' +
