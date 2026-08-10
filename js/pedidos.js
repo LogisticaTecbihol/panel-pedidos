@@ -3215,7 +3215,7 @@ function renderDetalle() {
   }).join('');
 }
 
-function exportDetalleCSV() {
+function exportDetalleExcel() {
   var fe = document.getElementById('f-emp').value;
   var fcomEl = document.getElementById('f-com');
   var fcom = fcomEl ? fcomEl.value : '';
@@ -3239,30 +3239,29 @@ function exportDetalleCSV() {
 
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var lines = ['Empresa,Cliente,Consecutivo,Fecha_Pedido,Producto,Presentacion,Cant_Pedida,Pendiente,Estado,Estado_2'];
-  rows.forEach(function(p) {
-    lines.push([
-      '"' + getSigla(p.Nombre_Empresa) + '"',
-      '"' + (p.Cliente||'').replace(/"/g,'""') + '"',
-      '"' + (p.Consecutivo||'') + '"',
-      '"' + fmtDate(p.Fecha_Pedido) + '"',
-      '"' + (p.Producto||'').replace(/"/g,'""') + '"',
-      '"' + (p.Presentacion||'').replace(/"/g,'""') + '"',
-      Number(p.Cantidad)||0,
-      Number(p.Cant_Pendiente)||0,
-      '"' + (p.Estado_Entrega||'Recibido') + '"',
-      '"' + (p.Estado_2||'Abierto') + '"'
-    ].join(','));
+  var data = rows.map(function(p) {
+    return {
+      'Empresa': getSigla(p.Nombre_Empresa),
+      'Cliente': p.Cliente || '',
+      'Consecutivo': p.Consecutivo || '',
+      'Fecha Pedido': p.Fecha_Pedido ? new Date(p.Fecha_Pedido) : '',
+      'Producto': p.Producto || '',
+      'Presentacion': p.Presentacion || '',
+      'Cant Pedida': Number(p.Cantidad) || 0,
+      'Pendiente': Number(p.Cant_Pendiente) || 0,
+      'Estado': p.Estado_Entrega || 'Recibido',
+      'Estado 2': p.Estado_2 || 'Abierto'
+    };
   });
 
-  var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'detalle_pedidos_' + today() + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('CSV exportado: ' + rows.length + ' líneas');
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    {wch:12},{wch:28},{wch:12},{wch:12},{wch:28},{wch:18},{wch:12},{wch:12},{wch:14},{wch:10}
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalle');
+  XLSX.writeFile(wb, 'detalle_pedidos_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' líneas', '#27ae60');
 }
 
 // ── Export órdenes a Excel ──
