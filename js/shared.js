@@ -110,7 +110,7 @@ async function apiGet(action, opts) {
         ok: true,
         clientes: res.data.map(function(r) {
           return {
-            cliente: r.Cliente, nit: r.NIT || '',
+            cliente: r.Cliente, nit: r.Identificacion || '',
             telefono: r.Telefono || '', direccion: r.Direccion || '',
             municipio: r.Municipio || '', departamento: r.Departamento || '',
             empresa: r.Nombre_Empresa || '', tipo_identificacion: r.Tipo_Identificacion || '',
@@ -937,7 +937,7 @@ async function apiPost(body) {
       if (!items.length) return { ok: true, added: 0 };
       var rows = items.map(function(it) {
         return {
-          Cliente: it.cliente || '', NIT: it.nit || '',
+          Cliente: it.cliente || '', Identificacion: it.nit || '',
           Telefono: it.telefono || '', Direccion: it.direccion || '',
           Municipio: it.municipio || '', Departamento: it.departamento || '',
           Nombre_Empresa: it.empresa || '', Tipo_Identificacion: it.tipo_identificacion || '',
@@ -945,7 +945,7 @@ async function apiPost(body) {
           Plazo_Pago: it.plazo_pago || ''
         };
       });
-      var res = await _sb.from('ClientesUnicos').upsert(rows, { onConflict: 'Nombre_Empresa,NIT', ignoreDuplicates: false });
+      var res = await _sb.from('ClientesUnicos').upsert(rows, { onConflict: 'Nombre_Empresa,Identificacion', ignoreDuplicates: false });
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };
     }

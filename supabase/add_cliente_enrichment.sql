@@ -6,7 +6,7 @@ ALTER TABLE "ClientesUnicos"
   ADD COLUMN IF NOT EXISTS "Cupo_Credito" text DEFAULT '',
   ADD COLUMN IF NOT EXISTS "Plazo_Pago" text DEFAULT '';
 
--- Índice único parcial para soportar upsert por empresa+NIT
+-- Índice único parcial para soportar upsert por empresa+Identificacion
 CREATE UNIQUE INDEX IF NOT EXISTS "ClientesUnicos_empresa_nit_uq"
-  ON "ClientesUnicos" ("Nombre_Empresa", "NIT")
-  WHERE "NIT" IS NOT NULL AND "NIT" != '';
+  ON "ClientesUnicos" ("Nombre_Empresa", "Identificacion")
+  WHERE "Identificacion" IS NOT NULL AND "Identificacion" != '';
