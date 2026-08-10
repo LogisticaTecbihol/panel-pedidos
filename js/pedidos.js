@@ -465,6 +465,7 @@ function derivedEstado2(lines) {
   var vals = lines.map(function(l) { return (l.Estado_2 || 'Abierto').trim(); });
   if (vals.indexOf('Anulado') >= 0) return 'Anulado';
   if (vals.indexOf('Bloqueado por cartera') >= 0) return 'Bloqueado por cartera';
+  if (vals.indexOf('Entregado por proveedor') >= 0) return 'Entregado por proveedor';
   var allCerrado = vals.every(function(v) { return v === 'Cerrado'; });
   if (allCerrado) return 'Cerrado';
   var allCerradoOrAlistado = vals.every(function(v) { return v === 'Cerrado' || v === 'Alistado'; });
@@ -671,7 +672,7 @@ function renderTable() {
     var est2 = derivedEstado2(lines);
     var pct = derivedPct(lines);
     var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : est === 'Alistado' ? 'b-alistado' : est === 'Facturado' ? 'b-fac' : 'b-ent';
-    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
+    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
     var done = est === 'Entregado' || est === 'Alistado';
     var idx = consecs.indexOf(c);
     var rowKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
@@ -3202,7 +3203,7 @@ function renderDetalle() {
     var est = (p.Estado_Entrega || 'Recibido').trim();
     var est2 = (p.Estado_2 || 'Abierto').trim();
     var badgeEst = norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : norm(est) === 'alistado' ? 'b-alistado' : 'b-ent';
-    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : 'b-anulado';
+    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
     return '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClass(p.Nombre_Empresa) + '">' + getSigla(p.Nombre_Empresa) + '</span></td>' +
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (p.Cliente||'') + '">' + (p.Cliente||'—') + '</td>' +

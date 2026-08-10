@@ -259,6 +259,7 @@ tbody tr:last-child td { border-bottom: none; }
 .b-cerrado   { background: #e3f2fd; color: #1565c0; }
 .b-anulado   { background: #fce4ec; color: #c62828; }
 .b-bloqueado { background: #fff3e0; color: #e65100; }
+.b-entregado-prov { background: #e0f2f1; color: #00695c; }
 
 /* ── ACTION BUTTONS ── */
 .btn-ver {
