@@ -261,6 +261,7 @@ async function apiPost(body) {
           Facturar_A: body.facturar_a || body.cliente || '',
           NIT_Adicional: body.nit_adicional || '',
           Consignacion: body.consignacion || 'No',
+          Bodega_Facturacion: body.bodega_facturacion || '',
           comercial_id: body.comercial_id || null,
           creado_por: _uid()
         });

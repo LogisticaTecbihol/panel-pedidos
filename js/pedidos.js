@@ -778,6 +778,8 @@ async function openDetail(idx) {
   document.getElementById('md-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('md-nit-adicional').value = c.NIT_Adicional || '';
   document.getElementById('md-consignacion').value = c.Consignacion || 'No';
+  document.getElementById('md-bodega-facturacion').value = c.Bodega_Facturacion || '';
+  _toggleBodegaField('md', c.Nombre_Empresa);
   document.getElementById('md-estado2').value = derivedEstado2(lines);
   document.getElementById('m-total').textContent = fmtMoney(c.Total_Orden);
   var obsText = c.Observaciones || lines.reduce(function(a, l) { return a || l.Observaciones; }, '') || '';
@@ -1562,6 +1564,7 @@ async function guardarTodo() {
     Facturar_A: document.getElementById('md-facturar-a').value.trim(),
     NIT_Adicional: document.getElementById('md-nit-adicional').value.trim(),
     Consignacion: document.getElementById('md-consignacion').value,
+    Bodega_Facturacion: document.getElementById('md-bodega-facturacion').value,
     Total_Orden: detailWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('md-estado2').value,
     Nombre_Empresa: c.Nombre_Empresa,
@@ -1915,6 +1918,8 @@ function openEdit(idx) {
   document.getElementById('ed-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('ed-nit-adicional').value = c.NIT_Adicional || '';
   document.getElementById('ed-consignacion').value = c.Consignacion || 'No';
+  document.getElementById('ed-bodega-facturacion').value = c.Bodega_Facturacion || '';
+  _toggleBodegaField('ed', c.Nombre_Empresa);
   document.getElementById('ed-estado2').value = derivedEstado2(getLinesFor(c));
   document.getElementById('btn-saveEdit').disabled = false;
   document.getElementById('btn-saveEdit').textContent = '✓ Aplicar cambios';
@@ -2042,6 +2047,7 @@ async function saveEdit() {
     Facturar_A: document.getElementById('ed-facturar-a').value.trim(),
     NIT_Adicional: document.getElementById('ed-nit-adicional').value.trim(),
     Consignacion: document.getElementById('ed-consignacion').value,
+    Bodega_Facturacion: document.getElementById('ed-bodega-facturacion').value,
     Total_Orden: editWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('ed-estado2').value,
   };
@@ -2726,6 +2732,16 @@ function actualizarConsecutivoNuevo() {
   document.getElementById('nv-consecutivo').value = comercial ? nextConsecutivoPorComercial(comercial) : '';
 }
 
+function _toggleBodegaField(prefix, empresa) {
+  var wrap = document.getElementById(prefix + '-bodega-wrap');
+  if (!wrap) return;
+  wrap.style.display = (getSigla(empresa) === 'PARCELAR') ? '' : 'none';
+  if (wrap.style.display === 'none') {
+    var sel = document.getElementById(prefix + '-bodega-facturacion');
+    if (sel) sel.value = '';
+  }
+}
+
 async function openNuevoPedido() {
   document.getElementById('nv-empresa').value = '';
   document.getElementById('nv-consecutivo').value = '';
@@ -2752,6 +2768,8 @@ async function openNuevoPedido() {
   document.getElementById('nv-facturar-a').removeAttribute('data-edited');
   document.getElementById('nv-nit-adicional').value = '';
   document.getElementById('nv-consignacion').value = 'No';
+  document.getElementById('nv-bodega-facturacion').value = '';
+  _toggleBodegaField('nv', '');
   document.getElementById('nv-observaciones').value = '';
   document.getElementById('nv-dup-warn').style.display = 'none';
   document.getElementById('btn-guardar-nuevo').disabled = false;
@@ -2763,6 +2781,7 @@ async function openNuevoPedido() {
     document.getElementById('nv-comercial').value = '';
     populateComercialSelect(nvEmpSel.value);
     actualizarConsecutivoNuevo();
+    _toggleBodegaField('nv', nvEmpSel.value);
   };
   document.getElementById('nv-comercial').oninput = actualizarConsecutivoNuevo;
   document.getElementById('nv-cliente').addEventListener('input', function() {
@@ -2982,6 +3001,7 @@ async function guardarNuevoPedido() {
       facturar_a: document.getElementById('nv-facturar-a').value.trim() || cliente,
       nit_adicional: document.getElementById('nv-nit-adicional').value.trim(),
       consignacion: document.getElementById('nv-consignacion').value,
+      bodega_facturacion: document.getElementById('nv-bodega-facturacion').value,
       total_orden: totalOrden,
       observaciones: document.getElementById('nv-observaciones').value.trim(),
       productos: productosValidos.map(function(p) {
@@ -3010,6 +3030,7 @@ async function guardarNuevoPedido() {
       facturar_a: document.getElementById('nv-facturar-a').value.trim() || cliente,
       nit_adicional: document.getElementById('nv-nit-adicional').value.trim(),
       consignacion: document.getElementById('nv-consignacion').value,
+      bodega_facturacion: document.getElementById('nv-bodega-facturacion').value,
       observaciones: document.getElementById('nv-observaciones').value.trim(),
       total: totalOrden,
       productos: productosValidos,
@@ -3323,6 +3344,7 @@ function exportarPedidoExcelDesdeModal() {
   if (data.plazo) rows.push(['Plazo de Pago', data.plazo]);
   if (data.precio) rows.push(['Precio Facturacion', data.precio]);
   if (data.consignacion === 'Si' || data.consignacion === 'Sí') rows.push(['Consignacion', 'Si']);
+  if (data.bodega_facturacion) rows.push(['Bodega Facturacion', data.bodega_facturacion]);
   if (data.observaciones) rows.push(['Observaciones', data.observaciones]);
   rows.push([]);
 
@@ -3498,6 +3520,7 @@ function _exportarRemisionEspecifica(rem, opts) {
     plazo: document.getElementById('md-plazo').value.trim() || c.Plazo_Pago || '',
     precio: document.getElementById('md-precio').value.trim() || c.Precio_Facturacion || '',
     consignacion: (document.getElementById('md-consignacion') && document.getElementById('md-consignacion').value) || c.Consignacion || 'No',
+    bodega_facturacion: (document.getElementById('md-bodega-facturacion') && document.getElementById('md-bodega-facturacion').value) || c.Bodega_Facturacion || '',
     facturar_a: document.getElementById('md-facturar-a') ? (document.getElementById('md-facturar-a').value.trim() || c.Facturar_A || '') : (c.Facturar_A || ''),
     nit_adicional: document.getElementById('md-nit-adicional') ? (document.getElementById('md-nit-adicional').value.trim() || c.NIT_Adicional || '') : (c.NIT_Adicional || ''),
     observaciones: obsPed,
@@ -3603,6 +3626,7 @@ function _dataPedidoDesdeModal(c) {
     facturar_a: _v('md-facturar-a', c.Facturar_A || c.Cliente),
     nit_adicional: _v('md-nit-adicional', c.NIT_Adicional),
     consignacion: _v('md-consignacion', c.Consignacion || 'No'),
+    bodega_facturacion: _v('md-bodega-facturacion', c.Bodega_Facturacion || ''),
     observaciones: obsText,
     total: c.Total_Orden,
     productos: lines.map(function(l) {
