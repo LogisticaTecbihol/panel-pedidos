@@ -2830,7 +2830,10 @@ async function openNuevoPedido() {
     items: function() {
       var emp = document.getElementById('nv-empresa').value;
       var cls = clientesCache || [];
-      if (emp) cls = cls.filter(function(c) { return !c.empresa || c.empresa === emp; });
+      if (emp) {
+        var exact = cls.filter(function(c) { return c.empresa === emp; });
+        cls = exact.length ? exact : cls;
+      }
       return cls;
     },
     display: function(c) {
