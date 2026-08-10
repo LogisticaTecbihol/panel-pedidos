@@ -1,5 +1,9 @@
--- Enriquecer ClientesUnicos con empresa, tipo identificación, correo, cupo crédito y plazo
+-- Agregar columnas faltantes a ClientesUnicos (la tabla live solo tenía id, Cliente, Identificacion)
 ALTER TABLE "ClientesUnicos"
+  ADD COLUMN IF NOT EXISTS "Telefono" text DEFAULT '',
+  ADD COLUMN IF NOT EXISTS "Direccion" text DEFAULT '',
+  ADD COLUMN IF NOT EXISTS "Municipio" text DEFAULT '',
+  ADD COLUMN IF NOT EXISTS "Departamento" text DEFAULT '',
   ADD COLUMN IF NOT EXISTS "Nombre_Empresa" text DEFAULT '',
   ADD COLUMN IF NOT EXISTS "Tipo_Identificacion" text DEFAULT '',
   ADD COLUMN IF NOT EXISTS "Correo_Electronico" text DEFAULT '',
