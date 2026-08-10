@@ -938,12 +938,18 @@ async function apiPost(body) {
       return { ok: true, added: rows.length };
     }
 
+    if (action === 'deleteClientesPorEmpresa') {
+      var empresas = body.empresas || [];
+      for (var ei = 0; ei < empresas.length; ei++) {
+        await _sb.from('ClientesUnicos').delete().eq('Nombre_Empresa', empresas[ei]);
+      }
+      return { ok: true };
+    }
+
     if (action === 'upsertClientesUnicos') {
       var items = body.items || [];
       if (!items.length) return { ok: true, added: 0 };
-      var empresas = {};
       var rows = items.map(function(it) {
-        if (it.empresa) empresas[it.empresa] = true;
         return {
           Cliente: it.cliente || '', Identificacion: it.nit || '',
           Telefono: it.telefono || '', Direccion: it.direccion || '',
@@ -953,10 +959,6 @@ async function apiPost(body) {
           Plazo_Pago: it.plazo_pago || ''
         };
       });
-      var empKeys = Object.keys(empresas);
-      for (var ei = 0; ei < empKeys.length; ei++) {
-        await _sb.from('ClientesUnicos').delete().eq('Nombre_Empresa', empKeys[ei]);
-      }
       var res = await _sb.from('ClientesUnicos').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };

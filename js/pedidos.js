@@ -4460,6 +4460,13 @@ async function confirmClientImport() {
   btn.textContent = '⏳ Importando...';
 
   try {
+    var empresas = {};
+    clientImportData.forEach(function(c) { if (c.empresa) empresas[c.empresa] = true; });
+    var empList = Object.keys(empresas);
+    if (empList.length) {
+      var delRes = await apiPost({ action: 'deleteClientesPorEmpresa', empresas: empList });
+      if (!delRes.ok) throw new Error(delRes.error || 'Error al limpiar clientes existentes');
+    }
     var batchSize = 200;
     var total = 0;
     for (var i = 0; i < clientImportData.length; i += batchSize) {
