@@ -110,8 +110,12 @@ async function apiGet(action, opts) {
         ok: true,
         clientes: res.data.map(function(r) {
           return {
-            cliente: r.Cliente, nit: r.Identificacion || '',
-            telefono: '', direccion: '', municipio: '', departamento: ''
+            cliente: r.Cliente, nit: r.NIT || '',
+            telefono: r.Telefono || '', direccion: r.Direccion || '',
+            municipio: r.Municipio || '', departamento: r.Departamento || '',
+            empresa: r.Nombre_Empresa || '', tipo_identificacion: r.Tipo_Identificacion || '',
+            correo: r.Correo_Electronico || '', cupo_credito: r.Cupo_Credito || '',
+            plazo_pago: r.Plazo_Pago || ''
           };
         }),
         source: 'ClientesUnicos'
@@ -924,6 +928,24 @@ async function apiPost(body) {
       });
       if (!rows.length) return { ok: true, added: 0 };
       var res = await _sb.from('maestro_productos').upsert(rows, { onConflict: 'Producto', ignoreDuplicates: true });
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, added: rows.length };
+    }
+
+    if (action === 'upsertClientesUnicos') {
+      var items = body.items || [];
+      if (!items.length) return { ok: true, added: 0 };
+      var rows = items.map(function(it) {
+        return {
+          Cliente: it.cliente || '', NIT: it.nit || '',
+          Telefono: it.telefono || '', Direccion: it.direccion || '',
+          Municipio: it.municipio || '', Departamento: it.departamento || '',
+          Nombre_Empresa: it.empresa || '', Tipo_Identificacion: it.tipo_identificacion || '',
+          Correo_Electronico: it.correo || '', Cupo_Credito: it.cupo_credito || '',
+          Plazo_Pago: it.plazo_pago || ''
+        };
+      });
+      var res = await _sb.from('ClientesUnicos').upsert(rows, { onConflict: 'Nombre_Empresa,NIT', ignoreDuplicates: false });
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };
     }

@@ -14,6 +14,7 @@
 .ac-item:hover,.ac-item.active{background:#ebf5fb}
 .ac-item strong{color:#1a5276}
 .ac-sub{font-size:.72rem;color:#718096;margin-top:2px}
+.ac-badge{display:inline-block;font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:4px;vertical-align:middle}
 /* ── Adjuntos ── */
 .adjuntos-section{background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin-top:14px}
 .adjuntos-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -158,6 +159,8 @@
         <button class="btn-dl auth-edit-only" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
         <button class="btn-dl auth-edit-only" onclick="document.getElementById('file-upload').click()" style="background:#27ae60">📥 Cargar Pedido</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
+        <button class="btn-dl auth-admin-only" onclick="document.getElementById('client-import-file').click()" style="background:#8e44ad;display:none">📋 Importar Clientes</button>
+        <input type="file" id="client-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleClientImport(this)">
         <button class="btn-dl" onclick="exportOrdenesExcel()" style="background:#217346">📊 Exportar Excel</button>
         <button class="btn-dl" onclick="loadFromAPI()">🔄 Actualizar datos</button>
       </div>
@@ -616,6 +619,9 @@
         <div>
           <label class="ef-label">Cliente *</label>
           <input class="ef" id="nv-cliente" type="text" placeholder="Nombre del cliente">
+          <div id="nv-cupo-info" style="display:none;margin-top:4px;font-size:0.72rem;padding:4px 8px;border-radius:4px;background:#eaf2f8;color:#1a5276">
+            <span id="nv-cupo-text"></span>
+          </div>
         </div>
         <div>
           <label class="ef-label">NIT</label>
@@ -723,6 +729,38 @@
   <div class="adjunto-preview-box">
     <button class="btn-close-preview" onclick="closeAdjuntoPreview()">✕</button>
     <div id="adjunto-preview-content"></div>
+  </div>
+</div>
+
+<!-- IMPORTAR CLIENTES OVERLAY -->
+<div class="overlay" id="client-import-overlay">
+  <div class="modal-box" style="max-width:800px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#6c3483,#8e44ad)">
+      <div style="flex:1">
+        <h2>📋 Importar Clientes</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Carga masiva de clientes desde Excel</div>
+      </div>
+      <button class="btn-close" onclick="closeClientImport()">✕</button>
+    </div>
+    <div class="mbody">
+      <div id="ci-summary" style="background:#f4ecf7;border:1px solid #d2b4de;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:0.84rem;color:#6c3483"></div>
+      <div style="overflow-x:auto;max-height:320px">
+        <table class="prod-table" style="font-size:0.8rem">
+          <thead>
+            <tr>
+              <th>#</th><th>Cliente</th><th>NIT</th><th>Tipo ID</th><th>Teléfono</th><th>Municipio</th><th>Plazo</th><th>Cupo Crédito</th>
+            </tr>
+          </thead>
+          <tbody id="ci-lines"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeClientImport()">Cancelar</button>
+        <button class="btn-confirm" id="btn-ci-confirm" onclick="confirmClientImport()" style="background:#8e44ad">📋 Importar</button>
+      </div>
+    </div>
   </div>
 </div>
 

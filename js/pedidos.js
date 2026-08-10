@@ -2771,6 +2771,7 @@ async function openNuevoPedido() {
   document.getElementById('nv-bodega-facturacion').value = '';
   _toggleBodegaField('nv', '');
   document.getElementById('nv-observaciones').value = '';
+  document.getElementById('nv-cupo-info').style.display = 'none';
   document.getElementById('nv-dup-warn').style.display = 'none';
   document.getElementById('btn-guardar-nuevo').disabled = false;
   document.getElementById('btn-guardar-nuevo').textContent = '✏️ Guardar pedido';
@@ -2826,13 +2827,21 @@ async function openNuevoPedido() {
   await loadAutocompleteData();
   if (clienteAC) { clienteAC.destroy(); clienteAC = null; }
   clienteAC = initAutocomplete(document.getElementById('nv-cliente'), {
-    items: function() { return clientesCache || []; },
+    items: function() {
+      var emp = document.getElementById('nv-empresa').value;
+      var cls = clientesCache || [];
+      if (emp) cls = cls.filter(function(c) { return !c.empresa || c.empresa === emp; });
+      return cls;
+    },
     display: function(c) {
-      return '<strong>' + escHtml(c.cliente) + '</strong>' +
-             (c.nit ? '<div class="ac-sub">NIT: ' + escHtml(c.nit) + '</div>' : '');
+      var sigla = c.empresa ? getSigla(c.empresa) : '';
+      var badge = sigla ? '<span class="ac-badge sigla-badge ' + getSiglaClass(c.empresa) + '">' + escHtml(sigla) + '</span> ' : '';
+      return badge + '<strong>' + escHtml(c.cliente) + '</strong>' +
+             (c.nit ? '<div class="ac-sub">NIT: ' + escHtml(c.nit) + '</div>' : '') +
+             (c.municipio ? '<div class="ac-sub">' + escHtml(c.municipio) + '</div>' : '');
     },
     match: function(c, val) {
-      return ((c.cliente||'') + ' ' + (c.nit||'')).toLowerCase().indexOf(val) >= 0;
+      return ((c.cliente||'') + ' ' + (c.nit||'') + ' ' + (c.municipio||'') + ' ' + (c.telefono||'')).toLowerCase().indexOf(val) >= 0;
     },
     onSelect: function(c) {
       document.getElementById('nv-cliente').value = c.cliente || '';
@@ -2842,6 +2851,17 @@ async function openNuevoPedido() {
       if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
       if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
       if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
+      if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
+      var cupoEl = document.getElementById('nv-cupo-info');
+      if (c.cupo_credito && c.cupo_credito !== 'NA') {
+        document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
+        cupoEl.style.display = 'block';
+      } else if (c.cupo_credito === 'NA') {
+        document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: No aplica';
+        cupoEl.style.display = 'block';
+      } else {
+        cupoEl.style.display = 'none';
+      }
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
         if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
@@ -4316,6 +4336,146 @@ async function deleteDespachoAdjunto(path) {
     handleDespachoUpload(input);
   });
 })();
+
+// ── Importar Clientes desde Excel ──
+
+var clientImportData = null;
+
+function handleClientImport(input) {
+  var file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) { showToast('El archivo está vacío', '#e74c3c'); return; }
+      var parsed = parseClientExcel(rows);
+      if (!parsed.length) { showToast('No se encontraron clientes válidos', '#e74c3c'); return; }
+      clientImportData = parsed;
+      showClientImportPreview(parsed);
+    } catch (err) {
+      showToast('Error al leer Excel: ' + err.message, '#e74c3c');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseClientExcel(rows) {
+  var siglaToEmpresa = {};
+  EMPRESAS_HOLDING.forEach(function(e) { siglaToEmpresa[e.sigla.toUpperCase()] = e.value; });
+
+  var headerMap = {};
+  var firstRow = rows[0];
+  Object.keys(firstRow).forEach(function(key) {
+    var k = key.toUpperCase().trim().replace(/[^A-Z0-9_ ]/g, '');
+    if (k.indexOf('EMPRESA') >= 0) headerMap.empresa = key;
+    else if (k === 'CLIENTE' || k.indexOf('RAZON') >= 0 || k.indexOf('NOMBRE') >= 0) headerMap.cliente = key;
+    else if (k.indexOf('TIPO') >= 0 && k.indexOf('IDENT') >= 0) headerMap.tipo_id = key;
+    else if (k === 'NIT' || k.indexOf('IDENTIFICACION') >= 0 || k.indexOf('CEDULA') >= 0 || k.indexOf('DOCUMENTO') >= 0) headerMap.nit = key;
+    else if (k.indexOf('CORREO') >= 0 || k.indexOf('EMAIL') >= 0 || k.indexOf('ELECTRONICO') >= 0) headerMap.correo = key;
+    else if (k.indexOf('DIRECCION') >= 0 || k.indexOf('ENVIO') >= 0) headerMap.direccion = key;
+    else if (k.indexOf('TELEFONO') >= 0 || k.indexOf('CELULAR') >= 0 || k.indexOf('TEL') >= 0) headerMap.telefono = key;
+    else if (k.indexOf('MUNICIPIO') >= 0 || k.indexOf('CIUDAD') >= 0) headerMap.municipio = key;
+    else if (k.indexOf('CUPO') >= 0 || k.indexOf('CREDITO') >= 0) headerMap.cupo = key;
+    else if (k.indexOf('PLAZO') >= 0 || k.indexOf('PAGO') >= 0) headerMap.plazo = key;
+  });
+
+  var results = [];
+  rows.forEach(function(r) {
+    var cliente = String(r[headerMap.cliente] || '').trim();
+    if (!cliente) return;
+
+    var empRaw = String(r[headerMap.empresa] || '').trim().toUpperCase();
+    var empresa = siglaToEmpresa[empRaw] || empRaw;
+
+    var cupoRaw = String(r[headerMap.cupo] || '').trim();
+    var cupo = cupoRaw;
+    if (cupoRaw && cupoRaw !== 'NA') {
+      var cupoNum = Number(String(cupoRaw).replace(/[^\d.-]/g, ''));
+      if (!isNaN(cupoNum) && cupoNum > 0) cupo = String(cupoNum);
+    }
+
+    results.push({
+      cliente: cliente,
+      nit: String(r[headerMap.nit] || '').trim(),
+      telefono: String(r[headerMap.telefono] || '').trim(),
+      direccion: String(r[headerMap.direccion] || '').trim(),
+      municipio: String(r[headerMap.municipio] || '').trim(),
+      departamento: '',
+      empresa: empresa,
+      tipo_identificacion: String(r[headerMap.tipo_id] || '').trim(),
+      correo: String(r[headerMap.correo] || '').trim(),
+      cupo_credito: cupo,
+      plazo_pago: String(r[headerMap.plazo] || '').trim()
+    });
+  });
+  return results;
+}
+
+function showClientImportPreview(clients) {
+  var empresas = {};
+  clients.forEach(function(c) { var s = c.empresa ? getSigla(c.empresa) : '?'; empresas[s] = (empresas[s]||0) + 1; });
+  var empList = Object.keys(empresas).map(function(s) { return s + ': ' + empresas[s]; }).join(', ');
+  document.getElementById('ci-summary').innerHTML =
+    '<strong>' + clients.length + ' clientes</strong> detectados · ' + empList;
+
+  var tbody = document.getElementById('ci-lines');
+  tbody.innerHTML = clients.slice(0, 20).map(function(c, i) {
+    return '<tr>' +
+      '<td>' + (i+1) + '</td>' +
+      '<td>' + escHtml(c.cliente) + '</td>' +
+      '<td>' + escHtml(c.nit) + '</td>' +
+      '<td>' + escHtml(c.tipo_identificacion) + '</td>' +
+      '<td>' + escHtml(c.telefono) + '</td>' +
+      '<td>' + escHtml(c.municipio) + '</td>' +
+      '<td>' + escHtml(c.plazo_pago) + '</td>' +
+      '<td>' + (c.cupo_credito && c.cupo_credito !== 'NA' ? fmtMoney(Number(c.cupo_credito)||0) : c.cupo_credito || '') + '</td>' +
+      '</tr>';
+  }).join('');
+  if (clients.length > 20) {
+    tbody.innerHTML += '<tr><td colspan="8" style="text-align:center;color:#718096;font-style:italic">... y ' + (clients.length - 20) + ' más</td></tr>';
+  }
+
+  document.getElementById('btn-ci-confirm').disabled = false;
+  document.getElementById('btn-ci-confirm').textContent = '📋 Importar ' + clients.length + ' clientes';
+  document.getElementById('client-import-overlay').classList.add('show');
+}
+
+function closeClientImport() {
+  document.getElementById('client-import-overlay').classList.remove('show');
+  clientImportData = null;
+}
+
+document.getElementById('client-import-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeClientImport(); });
+
+async function confirmClientImport() {
+  if (!clientImportData || !clientImportData.length) return;
+  var btn = document.getElementById('btn-ci-confirm');
+  btn.disabled = true;
+  btn.textContent = '⏳ Importando...';
+
+  try {
+    var batchSize = 200;
+    var total = 0;
+    for (var i = 0; i < clientImportData.length; i += batchSize) {
+      var batch = clientImportData.slice(i, i + batchSize);
+      var result = await apiPost({ action: 'upsertClientesUnicos', items: batch });
+      if (!result.ok) throw new Error(result.error || 'Error en la importación');
+      total += result.added || 0;
+    }
+    clientesCache = null;
+    await loadAutocompleteData();
+    closeClientImport();
+    showToast('✅ ' + total + ' clientes importados correctamente');
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+    btn.disabled = false;
+    btn.textContent = '📋 Importar';
+  }
+}
 
 // ── Auto-load on page open ──
 loadFromAPI();
