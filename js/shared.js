@@ -104,11 +104,17 @@ async function apiGet(action, opts) {
       };
     }
     if (action === 'getClientesUnicos') {
-      var res = await _sb.from('ClientesUnicos').select(cols);
-      if (res.error) return { ok: false, error: res.error.message, clientes: [] };
+      var allData = [], from = 0, pageSize = 1000;
+      while (true) {
+        var res = await _sb.from('ClientesUnicos').select(cols).range(from, from + pageSize - 1);
+        if (res.error) return { ok: false, error: res.error.message, clientes: [] };
+        allData = allData.concat(res.data);
+        if (res.data.length < pageSize) break;
+        from += pageSize;
+      }
       return {
         ok: true,
-        clientes: res.data.map(function(r) {
+        clientes: allData.map(function(r) {
           return {
             cliente: r.Cliente, nit: r.Identificacion || '',
             telefono: r.Telefono || '', direccion: r.Direccion || '',
