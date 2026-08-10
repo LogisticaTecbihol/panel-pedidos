@@ -2584,9 +2584,14 @@ function destroyGeoAC(key) {
 
 async function loadAutocompleteData() {
   var promises = [];
-  if (!clientesCache) promises.push(apiGet('getClientesUnicos').then(function(r) { if (r.ok) clientesCache = r.clientes || []; }).catch(function() { clientesCache = []; }));
+  if (!clientesCache) promises.push(apiGet('getClientesUnicos').then(function(r) {
+    console.log('[AC] getClientesUnicos resp:', r.ok, 'count:', (r.clientes||[]).length, r.error||'');
+    if (r.ok) clientesCache = r.clientes || [];
+    else console.warn('[AC] getClientesUnicos failed:', r.error);
+  }).catch(function(e) { console.warn('[AC] getClientesUnicos exception:', e); clientesCache = []; }));
   if (!productosCache) promises.push(apiGet('getMaestroProductos').then(function(r) { if (r.ok) productosCache = r.productos || []; }).catch(function() { productosCache = []; }));
   if (promises.length) await Promise.all(promises);
+  console.log('[AC] cache loaded — clientes:', (clientesCache||[]).length, 'productos:', (productosCache||[]).length);
 }
 
 function initAutocomplete(input, opts) {
@@ -2830,7 +2835,9 @@ async function openNuevoPedido() {
     items: function() {
       var emp = document.getElementById('nv-empresa').value;
       var cls = clientesCache || [];
+      console.log('[AC-items] empresa:', emp, 'total cache:', cls.length);
       if (emp) cls = cls.filter(function(c) { return !c.empresa || c.empresa === emp; });
+      console.log('[AC-items] after filter:', cls.length, cls.length ? 'first:'+cls[0].cliente : '');
       return cls;
     },
     display: function(c) {
