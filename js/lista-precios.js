@@ -32,10 +32,11 @@ async function loadPrecios() {
 
 // ── Filters ──
 function populateFilters() {
-  var empresas = {}, tipos = {};
+  var empresas = {}, tipos = {}, proveedores = {};
   preciosData.forEach(function(p) {
     if (p.Empresa) empresas[p.Empresa] = true;
     if (p.Tipo_Precio) tipos[p.Tipo_Precio] = true;
+    if (p.Proveedor) proveedores[p.Proveedor] = true;
   });
   var selEmp = document.getElementById('f-emp');
   var curEmp = selEmp.value;
@@ -45,6 +46,14 @@ function populateFilters() {
     selEmp.innerHTML += '<option value="' + e.replace(/"/g, '&quot;') + '">' + sigla + '</option>';
   });
   selEmp.value = curEmp;
+
+  var selProv = document.getElementById('f-prov');
+  var curProv = selProv.value;
+  selProv.innerHTML = '<option value="">Todos</option>';
+  Object.keys(proveedores).sort().forEach(function(pr) {
+    selProv.innerHTML += '<option value="' + pr.replace(/"/g, '&quot;') + '">' + escHtml(pr) + '</option>';
+  });
+  selProv.value = curProv;
 
   var selTipo = document.getElementById('f-tipo');
   var curTipo = selTipo.value;
@@ -57,10 +66,12 @@ function populateFilters() {
 
 function getFiltered() {
   var emp = document.getElementById('f-emp').value;
+  var prov = document.getElementById('f-prov').value;
   var tipo = document.getElementById('f-tipo').value;
   var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
   return preciosData.filter(function(p) {
     if (emp && p.Empresa !== emp) return false;
+    if (prov && p.Proveedor !== prov) return false;
     if (tipo && p.Tipo_Precio !== tipo) return false;
     if (txt && (p.Producto || '').toLowerCase().indexOf(txt) < 0) return false;
     return true;
@@ -69,6 +80,7 @@ function getFiltered() {
 
 function clearFilters() {
   document.getElementById('f-emp').value = '';
+  document.getElementById('f-prov').value = '';
   document.getElementById('f-tipo').value = '';
   document.getElementById('f-txt').value = '';
   currentPage = 1;
@@ -97,7 +109,7 @@ function renderTable() {
 
   document.getElementById('row-ct').textContent = '(' + filtered.length + ' productos)';
 
-  var canEdit = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
+  var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
   var tbody = document.getElementById('t-body');
   tbody.innerHTML = pageData.map(function(p, i) {
     var sigla = getSigla(p.Empresa);
@@ -105,10 +117,11 @@ function renderTable() {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (start + i + 1) + '</td>' +
       '<td><span class="sigla-tag ' + siglaClass + '">' + escHtml(sigla) + '</span></td>' +
+      '<td>' + escHtml(p.Proveedor || '') + '</td>' +
       '<td>' + escHtml(p.Tipo_Precio || '') + '</td>' +
       '<td>' + escHtml(p.Producto || '') + '</td>' +
       '<td class="money">' + fmtMoney(p.Precio) + '</td>' +
-      (canEdit
+      (canEd
         ? '<td style="text-align:center">' +
           '<button onclick="openEditPrecio(' + p.id + ')" style="background:#1a5276;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:4px">✏️</button>' +
           '<button onclick="openDeletePrecio(' + p.id + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600">🗑️</button>' +
@@ -131,6 +144,7 @@ function goPage(n) { currentPage = n; renderTable(); window.scrollTo(0, 0); }
 
 // ── Filter listeners ──
 document.getElementById('f-emp').addEventListener('change', function() { currentPage = 1; renderTable(); });
+document.getElementById('f-prov').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-tipo').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-txt').addEventListener('input', function() { currentPage = 1; renderTable(); });
 
@@ -148,6 +162,7 @@ function openNuevoPrecio() {
   document.getElementById('ed-titulo').textContent = '✏️ Agregar Precio';
   _populateEdEmpresa('ed-empresa');
   document.getElementById('ed-empresa').value = '';
+  document.getElementById('ed-proveedor').value = '';
   document.getElementById('ed-tipo').value = '';
   document.getElementById('ed-producto').value = '';
   document.getElementById('ed-precio').value = '';
@@ -161,6 +176,7 @@ function openEditPrecio(id) {
   document.getElementById('ed-titulo').textContent = '✏️ Editar Precio';
   _populateEdEmpresa('ed-empresa');
   document.getElementById('ed-empresa').value = p.Empresa || '';
+  document.getElementById('ed-proveedor').value = p.Proveedor || '';
   document.getElementById('ed-tipo').value = p.Tipo_Precio || '';
   document.getElementById('ed-producto').value = p.Producto || '';
   document.getElementById('ed-precio').value = p.Precio || '';
@@ -174,6 +190,7 @@ function closeEdit() {
 
 async function saveEdit() {
   var empresa = document.getElementById('ed-empresa').value;
+  var proveedor = document.getElementById('ed-proveedor').value.trim();
   var tipo = document.getElementById('ed-tipo').value;
   var producto = document.getElementById('ed-producto').value.trim();
   var precio = document.getElementById('ed-precio').value;
@@ -194,6 +211,7 @@ async function saveEdit() {
         action: 'editarListaPrecio',
         row: editingId,
         Empresa: empresa,
+        Proveedor: proveedor,
         Tipo_Precio: tipo,
         Producto: producto,
         Precio: Number(precio)
@@ -202,6 +220,7 @@ async function saveEdit() {
       result = await apiPost({
         action: 'agregarListaPrecio',
         Empresa: empresa,
+        Proveedor: proveedor,
         Tipo_Precio: tipo,
         lineas: [{ Producto: producto, Precio: Number(precio) }]
       });
@@ -224,7 +243,10 @@ function openDeletePrecio(id) {
   if (!p) return;
   deleteId = id;
   document.getElementById('del-msg').textContent = '¿Eliminar este precio?';
-  document.getElementById('del-detail').textContent = getSigla(p.Empresa) + ' · ' + p.Tipo_Precio + ' · ' + p.Producto + ' — ' + fmtMoney(p.Precio);
+  var detail = getSigla(p.Empresa);
+  if (p.Proveedor) detail += ' · ' + p.Proveedor;
+  detail += ' · ' + p.Tipo_Precio + ' · ' + p.Producto + ' — ' + fmtMoney(p.Precio);
+  document.getElementById('del-detail').textContent = detail;
   document.getElementById('delete-overlay').style.display = 'flex';
 }
 
@@ -273,13 +295,13 @@ function handleImportExcel(input) {
 }
 
 function parseImportRows(rows, fileName) {
-  // Find header row (look for "PRODUCTO" or "PRECIO" in any row)
   var headerIdx = -1;
-  var colProducto = -1, colPrecio = -1;
+  var colProducto = -1, colPrecio = -1, colProveedor = -1;
   for (var r = 0; r < Math.min(rows.length, 10); r++) {
     var row = rows[r] || [];
     for (var c = 0; c < row.length; c++) {
       var val = String(row[c] || '').toUpperCase().trim();
+      if (val.indexOf('PROVEEDOR') >= 0) colProveedor = c;
       if (val.indexOf('PRODUCTO') >= 0) colProducto = c;
       if (val.indexOf('PRECIO') >= 0) colPrecio = c;
     }
@@ -287,11 +309,10 @@ function parseImportRows(rows, fileName) {
   }
 
   if (headerIdx < 0) {
-    // Fallback: assume col B = Producto, col C = Precio (like the RESO file)
+    colProveedor = 0;
     colProducto = 1;
     colPrecio = 2;
-    headerIdx = 2; // skip first 3 rows (header at row 3)
-    // Find actual header
+    headerIdx = 2;
     for (var r2 = 0; r2 < Math.min(rows.length, 10); r2++) {
       var row2 = rows[r2] || [];
       for (var c2 = 0; c2 < row2.length; c2++) {
@@ -305,12 +326,15 @@ function parseImportRows(rows, fileName) {
   }
 
   importRows = [];
+  var hasProvCol = colProveedor >= 0;
   for (var i = headerIdx + 1; i < rows.length; i++) {
     var row = rows[i] || [];
     var producto = String(row[colProducto] || '').trim();
+    while (producto.indexOf('  ') >= 0) producto = producto.replace(/  /g, ' ');
     var precio = Number(row[colPrecio]) || 0;
     if (!producto || !precio) continue;
-    importRows.push({ producto: producto, precio: precio });
+    var prov = hasProvCol ? String(row[colProveedor] || '').trim() : '';
+    importRows.push({ producto: producto, precio: precio, proveedor: prov });
   }
 
   if (!importRows.length) {
@@ -318,13 +342,14 @@ function parseImportRows(rows, fileName) {
     return;
   }
 
-  // Show import modal
   _populateEdEmpresa('imp-empresa');
   document.getElementById('imp-archivo').textContent = fileName;
+  document.getElementById('imp-proveedor').value = '';
   document.getElementById('imp-summary').textContent = importRows.length + ' productos encontrados en el archivo';
   document.getElementById('imp-lines').innerHTML = importRows.map(function(r, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
+      '<td>' + escHtml(r.proveedor || '') + '</td>' +
       '<td>' + escHtml(r.producto) + '</td>' +
       '<td class="money">' + fmtMoney(r.precio) + '</td>' +
       '</tr>';
@@ -340,6 +365,7 @@ function closeImport() {
 async function confirmImport() {
   var empresa = document.getElementById('imp-empresa').value;
   var tipo = document.getElementById('imp-tipo').value;
+  var provGlobal = document.getElementById('imp-proveedor').value.trim();
   var reemplazar = document.getElementById('imp-reemplazar').checked;
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
@@ -359,21 +385,34 @@ async function confirmImport() {
       });
     }
 
-    // Batch insert in chunks of 50
+    // Group by proveedor for correct upsert
+    var byProv = {};
+    importRows.forEach(function(r) {
+      var prov = r.proveedor || provGlobal || '';
+      if (!byProv[prov]) byProv[prov] = [];
+      byProv[prov].push(r);
+    });
+
     var chunkSize = 50;
     var total = 0;
-    for (var i = 0; i < importRows.length; i += chunkSize) {
-      var chunk = importRows.slice(i, i + chunkSize);
-      var result = await apiPost({
-        action: 'agregarListaPrecio',
-        Empresa: empresa,
-        Tipo_Precio: tipo,
-        lineas: chunk.map(function(r) {
-          return { Producto: r.producto, Precio: r.precio };
-        })
-      });
-      if (!result.ok) throw new Error(result.error || 'Error en la importación');
-      total += chunk.length;
+    var provKeys = Object.keys(byProv);
+    for (var pk = 0; pk < provKeys.length; pk++) {
+      var prov = provKeys[pk];
+      var items = byProv[prov];
+      for (var i = 0; i < items.length; i += chunkSize) {
+        var chunk = items.slice(i, i + chunkSize);
+        var result = await apiPost({
+          action: 'agregarListaPrecio',
+          Empresa: empresa,
+          Proveedor: prov,
+          Tipo_Precio: tipo,
+          lineas: chunk.map(function(r) {
+            return { Producto: r.producto, Precio: r.precio };
+          })
+        });
+        if (!result.ok) throw new Error(result.error || 'Error en la importación');
+        total += chunk.length;
+      }
     }
 
     closeImport();
@@ -392,9 +431,9 @@ function exportExcel() {
   var filtered = getFiltered();
   if (!filtered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var rows = [['Empresa', 'Tipo Precio', 'Producto', 'Precio']];
+  var rows = [['Empresa', 'Proveedor', 'Tipo Precio', 'Producto', 'Precio']];
   filtered.forEach(function(p) {
-    rows.push([getSigla(p.Empresa), p.Tipo_Precio, p.Producto, Number(p.Precio) || 0]);
+    rows.push([getSigla(p.Empresa), p.Proveedor || '', p.Tipo_Precio, p.Producto, Number(p.Precio) || 0]);
   });
 
   var ws = XLSX.utils.aoa_to_sheet(rows);

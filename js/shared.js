@@ -937,13 +937,14 @@ async function apiPost(body) {
         return {
           Empresa: body.Empresa || '',
           Tipo_Precio: body.Tipo_Precio || '',
+          Proveedor: body.Proveedor || '',
           Producto: lin.Producto || '',
           Precio: Number(lin.Precio) || 0,
           creado_por: _uid()
         };
       });
       var res = await _sb.from('ListaPrecios').upsert(rows, {
-        onConflict: 'Empresa,Tipo_Precio,Producto'
+        onConflict: 'Empresa,Tipo_Precio,Proveedor,Producto'
       });
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };
@@ -953,6 +954,7 @@ async function apiPost(body) {
       var res = await _sb.from('ListaPrecios').update({
         Empresa: body.Empresa || '',
         Tipo_Precio: body.Tipo_Precio || '',
+        Proveedor: body.Proveedor || '',
         Producto: body.Producto || '',
         Precio: Number(body.Precio) || 0,
         modificado_por: _uid()

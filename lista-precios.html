@@ -65,6 +65,7 @@
 
   <div class="filters">
     <div class="fg"><label>Empresa</label><select id="f-emp"><option value="">Todas</option></select></div>
+    <div class="fg"><label>Proveedor</label><select id="f-prov"><option value="">Todos</option></select></div>
     <div class="fg"><label>Tipo Precio</label><select id="f-tipo"><option value="">Todos</option></select></div>
     <div class="fg"><label>Buscar producto</label><input type="text" id="f-txt" placeholder="Nombre del producto…" style="width:220px"></div>
     <button onclick="clearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
@@ -87,6 +88,7 @@
           <tr>
             <th style="width:30px">#</th>
             <th>Empresa</th>
+            <th>Proveedor</th>
             <th>Tipo Precio</th>
             <th>Producto</th>
             <th class="money">Precio</th>
@@ -116,6 +118,12 @@
           <select class="ef" id="ed-empresa"></select>
         </div>
         <div>
+          <label class="ef-label">Proveedor</label>
+          <input class="ef" id="ed-proveedor" type="text" placeholder="Ej: RESO, GREEN, ABAGO">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div>
           <label class="ef-label">Tipo Precio *</label>
           <select class="ef" id="ed-tipo">
             <option value="">— Seleccionar —</option>
@@ -123,10 +131,10 @@
             <option value="Mayorista">Mayorista</option>
           </select>
         </div>
-      </div>
-      <div style="margin-bottom:12px">
-        <label class="ef-label">Producto *</label>
-        <input class="ef" id="ed-producto" type="text" placeholder="Nombre del producto">
+        <div>
+          <label class="ef-label">Producto *</label>
+          <input class="ef" id="ed-producto" type="text" placeholder="Nombre del producto">
+        </div>
       </div>
       <div style="margin-bottom:12px">
         <label class="ef-label">Precio *</label>
@@ -153,10 +161,14 @@
       <button class="btn-close" onclick="closeImport()">✕</button>
     </div>
     <div class="mbody">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
         <div>
           <label class="ef-label">Empresa *</label>
           <select class="ef" id="imp-empresa"></select>
+        </div>
+        <div>
+          <label class="ef-label">Proveedor</label>
+          <input class="ef" id="imp-proveedor" type="text" placeholder="Ej: RESO, GREEN">
         </div>
         <div>
           <label class="ef-label">Tipo Precio *</label>
@@ -179,6 +191,7 @@
           <thead>
             <tr>
               <th>#</th>
+              <th>Proveedor</th>
               <th>Producto</th>
               <th class="money">Precio</th>
             </tr>
@@ -221,9 +234,9 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260811b"></script>
+<script src="js/shared.js?v=20260811d"></script>
 <script src="js/auth.js?v=20260807a"></script>
 <script src="js/notificaciones.js"></script>
-<script src="js/lista-precios.js?v=20260811c"></script>
+<script src="js/lista-precios.js?v=20260811d"></script>
 </body>
 </html>

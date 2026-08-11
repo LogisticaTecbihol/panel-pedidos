@@ -2655,15 +2655,18 @@ function initAutocomplete(input, opts) {
 
 function destroyProductoACs() { productoACs.forEach(function(ac) { ac.destroy(); }); productoACs = []; }
 
+function _normStr(s) { return (s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+
 function _lookupPrecio(empresa, tipoPrecio, productoNombre) {
   if (!listaPreciosCache || !empresa || !tipoPrecio || !productoNombre) return null;
-  var prodNorm = productoNombre.trim().toLowerCase();
-  var tipoNorm = tipoPrecio.trim().toLowerCase();
+  var empNorm = _normStr(empresa);
+  var tipoNorm = _normStr(tipoPrecio);
+  var prodNorm = _normStr(productoNombre);
   for (var i = 0; i < listaPreciosCache.length; i++) {
     var lp = listaPreciosCache[i];
-    if (lp.Empresa === empresa &&
-        (lp.Tipo_Precio || '').trim().toLowerCase() === tipoNorm &&
-        (lp.Producto || '').trim().toLowerCase() === prodNorm) {
+    if (_normStr(lp.Empresa) === empNorm &&
+        _normStr(lp.Tipo_Precio) === tipoNorm &&
+        _normStr(lp.Producto) === prodNorm) {
       return Number(lp.Precio) || 0;
     }
   }
@@ -2719,6 +2722,10 @@ function setupProductoAutocomplete() {
         _applyPrecioToLine(i);
       }
     }));
+    input.addEventListener('blur', function() {
+      var idx = [].slice.call(document.querySelectorAll('.nv-prod')).indexOf(input);
+      if (idx >= 0 && input.value.trim()) _applyPrecioToLine(idx);
+    });
   });
 }
 
