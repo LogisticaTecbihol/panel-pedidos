@@ -325,7 +325,7 @@
         .catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases',   { columns: 'Empresa,Bodega,Cantidad,Remision,Fecha,Producto,Presentacion' })
+      apiGet('getReenvases',   { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Fecha,Producto,Presentacion' })
         .catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getDevoluciones',{ columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Fecha_Devolucion,Fecha,Remision,Remision_Ingreso,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, devoluciones: [] }; }),

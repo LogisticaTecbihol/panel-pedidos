@@ -88,7 +88,7 @@ async function loadInventario() {
     var results = await Promise.all([
       apiGet('getInventario', { columns: 'id,Fecha,Empresa,Producto,Presentacion,Unidad_Medida,Cantidad_Caja,Lote,Cantidad,Observaciones' }),
       apiGet('getPedidos', { columns: 'Producto,Cantidad,Cant_Entregada,Estado_2' }),
-      apiGet('getReenvases', { columns: 'Bodega,Empresa,Producto,Cantidad' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getReenvases', { columns: 'Bodega,Empresa,Empresa_Destino,Producto,Cantidad' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getIngresos', { columns: 'Cantidad,Empresa_Origen,Empresa_Destino,Producto' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getMuestras', { columns: 'Cant_Entregada,Empresa,Producto' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getDevoluciones', { columns: 'Estado,Cantidad,Remision_Ingreso,Bodega_Ingreso,Remision_Salida,Bodega_Salida,Empresa,Producto' }).catch(function() { return { ok: true, devoluciones: [] }; }),
