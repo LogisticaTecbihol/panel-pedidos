@@ -656,8 +656,7 @@ function openNewOC() {
   var btnRem = document.getElementById('btn-oc-pdf-remisiones');
   if (btnSol) btnSol.style.display = 'none';
   if (btnRem) btnRem.style.display = 'none';
-  // OC nueva siempre nace "Por aprobar": bloquear remisión y opción Cerrada.
-  _applyAprobacionLockOC({ Estado_Aprobacion: 'Por aprobar' });
+  _applyAprobacionLockOC({ Estado_Aprobacion: 'Aprobada' });
   document.getElementById('oc-overlay').classList.add('show');
 }
 
@@ -839,6 +838,7 @@ async function saveOC() {
       Fecha: fecha, Empresa_Destino: empresa_destino, Empresa_Origen: empresa_origen,
       Consecutivo: consecutivo, Direccion: direccion, Bodega: bodega, Municipio: municipio,
       Total_Orden: totalOrden, Observaciones: observaciones, Estado: estado, Remision: remision, Remision_Origen: remision_origen,
+      Estado_Aprobacion: 'Aprobada',
       lineas: validLines,
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');

@@ -571,7 +571,7 @@ async function apiPost(body) {
           Total_Orden: Number(body.Total_Orden) || 0, Observaciones: body.Observaciones || '',
           Estado: body.Estado || 'Abierta', Fecha_Registro: now, Remision: body.Remision || '',
           Remision_Origen: body.Remision_Origen || '',
-          Estado_Aprobacion: 'Por aprobar',
+          Estado_Aprobacion: body.Estado_Aprobacion || 'Por aprobar',
           creado_por: _uid()
         };
       });
