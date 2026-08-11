@@ -159,7 +159,7 @@ var RE_COLS = [
 async function loadReenvases() {
   await _authReady;
   populateEmpresaSelect('re-empresa');
-  populateEmpresaSelect('re-empresa-destino');
+  populateEmpresaSelect('re-empresa-destino', '— Sin traslado —', ['CHIA ABAGO']);
   var loadZone = document.getElementById('load-zone');
   var main = document.getElementById('main');
   var loadErr = document.getElementById('load-error');
