@@ -17,6 +17,7 @@ var AUTH = (function() {
     { key: 'kardex',       label: '📋 Kardex' },
     { key: 'muestras',     label: '🧪 Muestras' },
     { key: 'reenvases',    label: '🏭 Salidas a producción' },
+    { key: 'lista_precios', label: '💲 Lista de Precios' },
     { key: 'reportes',     label: '📈 Reportes' },
     { key: 'dashboard',    label: '📊 Dashboard' },
     { key: 'muestras_aprobar',       label: '✅ Aprobar solicitudes de muestras' },

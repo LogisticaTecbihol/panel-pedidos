@@ -162,6 +162,11 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, remisionesAnuladas: _addRow(res.data) };
     }
+    if (action === 'getListaPrecios') {
+      var res = await _sb.from('ListaPrecios').select(cols).order('Producto');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, precios: _addRow(res.data) };
+    }
 
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
@@ -919,6 +924,56 @@ async function apiPost(body) {
       var res = await _sb.from('RemisionesAnuladas').delete().eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, deleted: 1 };
+    }
+
+    // ── LISTA DE PRECIOS ──
+
+    if (action === 'agregarListaPrecio') {
+      var lineas = body.lineas || [];
+      if (!lineas.length && body.Producto) {
+        lineas = [{ Producto: body.Producto, Precio: body.Precio }];
+      }
+      var rows = lineas.map(function(lin) {
+        return {
+          Empresa: body.Empresa || '',
+          Tipo_Precio: body.Tipo_Precio || '',
+          Producto: lin.Producto || '',
+          Precio: Number(lin.Precio) || 0,
+          creado_por: _uid()
+        };
+      });
+      var res = await _sb.from('ListaPrecios').upsert(rows, {
+        onConflict: 'Empresa,Tipo_Precio,Producto'
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, added: rows.length };
+    }
+
+    if (action === 'editarListaPrecio') {
+      var res = await _sb.from('ListaPrecios').update({
+        Empresa: body.Empresa || '',
+        Tipo_Precio: body.Tipo_Precio || '',
+        Producto: body.Producto || '',
+        Precio: Number(body.Precio) || 0,
+        modificado_por: _uid()
+      }).eq('id', body.row);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, updated: 1 };
+    }
+
+    if (action === 'eliminarListaPrecio') {
+      var res = await _sb.from('ListaPrecios').delete().eq('id', body.row);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, deleted: 1 };
+    }
+
+    if (action === 'eliminarListaPreciosBulk') {
+      var q = _sb.from('ListaPrecios').delete();
+      if (body.Empresa) q = q.eq('Empresa', body.Empresa);
+      if (body.Tipo_Precio) q = q.eq('Tipo_Precio', body.Tipo_Precio);
+      var res = await q;
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
     }
 
     if (action === 'addMaestroProductos') {

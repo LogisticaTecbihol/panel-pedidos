@@ -844,6 +844,17 @@ async function openDetail(idx) {
   }
 
   resetNewLineForm();
+  var nlProd = document.getElementById('nl-producto');
+  nlProd.onblur = function() {
+    var prod = nlProd.value.trim();
+    if (!prod || activeIdx === null) return;
+    var cDet = consecs[activeIdx];
+    var precio = _lookupPrecio(cDet.Nombre_Empresa, document.getElementById('md-precio').value.trim(), prod);
+    if (precio !== null) {
+      document.getElementById('nl-vunitario').value = precio;
+      calcNewLineTotal();
+    }
+  };
   renderFacturaRemisiones();
   document.getElementById('overlay').classList.add('show');
   destroyGeoAC('md');
@@ -2571,6 +2582,7 @@ function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&
 
 var clientesCache = null;
 var productosCache = null;
+var listaPreciosCache = null;
 var clienteAC = null;
 var productoACs = [];
 var geoACs = { nv: null, md: null, ed: null };
@@ -2587,6 +2599,7 @@ async function loadAutocompleteData() {
   var promises = [];
   if (!clientesCache) promises.push(apiGet('getClientesUnicos').then(function(r) { if (r.ok) clientesCache = r.clientes || []; }).catch(function() { clientesCache = []; }));
   if (!productosCache) promises.push(apiGet('getMaestroProductos').then(function(r) { if (r.ok) productosCache = r.productos || []; }).catch(function() { productosCache = []; }));
+  if (!listaPreciosCache) promises.push(apiGet('getListaPrecios').then(function(r) { if (r.ok) listaPreciosCache = r.precios || []; }).catch(function() { listaPreciosCache = []; }));
   if (promises.length) await Promise.all(promises);
 }
 
@@ -2642,6 +2655,44 @@ function initAutocomplete(input, opts) {
 
 function destroyProductoACs() { productoACs.forEach(function(ac) { ac.destroy(); }); productoACs = []; }
 
+function _lookupPrecio(empresa, tipoPrecio, productoNombre) {
+  if (!listaPreciosCache || !empresa || !tipoPrecio || !productoNombre) return null;
+  var prodNorm = productoNombre.trim().toLowerCase();
+  var tipoNorm = tipoPrecio.trim().toLowerCase();
+  for (var i = 0; i < listaPreciosCache.length; i++) {
+    var lp = listaPreciosCache[i];
+    if (lp.Empresa === empresa &&
+        (lp.Tipo_Precio || '').trim().toLowerCase() === tipoNorm &&
+        (lp.Producto || '').trim().toLowerCase() === prodNorm) {
+      return Number(lp.Precio) || 0;
+    }
+  }
+  return null;
+}
+
+function _reapplyPreciosNuevo() {
+  syncNuevoFromDOM();
+  var prodInputs = document.querySelectorAll('.nv-prod');
+  for (var j = 0; j < prodInputs.length; j++) {
+    if (prodInputs[j].value.trim()) _applyPrecioToLine(j);
+  }
+}
+
+function _applyPrecioToLine(lineIdx) {
+  var empresa = document.getElementById('nv-empresa').value;
+  var tipoPrecio = document.getElementById('nv-precio').value.trim();
+  var prodInputs = document.querySelectorAll('.nv-prod');
+  var vuniInputs = document.querySelectorAll('.nv-vuni');
+  if (!prodInputs[lineIdx] || !vuniInputs[lineIdx]) return;
+  var producto = prodInputs[lineIdx].value.trim();
+  var precio = _lookupPrecio(empresa, tipoPrecio, producto);
+  if (precio !== null) {
+    vuniInputs[lineIdx].value = precio;
+    syncNuevoFromDOM();
+    updateNuevoLine(lineIdx);
+  }
+}
+
 function setupProductoAutocomplete() {
   destroyProductoACs();
   if (!productosCache) return;
@@ -2665,6 +2716,7 @@ function setupProductoAutocomplete() {
         var presInputs = document.querySelectorAll('.nv-pres');
         if (presInputs[i]) presInputs[i].value = p.presentacion || '';
         syncNuevoFromDOM();
+        _applyPrecioToLine(i);
       }
     }));
   });
@@ -2784,7 +2836,9 @@ async function openNuevoPedido() {
     populateComercialSelect(nvEmpSel.value);
     actualizarConsecutivoNuevo();
     _toggleBodegaField('nv', nvEmpSel.value);
+    _reapplyPreciosNuevo();
   };
+  document.getElementById('nv-precio').onchange = function() { _reapplyPreciosNuevo(); };
   document.getElementById('nv-comercial').oninput = actualizarConsecutivoNuevo;
   document.getElementById('nv-cliente').addEventListener('input', function() {
     var fa = document.getElementById('nv-facturar-a');

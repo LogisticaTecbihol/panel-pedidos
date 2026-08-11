@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Lista de precios por empresa — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💲</text></svg>">
+<title>Lista de Precios – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css">
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body data-modulo="lista_precios">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="lista-precios.html" data-modulo="lista_precios" class="active">💲 Lista de Precios</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="usuarios.html" id="nav-usuarios" class="auth-admin-only" style="display:none">👥 Usuarios</a>
+    <a href="auditoria.html" id="nav-auditoria" class="auth-admin-only" style="display:none">🔍 Auditoría</a>
+    <a href="backup.html" id="nav-backup" class="auth-admin-only" style="display:none">💾 Backup</a>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando lista de precios</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadPrecios()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total productos</div></div>
+    <div class="sc recibido"><div class="num" id="s-empresas">0</div><div class="lbl">Empresas</div></div>
+    <div class="sc parcial"><div class="num" id="s-tipos">0</div><div class="lbl">Tipos de precio</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg"><label>Empresa</label><select id="f-emp"><option value="">Todas</option></select></div>
+    <div class="fg"><label>Tipo Precio</label><select id="f-tipo"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Buscar producto</label><input type="text" id="f-txt" placeholder="Nombre del producto…" style="width:220px"></div>
+    <button onclick="clearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>💲 Lista de Precios <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl auth-edit-only" onclick="openNuevoPrecio()" style="background:#1a5276">✏️ Agregar Precio</button>
+        <button class="btn-dl auth-edit-only" onclick="document.getElementById('file-upload').click()" style="background:#27ae60">📥 Importar Excel</button>
+        <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleImportExcel(this)">
+        <button class="btn-dl" onclick="exportExcel()" style="background:#217346">📊 Exportar Excel</button>
+        <button class="btn-dl" onclick="loadPrecios()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:30px">#</th>
+            <th>Empresa</th>
+            <th>Tipo Precio</th>
+            <th>Producto</th>
+            <th class="money">Precio</th>
+            <th style="width:120px" class="auth-edit-only">Acción</th>
+          </tr>
+        </thead>
+        <tbody id="t-body"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<!-- MODAL: Agregar / Editar precio -->
+<div class="overlay" id="edit-overlay">
+  <div class="modal-box" style="max-width:600px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="ed-titulo">✏️ Agregar Precio</h2>
+      </div>
+      <button class="btn-close" onclick="closeEdit()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div>
+          <label class="ef-label">Empresa *</label>
+          <select class="ef" id="ed-empresa"></select>
+        </div>
+        <div>
+          <label class="ef-label">Tipo Precio *</label>
+          <select class="ef" id="ed-tipo">
+            <option value="">— Seleccionar —</option>
+            <option value="Dealer">Dealer</option>
+            <option value="Mayorista">Mayorista</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Producto *</label>
+        <input class="ef" id="ed-producto" type="text" placeholder="Nombre del producto">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Precio *</label>
+        <input class="ef" id="ed-precio" type="number" min="0" placeholder="0">
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeEdit()">Cancelar</button>
+        <button class="btn-confirm" id="btn-save" onclick="saveEdit()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Import Preview -->
+<div class="overlay" id="import-overlay">
+  <div class="modal-box" style="max-width:900px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#27ae60,#2ecc71)">
+      <div style="flex:1">
+        <h2>📥 Importar Lista de Precios</h2>
+        <div id="imp-archivo" style="font-size:0.78rem;opacity:0.85;margin-top:4px"></div>
+      </div>
+      <button class="btn-close" onclick="closeImport()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div>
+          <label class="ef-label">Empresa *</label>
+          <select class="ef" id="imp-empresa"></select>
+        </div>
+        <div>
+          <label class="ef-label">Tipo Precio *</label>
+          <select class="ef" id="imp-tipo">
+            <option value="">— Seleccionar —</option>
+            <option value="Dealer">Dealer</option>
+            <option value="Mayorista">Mayorista</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:#4a5568;cursor:pointer">
+          <input type="checkbox" id="imp-reemplazar" style="width:16px;height:16px">
+          Reemplazar lista existente de esta empresa y tipo (elimina los precios actuales antes de importar)
+        </label>
+      </div>
+      <div id="imp-summary" style="background:#e8f8f5;border:1px solid #a3e4d7;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:0.84rem;color:#1a5276"></div>
+      <div style="overflow-x:auto;max-height:400px">
+        <table class="prod-table" style="font-size:0.82rem">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Producto</th>
+              <th class="money">Precio</th>
+            </tr>
+          </thead>
+          <tbody id="imp-lines"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeImport()">Cancelar</button>
+        <button class="btn-confirm" id="btn-import" onclick="confirmImport()" style="background:#27ae60">📥 Importar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="overlay" id="delete-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1">
+        <h2>🗑️ Eliminar Precio</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Esta acción no se puede deshacer</div>
+      </div>
+      <button class="btn-close" onclick="closeDelete()">✕</button>
+    </div>
+    <div class="mbody" style="text-align:center;padding:28px 24px">
+      <div style="font-size:2.5rem;margin-bottom:12px">⚠️</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#2d3748;margin-bottom:8px" id="del-msg">¿Eliminar este precio?</div>
+      <div style="font-size:0.82rem;color:#718096" id="del-detail"></div>
+    </div>
+    <div class="mftr" style="justify-content:center;gap:12px">
+      <button class="btn-cancel" onclick="closeDelete()">Cancelar</button>
+      <button class="btn-confirm" id="btn-del-confirm" onclick="confirmDelete()" style="background:#e74c3c">🗑️ Sí, eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20260811b"></script>
+<script src="js/auth.js?v=20260807a"></script>
+<script src="js/notificaciones.js"></script>
+<script src="js/lista-precios.js?v=20260811a"></script>
+</body>
+</html>
