@@ -143,6 +143,7 @@ var EMPRESAS_SIGLA = {
 
 var RE_COLS = [
   { key: 'Empresa', label: 'Empresa', sortable: true },
+  { key: 'Empresa_Destino', label: 'Emp. Destino', sortable: true },
   { key: 'Planta', label: 'Planta', sortable: true },
   { key: 'Fecha', label: 'Fecha', sortable: true, fmt: 'date' },
   { key: 'Producto', label: 'Producto', sortable: true },
@@ -158,6 +159,7 @@ var RE_COLS = [
 async function loadReenvases() {
   await _authReady;
   populateEmpresaSelect('re-empresa');
+  populateEmpresaSelect('re-empresa-destino');
   var loadZone = document.getElementById('load-zone');
   var main = document.getElementById('main');
   var loadErr = document.getElementById('load-error');
@@ -213,7 +215,7 @@ function applyReFilters() {
     if (bod !== bodegaActual) return false;
     if (fEmp && r.Empresa !== fEmp) return false;
     if (fTxt) {
-      var hay = [r.Empresa, r.Planta, r.Producto, r.Presentacion, r.Remision, r.Observaciones]
+      var hay = [r.Empresa, r.Empresa_Destino, r.Planta, r.Producto, r.Presentacion, r.Remision, r.Observaciones]
         .join(' ').toLowerCase();
       if (hay.indexOf(fTxt) < 0) return false;
     }
@@ -321,6 +323,8 @@ function renderReTable() {
   tbody.innerHTML = filteredRe.map(function(r) {
     var sigla = EMPRESAS_SIGLA[r.Empresa] || r.Empresa || '—';
     var siglaCls = 'sigla-' + (EMPRESAS_SIGLA[r.Empresa] || 'DEFAULT');
+    var siglaDestino = r.Empresa_Destino ? (EMPRESAS_SIGLA[r.Empresa_Destino] || r.Empresa_Destino) : '';
+    var siglaDCls = r.Empresa_Destino ? 'sigla-' + (EMPRESAS_SIGLA[r.Empresa_Destino] || 'DEFAULT') : '';
     var obs = (r.Observaciones || '');
     if (obs.length > 40) obs = obs.substring(0, 40) + '…';
 
@@ -328,6 +332,7 @@ function renderReTable() {
 
     return '<tr style="cursor:pointer" onclick="viewReenvase(' + r.id + ')">' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
+      '<td>' + (siglaDestino ? '<span class="sigla-badge ' + siglaDCls + '">' + escHtml(siglaDestino) + '</span>' : '—') + '</td>' +
       '<td>' + escHtml(plantaShort || '—') + '</td>' +
       '<td>' + fmtDate(r.Fecha) + '</td>' +
       '<td>' + escHtml(r.Producto || '—') + '</td>' +
@@ -360,7 +365,8 @@ function viewReenvase(id) {
 
   var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem">' +
     field('Bodega', r.Bodega || 'Productos Buenos') +
-    field('Empresa', EMPRESAS_SIGLA[r.Empresa] || r.Empresa) +
+    field('Empresa (Origen)', EMPRESAS_SIGLA[r.Empresa] || r.Empresa) +
+    field('Empresa Destino', r.Empresa_Destino ? (EMPRESAS_SIGLA[r.Empresa_Destino] || r.Empresa_Destino) : '') +
     field('Planta de destino', r.Planta) +
     field('Fecha', fmtDate(r.Fecha)) +
     field('N° Remisión', r.Remision) +
@@ -411,6 +417,7 @@ async function openNewReenvase() {
   document.getElementById('btn-save-re').disabled = false;
 
   document.getElementById('re-empresa').value = '';
+  document.getElementById('re-empresa-destino').value = '';
   document.getElementById('re-planta').value = '';
   document.getElementById('re-fecha').value = today();
   document.getElementById('re-remision').value = '';
@@ -436,6 +443,7 @@ async function editReenvase(id) {
   document.getElementById('btn-save-re').disabled = false;
 
   document.getElementById('re-empresa').value = r.Empresa || '';
+  document.getElementById('re-empresa-destino').value = r.Empresa_Destino || '';
   document.getElementById('re-planta').value = r.Planta || '';
   document.getElementById('re-fecha').value = toDateInput(r.Fecha);
   document.getElementById('re-remision').value = r.Remision || '';
@@ -528,12 +536,14 @@ function syncReLinesFromDOM() {
 async function saveReenvase() {
   var btn = document.getElementById('btn-save-re');
   var empresa = document.getElementById('re-empresa').value;
+  var empresaDestino = document.getElementById('re-empresa-destino').value;
   var planta = document.getElementById('re-planta').value;
   var fecha = document.getElementById('re-fecha').value;
   var remision = document.getElementById('re-remision').value.trim();
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
-  if (!planta) { showToast('Selecciona la planta de destino', '#e74c3c'); return; }
+  if (!planta && !empresaDestino) { showToast('Selecciona la planta de destino o la empresa destino', '#e74c3c'); return; }
+  if (empresaDestino && empresaDestino === empresa) { showToast('La empresa destino debe ser diferente a la empresa origen', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
 
   if (reEditId) {
@@ -551,7 +561,7 @@ async function saveReenvase() {
     try {
       var result = await apiPost({
         action: 'editarReenvase', row: reEditId,
-        Empresa: empresa, Planta: planta, Producto: producto, Presentacion: presentacion,
+        Empresa: empresa, Empresa_Destino: empresaDestino, Planta: planta, Producto: producto, Presentacion: presentacion,
         Cantidad: cantidad, Remision: remision, Fecha: fecha,
         Observaciones: observaciones, Bodega: document.getElementById('re-bodega').value
       });
@@ -581,7 +591,7 @@ async function saveReenvase() {
       var p = productosValidos[i];
       var result = await apiPost({
         action: 'agregarReenvase',
-        Empresa: empresa, Planta: planta, Producto: p.producto, Presentacion: p.presentacion,
+        Empresa: empresa, Empresa_Destino: empresaDestino, Planta: planta, Producto: p.producto, Presentacion: p.presentacion,
         Cantidad: p.cantidad, Remision: remision, Fecha: fecha,
         Observaciones: (p.observaciones || '').trim(), Bodega: document.getElementById('re-bodega').value
       });

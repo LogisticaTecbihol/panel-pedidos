@@ -324,18 +324,36 @@ function buildMovimientos() {
     if (cant <= 0) return;
     var rem = String(re.Remision || '').trim();
     if (!rem) return;
+    var esTraslado = !!(re.Empresa_Destino);
+    var refText = esTraslado
+      ? 'Traslado → ' + (SIGLAS[re.Empresa_Destino] || re.Empresa_Destino || '')
+      : (re.Planta || '');
     kxMovimientos.push({
       fecha: re.Fecha || '',
       tipo: 'Salida',
-      modulo: 'Producción',
+      modulo: esTraslado ? 'Traslado' : 'Producción',
       remision: rem,
-      referencia: re.Planta || '',
+      referencia: refText,
       empresa: re.Empresa || '',
       producto: _normProd(re.Producto),
       presentacion: re.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
     });
+    if (esTraslado) {
+      kxMovimientos.push({
+        fecha: re.Fecha || '',
+        tipo: 'Entrada',
+        modulo: 'Traslado',
+        remision: rem,
+        referencia: 'Traslado ← ' + (SIGLAS[re.Empresa] || re.Empresa || ''),
+        empresa: re.Empresa_Destino,
+        producto: _normProd(re.Producto),
+        presentacion: re.Presentacion || '',
+        cantidad: cant,
+        _ajusteId: null
+      });
+    }
   });
 
   // Ingresos a Bodega NC — SALIDA de la bodega de productos buenos

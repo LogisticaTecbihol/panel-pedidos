@@ -225,12 +225,21 @@
       if (cant <= 0) return;
       var rem = String(re.Remision || '').trim();
       if (!rem) return;
+      var esTraslado = !!(re.Empresa_Destino);
       movs.push({
-        fecha: re.Fecha || '', tipo: 'Salida', modulo: 'Producción',
+        fecha: re.Fecha || '', tipo: 'Salida', modulo: esTraslado ? 'Traslado' : 'Producción',
         remision: rem, empresa: re.Empresa || '',
         producto: _normProd(re.Producto),
         presentacion: re.Presentacion || '', cantidad: cant
       });
+      if (esTraslado) {
+        movs.push({
+          fecha: re.Fecha || '', tipo: 'Entrada', modulo: 'Traslado',
+          remision: rem, empresa: re.Empresa_Destino,
+          producto: _normProd(re.Producto),
+          presentacion: re.Presentacion || '', cantidad: cant
+        });
+      }
     });
 
     // Ingresos a Bodega NC — SALIDA (excepto devoluciones de cliente)
@@ -424,7 +433,9 @@
     }
     (sources.reenvases || []).forEach(function(re) {
       if (!_esBueno(re.Bodega || 'Productos Buenos')) return;
-      add(re.Empresa, re.Producto, -(Number(re.Cantidad) || 0));
+      var cant = Number(re.Cantidad) || 0;
+      add(re.Empresa, re.Producto, -cant);
+      if (re.Empresa_Destino) add(re.Empresa_Destino, re.Producto, cant);
     });
     (sources.muestras || []).forEach(function(m) {
       var cant = Number(m.Cant_Entregada) || 0;

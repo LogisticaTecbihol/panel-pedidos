@@ -869,7 +869,7 @@ async function apiPost(body) {
     if (action === 'agregarReenvase') {
       var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
       var row = {
-        Empresa: body.Empresa || '', Planta: body.Planta || '',
+        Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
         Producto: body.Producto || '',
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
         Remision: body.Remision || '', Fecha: body.Fecha || '',
@@ -884,7 +884,7 @@ async function apiPost(body) {
 
     if (action === 'editarReenvase') {
       var res = await _sb.from('Reenvases').update({
-        Empresa: body.Empresa || '', Planta: body.Planta || '',
+        Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
         Producto: body.Producto || '',
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
         Remision: body.Remision || '', Fecha: body.Fecha || '',
