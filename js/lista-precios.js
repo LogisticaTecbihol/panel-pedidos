@@ -19,7 +19,7 @@ async function loadPrecios() {
     if (!res.ok) throw new Error(res.error || 'Error al cargar');
     preciosData = res.precios || [];
     document.getElementById('load-zone').style.display = 'none';
-    document.getElementById('main').style.display = '';
+    document.getElementById('main').style.display = 'block';
     populateFilters();
     renderTable();
     setSyncStatus('ok', 'Conectado a la nube. Los cambios se guardan automáticamente.');
