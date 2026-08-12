@@ -2635,7 +2635,8 @@ function _autoFillPresentacion(productoNombre, empresa) {
       : productosCache;
     for (var i = 0; i < filtrados.length; i++) {
       if ((filtrados[i].producto || '').toLowerCase().trim() === prodNorm) {
-        return filtrados[i].presentacion || '';
+        if (filtrados[i].presentacion) return filtrados[i].presentacion;
+        break;
       }
     }
   }
