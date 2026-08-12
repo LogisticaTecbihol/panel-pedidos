@@ -701,11 +701,18 @@ function renderPlantaTable() {
     return;
   }
 
+  function _isProveedor(r) {
+    return isCarvalProduct(r.producto) || isAbagoProduct(r.producto) || isShardaProduct(r.producto) || isDisneyProduct(r.producto);
+  }
+
   function _plantaRowHTML(r) {
+    var esProv = _isProveedor(r);
     var badge;
     if (r.estado === 'verde') badge = '<span style="background:#d5f5e3;color:#1e8449;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟢 Cubierto</span>';
     else if (r.estado === 'amarillo') badge = '<span style="background:#fef5e7;color:#b7791f;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟡 Cubierto con traslados</span>';
-    else badge = '<span style="background:#fadbd8;color:#a93226;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🔴 Producir</span>';
+    else badge = esProv
+      ? '<span style="background:#fadbd8;color:#a93226;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🔴 Solicitar a proveedor</span>'
+      : '<span style="background:#fadbd8;color:#a93226;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🔴 Producir</span>';
     var abierto = !!plantaExpanded[r.prodKey];
     var keyEsc = r.prodKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     var chevron = '<button onclick="togglePlantaDetail(\'' + keyEsc + '\')" title="Ver pedidos que suman este pendiente" style="background:none;border:none;color:#1a5276;cursor:pointer;font-size:0.85rem;font-weight:700;padding:0 4px">' + (abierto ? '▾' : '▸') + '</button>';
@@ -855,7 +862,8 @@ function exportPlanta() {
     base['Exist. total holding'] = r.existHolding;
     base['Traslados pend. aprobar'] = r.trasladosPend;
     base['A producir'] = r.producir;
-    base['Estado'] = r.estado === 'verde' ? 'Cubierto' : r.estado === 'amarillo' ? 'Cubierto con traslados' : 'Requiere producción';
+    var esProv = isCarvalProduct(r.producto) || isAbagoProduct(r.producto) || isShardaProduct(r.producto) || isDisneyProduct(r.producto);
+    base['Estado'] = r.estado === 'verde' ? 'Cubierto' : r.estado === 'amarillo' ? 'Cubierto con traslados' : esProv ? 'Solicitar a proveedor' : 'Requiere producción';
     return base;
   });
   var ws = XLSX.utils.json_to_sheet(data);
