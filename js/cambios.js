@@ -615,7 +615,6 @@ async function saveCambio() {
 
   readCamLines();
   var validCambiar = camLineasCambiar.filter(function(l) { return l.Producto; });
-  if (!validCambiar.length) { showToast('Agrega al menos un producto a cambiar', '#e74c3c'); return; }
 
   var validEntregar = camLineasEntregar.filter(function(l) { return l.Producto; });
 
