@@ -3039,7 +3039,7 @@ function renderNuevoLines() {
       '<td><input class="ef nv-cant" data-i="' + i + '" type="number" min="0" value="' + (p.cantidad||'') + '" placeholder="0" style="width:80px;text-align:right" oninput="updateNuevoLine(' + i + ')"></td>' +
       '<td><input class="ef nv-vuni" data-i="' + i + '" type="number" min="0" value="' + (p.valor_unitario||'') + '" placeholder="0" style="width:100px;text-align:right" oninput="updateNuevoLine(' + i + ')"></td>' +
       '<td><input class="ef nv-vtot" data-i="' + i + '" type="number" value="' + (p.valor_total||0) + '" style="width:100px;text-align:right;background:#f7fafc" readonly></td>' +
-      '<td style="text-align:center"><input type="checkbox" class="nv-bonif" data-i="' + i + '"' + (p.bonificado === 'Sí' ? ' checked' : '') + '></td>' +
+      '<td style="text-align:center"><input type="checkbox" class="nv-bonif" data-i="' + i + '"' + (p.bonificado === 'Sí' ? ' checked' : '') + ' onchange="onNvBonifChange(' + i + ',this.checked)"></td>' +
       '<td style="text-align:center">' +
         (nuevoProductos.length > 1
           ? '<button onclick="removeNuevoLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>'
@@ -3058,6 +3058,14 @@ function updateNuevoLine(i) {
   var vtots = document.querySelectorAll('.nv-vtot');
   if (vtots[i]) vtots[i].value = nuevoProductos[i].valor_total;
   updateNuevoTotal();
+}
+
+function onNvBonifChange(i, checked) {
+  if (checked) {
+    var vunis = document.querySelectorAll('.nv-vuni');
+    if (vunis[i]) vunis[i].value = 1;
+  }
+  updateNuevoLine(i);
 }
 
 function updateNuevoTotal() {
