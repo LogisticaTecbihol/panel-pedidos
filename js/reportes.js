@@ -51,12 +51,57 @@ var CARVAL_PRODUCTS_RAW = [
   'TRIP CROP X 250 CC',
   'TRIP CROP X LITRO'
 ];
+var ABAGO_PRODUCTS_RAW = [
+  'MALOLITA X KILO',
+  'MALOLITA X 25 KILOS',
+  'BORCAMAG X BIDON 20 LITROS',
+  'BORCAMAG X GALON',
+  'BORCAMAG X LITRO',
+  'BORCAMAG X 250 ML',
+  'CREOLINA X 20 LITROS',
+  'CREOLINA X 250 ML',
+  'CREOLINA X GALON',
+  'CREOLINA X 500 ML',
+  'CREOLINA X LITRO',
+  'FUNBAC X LITRO',
+  'FUNBAC X GALON',
+  'FUNBAC X BIDON 20 LITROS',
+  'ACI SI X 250 ML',
+  'ACI SI X LITRO',
+  'ACI SI X GALON',
+  'ACI SI X BIDON 20 LITROS',
+  'SABIAGRA X 250 ML',
+  'SABIAGRA X LITRO',
+  'SABIAGRA X GALON',
+  'SABIAGRA X BIDON 20 LITROS',
+  'NITRO-TECH X 250 ML',
+  'NITRO-TECH X LITRO',
+  'NITRO-TECH X GALON',
+  'NITRO-TECH X BIDON 20 LITROS',
+  'MOSKAKILL X 250 ML',
+  'MOSKAKILL X 500 ML',
+  'MOSKAKILL X LITRO',
+  'MOSKAKILL X GALON',
+  'MOSKAKILL X BIDON 20 LITROS',
+  'NUL X KILO',
+  'NUL X 25 KILOS',
+  'COMBI K X KILO',
+  'COMBI K X 25 KILOS'
+];
+
 var _carvalNormSet = {};
 CARVAL_PRODUCTS_RAW.forEach(function(p) {
   _carvalNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
 });
+var _abagoNormSet = {};
+ABAGO_PRODUCTS_RAW.forEach(function(p) {
+  _abagoNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
+});
 function isCarvalProduct(name) {
   return !!_carvalNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
+}
+function isAbagoProduct(name) {
+  return !!_abagoNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
 }
 
 var SIGLAS = {
@@ -596,9 +641,13 @@ function renderPlantaTable() {
   }).join('');
 
   var rows = sortedPlanta();
-  var rowsProduccion = rows.filter(function(r) { return !isCarvalProduct(r.producto); });
+  var rowsProduccion = rows.filter(function(r) { return !isCarvalProduct(r.producto) && !isAbagoProduct(r.producto); });
   var rowsCarval = rows.filter(function(r) { return isCarvalProduct(r.producto); });
-  document.getElementById('pl-count').textContent = '(' + plantaData.length + ' producto' + (plantaData.length === 1 ? '' : 's') + (rowsCarval.length ? ' · ' + rowsCarval.length + ' Carval' : '') + ')';
+  var rowsAbago = rows.filter(function(r) { return isAbagoProduct(r.producto); });
+  var extraLabel = [];
+  if (rowsCarval.length) extraLabel.push(rowsCarval.length + ' Carval');
+  if (rowsAbago.length) extraLabel.push(rowsAbago.length + ' Abago');
+  document.getElementById('pl-count').textContent = '(' + plantaData.length + ' producto' + (plantaData.length === 1 ? '' : 's') + (extraLabel.length ? ' · ' + extraLabel.join(' · ') : '') + ')';
 
   var tbody = document.getElementById('pl-body');
   if (!rows.length) {
@@ -640,6 +689,10 @@ function renderPlantaTable() {
   if (rowsProduccion.length) {
     html += '<tr><td colspan="' + cols.length + '" style="background:#eaf2f8;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#1a5276;border-bottom:2px solid #2980b9">🏭 Producción propia (' + rowsProduccion.length + ' productos)</td></tr>';
     html += rowsProduccion.map(_plantaRowHTML).join('');
+  }
+  if (rowsAbago.length) {
+    html += '<tr><td colspan="' + cols.length + '" style="background:#eafaf1;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#1e8449;border-bottom:2px solid #27ae60;border-top:2px solid #27ae60">📦 Proveedor Abago (' + rowsAbago.length + ' productos)</td></tr>';
+    html += rowsAbago.map(_plantaRowHTML).join('');
   }
   if (rowsCarval.length) {
     html += '<tr><td colspan="' + cols.length + '" style="background:#fef9e7;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#7d6608;border-bottom:2px solid #f1c40f;border-top:2px solid #f1c40f">📦 Proveedor Carval (' + rowsCarval.length + ' productos)</td></tr>';
@@ -739,7 +792,7 @@ function exportPlanta() {
   var empresasList = _empresasVisibles();
   var data = rows.map(function(r) {
     var base = {
-      'Categoría': isCarvalProduct(r.producto) ? 'Carval' : 'Producción propia',
+      'Categoría': isCarvalProduct(r.producto) ? 'Carval' : isAbagoProduct(r.producto) ? 'Abago' : 'Producción propia',
       'Producto': r.producto || '',
       'Presentación(es)': r.presentaciones || '',
       'Pendiente': r.pendiente
