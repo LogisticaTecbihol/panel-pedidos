@@ -19,6 +19,46 @@ var plantaExpanded = {}; // prodKey → true si su detalle está desplegado
 var trasladosData = [];
 var trasladosSort = { col: 'fecha', dir: 'desc' };
 
+var CARVAL_PRODUCTS_RAW = [
+  'AMETRINA 80WG X KILO',
+  'CERTUS 70 WS X 100 GR CV',
+  'CERTUS 70 WS X500G (THIAMETOXAN)',
+  'CERTUS70 WS X 50 GR',
+  'CONTRA 200 SC X 200 CC',
+  'CONTRA 200 SC X LITRO',
+  'CUFIGA 80 WP X 500 GR CV',
+  'DIRVO 60% WG X 20 GR CV',
+  'DIRVO 60% WG X KILO ( METSULFURON) CV',
+  'FICLORAM SL X GALON',
+  'FICLORAM X 20 L',
+  'FICLORAM X LITRO',
+  'FIPRID 75 SC 100ML CV',
+  'FIPRID X 500 ML',
+  'FOSTAL 80 WP X 500 GR CV',
+  'GLYFOSATO X 50G',
+  'GRADUS 43 SC X LITRO CV',
+  'GRADUS 43 X 500 ML CV',
+  'HEXAZINONA 300 GR',
+  'HEXAZINONA 75 X KILO',
+  'LAMBDA CIHALOTRINAX 100ML',
+  'LAMBDA CIHALOTRINAX 500ML',
+  'LAMBDA CIHALOTRINAX LITRO',
+  'RUDOWN 747 X 1KG',
+  'RUDOWN X50GR',
+  'SAGUM 25 SC X 500 ML CV',
+  'SAGUM X LITRO CV',
+  'TABUS 50 WG X 40 GR CV',
+  'TRIP CROP X 250 CC',
+  'TRIP CROP X LITRO'
+];
+var _carvalNormSet = {};
+CARVAL_PRODUCTS_RAW.forEach(function(p) {
+  _carvalNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
+});
+function isCarvalProduct(name) {
+  return !!_carvalNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
+}
+
 var SIGLAS = {
   'PARCELAR DE COLOMBIA SAS': 'PARCELAR',
   'GREEN AGROSOLUCIONES DE COLOMBIA SAS': 'GREEN',
@@ -555,16 +595,18 @@ function renderPlantaTable() {
     return '<th class="' + cls + '" onclick="togglePlantaSort(\'' + safeId + '\')">' + c.label + '</th>';
   }).join('');
 
-  document.getElementById('pl-count').textContent = '(' + plantaData.length + ' producto' + (plantaData.length === 1 ? '' : 's') + ')';
-
   var rows = sortedPlanta();
+  var rowsProduccion = rows.filter(function(r) { return !isCarvalProduct(r.producto); });
+  var rowsCarval = rows.filter(function(r) { return isCarvalProduct(r.producto); });
+  document.getElementById('pl-count').textContent = '(' + plantaData.length + ' producto' + (plantaData.length === 1 ? '' : 's') + (rowsCarval.length ? ' · ' + rowsCarval.length + ' Carval' : '') + ')';
+
   var tbody = document.getElementById('pl-body');
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="' + cols.length + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos con demanda pendiente.</div></td></tr>';
     return;
   }
 
-  tbody.innerHTML = rows.map(function(r) {
+  function _plantaRowHTML(r) {
     var badge;
     if (r.estado === 'verde') badge = '<span style="background:#d5f5e3;color:#1e8449;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟢 Cubierto</span>';
     else if (r.estado === 'amarillo') badge = '<span style="background:#fef5e7;color:#b7791f;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🟡 Cubierto con traslados</span>';
@@ -592,7 +634,18 @@ function renderPlantaTable() {
     var mainRow = '<tr>' + celdas + '</tr>';
     var detailRow = abierto ? renderPlantaDetail(r, cols.length) : '';
     return mainRow + detailRow;
-  }).join('');
+  }
+
+  var html = '';
+  if (rowsProduccion.length) {
+    html += '<tr><td colspan="' + cols.length + '" style="background:#eaf2f8;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#1a5276;border-bottom:2px solid #2980b9">🏭 Producción propia (' + rowsProduccion.length + ' productos)</td></tr>';
+    html += rowsProduccion.map(_plantaRowHTML).join('');
+  }
+  if (rowsCarval.length) {
+    html += '<tr><td colspan="' + cols.length + '" style="background:#fef9e7;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#7d6608;border-bottom:2px solid #f1c40f;border-top:2px solid #f1c40f">📦 Proveedor Carval (' + rowsCarval.length + ' productos)</td></tr>';
+    html += rowsCarval.map(_plantaRowHTML).join('');
+  }
+  tbody.innerHTML = html;
 }
 
 // Alterna el detalle desplegable de una fila.
@@ -686,6 +739,7 @@ function exportPlanta() {
   var empresasList = _empresasVisibles();
   var data = rows.map(function(r) {
     var base = {
+      'Categoría': isCarvalProduct(r.producto) ? 'Carval' : 'Producción propia',
       'Producto': r.producto || '',
       'Presentación(es)': r.presentaciones || '',
       'Pendiente': r.pendiente

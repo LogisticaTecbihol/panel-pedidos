@@ -372,7 +372,14 @@ async function saveUser() {
         body: { email: email, password: password }
       });
 
-      if (fnRes.error) throw new Error(fnRes.error.message || 'Error al crear usuario en Auth');
+      if (fnRes.error) {
+        var errMsg = 'Error al crear usuario en Auth';
+        try {
+          var body = await fnRes.error.context.json();
+          if (body && body.error) errMsg = body.error;
+        } catch(_e) {}
+        throw new Error(errMsg);
+      }
       var newUserId = fnRes.data && fnRes.data.user_id;
       if (!newUserId) throw new Error('No se recibió el ID del usuario creado');
 
