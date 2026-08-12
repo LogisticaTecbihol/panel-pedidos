@@ -63,7 +63,11 @@
     return /planta/i.test(origen || '');
   }
 
-  var _NC_MOTIVOS_IGNORAR_SALIDA = { 'Devolucion_cliente': true };
+  var _NC_MOTIVOS_IGNORAR_SALIDA = {
+    'Devolucion_cliente': true,
+    'Retorno_conforme': true,
+    'Traslado_NC': true
+  };
 
 
   // ═════════════════════════════════════════════════════════
@@ -175,27 +179,25 @@
       });
     });
 
-    // Órdenes de Compra — Remisión Destino dispara ENTRADA destino;
-    // Salida origen se dispara con Remisión Origen, o con Remisión
-    // Destino si el origen es distinto (misma lógica que kardex.js).
+    // Órdenes de Compra — ENTRADA destino + SALIDA origen
+    // (misma lógica que kardex.js: requiere Remision para procesar)
     (src.ordenes || []).forEach(function(oc) {
       var cant = Number(oc.Cantidad) || 0;
       if (cant <= 0) return;
-      var remDest = String(oc.Remision || '').trim();
-      var remOrig = String(oc.Remision_Origen || '').trim();
-      if (remDest && oc.Empresa_Destino) {
+      var rem = String(oc.Remision || '').trim();
+      if (!rem) return;
+      if (oc.Empresa_Destino) {
         movs.push({
           fecha: oc.Fecha || '', tipo: 'Entrada', modulo: 'Órdenes de Compra',
-          remision: remDest, empresa: oc.Empresa_Destino,
+          remision: rem, empresa: oc.Empresa_Destino,
           producto: _normProd(oc.Producto),
           presentacion: oc.Presentacion || '', cantidad: cant
         });
       }
-      var remSalida = remOrig || remDest;
-      if (remSalida && oc.Empresa_Origen && oc.Empresa_Origen !== oc.Empresa_Destino) {
+      if (oc.Empresa_Origen && oc.Empresa_Origen !== oc.Empresa_Destino) {
         movs.push({
           fecha: oc.Fecha || '', tipo: 'Salida', modulo: 'Órdenes de Compra',
-          remision: remSalida, empresa: oc.Empresa_Origen,
+          remision: rem, empresa: oc.Empresa_Origen,
           producto: _normProd(oc.Producto),
           presentacion: oc.Presentacion || '', cantidad: cant
         });
