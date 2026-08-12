@@ -561,10 +561,16 @@ async function saveEntregas() {
   btn.textContent = '⏳ Guardando...';
 
   try {
+    await loadMuestras();
+
+    var noEncontradas = [];
     for (var i = 0; i < updates.length; i++) {
       var u = updates[i];
       var row = allMuestras.filter(function(r) { return r.id === u.id; })[0];
-      if (!row) continue;
+      if (!row) {
+        noEncontradas.push(u.id);
+        continue;
+      }
       var estado = 'Despachada';
       var res = await apiPost({
         action: 'editarMuestra', row: u.id,
@@ -580,6 +586,9 @@ async function saveEntregas() {
         Fecha_Entrega: row.Fecha_Entrega || ''
       });
       if (!res.ok) throw new Error(res.error || 'Error al guardar línea ' + u.id);
+    }
+    if (noEncontradas.length) {
+      throw new Error('No se encontraron ' + noEncontradas.length + ' línea(s) en la base de datos. Recargá la página e intentá de nuevo.');
     }
     closeViewMu();
     showToast('✅ Entregas registradas');
