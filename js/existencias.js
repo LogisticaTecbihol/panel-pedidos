@@ -528,13 +528,50 @@
   // Exportar
   // ═════════════════════════════════════════════════════════
 
+  async function debugProducto(filtro) {
+    var snap = await loadSnapshot();
+    var movs = snap.kxMovimientos;
+    var f = (filtro || '').toUpperCase();
+    var encontrados = movs.filter(function(m) {
+      return m.producto && m.producto.toUpperCase().indexOf(f) >= 0;
+    });
+    var porEmpresa = {};
+    encontrados.forEach(function(m) {
+      var k = m.empresa;
+      if (!porEmpresa[k]) porEmpresa[k] = { entradas: [], salidas: [], saldo: 0 };
+      if (m.tipo === 'Entrada') {
+        porEmpresa[k].entradas.push(m);
+        porEmpresa[k].saldo += m.cantidad;
+      } else {
+        porEmpresa[k].salidas.push(m);
+        porEmpresa[k].saldo -= m.cantidad;
+      }
+    });
+    console.log('=== DEBUG Existencias (' + filtro + ') ===');
+    console.log('Total movimientos:', encontrados.length);
+    Object.keys(porEmpresa).sort().forEach(function(emp) {
+      var d = porEmpresa[emp];
+      console.log('\n--- ' + emp + ' --- Saldo: ' + d.saldo);
+      console.log('Entradas (' + d.entradas.length + '):');
+      d.entradas.forEach(function(m) {
+        console.log('  +' + m.cantidad, m.modulo, m.remision, m.fecha);
+      });
+      console.log('Salidas (' + d.salidas.length + '):');
+      d.salidas.forEach(function(m) {
+        console.log('  -' + m.cantidad, m.modulo, m.remision, m.fecha);
+      });
+    });
+    console.log('\nSaldos snapshot:', snap.saldos[_normProd(filtro)] || 'No encontrado (busca nombre exacto)');
+    return porEmpresa;
+  }
+
   global.Existencias = {
     loadSnapshot: loadSnapshot,
     getPorEmpresa: getPorEmpresa,
     getPorEmpresaEspecifica: getPorEmpresaEspecifica,
-    // Expuestas por si alguien quiere reutilizar en el futuro:
     buildKxMovimientos: buildKxMovimientos,
-    computeSaldosPorEmpresa: computeSaldosPorEmpresa
+    computeSaldosPorEmpresa: computeSaldosPorEmpresa,
+    debug: debugProducto
   };
 
   // Compatibilidad con inventario.js (globals antiguos).
