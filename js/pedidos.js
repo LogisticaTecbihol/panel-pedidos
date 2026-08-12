@@ -849,6 +849,11 @@ async function openDetail(idx) {
     var prod = nlProd.value.trim();
     if (!prod || activeIdx === null) return;
     var cDet = consecs[activeIdx];
+    var nlPres = document.getElementById('nl-presentacion');
+    if (nlPres && !nlPres.value.trim()) {
+      var pres = _autoFillPresentacion(prod, cDet.Nombre_Empresa);
+      if (pres) nlPres.value = pres;
+    }
     var precio = _lookupPrecio(cDet.Nombre_Empresa, document.getElementById('md-precio').value.trim(), prod);
     if (precio !== null) {
       document.getElementById('nl-vunitario').value = precio;
@@ -2587,6 +2592,55 @@ var clienteAC = null;
 var productoACs = [];
 var geoACs = { nv: null, md: null, ed: null };
 
+function _extraerPresentacion(nombre) {
+  if (!nombre) return '';
+  var s = String(nombre).trim();
+  var patterns = [
+    /\b(bid[oó]n\s+\d+\s*(?:litros?|lts?|l))\b/i,
+    /\b(caneca\s+\d+\s*(?:litros?|lts?|l))\b/i,
+    /\b(garrafa\s+\d+\s*(?:litros?|lts?|l))\b/i,
+    /\b(tambor\s+\d+\s*(?:litros?|lts?|l|galones?))\b/i,
+    /\b(frasco\s+\d+\s*(?:ml|cc|litros?|lts?|l|g|gr|oz))\b/i,
+    /\b(bolsa\s+\d+\s*(?:kg|g|gr|lb|litros?|lts?|l|ml))\b/i,
+    /\b(saco\s+\d+\s*(?:kg|lb))\b/i,
+    /\b(bulto\s+\d+\s*(?:kg|lb))\b/i,
+    /\b(caja\s+\d+\s*(?:unidades|uds?|kg|g|gr|litros?|lts?|l))\b/i,
+    /\b(sobre\s+\d+\s*(?:g|gr|ml|cc))\b/i,
+    /\b(\d+\s*(?:x\s*\d+\s*)?galones?)\b/i,
+    /\b(\d+\s*(?:x\s*\d+\s*)?litros?)\b/i,
+    /\b(\d+\s*(?:x\s*\d+\s*)?lts?)\b/i,
+    /\b(\d+\s*ml)\b/i,
+    /\b(\d+\s*cc)\b/i,
+    /\b(\d+\s*(?:x\s*\d+\s*)?kg)\b/i,
+    /\b(\d+\s*g(?:r(?:amos?)?)?)\b(?!\s*al)/i,
+    /\b(\d+\s*lb)\b/i,
+    /\b(\d+\s*oz)\b/i,
+    /\b(gal[oó]n)\b/i,
+    /\b(litro)\b/i,
+  ];
+  for (var pi = 0; pi < patterns.length; pi++) {
+    var m = s.match(patterns[pi]);
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
+function _autoFillPresentacion(productoNombre, empresa) {
+  if (!productoNombre) return '';
+  var prodNorm = productoNombre.toLowerCase().trim();
+  if (productosCache) {
+    var filtrados = empresa
+      ? productosCache.filter(function(p) { return !p.empresa || p.empresa === empresa; })
+      : productosCache;
+    for (var i = 0; i < filtrados.length; i++) {
+      if ((filtrados[i].producto || '').toLowerCase().trim() === prodNorm) {
+        return filtrados[i].presentacion || '';
+      }
+    }
+  }
+  return _extraerPresentacion(productoNombre);
+}
+
 function destroyGeoAC(key) {
   if (geoACs[key]) {
     if (geoACs[key].deptAC) geoACs[key].deptAC.destroy();
@@ -2724,7 +2778,16 @@ function setupProductoAutocomplete() {
     }));
     input.addEventListener('blur', function() {
       var idx = [].slice.call(document.querySelectorAll('.nv-prod')).indexOf(input);
-      if (idx >= 0 && input.value.trim()) _applyPrecioToLine(idx);
+      if (idx >= 0 && input.value.trim()) {
+        var presInput = document.querySelectorAll('.nv-pres')[idx];
+        if (presInput && !presInput.value.trim()) {
+          var emp = document.getElementById('nv-empresa').value;
+          var pres = _autoFillPresentacion(input.value.trim(), emp);
+          if (pres) presInput.value = pres;
+          syncNuevoFromDOM();
+        }
+        _applyPrecioToLine(idx);
+      }
     });
   });
 }
