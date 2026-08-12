@@ -107,6 +107,13 @@ var SHARDA_PRODUCTS_RAW = [
   'SHARDIZOL 250 EC LITRO'
 ];
 
+var DISNEY_PRODUCTS_RAW = [
+  'OXICLORURO DE COBRE',
+  'OXICLORURO DE COBRE X KILO',
+  'OXICLORURO DE COBRE X 500 GR',
+  'OXICLORURO DE COBRE X 250 GR'
+];
+
 var _carvalNormSet = {};
 CARVAL_PRODUCTS_RAW.forEach(function(p) {
   _carvalNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
@@ -119,6 +126,10 @@ var _shardaNormSet = {};
 SHARDA_PRODUCTS_RAW.forEach(function(p) {
   _shardaNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
 });
+var _disneyNormSet = {};
+DISNEY_PRODUCTS_RAW.forEach(function(p) {
+  _disneyNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
+});
 function isCarvalProduct(name) {
   return !!_carvalNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
 }
@@ -127,6 +138,9 @@ function isAbagoProduct(name) {
 }
 function isShardaProduct(name) {
   return !!_shardaNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
+}
+function isDisneyProduct(name) {
+  return !!_disneyNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
 }
 
 var SIGLAS = {
@@ -669,7 +683,7 @@ function renderPlantaTable() {
   }).join('');
 
   var rows = sortedPlanta();
-  var rowsProduccion = rows.filter(function(r) { return !isCarvalProduct(r.producto) && !isAbagoProduct(r.producto) && !isShardaProduct(r.producto); });
+  var rowsProduccion = rows.filter(function(r) { return !isCarvalProduct(r.producto) && !isAbagoProduct(r.producto) && !isShardaProduct(r.producto) && !isDisneyProduct(r.producto); });
   var rowsCarval = rows.filter(function(r) { return isCarvalProduct(r.producto); });
   var rowsAbago = rows.filter(function(r) { return isAbagoProduct(r.producto); });
   var rowsSharda = rows.filter(function(r) { return isShardaProduct(r.producto); });
@@ -677,6 +691,8 @@ function renderPlantaTable() {
   if (rowsCarval.length) extraLabel.push(rowsCarval.length + ' Carval');
   if (rowsAbago.length) extraLabel.push(rowsAbago.length + ' Abago');
   if (rowsSharda.length) extraLabel.push(rowsSharda.length + ' Sharda');
+  var rowsDisney = rows.filter(function(r) { return isDisneyProduct(r.producto); });
+  if (rowsDisney.length) extraLabel.push(rowsDisney.length + ' Disney C.');
   document.getElementById('pl-count').textContent = '(' + plantaData.length + ' producto' + (plantaData.length === 1 ? '' : 's') + (extraLabel.length ? ' · ' + extraLabel.join(' · ') : '') + ')';
 
   var tbody = document.getElementById('pl-body');
@@ -731,6 +747,10 @@ function renderPlantaTable() {
   if (rowsSharda.length) {
     html += '<tr><td colspan="' + cols.length + '" style="background:#f4ecf7;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#6c3483;border-bottom:2px solid #8e44ad;border-top:2px solid #8e44ad">📦 Proveedor Sharda (' + rowsSharda.length + ' productos)</td></tr>';
     html += rowsSharda.map(_plantaRowHTML).join('');
+  }
+  if (rowsDisney.length) {
+    html += '<tr><td colspan="' + cols.length + '" style="background:#fbeee6;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#a04000;border-bottom:2px solid #e67e22;border-top:2px solid #e67e22">📦 Proveedor Disney Castellanos (' + rowsDisney.length + ' productos)</td></tr>';
+    html += rowsDisney.map(_plantaRowHTML).join('');
   }
   tbody.innerHTML = html;
 }
@@ -826,7 +846,7 @@ function exportPlanta() {
   var empresasList = _empresasVisibles();
   var data = rows.map(function(r) {
     var base = {
-      'Categoría': isCarvalProduct(r.producto) ? 'Carval' : isAbagoProduct(r.producto) ? 'Abago' : isShardaProduct(r.producto) ? 'Sharda' : 'Producción propia',
+      'Categoría': isCarvalProduct(r.producto) ? 'Carval' : isAbagoProduct(r.producto) ? 'Abago' : isShardaProduct(r.producto) ? 'Sharda' : isDisneyProduct(r.producto) ? 'Disney Castellanos' : 'Producción propia',
       'Producto': r.producto || '',
       'Presentación(es)': r.presentaciones || '',
       'Pendiente': r.pendiente
