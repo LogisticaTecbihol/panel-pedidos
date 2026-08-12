@@ -2609,6 +2609,7 @@ function _extraerPresentacion(nombre) {
     /\b(\d+\s*(?:x\s*\d+\s*)?galones?)\b/i,
     /\b(\d+\s*(?:x\s*\d+\s*)?litros?)\b/i,
     /\b(\d+\s*(?:x\s*\d+\s*)?lts?)\b/i,
+    /\b(\d+\s*l)\b(?![\wáéíóú])/i,
     /\b(\d+\s*ml)\b/i,
     /\b(\d+\s*cc)\b/i,
     /\b(\d+\s*(?:x\s*\d+\s*)?kg)\b/i,
