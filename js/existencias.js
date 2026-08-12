@@ -335,7 +335,7 @@
         .catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getKardexNC',    { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Presentacion,Bodega_Salida' })
+      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Salida' })
         .catch(function() { return { ok: true, cambios: [] }; })
     ]);
 
