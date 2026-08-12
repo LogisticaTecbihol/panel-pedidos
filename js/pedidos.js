@@ -2711,7 +2711,7 @@ function initAutocomplete(input, opts) {
 
 function destroyProductoACs() { productoACs.forEach(function(ac) { ac.destroy(); }); productoACs = []; }
 
-function _normStr(s) { return (s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function _normStr(s) { return (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' '); }
 
 function _lookupPrecio(empresa, tipoPrecio, productoNombre) {
   if (!listaPreciosCache || !empresa || !tipoPrecio || !productoNombre) return null;
@@ -2818,6 +2818,12 @@ function populateNuevoDataLists() {
     if (pl) plazos[pl] = true;
     if (pr) precios[pr] = true;
   });
+  if (listaPreciosCache) {
+    listaPreciosCache.forEach(function(lp) {
+      var tp = (lp.Tipo_Precio || '').trim();
+      if (tp) precios[tp] = true;
+    });
+  }
   document.getElementById('dl-plazo').innerHTML = Object.keys(plazos).sort().map(function(v) {
     return '<option value="' + v.replace(/"/g, '&quot;') + '">';
   }).join('');
