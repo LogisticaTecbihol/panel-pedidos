@@ -2910,7 +2910,9 @@ async function openNuevoPedido() {
     _toggleBodegaField('nv', nvEmpSel.value);
     _reapplyPreciosNuevo();
   };
-  document.getElementById('nv-precio').onchange = function() { _reapplyPreciosNuevo(); };
+  var nvPrecioEl = document.getElementById('nv-precio');
+  nvPrecioEl.oninput = function() { _reapplyPreciosNuevo(); };
+  nvPrecioEl.onchange = function() { _reapplyPreciosNuevo(); };
   document.getElementById('nv-comercial').oninput = actualizarConsecutivoNuevo;
   document.getElementById('nv-cliente').addEventListener('input', function() {
     var fa = document.getElementById('nv-facturar-a');
