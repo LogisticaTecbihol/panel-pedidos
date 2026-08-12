@@ -471,7 +471,10 @@ function buildPlanta() {
     var pend = Number(p.Cant_Pendiente) || 0;
     if (pend <= 0) return;
     var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 === 'Anulado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera') return;
+    var est2L = est2.toLowerCase();
+    if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera') return;
+    var rawEst = (p.Estado_Entrega || '').trim().toLowerCase() || 'recibido';
+    if (rawEst === 'recibido' && est2L === 'cerrado') return;
     if (fEmp && p.Nombre_Empresa !== fEmp) return;
     if (fCom && p.Comercial !== fCom) return;
     if (fCli && (p.Cliente || '').trim() !== fCli) return;
