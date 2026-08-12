@@ -92,6 +92,17 @@ var ABAGO_PRODUCTS_RAW = [
   'COMBI K X 25 KILOS'
 ];
 
+var SHARDA_PRODUCTS_RAW = [
+  'SHAZUGAMYCIN 2% SL',
+  'SHAZUGAMYCIN 2 % SL',
+  'SHAZUGAMYCIN 2% SL 200 LT',
+  'SHAZUGAMYCIN 2 % SL 200 LT',
+  'SHAZUGAMYCIN 2% SL X LITRO',
+  'SHAZUGAMYCIN 2 % SL X LITRO',
+  'SHAZUGAMYCIN 2% SL X 200 LT',
+  'SHAZUGAMYCIN 2 % SL X 200 LT'
+];
+
 var _carvalNormSet = {};
 CARVAL_PRODUCTS_RAW.forEach(function(p) {
   _carvalNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
@@ -100,11 +111,18 @@ var _abagoNormSet = {};
 ABAGO_PRODUCTS_RAW.forEach(function(p) {
   _abagoNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
 });
+var _shardaNormSet = {};
+SHARDA_PRODUCTS_RAW.forEach(function(p) {
+  _shardaNormSet[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true;
+});
 function isCarvalProduct(name) {
   return !!_carvalNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
 }
 function isAbagoProduct(name) {
   return !!_abagoNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
+}
+function isShardaProduct(name) {
+  return !!_shardaNormSet[String(name || '').replace(/\s+/g, ' ').trim().toUpperCase()];
 }
 
 var SIGLAS = {
@@ -647,12 +665,14 @@ function renderPlantaTable() {
   }).join('');
 
   var rows = sortedPlanta();
-  var rowsProduccion = rows.filter(function(r) { return !isCarvalProduct(r.producto) && !isAbagoProduct(r.producto); });
+  var rowsProduccion = rows.filter(function(r) { return !isCarvalProduct(r.producto) && !isAbagoProduct(r.producto) && !isShardaProduct(r.producto); });
   var rowsCarval = rows.filter(function(r) { return isCarvalProduct(r.producto); });
   var rowsAbago = rows.filter(function(r) { return isAbagoProduct(r.producto); });
+  var rowsSharda = rows.filter(function(r) { return isShardaProduct(r.producto); });
   var extraLabel = [];
   if (rowsCarval.length) extraLabel.push(rowsCarval.length + ' Carval');
   if (rowsAbago.length) extraLabel.push(rowsAbago.length + ' Abago');
+  if (rowsSharda.length) extraLabel.push(rowsSharda.length + ' Sharda');
   document.getElementById('pl-count').textContent = '(' + plantaData.length + ' producto' + (plantaData.length === 1 ? '' : 's') + (extraLabel.length ? ' · ' + extraLabel.join(' · ') : '') + ')';
 
   var tbody = document.getElementById('pl-body');
@@ -703,6 +723,10 @@ function renderPlantaTable() {
   if (rowsCarval.length) {
     html += '<tr><td colspan="' + cols.length + '" style="background:#fef9e7;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#7d6608;border-bottom:2px solid #f1c40f;border-top:2px solid #f1c40f">📦 Proveedor Carval (' + rowsCarval.length + ' productos)</td></tr>';
     html += rowsCarval.map(_plantaRowHTML).join('');
+  }
+  if (rowsSharda.length) {
+    html += '<tr><td colspan="' + cols.length + '" style="background:#f4ecf7;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#6c3483;border-bottom:2px solid #8e44ad;border-top:2px solid #8e44ad">📦 Proveedor Sharda (' + rowsSharda.length + ' productos)</td></tr>';
+    html += rowsSharda.map(_plantaRowHTML).join('');
   }
   tbody.innerHTML = html;
 }
@@ -798,7 +822,7 @@ function exportPlanta() {
   var empresasList = _empresasVisibles();
   var data = rows.map(function(r) {
     var base = {
-      'Categoría': isCarvalProduct(r.producto) ? 'Carval' : isAbagoProduct(r.producto) ? 'Abago' : 'Producción propia',
+      'Categoría': isCarvalProduct(r.producto) ? 'Carval' : isAbagoProduct(r.producto) ? 'Abago' : isShardaProduct(r.producto) ? 'Sharda' : 'Producción propia',
       'Producto': r.producto || '',
       'Presentación(es)': r.presentaciones || '',
       'Pendiente': r.pendiente
