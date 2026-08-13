@@ -1198,7 +1198,35 @@ async function openDetail(idx) {
   }
 
   resetNewLineForm();
+  if (nlProdAC) { nlProdAC.destroy(); nlProdAC = null; }
   var nlProd = document.getElementById('nl-producto');
+  if (productosCache) {
+    nlProdAC = initAutocomplete(nlProd, {
+      items: function() {
+        var emp = c.Nombre_Empresa;
+        var prods = productosCache || [];
+        if (emp) prods = prods.filter(function(p) { return !p.empresa || p.empresa === emp; });
+        return prods;
+      },
+      display: function(p) {
+        return '<strong>' + escHtml(p.producto) + '</strong>' +
+               (p.presentacion ? ' <span class="ac-sub">— ' + escHtml(p.presentacion) + '</span>' : '');
+      },
+      match: function(p, val) {
+        return ((p.producto||'') + ' ' + (p.presentacion||'')).toLowerCase().indexOf(val) >= 0;
+      },
+      onSelect: function(p) {
+        nlProd.value = p.producto || '';
+        var nlPres = document.getElementById('nl-presentacion');
+        if (nlPres) nlPres.value = p.presentacion || '';
+        var precio = _lookupPrecio(c.Nombre_Empresa, document.getElementById('md-precio').value.trim(), p.producto);
+        if (precio !== null) {
+          document.getElementById('nl-vunitario').value = precio;
+          calcNewLineTotal();
+        }
+      }
+    });
+  }
   nlProd.onblur = function() {
     var prod = nlProd.value.trim();
     if (!prod || activeIdx === null) return;
@@ -1227,6 +1255,7 @@ async function openDetail(idx) {
 function closeModal() {
   document.getElementById('overlay').classList.remove('show');
   activeIdx = null;
+  if (nlProdAC) { nlProdAC.destroy(); nlProdAC = null; }
   destroyGeoAC('md');
   if (typeof closeRemPicker === 'function') closeRemPicker();
   if (typeof closeFmtPickers === 'function') closeFmtPickers();
@@ -2941,6 +2970,7 @@ var productosCache = null;
 var listaPreciosCache = null;
 var clienteAC = null;
 var nitAC = null;
+var nlProdAC = null;
 var productoACs = [];
 var geoACs = { nv: null, md: null, ed: null };
 
