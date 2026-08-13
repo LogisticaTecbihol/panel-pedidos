@@ -2350,10 +2350,15 @@ function renderEditLines() {
     var cantDisBg = (lockEntregado || lockCant) ? ';background:#f7fafc;opacity:0.7' : '';
     var prod = (l.Producto||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     var pres = (l.Presentacion||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    var textoTieneBonif = /bonificado/i.test(l.Producto || '');
+    var vUnit = Number(l.Valor_Unitario) || 0;
+    var bonif = (l.Bonificado || '').trim();
+    var esBonif = bonif === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
       '<td><input class="ef ed-prod" data-i="' + i + '" type="text" value="' + prod + '" style="min-width:260px' + (locked || lockEntregado ? ';background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
       '<td><input class="ef ed-pres" data-i="' + i + '" type="text" value="' + pres + '" style="' + (locked || lockEntregado ? 'background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
+      '<td style="text-align:center"><input type="checkbox" class="ed-bonif" data-i="' + i + '"' + (esBonif ? ' checked' : '') + ' style="width:16px;height:16px;cursor:pointer"' + disAttr + '></td>' +
       '<td><input class="ef ed-cant" data-i="' + i + '" type="number" min="0" value="' + (l.Cantidad||0) + '" style="width:80px;text-align:right' + cantDisBg + '"' + cantDisAttr + (lockEntregado || lockCant ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
       '<td><input class="ef ed-vuni" data-i="' + i + '" type="number" min="0" value="' + (l.Valor_Unitario||0) + '" style="width:100px;text-align:right' + disBg + '"' + disAttr + (lockEntregado ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
       '<td><input class="ef ed-vtot" data-i="' + i + '" type="number" value="' + (l.Valor_Total||0) + '" style="width:100px;text-align:right;background:#f7fafc" readonly></td>' +
@@ -2394,7 +2399,7 @@ function addEditLine() {
   editWorkingLines.push({
     Producto:'', Presentacion:'', Cantidad:0, Valor_Unitario:0, Valor_Total:0,
     Cant_Entregada:0, Cant_Pendiente:0, Estado_Entrega:'Recibido',
-    Fecha_Ult_Entrega:null, Remisiones:'', __row: null
+    Fecha_Ult_Entrega:null, Remisiones:'', Bonificado:'', __row: null
   });
   renderEditLines();
   var wrap = document.querySelector('#edit-overlay .prod-wrap');
@@ -2420,6 +2425,7 @@ async function saveEdit() {
   var vunis = [].slice.call(document.querySelectorAll('.ed-vuni'));
   var vtots = [].slice.call(document.querySelectorAll('.ed-vtot'));
   var rems = [].slice.call(document.querySelectorAll('.ed-rem'));
+  var bonifs = [].slice.call(document.querySelectorAll('.ed-bonif'));
   editWorkingLines.forEach(function(l, i) {
     if (norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) return;
     l.Producto = prods[i] ? prods[i].value.trim() : '';
@@ -2428,6 +2434,7 @@ async function saveEdit() {
     l.Valor_Unitario = Number(vunis[i] && vunis[i].value) || 0;
     l.Valor_Total = Number(vtots[i] && vtots[i].value) || 0;
     l.Remisiones = rems[i] ? rems[i].value.trim() : '';
+    l.Bonificado = bonifs[i] && bonifs[i].checked ? 'Sí' : '';
     l.Cant_Pendiente = Math.max(0, l.Cantidad - (Number(l.Cant_Entregada)||0));
   });
 
