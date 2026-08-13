@@ -299,8 +299,8 @@ function _drawRemisionCopy(doc, data, palette) {
     head: [['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada', 'Bonif.']],
     body: tableBody,
     theme: 'grid',
-    headStyles: { fillColor: accent, fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
-    bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    headStyles: { fillColor: accent, fontSize: 7.5, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.5 },
+    bodyStyles: { fontSize: 7.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
       1: { cellWidth: 82 },
@@ -309,7 +309,7 @@ function _drawRemisionCopy(doc, data, palette) {
       4: { halign: 'center', cellWidth: 18 }
     },
     margin: { top: pageTopY, left: 14, right: 14, bottom: 15 },
-    styles: { cellPadding: 3, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    styles: { cellPadding: 1.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
     tableLineColor: [60, 60, 60],
     tableLineWidth: 0.5,
     didDrawPage: function(hookData) {
