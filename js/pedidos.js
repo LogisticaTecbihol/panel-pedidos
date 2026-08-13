@@ -148,6 +148,86 @@ function getSigla(n) { return SIGLAS[(n||'').trim()] || n || '—'; }
 var SIGLA_CLASSES = ['PARCELAR','GREEN','RESO','IASO','IAS'];
 function getSiglaClass(n) { var s = getSigla(n); return SIGLA_CLASSES.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
 
+// ── Listado clientes GREEN (fuente: listado_clientes_green.xlsx) ──
+// [cliente, tipo_id, nit, direccion, telefono, municipio]
+var _CLIENTES_GREEN_RAW = [
+  ['AGRICOLA COLOMBIANA SAS','NIT','900562418-0','CRA 2A 0 16','3144658261','Cogua'],
+  ['AGRICOLA LOS PINOS S.A.S.','NIT','800159028-1','CL 7 1 50','6018209914','Madrid'],
+  ['AGRITEK AG SAS','NIT','902083882-7','PARQUE AGROINDUSTRIAL SABANA PH OFICINA 503','3176806394','Mosquera'],
+  ['AGROACTIVA JVR S.A.S','NIT','900296879-1','CC GREEN HILLS BL C P 3 LC 8','3133496823','Tunja'],
+  ['AGROCIENCIA SAS','NIT','901739475-6','CALLE 5 4 28','3123403239','Caqueza'],
+  ['AGRO-GRANJA DEL ORIENTE SAS','NIT','901674808-4','CR 5 NO. 4 19 / 22','3153648723','Une'],
+  ['AGROINSUMOS Y FERRETERIA MAG SAS','NIT','901484301-7','DG 3 2 A 23','3213430439','Anolaima'],
+  ['AGROPECUARIA KINAGRO SAS','NIT','900618127-5','CR 51 6 SUR 95','31041304','Medellín'],
+  ['AGROTECH CORPORATIVO S.A.S','NIT','900589828-4','calle 1 # 3-45','22141122','Cartago'],
+  ['AGROVERT SAS','NIT','901067015-7','AV TRONCAL OCCIDENTE #11E 03E PARQUE AGROINDUSTRIAL DE LA SABANA PH','3058816728','Mosquera'],
+  ['AGROZAM FACATATIVA SAS','NIT','901042166-2','CRA 1 7 62','3133177479','Facatativá'],
+  ['ALMACENES AGROMAX SAS','NIT','832002204-3','CARRERA 4 1 MCP','3132511837','El Rosal'],
+  ['ANDREA KATHERINE ZABALA RODRIGUEZ','CC','1075626762','CARRERA 5 # 1-11','','Cajamarca'],
+  ['BETANCOURT SANCHEZ KAREM SOFIA','CC','1001342969','CRA 81H #45-24 SUR','3134791231','Bogota D.C.'],
+  ['CASTELLANOS DISNEY','CC','79311889','BOGOTA D.C','3102098249','Bogota D.C.'],
+  ['CHI ABAGO SAS','NIT','901405081-4','CRA 62 # 167B-57 INTERIOR 18','3174271771','Bogota D.C.'],
+  ['DISTRIBUIDORA AGRICOLA DEL SUMAPAZ','NIT','900086526-6','CLL 19 B 6 40','','Fusagasugá'],
+  ['DOCTOR CALDERON ASISTENCIA TECNICA AGRICOLA','NIT','800247233-1','CARRERA 20 # 8781','6222687','Bogota D.C.'],
+  ['EDGAR ALBERTO RUIZ TOBON','NIT','75087156-7','BRR LA PRIMAVERA CL 49 19 119','3218119833','Caldas'],
+  ['ERIKA TATIANA CRIOLLO PINZON','CC','1069753098','CRA 2 # 9 37','','Fusagasugá'],
+  ['FERRETERIA NICHOLSON','NIT','13348064-3','CL 17 28 26','3108126572','Bogota D.C.'],
+  ['GALVIS SILVA KAREN JULIET','NIT','1033764044-3','CR 9 A 51 41 SUR','3125197313','Bogota D.C.'],
+  ['GOMEZ GOMEZ LUCIO ANTONIO','CC','80384356','AV 17#11-60','3245739454','Funza'],
+  ['GRANENLACE SAS','NIT','900558587-1','CC GREEN HILLS BL CP 3 LC 8','3133496823','Tunja'],
+  ['GREEN AGROSOLUCIONES DE COLOMBIA SAS','NIT','9000511092-9','AV TRONCAL OCCIDENTE KM 1,8 VIA BOGOTA','82997677','Mosquera'],
+  ['GREEN AGROSOLUCIONES DE COLOMBIA SAS','NIT','900511092-5','AV TRONCAL OCCIDENTE KM 1,8 VIA BOGOTA','82997677','Mosquera'],
+  ['GRUPO EMPRESARIAL YEBUL AGRO SAS','NIT','901844224-3','CR 1 8 25 LT 7','3165418238','Une'],
+  ['GUILLERMO LEON MATEUS GUTIERREZ','CC','74359884','AV LIBERTADORES 21-72','','Paipa'],
+  ['GUZMAN CALDERON LAURA LIZETH','CC','1105692121','ESPINAL','3202220022','Espinal'],
+  ['INSUMOS AGROPECUARIOS DE LA SABANA SAS','NIT','900447393-3','AV TRONCAL OCCIDENTE 11E 03E BOD','3106716741','Mosquera'],
+  ['INSUMOS AGROPECUARIOS SOSTENIBLE SAS','NIT','901924101-1','AV TRONCAL OCC 11 E 3 E BD 1271','3103616741','Mosquera'],
+  ['INVERSIONES EL CACIQUE BJ S.A.S','NIT','901965797-0','CL 14 18 74 BRR 20 DE JULIO','3143251668','Sogamoso'],
+  ['INVERSIONES SAN ISIDRO LABRADOR SAS','NIT','901293475-1','CRA 7 6A 25','8999589','Sibaté'],
+  ['JESUS HORACIO AYALA HERRERA','CC','1105684820','CARRERA 1','','Ibagué'],
+  ['JONATHAN FELIPE GAITAN TRIVIÑO','CC','1073427786','CRA 7 6 85','31653215','Bojacá'],
+  ['JOSE DAVID MARTINEZ SANCHEZ','CC','1192914971','CRA 6 # 149-41','31605739','Cachipay'],
+  ['JULIETH ROSSANA RODRIGUEZ GONZALEZ','CC','1115737739','CRA 14 29 27','','Arauca'],
+  ['MAKRO ALEJO SAS','NIT','901172467-1','AV LIBERTADORES 21 78','3123342291','Paipa'],
+  ['MARIA CAMILA PENAGOS','CC','1073509910','CRA 6 # 17-90','','Funza'],
+  ['MARIO ANDRES ANDRES MEDINA','CC','1070954843','CALLE19 ESTE #1 SUR 94','3148675095','Facatativá'],
+  ['MISAKGRO SAS','NIT','901472748-3','CRA 5 ESTE 19 B 19 IREGUI 2','3163118221','Mosquera'],
+  ['ORTIZ GUERRA Y ASOCIADOS SAS','NIT','900822217-3','CR 4 S 333','','Neiva'],
+  ['PAEZ SANCHEZ JOHN EPIMENIO','NIT','79432722-0','cl 35 sur 4a 45','3214401053','Bogota D.C.'],
+  ['PARCELAR DE COLOMBIA SAS','NIT','900156484-6','AV TRONCAL OCCI 11 E 03','3134629468','Mosquera'],
+  ['PAULA MARTINEZ','CC','121','','',''],
+  ['PEAJE CHICORAL/GUALANDAY','NIT','900816750-3','','',''],
+  ['PUNTO AGROTECNOLOGICO DE COLOMBIA SAS PAGROCOL','NIT','901185718-1','CRA 8 19 40 BRR CHILE','3216401093','Pasto'],
+  ['RUIZ TOBON OLGA CECILIA','NIT','30331875-7','CALLE 47 A 19 99 BRR SAN JORGE','8861413','Manizales'],
+  ['SALCEDO PACHECO GABRIELA','NIT','1091654599-8','CL 8 C 29 A 163 BRR ALTOS DE LA COLINA','3188970940','Ocaña'],
+  ['SANCHEZ DUARTE LAURA CATALINA','CC','1014304915','CRA 103B # 86-56','3174392690','Bogota D.C.'],
+  ['SANCHEZ OSCAMPO CARLOS FELIPE','CC','79522124','AV TRONCAL OCCIDENTE 11E 03E','3106716741','Mosquera'],
+  ['SINDY AMPARO VERGEL TORRADO','CC','10944574455','CL 7A 14A 52 P1','3134994577','Ocaña'],
+  ['SOLUCIONES INTEGRALES RESO SAS','NIT','901311335-5','AV TRONCAL OCCIDENTE 11E 03 E','','Mosquera'],
+  ['SOLUINTEGRAL CORP COLOMBIA S.A.S.','NIT','901784290-1','CARRERA 17A # 28 - 31','6076794698','Bucaramanga'],
+  ['SUPERCAMPO ML SAS','NIT','901135024-5','CRA 16 28 59 BRR ALARCON','6076517957','Bucaramanga'],
+  ['SUREMCOL SAS ZOMAC','NIT','901445989-7','CR 20 N 25 09','3182064038','Yopal']
+];
+
+function _mergeClientesGreen() {
+  if (!clientesCache) clientesCache = [];
+  var EMP = 'GREEN AGROSOLUCIONES DE COLOMBIA SAS';
+  var existing = {};
+  clientesCache.forEach(function(c) {
+    if (c.empresa === EMP) existing[(c.cliente || '').toUpperCase().trim() + '||' + (c.nit || '')] = true;
+  });
+  _CLIENTES_GREEN_RAW.forEach(function(r) {
+    var key = r[0].toUpperCase().trim() + '||' + r[2];
+    if (existing[key]) return;
+    existing[key] = true;
+    clientesCache.push({
+      cliente: r[0], tipo_identificacion: r[1], nit: r[2],
+      direccion: r[3], telefono: r[4], municipio: r[5],
+      departamento: '', empresa: EMP, correo: '', cupo_credito: '', plazo_pago: ''
+    });
+  });
+}
+
 // ── State ──
 var consecs = [];
 var pedidos = [];
@@ -2589,6 +2669,7 @@ var clientesCache = null;
 var productosCache = null;
 var listaPreciosCache = null;
 var clienteAC = null;
+var nitAC = null;
 var productoACs = [];
 var geoACs = { nv: null, md: null, ed: null };
 
@@ -2657,6 +2738,7 @@ async function loadAutocompleteData() {
   if (!productosCache) promises.push(apiGet('getMaestroProductos').then(function(r) { if (r.ok) productosCache = r.productos || []; }).catch(function() { productosCache = []; }));
   if (!listaPreciosCache) promises.push(apiGet('getListaPrecios').then(function(r) { if (r.ok) listaPreciosCache = r.precios || []; }).catch(function() { listaPreciosCache = []; }));
   if (promises.length) await Promise.all(promises);
+  _mergeClientesGreen();
 }
 
 function initAutocomplete(input, opts) {
@@ -2975,7 +3057,7 @@ async function openNuevoPedido() {
       var sigla = c.empresa ? getSigla(c.empresa) : '';
       var badge = sigla ? '<span class="ac-badge sigla-badge ' + getSiglaClass(c.empresa) + '">' + escHtml(sigla) + '</span> ' : '';
       return badge + '<strong>' + escHtml(c.cliente) + '</strong>' +
-             (c.nit ? '<div class="ac-sub">NIT: ' + escHtml(c.nit) + '</div>' : '') +
+             (c.nit ? '<div class="ac-sub">' + escHtml(c.tipo_identificacion || 'NIT') + ': ' + escHtml(c.nit) + '</div>' : '') +
              (c.municipio ? '<div class="ac-sub">' + escHtml(c.municipio) + '</div>' : '');
     },
     match: function(c, val) {
@@ -3014,6 +3096,61 @@ async function openNuevoPedido() {
       }
     }
   });
+  if (nitAC) { nitAC.destroy(); nitAC = null; }
+  nitAC = initAutocomplete(document.getElementById('nv-nit'), {
+    minChars: 3,
+    items: function() {
+      var emp = document.getElementById('nv-empresa').value;
+      var cls = (clientesCache || []).filter(function(c) { return c.nit; });
+      if (emp) {
+        var exact = cls.filter(function(c) { return c.empresa === emp; });
+        if (exact.length) cls = exact;
+      }
+      return cls;
+    },
+    display: function(c) {
+      var sigla = c.empresa ? getSigla(c.empresa) : '';
+      var badge = sigla ? '<span class="ac-badge sigla-badge ' + getSiglaClass(c.empresa) + '">' + escHtml(sigla) + '</span> ' : '';
+      var tipoTag = c.tipo_identificacion ? '<span style="color:#718096;font-size:0.72rem">' + escHtml(c.tipo_identificacion) + '</span> ' : '';
+      return badge + tipoTag + '<strong>' + escHtml(c.nit) + '</strong>' +
+             '<div class="ac-sub">' + escHtml(c.cliente) + '</div>' +
+             (c.municipio ? '<div class="ac-sub">' + escHtml(c.municipio) + '</div>' : '');
+    },
+    match: function(c, val) {
+      var nitClean = (c.nit || '').replace(/[-.\s]/g, '').toLowerCase();
+      var valClean = val.replace(/[-.\s]/g, '').toLowerCase().replace(/^(nit|cc|ce|ti|pa)\s*/i, '');
+      return nitClean.indexOf(valClean) >= 0;
+    },
+    onSelect: function(c) {
+      document.getElementById('nv-nit').value = c.nit || '';
+      document.getElementById('nv-cliente').value = c.cliente || '';
+      var fa = document.getElementById('nv-facturar-a');
+      if (!fa.dataset.edited) fa.value = c.cliente || '';
+      if (c.telefono) document.getElementById('nv-telefono').value = c.telefono;
+      if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
+      if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
+      if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
+      if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
+      if (c.cupo_credito && c.cupo_credito !== 'NA') {
+        document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
+        document.getElementById('nv-cupo-info').style.display = 'block';
+      } else {
+        document.getElementById('nv-cupo-info').style.display = 'none';
+      }
+      var lastOrder = getLastOrderForClient(c.cliente);
+      if (lastOrder) {
+        if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
+        if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
+        if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
+        if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
+        if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
+        if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
+          document.getElementById('nv-comercial').value = lastOrder.Comercial;
+          actualizarConsecutivoNuevo();
+        }
+      }
+    }
+  });
   setupProductoAutocomplete();
   destroyGeoAC('nv');
   geoACs.nv = setupGeoAutocomplete(
@@ -3026,6 +3163,7 @@ function closeNuevo() {
   document.getElementById('nuevo-overlay').classList.remove('show');
   nuevoProductos = [];
   if (clienteAC) { clienteAC.destroy(); clienteAC = null; }
+  if (nitAC) { nitAC.destroy(); nitAC = null; }
   destroyProductoACs();
   destroyGeoAC('nv');
 }
