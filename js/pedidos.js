@@ -1158,13 +1158,12 @@ async function openDetail(idx) {
   if (!lines.length) {
     tbody.innerHTML = '<tr><td colspan="11"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
   } else {
-    var orderHasDeliveries = lines.some(function(l) { return (Number(l.Cant_Entregada)||0) > 0; });
     tbody.innerHTML = detailWorkingLines.map(function(l, i) {
       var pedida = Number(l.Cantidad)||0;
       var entregada = Number(l.Cant_Entregada)||0;
       var pendiente = Math.max(0, pedida - entregada);
       var rawEst = (l.Estado_Entrega || '').trim();
-      var estL = (!rawEst || norm(rawEst) === 'recibido') ? (orderHasDeliveries ? 'Parcial' : 'Recibido') : rawEst;
+      var estL = (!rawEst || norm(rawEst) === 'recibido') ? (entregada > 0 ? 'Parcial' : 'Recibido') : rawEst;
       var badgeL = norm(estL) === 'recibido' ? 'b-rec' : norm(estL) === 'parcial' ? 'b-par' : norm(estL) === 'alistado' ? 'b-alistado' : norm(estL) === 'facturado' ? 'b-fac' : 'b-ent';
       var done = norm(estL) === 'entregado' || norm(estL) === 'alistado';
       var lockEntregado = norm(rawEst) === 'entregado' && !AUTH.isAdmin();
@@ -1907,7 +1906,6 @@ async function guardarTodo() {
     });
   }
 
-  var anyDelivery = detailWorkingLines.some(function(l) { return (Number(l.Cant_Entregada)||0) > 0; });
   detailWorkingLines.forEach(function(l) {
     var pedida = Number(l.Cantidad) || 0;
     var entregada = Number(l.Cant_Entregada) || 0;
@@ -1915,8 +1913,6 @@ async function guardarTodo() {
       var todasRemision = (l._entregas || []).length > 0 && (l._entregas || []).every(function(e) { return (e.remision || '').trim() !== ''; });
       l.Estado_Entrega = todasRemision ? 'Entregado' : 'Alistado';
     } else if (entregada > 0) {
-      l.Estado_Entrega = 'Parcial';
-    } else if (anyDelivery) {
       l.Estado_Entrega = 'Parcial';
     } else {
       l.Estado_Entrega = 'Recibido';
