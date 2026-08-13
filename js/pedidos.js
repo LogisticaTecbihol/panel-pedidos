@@ -1103,8 +1103,12 @@ async function openDetail(idx) {
 
   // Cargar snapshot de existencias para poblar los selectores de empresa origen.
   // No bloqueamos la apertura si falla; simplemente el selector queda vacío.
+  var _acP = [];
+  if (!productosCache) _acP.push(apiGet('getMaestroProductos').then(function(r) { if (r.ok) productosCache = r.productos || []; }).catch(function() { productosCache = []; }));
+  if (!listaPreciosCache) _acP.push(apiGet('getListaPrecios').then(function(r) { if (r.ok) listaPreciosCache = r.precios || []; }).catch(function() { listaPreciosCache = []; }));
   try { existSnapshot = await Existencias.loadSnapshot(); }
   catch (e) { existSnapshot = null; console.warn('No se pudo cargar existencias:', e); }
+  if (_acP.length) await Promise.all(_acP);
 
   // Cargar datos de factura de entregas existentes (por remisión).
   var _facturaMap = {};
@@ -2296,9 +2300,13 @@ async function agregarNuevaLinea() {
 }
 
 // ── Edit Modal ──
-function openEdit(idx) {
+async function openEdit(idx) {
   editIdx = idx;
   var c = consecs[idx];
+  var acPromises = [];
+  if (!productosCache) acPromises.push(apiGet('getMaestroProductos').then(function(r) { if (r.ok) productosCache = r.productos || []; }).catch(function() { productosCache = []; }));
+  if (!listaPreciosCache) acPromises.push(apiGet('getListaPrecios').then(function(r) { if (r.ok) listaPreciosCache = r.precios || []; }).catch(function() { listaPreciosCache = []; }));
+  if (acPromises.length) await Promise.all(acPromises);
   editKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
   editWorkingLines = getLinesFor(c).map(function(l) { return Object.assign({}, l); });
 
