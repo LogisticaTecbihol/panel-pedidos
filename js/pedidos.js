@@ -3259,8 +3259,8 @@ async function openNuevoPedido() {
     _reapplyPreciosNuevo();
   };
   var nvPrecioEl = document.getElementById('nv-precio');
-  nvPrecioEl.oninput = function() { _reapplyPreciosNuevo(); };
-  nvPrecioEl.onchange = function() { _reapplyPreciosNuevo(); };
+  nvPrecioEl.oninput = function() { _reapplyPreciosNuevo(); _toggleNvProductos(); };
+  nvPrecioEl.onchange = function() { _reapplyPreciosNuevo(); _toggleNvProductos(); };
   document.getElementById('nv-comercial').oninput = actualizarConsecutivoNuevo;
   document.getElementById('nv-cliente').addEventListener('input', function() {
     var fa = document.getElementById('nv-facturar-a');
@@ -3433,6 +3433,33 @@ document.getElementById('nuevo-overlay').addEventListener('scroll', function() {
   [].slice.call(document.querySelectorAll('.ac-dropdown')).forEach(function(dd) { dd.style.display = 'none'; });
 }, true);
 
+function _toggleNvProductos() {
+  var precio = (document.getElementById('nv-precio').value || '').trim();
+  var disabled = !precio;
+  var wrap = document.querySelector('#nuevo-overlay .prod-wrap');
+  if (wrap) {
+    wrap.style.opacity = disabled ? '0.45' : '';
+    wrap.style.pointerEvents = disabled ? 'none' : '';
+  }
+  var btnAdd = document.querySelector('#nuevo-overlay button[onclick*="addNuevoProducto"]');
+  if (btnAdd) {
+    btnAdd.disabled = disabled;
+    btnAdd.style.opacity = disabled ? '0.45' : '';
+  }
+  var msg = document.getElementById('nv-precio-warn');
+  if (!msg) {
+    var ref = wrap || document.getElementById('nv-lines');
+    if (ref && ref.parentNode) {
+      msg = document.createElement('div');
+      msg.id = 'nv-precio-warn';
+      msg.style.cssText = 'color:#c0392b;font-size:0.8rem;font-weight:600;margin-bottom:6px;display:none';
+      msg.textContent = 'Selecciona el Precio Facturación antes de agregar productos.';
+      ref.parentNode.insertBefore(msg, ref);
+    }
+  }
+  if (msg) msg.style.display = disabled ? '' : 'none';
+}
+
 function renderNuevoLines() {
   var tbody = document.getElementById('nv-lines');
   tbody.innerHTML = nuevoProductos.map(function(p, i) {
@@ -3454,6 +3481,7 @@ function renderNuevoLines() {
   }).join('');
   updateNuevoTotal();
   setupProductoAutocomplete();
+  _toggleNvProductos();
 }
 
 function updateNuevoLine(i) {
