@@ -228,7 +228,7 @@ function _drawRemisionCopy(doc, data, palette) {
     var maxF = Math.max(left.length, right.length);
     var infoTop = y - 5;
     var midX = 14 + leftBlockW;
-    var rowGap = 9;
+    var rowGap = 6;
     for (var fi = 0; fi < maxF; fi++) {
       var rowH = 0;
       if (fi < left.length) {
@@ -240,7 +240,7 @@ function _drawRemisionCopy(doc, data, palette) {
         var lVal = String(left[fi][1] || '');
         var lLines = lVal ? doc.splitTextToSize(lVal, leftValMaxW) : [''];
         doc.text(lLines, leftValX, y);
-        rowH = Math.max(rowH, (lLines.length - 1) * 4);
+        rowH = Math.max(rowH, (lLines.length - 1) * 3.5);
       }
       if (fi < right.length) {
         doc.setFont(undefined, 'bold');
@@ -251,13 +251,13 @@ function _drawRemisionCopy(doc, data, palette) {
         var rVal = String(right[fi][1] || '');
         var rLines = rVal ? doc.splitTextToSize(rVal, rightValMaxW) : [''];
         doc.text(rLines, rightValX, y);
-        rowH = Math.max(rowH, (rLines.length - 1) * 4);
+        rowH = Math.max(rowH, (rLines.length - 1) * 3.5);
       }
       y += rowGap + rowH;
       if (fi < maxF - 1) {
         doc.setDrawColor(200, 210, 220);
         doc.setLineWidth(0.2);
-        doc.line(14, y - 4, pw - 14, y - 4);
+        doc.line(14, y - 3, pw - 14, y - 3);
       }
     }
     var infoBottom = y - 4;
