@@ -2333,6 +2333,8 @@ function openEdit(idx) {
 function closeEdit() {
   document.getElementById('edit-overlay').classList.remove('show');
   editIdx = null; editKey = null; editWorkingLines = [];
+  edProdACs.forEach(function(ac) { ac.destroy(); });
+  edProdACs = [];
   destroyGeoAC('ed');
 }
 
@@ -2372,6 +2374,43 @@ function renderEditLines() {
       '</td></tr>';
   }).join('');
   updateEditTotal();
+  edProdACs.forEach(function(ac) { ac.destroy(); });
+  edProdACs = [];
+  if (productosCache && editIdx !== null) {
+    var emp = consecs[editIdx].Nombre_Empresa;
+    [].slice.call(document.querySelectorAll('.ed-prod')).forEach(function(input, i) {
+      var lockEntregado = editWorkingLines[i] && norm(editWorkingLines[i].Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin();
+      if (lockEntregado) return;
+      edProdACs.push(initAutocomplete(input, {
+        items: function() {
+          var prods = productosCache || [];
+          if (emp) prods = prods.filter(function(p) { return !p.empresa || p.empresa === emp; });
+          return prods;
+        },
+        display: function(p) {
+          return '<strong>' + escHtml(p.producto) + '</strong>' +
+                 (p.presentacion ? ' <span class="ac-sub">— ' + escHtml(p.presentacion) + '</span>' : '');
+        },
+        match: function(p, val) {
+          return ((p.producto||'') + ' ' + (p.presentacion||'')).toLowerCase().indexOf(val) >= 0;
+        },
+        onSelect: function(p) {
+          input.value = p.producto || '';
+          var presInputs = document.querySelectorAll('.ed-pres');
+          var idx = [].slice.call(document.querySelectorAll('.ed-prod')).indexOf(input);
+          if (idx >= 0 && presInputs[idx]) presInputs[idx].value = p.presentacion || '';
+          var precio = _lookupPrecio(emp, document.getElementById('ed-precio').value.trim(), p.producto);
+          if (precio !== null) {
+            var vunis = document.querySelectorAll('.ed-vuni');
+            if (idx >= 0 && vunis[idx]) {
+              vunis[idx].value = precio;
+              updateLineTotal(idx);
+            }
+          }
+        }
+      }));
+    });
+  }
 }
 
 function updateLineTotal(i) {
@@ -2979,6 +3018,7 @@ var clienteAC = null;
 var nitAC = null;
 var nlProdAC = null;
 var productoACs = [];
+var edProdACs = [];
 var geoACs = { nv: null, md: null, ed: null };
 
 function _extraerPresentacion(nombre) {
