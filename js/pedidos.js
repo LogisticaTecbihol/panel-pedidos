@@ -464,11 +464,26 @@ var _CLIENTES_IAS_RAW = [
   ['ZULUAGA RAMIREZ GERVACIO','CC','84035519','','','']
 ];
 
+var _CLIENTES_RESO_RAW = [
+  ['AGROVETERINARIA LA LLANURA DEL SUR','NIT','901330615','CR 22 9 22 BRR EL PUERTO','3147638821','PUERTO ASIS','PUTUMAYO'],
+  ['JPB','NIT','98364078','VDA  EJIDO SAN ANTONIO','3117923405','PUPIALES','NARIÑO'],
+  ['ALIANZA BIOACTIVA S.A.S.','NIT','901291485-4','KM 1, 5 VÍA SIBERIA-COTA. VEREDA vuelta grande','3004913753','COTA','CUNDINAMARCA'],
+  ['NOVA GROW SAS','NIT','901906731-3','VIA ND65119838 - T1253344 PAR INDUSTRIAL EXPONORTE OF 15','3006246677','LA UNION','VALLE DEL CAUCA'],
+  ['GRUPO SIEMSO S.A.S','NIT','901852586','Carrera 34B # 23-65 sur manzanares 5ta etapa','3194800678','NEIVA','HUILA'],
+  ['AGROVERT','NIT','901067015','MOSQUERA','3058816728','MOSQUERA','CUNDINAMARCA'],
+  ['PARCELAR DE COLOMBIA SAS','NIT','900156484','AV TRONCAL OCC 11 E 3 E','3134629468','','CUNDINAMARCA'],
+  ['GREEN AGROSOLUCIONES DE COLOMBIA SAS','NIT','9005110925','AV TRONCAL OCC 11 E 3 E','3001264572','MOSQUERA','CUNDINAMARCA'],
+  ['AGROACTIVA JVR SAS','NIT','900296879','CL 47 # 1-28 P 3 BRR SAN JOSÉ DE LAS FLORES','3133496823','TUNJA','BOYACA'],
+  ['GRANENLACE SAS','NIT','900558587','CALLE 47 NO. 1-28 PISO 3 SAN JOSÉ DE LAS FLORES','7454074','TUNJA','BOYACA'],
+  ['ANA MARIA ORTEGA RESTREPO','NIT','43758456-5','AV LAS AMERICAS SEC BELMONTE MERCASA BL 4 BG 11','3152492350','PEREIRA','RISARALDA']
+];
+
 function _mergeClientesEmbedded() {
   if (!clientesCache) clientesCache = [];
   var sets = [
     { raw: _CLIENTES_GREEN_RAW, empresa: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS' },
-    { raw: _CLIENTES_IAS_RAW, empresa: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS' }
+    { raw: _CLIENTES_IAS_RAW, empresa: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS' },
+    { raw: _CLIENTES_RESO_RAW, empresa: 'SOLUCIONES INTEGRALES RESO SAS' }
   ];
   sets.forEach(function(s) {
     var existing = {};
@@ -482,7 +497,7 @@ function _mergeClientesEmbedded() {
       clientesCache.push({
         cliente: r[0], tipo_identificacion: r[1], nit: r[2],
         direccion: r[3], telefono: r[4], municipio: r[5],
-        departamento: '', empresa: s.empresa, correo: '', cupo_credito: '', plazo_pago: ''
+        departamento: r[6] || '', empresa: s.empresa, correo: '', cupo_credito: '', plazo_pago: ''
       });
     });
   });
