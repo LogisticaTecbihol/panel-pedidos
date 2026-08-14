@@ -1138,7 +1138,7 @@ async function openDetail(idx) {
   document.getElementById('md-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('md-nit-adicional').value = c.NIT_Adicional || '';
   document.getElementById('md-consignacion').value = c.Consignacion || 'No';
-  document.getElementById('md-bodega-facturacion').value = c.Bodega_Facturacion || '';
+  document.getElementById('md-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('md', c.Nombre_Empresa);
   document.getElementById('md-estado2').value = derivedEstado2(lines);
   document.getElementById('m-total').textContent = fmtMoney(c.Total_Orden);
@@ -2324,7 +2324,7 @@ async function openEdit(idx) {
   document.getElementById('ed-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('ed-nit-adicional').value = c.NIT_Adicional || '';
   document.getElementById('ed-consignacion').value = c.Consignacion || 'No';
-  document.getElementById('ed-bodega-facturacion').value = c.Bodega_Facturacion || '';
+  document.getElementById('ed-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('ed', c.Nombre_Empresa);
   document.getElementById('ed-estado2').value = derivedEstado2(getLinesFor(c));
   document.getElementById('btn-saveEdit').disabled = false;
@@ -3289,6 +3289,11 @@ function nextConsecutivoPorComercial(comercial) {
 function actualizarConsecutivoNuevo() {
   var comercial = document.getElementById('nv-comercial').value.trim();
   document.getElementById('nv-consecutivo').value = comercial ? nextConsecutivoPorComercial(comercial) : '';
+}
+
+function _normBodegaFacturacion(v) {
+  if (v === 'Bodega principal') return 'Productos Buenos';
+  return v;
 }
 
 function _toggleBodegaField(prefix, empresa) {
