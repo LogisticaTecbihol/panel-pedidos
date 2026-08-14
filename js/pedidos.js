@@ -4242,40 +4242,21 @@ function _exportarRemisionEspecifica(rem, opts) {
     }
     var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
     var dataPedido = _dataPedidoDesdeModal(c);
-    var extras = [{
-      buildDoc: function() {
-        var r = generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true }));
-        return r ? r.doc : null;
-      },
-      meta: {
-        modulo: 'pedidos',
-        referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || ''),
-        titulo: 'Pedido #' + (c.Consecutivo || '') + ' — ' + (dataPedido.cliente || 'sin cliente')
-      }
-    }];
     var ocGroups = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
-    ocGroups.forEach(function(ocLines) {
-      extras.push({
-        buildDoc: function() {
-          var r = generarRemisionesTrasladoPDF(ocLines, { return_doc: true });
-          return r ? r.doc : null;
-        },
-        meta: {
-          modulo: 'pedidos',
-          referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · OC ' + (ocLines[0].Consecutivo || ''),
-          titulo: 'Remisión Traslado OC #' + (ocLines[0].Consecutivo || '') + ' — ' + (ocLines[0].Empresa_Origen || '') + ' → ' + (ocLines[0].Empresa_Destino || '')
-        }
-      });
-    });
     NOTIF.openModalEnviar({
       modulo: 'pedidos',
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
       titulo: 'Remisión #' + rem.remision + ' — ' + (data.cliente || 'sin cliente'),
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
-        return r ? r.doc : null;
-      },
-      extras: extras
+        if (!r) return null;
+        var doc = r.doc;
+        generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true, _doc: doc }));
+        ocGroups.forEach(function(ocLines) {
+          generarRemisionesTrasladoPDF(ocLines, { return_doc: true, _doc: doc });
+        });
+        return doc;
+      }
     });
     return;
   }
@@ -4395,7 +4376,8 @@ function exportarPedidoDesdeModal(opts) {
 
 function generarPedidoPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
-  var doc = new jsPDF();
+  var doc = data._doc || new jsPDF();
+  if (data._doc) doc.addPage();
   var pw = doc.internal.pageSize.getWidth();
 
   var palette = _pdfPaletteFor(data.empresa);

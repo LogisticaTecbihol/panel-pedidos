@@ -98,7 +98,8 @@ function _drawRemisionCopyFooter(doc, label, palette, pageIdx, pageCount, genSta
 
 function generarRemisionPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
-  var doc = new jsPDF();
+  var doc = data._doc || new jsPDF();
+  if (data._doc) doc.addPage();
   var palette = _pdfPaletteFor(data.empresa);
   var copias = data.copies || ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD', 'CLIENTE', 'COPIA - LOGISTICA'];
   if (!copias.length) copias = [''];
@@ -521,7 +522,8 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
     return;
   }
   var jsPDF = window.jspdf.jsPDF;
-  var doc = new jsPDF();
+  var doc = opts._doc || new jsPDF();
+  if (opts._doc) doc.addPage();
   var siglaOrig = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Origen) : '') || hdr.Empresa_Origen || '';
   var siglaDest = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Destino) : '') || hdr.Empresa_Destino || '';
   var entregas = _ocProductosParaPDF(ocs);
