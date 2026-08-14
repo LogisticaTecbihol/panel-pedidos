@@ -10,7 +10,9 @@ function getSiglaIng(n) { return getSigla(n); }
 function getSiglaClassIng(n) { return getSiglaClass(n); }
 
 // ── Sorting ──
-var sortLevelsIng = [];
+var sortLevelsIng = [
+  { id: 'fecha', dir: 'desc' }
+];
 
 var SORT_COLS_ING = [
   { id:'fecha',     label:'Fecha',        fn: function(r) { return +new Date(r.Fecha||0); } },

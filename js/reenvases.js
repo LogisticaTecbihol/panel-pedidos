@@ -2,7 +2,9 @@
 
 var allReenvases = [];
 var filteredRe = [];
-var reSortCols = [];
+var reSortCols = [
+  { key: 'Fecha', dir: 'desc' }
+];
 var reEditId = null;
 var reDeleteId = null;
 var productosCache = null;
