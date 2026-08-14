@@ -3807,12 +3807,25 @@ function renderDetalle() {
   var fc = document.getElementById('f-cli').value;
   var fs = document.getElementById('f-est').value;
   var fs2 = document.getElementById('f-est2').value;
+  var fpEl = document.getElementById('f-prod');
+  var fp = fpEl ? fpEl.value.trim().toLowerCase() : '';
+  var fdEl = document.getElementById('f-fec-desde');
+  var fhEl = document.getElementById('f-fec-hasta');
+  var fdesde = fdEl ? fdEl.value : '';
+  var fhasta = fhEl ? fhEl.value : '';
   var ft = document.getElementById('f-txt').value.toLowerCase();
 
   var rows = pedidos.filter(function(p) {
     if (fe && p.Nombre_Empresa !== fe) return false;
     if (fcom && (p.Comercial || '').trim() !== fcom) return false;
     if (fc && (p.Cliente || '').toLowerCase().indexOf(fc.toLowerCase()) < 0) return false;
+    if (fdesde || fhasta) {
+      var fp10 = String(p.Fecha_Pedido || '').slice(0, 10);
+      if (!fp10) return false;
+      if (fdesde && fp10 < fdesde) return false;
+      if (fhasta && fp10 > fhasta) return false;
+    }
+    if (fp && String(p.Producto || '').toLowerCase().indexOf(fp) < 0) return false;
     if (fs) {
       var rawEst = norm(p.Estado_Entrega || 'Recibido');
       if (rawEst !== norm(fs)) return false;
