@@ -508,7 +508,8 @@ function _ocEmpresaInfoParaCliente(empresa) {
 //       - Página 2: Remision_Origen (número usado por Origen)
 // Si una de las remisiones aún no está cargada, esa página se omite.
 // Si NINGUNA está cargada, avisa y no genera nada.
-function generarRemisionesTrasladoPDF(ocs) {
+function generarRemisionesTrasladoPDF(ocs, opts) {
+  opts = opts || {};
   if (!ocs || !ocs.length) return;
   var hdr = ocs[0];
   var remDest = String(hdr.Remision || '').trim();
@@ -617,5 +618,6 @@ function generarRemisionesTrasladoPDF(ocs) {
   }
 
   var fname = 'Remisiones_Traslado_' + (siglaDest || 'DEST') + '_' + (siglaOrig || 'ORIG') + '_' + (hdr.Consecutivo || '') + '.pdf';
+  if (opts.return_doc) return { doc: doc, filename: fname };
   doc.save(fname);
 }

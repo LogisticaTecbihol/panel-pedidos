@@ -521,6 +521,7 @@ var existSnapshot = null;
 //                       Cantidad, Empresa_Origen, Fecha, Estado }.
 // Se reconstruye en cada loadFromAPI().
 var solicitudesCompraPorPedido = {};
+var ocsLegalizadasPorPedido = {};
 
 function _normSC(s) { return String(s || '').toLowerCase().trim(); }
 function _keySC(empresa, consecutivo) {
@@ -603,6 +604,28 @@ function _buildSolicitudesMap(ordenes) {
   return map;
 }
 
+function _buildOCsLegalizadasMap(ordenes) {
+  var map = {};
+  (ordenes || []).forEach(function(oc) {
+    if (String(oc.Tipo || '').toLowerCase() !== 'traslado') return;
+    var remDest = String(oc.Remision || '').trim();
+    var remOrig = String(oc.Remision_Origen || '').trim();
+    if (!remDest && !remOrig) return;
+    var ref = _parseRefPedido(oc.Ref_Pedido);
+    if (!ref) return;
+    var k = _keySC(ref.empresa, ref.consecutivo);
+    if (!map[k]) map[k] = {};
+    var consec = String(oc.Consecutivo || '');
+    if (!map[k][consec]) map[k][consec] = [];
+    map[k][consec].push(oc);
+  });
+  var result = {};
+  Object.keys(map).forEach(function(k) {
+    result[k] = Object.keys(map[k]).map(function(c) { return map[k][c]; });
+  });
+  return result;
+}
+
 // ── Load from API ──
 async function loadFromAPI() {
   await _authReady;
@@ -630,13 +653,15 @@ async function loadFromAPI() {
     // sin badges (los pedidos siguen cargando).
     var pedidosPromise = apiGet('getPedidos');
     var ordenesPromise = apiGet('getOrdenesCompra', {
-      columns: 'id,Consecutivo,Tipo,Estado,Remision,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Fecha,Ref_Pedido'
+      columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido'
     }).catch(function() { return { ok: true, ordenes: [] }; });
     var results = await Promise.all([pedidosPromise, ordenesPromise]);
     var data = results[0];
     var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
-    solicitudesCompraPorPedido = _buildSolicitudesMap((ocData && ocData.ok && ocData.ordenes) || []);
+    var allOCs = (ocData && ocData.ok && ocData.ordenes) || [];
+    solicitudesCompraPorPedido = _buildSolicitudesMap(allOCs);
+    ocsLegalizadasPorPedido = _buildOCsLegalizadasMap(allOCs);
 
     var EXPECTED = ['Fecha_Procesamiento','Nombre_Empresa','Consecutivo','Fecha_Pedido',
       'Cliente','NIT','Telefono','Direccion_Envio','Municipio','Departamento',
@@ -4217,6 +4242,31 @@ function _exportarRemisionEspecifica(rem, opts) {
     }
     var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
     var dataPedido = _dataPedidoDesdeModal(c);
+    var extras = [{
+      buildDoc: function() {
+        var r = generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true }));
+        return r ? r.doc : null;
+      },
+      meta: {
+        modulo: 'pedidos',
+        referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || ''),
+        titulo: 'Pedido #' + (c.Consecutivo || '') + ' — ' + (dataPedido.cliente || 'sin cliente')
+      }
+    }];
+    var ocGroups = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+    ocGroups.forEach(function(ocLines) {
+      extras.push({
+        buildDoc: function() {
+          var r = generarRemisionesTrasladoPDF(ocLines, { return_doc: true });
+          return r ? r.doc : null;
+        },
+        meta: {
+          modulo: 'pedidos',
+          referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · OC ' + (ocLines[0].Consecutivo || ''),
+          titulo: 'Remisión Traslado OC #' + (ocLines[0].Consecutivo || '') + ' — ' + (ocLines[0].Empresa_Origen || '') + ' → ' + (ocLines[0].Empresa_Destino || '')
+        }
+      });
+    });
     NOTIF.openModalEnviar({
       modulo: 'pedidos',
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
@@ -4225,17 +4275,7 @@ function _exportarRemisionEspecifica(rem, opts) {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
         return r ? r.doc : null;
       },
-      extras: [{
-        buildDoc: function() {
-          var r = generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true }));
-          return r ? r.doc : null;
-        },
-        meta: {
-          modulo: 'pedidos',
-          referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || ''),
-          titulo: 'Pedido #' + (c.Consecutivo || '') + ' — ' + (dataPedido.cliente || 'sin cliente')
-        }
-      }]
+      extras: extras
     });
     return;
   }
