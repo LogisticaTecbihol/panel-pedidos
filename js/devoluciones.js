@@ -22,11 +22,8 @@ function fmtMoney(v) {
 }
 
 // ── Sorting ──
-// Orden inicial: empresa → cliente → vendedor → fecha (fecha desc para ver lo más reciente primero)
+// Orden inicial: fecha desc (solicitudes más nuevas primero)
 var sortLevelsDev = [
-  { id: 'empresa',  dir: 'asc'  },
-  { id: 'cliente',  dir: 'asc'  },
-  { id: 'vendedor', dir: 'asc'  },
   { id: 'fecha',    dir: 'desc' },
 ];
 
