@@ -1456,6 +1456,12 @@ function openTramitarDev(key) {
   document.getElementById('tramitar-remision-salida').value = r.Remision_Salida || '';
   document.getElementById('tramitar-bodega-salida').value = r.Bodega_Salida || 'Productos Buenos';
   document.getElementById('tramitar-fecha-salida').value = r.Fecha_Salida ? toDateInput(r.Fecha_Salida) : today();
+  var _elTRI = document.getElementById('tramitar-remision-ingreso');
+  _elTRI.readOnly = false; _elTRI.style.background = ''; _elTRI.placeholder = 'N° remisión';
+  var _chkTRI = document.getElementById('tramitar-remision-ingreso-auto'); if (_chkTRI) _chkTRI.checked = false;
+  var _elTRS = document.getElementById('tramitar-remision-salida');
+  _elTRS.readOnly = false; _elTRS.style.background = ''; _elTRS.placeholder = 'N° remisión';
+  var _chkTRS = document.getElementById('tramitar-remision-salida-auto'); if (_chkTRS) _chkTRS.checked = false;
 
   var tbody = document.getElementById('tramitar-lines');
   tbody.innerHTML = tramitarDevLines.map(function(l, i) {
@@ -1497,6 +1503,9 @@ async function saveTramitarDev() {
     if (tramitarDevLines[i]) tramitarDevLines[i].Cant_Entregada = Number(inp.value) || 0;
   });
 
+  var devLines = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
+  var empresaDev = devLines.length ? (devLines[0].Empresa || '') : '';
+
   var btn = document.getElementById('btn-tramitar-dev');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
@@ -1504,6 +1513,7 @@ async function saveTramitarDev() {
   try {
     var result = await apiPost({
       action: 'tramitarDevolucion',
+      Empresa: empresaDev,
       Remision_Ingreso: remIngreso,
       Bodega_Ingreso: bodegaIngreso,
       Fecha_Ingreso: fechaIngreso,
@@ -1514,7 +1524,10 @@ async function saveTramitarDev() {
     });
     if (!result.ok) throw new Error(result.error || 'Error al tramitar');
     closeTramitarDev();
-    showToast('✅ Devolución tramitada — ' + result.updated + ' línea(s) actualizadas');
+    var toastDev = ['✅ Devolución tramitada'];
+    if (result.remision_ingreso) toastDev.push('RE: ' + result.remision_ingreso);
+    if (result.remision_salida) toastDev.push('RS: ' + result.remision_salida);
+    showToast(toastDev.join(' · '));
     await loadDevoluciones();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');

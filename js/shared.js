@@ -29,6 +29,20 @@ function getSigla(n) { return SIGLAS[(n||'').trim()] || n || '—'; }
 var SIGLA_CLASSES = ['PARCELAR','GREEN','RESO','IASO','IAS'];
 function getSiglaClass(n) { var s = getSigla(n); return SIGLA_CLASSES.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
 
+function _esEmpresaHolding(nombre) {
+  return EMPRESAS_HOLDING.some(function(e) { return e.value === (nombre || '').trim() || e.sigla === (nombre || '').trim(); });
+}
+async function generarRemisionConsecutivo(empresa, tipo) {
+  var res = await _sb.rpc('generar_remision', { p_empresa_nombre: empresa, p_tipo: tipo });
+  if (res.error) throw new Error('Error generando remisión: ' + res.error.message);
+  return res.data;
+}
+async function generarRemisionDual(empresaSalida, empresaEntrada) {
+  var res = await _sb.rpc('generar_remision_dual', { p_empresa_salida: empresaSalida, p_empresa_entrada: empresaEntrada });
+  if (res.error) throw new Error('Error generando remisiones: ' + res.error.message);
+  return res.data;
+}
+
 function populateEmpresaSelect(id, defaultLabel, extras) {
   var sel = document.getElementById(id);
   if (!sel) return;
@@ -318,34 +332,60 @@ async function apiPost(body) {
       if (!lineas.length && body.Producto) {
         lineas = [{ Producto: body.Producto, Presentacion: body.Presentacion, Cantidad: body.Cantidad }];
       }
+      var remOrigen = (body.Remision_Origen || '').trim();
+      var remDestino = (body.Remision_Destino || '').trim();
+      var origen = (body.Origen || '').trim();
+      var empOrigen = (body.Empresa_Origen || '').trim();
+      var empDestino = (body.Empresa_Destino || '').trim();
+      var esPlanta = /planta/i.test(origen);
+      var esHolding = _esEmpresaHolding(empOrigen);
+      if (!remDestino && empDestino) {
+        remDestino = await generarRemisionConsecutivo(empDestino, 'ENTRADA');
+      }
+      if (!remOrigen && esHolding && !esPlanta && empOrigen !== empDestino) {
+        remOrigen = await generarRemisionConsecutivo(empOrigen, 'SALIDA');
+      }
       var rows = lineas.map(function(lin) {
         return {
           Fecha: body.Fecha || '', Origen: body.Origen || '',
           Empresa_Origen: body.Empresa_Origen || '', Empresa_Destino: body.Empresa_Destino || '',
           Producto: lin.Producto || '', Presentacion: lin.Presentacion || '',
           Cantidad: Number(lin.Cantidad) || 0, Responsable: body.Responsable || '',
-          Remision_Origen: body.Remision_Origen || '', Remision_Destino: body.Remision_Destino || '',
+          Remision_Origen: remOrigen, Remision_Destino: remDestino,
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
           creado_por: _uid()
         };
       });
       var res = await _sb.from('Ingresos').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, added: rows.length };
+      return { ok: true, added: rows.length, remision_origen: remOrigen, remision_destino: remDestino };
     }
 
     if (action === 'editarIngreso') {
+      var remOrigenE = (body.Remision_Origen || '').trim();
+      var remDestinoE = (body.Remision_Destino || '').trim();
+      var origenE = (body.Origen || '').trim();
+      var empOrigenE = (body.Empresa_Origen || '').trim();
+      var empDestinoE = (body.Empresa_Destino || '').trim();
+      var esPlantaE = /planta/i.test(origenE);
+      var esHoldingE = _esEmpresaHolding(empOrigenE);
+      if (!remDestinoE && empDestinoE && !body._remision_destino_existente) {
+        remDestinoE = await generarRemisionConsecutivo(empDestinoE, 'ENTRADA');
+      }
+      if (!remOrigenE && esHoldingE && !esPlantaE && empOrigenE !== empDestinoE && !body._remision_origen_existente) {
+        remOrigenE = await generarRemisionConsecutivo(empOrigenE, 'SALIDA');
+      }
       var res = await _sb.from('Ingresos').update({
         Fecha: body.Fecha || '', Origen: body.Origen || '',
         Empresa_Origen: body.Empresa_Origen || '', Empresa_Destino: body.Empresa_Destino || '',
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Cantidad: Number(body.Cantidad) || 0, Responsable: body.Responsable || '',
-        Remision_Origen: body.Remision_Origen || '', Remision_Destino: body.Remision_Destino || '',
+        Remision_Origen: remOrigenE, Remision_Destino: remDestinoE,
         Observaciones: body.Observaciones || '',
         modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, updated: 1 };
+      return { ok: true, updated: 1, remision_origen: remOrigenE, remision_destino: remDestinoE };
     }
 
     if (action === 'eliminarIngreso') {
@@ -413,15 +453,22 @@ async function apiPost(body) {
 
     if (action === 'tramitarDevolucion') {
       var lineas = body.lineas || [];
+      var remIngDev = (body.Remision_Ingreso || '').trim();
+      var remSalDev = (body.Remision_Salida || '').trim();
+      var empDev = (body.Empresa || '').trim();
+      if (empDev) {
+        if (!remIngDev) remIngDev = await generarRemisionConsecutivo(empDev, 'ENTRADA');
+        if (!remSalDev) remSalDev = await generarRemisionConsecutivo(empDev, 'SALIDA');
+      }
       for (var i = 0; i < lineas.length; i++) {
         var lin = lineas[i];
         var res = await _sb.from('Devoluciones').update({
-          Remision: body.Remision_Ingreso || '',
+          Remision: remIngDev,
           Fecha_Devolucion: body.Fecha_Ingreso || '',
-          Remision_Ingreso: body.Remision_Ingreso || '',
+          Remision_Ingreso: remIngDev,
           Bodega_Ingreso: body.Bodega_Ingreso || 'Productos Buenos',
           Fecha_Ingreso: body.Fecha_Ingreso || '',
-          Remision_Salida: body.Remision_Salida || '',
+          Remision_Salida: remSalDev,
           Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
           Fecha_Salida: body.Fecha_Salida || '',
           Cant_Entregada: Number(lin.Cant_Entregada) || 0,
@@ -430,7 +477,7 @@ async function apiPost(body) {
         }).eq('id', lin.id);
         if (res.error) return { ok: false, error: res.error.message };
       }
-      return { ok: true, updated: lineas.length };
+      return { ok: true, updated: lineas.length, remision_ingreso: remIngDev, remision_salida: remSalDev };
     }
 
     if (action === 'eliminarDevolucion') {
@@ -485,12 +532,19 @@ async function apiPost(body) {
 
     if (action === 'gestionarCambio') {
       var ids = body.ids || [];
+      var remIngCam = (body.Remision_Ingreso || '').trim();
+      var remSalCam = (body.Remision_Salida || '').trim();
+      var empCam = (body.Empresa || '').trim();
+      if (empCam) {
+        if (!remIngCam) remIngCam = await generarRemisionConsecutivo(empCam, 'ENTRADA');
+        if (!remSalCam) remSalCam = await generarRemisionConsecutivo(empCam, 'SALIDA');
+      }
       for (var i = 0; i < ids.length; i++) {
         var res = await _sb.from('CambiosMercancia').update({
-          Remision_Ingreso: body.Remision_Ingreso || '',
+          Remision_Ingreso: remIngCam,
           Bodega_Ingreso: body.Bodega_Ingreso || 'Productos Buenos',
           Fecha_Ingreso: body.Fecha_Ingreso || '',
-          Remision_Salida: body.Remision_Salida || '',
+          Remision_Salida: remSalCam,
           Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
           Fecha_Salida: body.Fecha_Salida || '',
           Estado: 'Cerrado',
@@ -498,7 +552,7 @@ async function apiPost(body) {
         }).eq('id', ids[i]);
         if (res.error) return { ok: false, error: res.error.message };
       }
-      return { ok: true, updated: ids.length };
+      return { ok: true, updated: ids.length, remision_ingreso: remIngCam, remision_salida: remSalCam };
     }
 
     if (action === 'eliminarCambio') {
@@ -650,12 +704,27 @@ async function apiPost(body) {
         Total_Orden: Number(body.Total_Orden) || 0, Observaciones: body.Observaciones || '',
         Estado: body.Estado || 'Abierta'
       };
-      if (body.Remision !== undefined) upd.Remision = body.Remision || '';
-      if (body.Remision_Origen !== undefined) upd.Remision_Origen = body.Remision_Origen || '';
+      var remOC = (body.Remision !== undefined) ? (body.Remision || '').trim() : undefined;
+      var remOrigenOC = (body.Remision_Origen !== undefined) ? (body.Remision_Origen || '').trim() : undefined;
+      var empDestOC = (body.Empresa_Destino || '').trim();
+      var empOrigOC = (body.Empresa_Origen || '').trim();
+      var generatedRemOC = {};
+      if (body._legalizar && empDestOC) {
+        if (remOC !== undefined && !remOC) {
+          remOC = await generarRemisionConsecutivo(empDestOC, 'ENTRADA');
+          generatedRemOC.remision_destino = remOC;
+        }
+        if (remOrigenOC !== undefined && !remOrigenOC && empOrigOC && empOrigOC !== empDestOC) {
+          remOrigenOC = await generarRemisionConsecutivo(empOrigOC, 'SALIDA');
+          generatedRemOC.remision_origen = remOrigenOC;
+        }
+      }
+      if (remOC !== undefined) upd.Remision = remOC;
+      if (remOrigenOC !== undefined) upd.Remision_Origen = remOrigenOC;
       upd.modificado_por = _uid();
       var res = await _sb.from('OrdenesCompra').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, updated: 1 };
+      return Object.assign({ ok: true, updated: 1 }, generatedRemOC);
     }
 
     if (action === 'eliminarOrdenCompra') {
@@ -689,9 +758,14 @@ async function apiPost(body) {
           creado_por: _uid()
         };
       });
+      var remMu = (body.Remision || '').trim();
+      if (!remMu && body._generar_remision && (body.Empresa || '').trim()) {
+        remMu = await generarRemisionConsecutivo(body.Empresa, 'SALIDA');
+        rows.forEach(function(r) { r.Remision = remMu; });
+      }
       var res = await _sb.from('SolicitudMuestras').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, added: rows.length };
+      return { ok: true, added: rows.length, remision: remMu };
     }
 
     if (action === 'aprobarMuestra') {
@@ -743,12 +817,16 @@ async function apiPost(body) {
     }
 
     if (action === 'editarMuestra') {
+      var remMuE = (body.Remision || '').trim();
+      if (!remMuE && body._generar_remision && (body.Empresa || '').trim()) {
+        remMuE = await generarRemisionConsecutivo(body.Empresa, 'SALIDA');
+      }
       var res = await _sb.from('SolicitudMuestras').update({
         Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || '',
         Fecha_Despacho: body.Fecha_Despacho || '', Responsable: body.Responsable || '',
         Departamento: body.Departamento || '', Municipio: body.Municipio || '', Tipo_Cultivo: body.Tipo_Cultivo || '',
         Fecha_Aplicacion: body.Fecha_Aplicacion || '', Fecha_Seguimiento: body.Fecha_Seguimiento || '',
-        Remision: body.Remision || '', Objetivo: body.Objetivo || '',
+        Remision: remMuE, Objetivo: body.Objetivo || '',
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Cantidad: Number(body.Cantidad) || 0, Cant_Entregada: Number(body.Cant_Entregada) || 0,
         Fecha_Entrega: body.Fecha_Entrega || '', Solicitante: body.Solicitante || '',
@@ -757,7 +835,7 @@ async function apiPost(body) {
         modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, updated: 1 };
+      return { ok: true, updated: 1, remision: remMuE };
     }
 
     if (action === 'eliminarMuestra') {
@@ -873,31 +951,51 @@ async function apiPost(body) {
 
     if (action === 'agregarReenvase') {
       var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      var remReenv = (body.Remision || '').trim();
+      var remReenvDest = (body.Remision_Destino || '').trim();
+      var empReenv = (body.Empresa || '').trim();
+      var empReenvDest = (body.Empresa_Destino || '').trim();
+      if (!remReenv && empReenv) {
+        remReenv = await generarRemisionConsecutivo(empReenv, 'SALIDA');
+      }
+      if (!remReenvDest && empReenvDest && empReenvDest !== empReenv) {
+        remReenvDest = await generarRemisionConsecutivo(empReenvDest, 'ENTRADA');
+      }
       var row = {
         Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
         Producto: body.Producto || '',
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
-        Remision: body.Remision || '', Fecha: body.Fecha || '',
+        Remision: remReenv, Remision_Destino: remReenvDest, Fecha: body.Fecha || '',
         Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
         Fecha_Registro: now,
         creado_por: _uid()
       };
       var res = await _sb.from('Reenvases').insert([row]);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, added: 1 };
+      return { ok: true, added: 1, remision: remReenv, remision_destino: remReenvDest };
     }
 
     if (action === 'editarReenvase') {
+      var remReenvEd = (body.Remision || '').trim();
+      var remReenvDestEd = (body.Remision_Destino || '').trim();
+      var empReenvEd = (body.Empresa || '').trim();
+      var empReenvDestEd = (body.Empresa_Destino || '').trim();
+      if (!remReenvEd && empReenvEd && !body._remision_existente) {
+        remReenvEd = await generarRemisionConsecutivo(empReenvEd, 'SALIDA');
+      }
+      if (!remReenvDestEd && empReenvDestEd && empReenvDestEd !== empReenvEd && !body._remision_destino_existente) {
+        remReenvDestEd = await generarRemisionConsecutivo(empReenvDestEd, 'ENTRADA');
+      }
       var res = await _sb.from('Reenvases').update({
         Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
         Producto: body.Producto || '',
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
-        Remision: body.Remision || '', Fecha: body.Fecha || '',
+        Remision: remReenvEd, Remision_Destino: remReenvDestEd, Fecha: body.Fecha || '',
         Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
         modificado_por: _uid()
       }).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, updated: 1 };
+      return { ok: true, updated: 1, remision: remReenvEd, remision_destino: remReenvDestEd };
     }
 
     if (action === 'eliminarReenvase') {

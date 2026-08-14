@@ -163,10 +163,12 @@
         <div id="ing-remision-origen-wrap">
           <label class="ef-label">Remisión Origen</label>
           <input class="ef" id="ing-remision-origen" type="text" placeholder="N° remisión origen">
+          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="ing-remision-origen-auto" onchange="var el=document.getElementById('ing-remision-origen');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión origen';}">Auto</label>
         </div>
         <div>
           <label class="ef-label">Remisión Destino</label>
           <input class="ef" id="ing-remision-destino" type="text" placeholder="N° remisión destino">
+          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="ing-remision-destino-auto" onchange="var el=document.getElementById('ing-remision-destino');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión destino';}">Auto</label>
         </div>
         <div style="grid-column:1/-1">
           <label class="ef-label">Observaciones (opcional)</label>

@@ -338,9 +338,10 @@
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <label>📄 N° Remisión</label>
-          <input type="text" id="m-remision" placeholder="XXXX" style="width:160px">
+          <input type="text" id="m-remision" placeholder="N° remisión" style="width:180px">
+          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="m-remision-auto" onchange="var el=document.getElementById('m-remision');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
         </div>
-        <div class="hint">Ingresa la fecha y N° Remisión (obligatorio si asignas stock de la misma empresa del pedido). Luego, en cada línea, elige la empresa origen del inventario y la cantidad. Si el stock sale de la empresa del pedido se emite la remisión al cliente; si sale de otra empresa se genera SOLO una solicitud de compra (OC de traslado) y la remisión se emitirá después, cuando esa OC se legalice en el módulo Órdenes.</div>
+        <div class="hint">La fecha es obligatoria. El N° Remisión se genera automáticamente al guardar (salida). Active "Manual" solo en caso de contingencia.</div>
       </div>
       <div class="prod-wrap">
         <table class="prod-table">

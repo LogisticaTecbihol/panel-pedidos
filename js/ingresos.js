@@ -374,6 +374,15 @@ function onOrigenChange() {
   if (origen === 'Chia Abago') {
     document.getElementById('ing-empresa-destino').value = '';
   }
+  var esPlanta = !!ORIGEN_EMPRESA[origen];
+  var chkOrigen = document.getElementById('ing-remision-origen-auto');
+  var elOrigen = document.getElementById('ing-remision-origen');
+  if (chkOrigen) {
+    chkOrigen.checked = false;
+    elOrigen.readOnly = false;
+    elOrigen.style.background = '';
+    elOrigen.placeholder = esPlanta ? 'N° remisión planta' : 'N° remisión origen';
+  }
 }
 
 // ── New Ingreso Modal ──
@@ -388,6 +397,10 @@ function openNewIngreso() {
   document.getElementById('ing-remision-origen').value = '';
   document.getElementById('ing-remision-destino').value = '';
   document.getElementById('ing-observaciones').value = '';
+  var chkDestA = document.getElementById('ing-remision-destino-auto');
+  if (chkDestA) chkDestA.checked = false;
+  var elDest = document.getElementById('ing-remision-destino');
+  elDest.readOnly = false; elDest.style.background = ''; elDest.placeholder = 'N° remisión destino';
   document.getElementById('btn-save-ing').disabled = false;
   document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso';
   document.getElementById('ing-edit-single').style.display = 'none';
@@ -423,6 +436,14 @@ function openEditIng(row) {
   document.getElementById('ing-responsable').value = r.Responsable || '';
   document.getElementById('ing-remision-origen').value = r.Remision_Origen || '';
   document.getElementById('ing-remision-destino').value = r.Remision_Destino || '';
+  var elD = document.getElementById('ing-remision-destino');
+  elD.readOnly = false; elD.style.background = ''; elD.placeholder = 'N° remisión destino';
+  var chkD = document.getElementById('ing-remision-destino-auto');
+  if (chkD) chkD.checked = false;
+  var elO = document.getElementById('ing-remision-origen');
+  elO.readOnly = false; elO.style.background = ''; elO.placeholder = 'N° remisión origen';
+  var chkO = document.getElementById('ing-remision-origen-auto');
+  if (chkO) chkO.checked = false;
   document.getElementById('ing-observaciones').value = r.Observaciones || '';
   document.getElementById('btn-save-ing').disabled = false;
   document.getElementById('btn-save-ing').textContent = '✓ Guardar cambios';
@@ -473,10 +494,15 @@ async function saveIngreso() {
         Fecha: fecha, Origen: origen, Empresa_Origen: empresa_origen, Empresa_Destino: empresa_destino,
         Producto: prod, Presentacion: pres, Cantidad: cant,
         Responsable: responsable, Remision_Origen: remision_origen, Remision_Destino: remision_destino, Observaciones: observaciones,
+        _remision_origen_existente: !!(editIngreso.Remision_Origen || '').trim(),
+        _remision_destino_existente: !!(editIngreso.Remision_Destino || '').trim(),
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
       closeIngModal();
-      showToast('✅ Ingreso actualizado en la nube');
+      var toastParts = ['✅ Ingreso actualizado'];
+      if (result.remision_destino) toastParts.push('RE: ' + result.remision_destino);
+      if (result.remision_origen) toastParts.push('RS: ' + result.remision_origen);
+      showToast(toastParts.join(' · '));
       await loadIngresos();
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -502,7 +528,10 @@ async function saveIngreso() {
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     closeIngModal();
-    showToast('✅ ' + result.added + ' línea(s) registradas en la nube');
+    var toastPartsNew = ['✅ ' + result.added + ' línea(s) registradas'];
+    if (result.remision_destino) toastPartsNew.push('RE: ' + result.remision_destino);
+    if (result.remision_origen) toastPartsNew.push('RS: ' + result.remision_origen);
+    showToast(toastPartsNew.join(' · '));
     await loadIngresos();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');

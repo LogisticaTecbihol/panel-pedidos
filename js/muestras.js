@@ -853,6 +853,9 @@ async function openNewMuestra() {
   document.getElementById('mu-fecha-aplicacion').value = '';
   document.getElementById('mu-fecha-seguimiento').value = '';
   document.getElementById('mu-remision').value = '';
+  var _elMuR = document.getElementById('mu-remision');
+  _elMuR.readOnly = false; _elMuR.style.background = ''; _elMuR.placeholder = 'N° remisión';
+  var _chkMuR = document.getElementById('mu-remision-auto'); if (_chkMuR) _chkMuR.checked = false;
   document.getElementById('mu-solicitante').value = '';
   document.getElementById('mu-autoriza').value = '';
   document.getElementById('mu-estado').value = 'Pendiente';
@@ -903,6 +906,9 @@ async function editMuestra(id) {
   document.getElementById('mu-fecha-aplicacion').value = toDateInput(r.Fecha_Aplicacion);
   document.getElementById('mu-fecha-seguimiento').value = toDateInput(r.Fecha_Seguimiento);
   document.getElementById('mu-remision').value = r.Remision || '';
+  var _elMuRe = document.getElementById('mu-remision');
+  _elMuRe.readOnly = false; _elMuRe.style.background = ''; _elMuRe.placeholder = 'N° remisión';
+  var _chkMuRe = document.getElementById('mu-remision-auto'); if (_chkMuRe) _chkMuRe.checked = false;
   document.getElementById('mu-solicitante').value = r.Solicitante || '';
   document.getElementById('mu-autoriza').value = r.Autoriza || '';
   document.getElementById('mu-estado').value = r.Estado || 'Pendiente';
@@ -1015,6 +1021,8 @@ async function saveMuestra() {
     btn.disabled = true;
     btn.textContent = '⏳ Guardando...';
 
+    var muEditRow = allMuestras ? allMuestras.filter(function(x) { return x.id === muEditId; })[0] : null;
+    var generarRemMu = estado === 'Despachada' && !(muEditRow && (muEditRow.Remision || '').trim()) && !document.getElementById('mu-remision').value.trim();
     try {
       var result = await apiPost({
         action: 'editarMuestra',
@@ -1039,11 +1047,14 @@ async function saveMuestra() {
         Presentacion: presentacion,
         Cantidad: cantidad,
         Cant_Entregada: cantEntregada,
-        Fecha_Entrega: fechaEntrega
+        Fecha_Entrega: fechaEntrega,
+        _generar_remision: generarRemMu
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
       closeMuModal();
-      showToast('✅ Solicitud actualizada');
+      var toastMu = ['✅ Solicitud actualizada'];
+      if (result.remision) toastMu.push('RS: ' + result.remision);
+      showToast(toastMu.join(' · '));
       await loadMuestras();
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -1093,6 +1104,7 @@ async function saveMuestra() {
       Estado: document.getElementById('mu-estado').value,
       Objetivo: document.getElementById('mu-objetivo').value.trim(),
       Observaciones: document.getElementById('mu-observaciones').value.trim(),
+      _generar_remision: document.getElementById('mu-estado').value === 'Despachada' && !document.getElementById('mu-remision').value.trim(),
       lineas: productosValidos.map(function(p) {
         return { Producto: p.producto, Presentacion: p.presentacion, Cantidad: p.cantidad };
       })
@@ -1100,7 +1112,9 @@ async function saveMuestra() {
 
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     closeMuModal();
-    showToast('✅ Solicitud creada: ' + (result.added || 0) + ' línea(s)');
+    var toastMuNew = ['✅ Solicitud creada: ' + (result.added || 0) + ' línea(s)'];
+    if (result.remision) toastMuNew.push('RS: ' + result.remision);
+    showToast(toastMuNew.join(' · '));
     _notifyAdminsNuevaSolicitud({
       empresa: empresa, consecutivo: consecutivo,
       solicitante: document.getElementById('mu-solicitante').value.trim(),

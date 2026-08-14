@@ -146,7 +146,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
         </div>
         <div>
           <label class="ef-label">Empresa Destino <span style="font-weight:400;color:#a0aec0;font-size:0.76rem">(traslado entre empresas)</span></label>
-          <select class="ef" id="re-empresa-destino">
+          <select class="ef" id="re-empresa-destino" onchange="var w=document.getElementById('re-remision-destino-wrap');if(w)w.style.display=this.value?'':'none';">
             <option value="">— Sin traslado —</option>
           </select>
         </div>
@@ -157,8 +157,14 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
           <input class="ef" id="re-fecha" type="date">
         </div>
         <div>
-          <label class="ef-label">N° Remisión</label>
+          <label class="ef-label">N° Remisión Salida</label>
           <input class="ef" id="re-remision" type="text" placeholder="N° remisión">
+          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="re-remision-auto" onchange="var el=document.getElementById('re-remision');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+        </div>
+        <div id="re-remision-destino-wrap" style="display:none">
+          <label class="ef-label">N° Remisión Entrada (destino)</label>
+          <input class="ef" id="re-remision-destino" type="text" placeholder="N° remisión destino">
+          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="re-remision-destino-auto" onchange="var el=document.getElementById('re-remision-destino');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión destino';}">Auto</label>
         </div>
       </div>
 

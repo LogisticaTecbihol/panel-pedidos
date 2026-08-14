@@ -1173,6 +1173,9 @@ async function openDetail(idx) {
   document.getElementById('m-fecha').value = today();
   document.getElementById('m-remision').value = '';
   document.getElementById('m-remision').classList.remove('error');
+  var _elPR = document.getElementById('m-remision');
+  _elPR.readOnly = false; _elPR.style.background = ''; _elPR.placeholder = 'N° remisión';
+  var _chkPR = document.getElementById('m-remision-auto'); if (_chkPR) _chkPR.checked = false;
   document.getElementById('btn-confirmar').disabled = false;
   document.getElementById('btn-confirmar').textContent = '✓ Guardar cambios';
 
@@ -1878,20 +1881,6 @@ async function guardarTodo() {
   var fecha = document.getElementById('m-fecha').value;
   var rem = document.getElementById('m-remision').value.trim();
 
-  // Recolectar asignaciones pendientes de todas las líneas.
-  // Cada entrada = { row, _idx, cantidad, empresa_stock, remision, fecha }.
-  //
-  // Se separan en dos buckets según la regla de negocio:
-  //   • entregasDirectas:   empresa_stock === empresa del pedido →
-  //     generan remisión al cliente + EntregasPedido + descuento
-  //     de inventario ya mismo.
-  //   • solicitudesCompra:  empresa_stock !== empresa del pedido →
-  //     SOLO generan la OC de traslado (Estado='Abierta') como
-  //     "solicitud de compra". NO se crea EntregasPedido, NO se
-  //     actualiza Cant_Entregada/Remisiones, NO se genera PDF.
-  //     La remisión al cliente se emite después, cuando la OC se
-  //     legalice en el módulo Órdenes y el producto quede como
-  //     existencia en la empresa del pedido.
   var entregas = [];
   var solicitudesCompra = [];
   var empPedidoN = norm(c.Nombre_Empresa);
@@ -1914,9 +1903,14 @@ async function guardarTodo() {
   });
 
   if (entregas.length > 0 && !rem) {
-    document.getElementById('m-remision').classList.add('error');
-    showToast('El N° de remisión es obligatorio para descontar stock', '#e74c3c');
-    return;
+    try {
+      rem = await generarRemisionConsecutivo(c.Nombre_Empresa, 'SALIDA');
+      entregas.forEach(function(e) { e.remision = rem; });
+      document.getElementById('m-remision').value = rem;
+    } catch (err) {
+      showToast('Error generando remisión: ' + err.message, '#e74c3c');
+      return;
+    }
   }
   if ((entregas.length > 0 || solicitudesCompra.length > 0) && !fecha) {
     showToast('Selecciona la fecha', '#e74c3c');

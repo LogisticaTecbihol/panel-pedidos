@@ -642,6 +642,12 @@ function openNewOC() {
   document.getElementById('oc-municipio').value = '';
   document.getElementById('oc-remision').value = '';
   document.getElementById('oc-remision-origen').value = '';
+  var elOcRem = document.getElementById('oc-remision');
+  elOcRem.readOnly = false; elOcRem.style.background = ''; elOcRem.placeholder = 'Registrar para cerrar orden';
+  var elOcRemO = document.getElementById('oc-remision-origen');
+  elOcRemO.readOnly = false; elOcRemO.style.background = ''; elOcRemO.placeholder = 'Remisión del proveedor';
+  var chkOcR = document.getElementById('oc-remision-auto'); if (chkOcR) chkOcR.checked = false;
+  var chkOcRO = document.getElementById('oc-remision-origen-auto'); if (chkOcRO) chkOcRO.checked = false;
   document.getElementById('oc-estado').value = 'Abierta';
   document.getElementById('oc-observaciones').value = '';
   document.getElementById('btn-save-oc').disabled = false;
@@ -725,6 +731,12 @@ function openEditOC(row) {
   document.getElementById('oc-municipio').value = r.Municipio || '';
   document.getElementById('oc-remision').value = r.Remision || '';
   document.getElementById('oc-remision-origen').value = r.Remision_Origen || '';
+  var elR = document.getElementById('oc-remision');
+  elR.readOnly = false; elR.style.background = ''; elR.placeholder = 'Registrar para cerrar orden';
+  var chkR = document.getElementById('oc-remision-auto'); if (chkR) chkR.checked = false;
+  var elRO = document.getElementById('oc-remision-origen');
+  elRO.readOnly = false; elRO.style.background = ''; elRO.placeholder = 'Remisión del proveedor';
+  var chkRO = document.getElementById('oc-remision-origen-auto'); if (chkRO) chkRO.checked = false;
   document.getElementById('oc-estado').value = r.Estado || 'Abierta';
   document.getElementById('oc-observaciones').value = r.Observaciones || '';
   document.getElementById('btn-save-oc').disabled = false;
@@ -804,6 +816,7 @@ async function saveOC() {
     btn.disabled = true;
     btn.textContent = '⏳ Guardando...';
 
+    var esLegalizar = !!(estado === 'Cerrada' && !(editOrden.Remision || '').trim());
     try {
       var result = await apiPost({
         action: 'editarOrdenCompra', row: editOrden.__row,
@@ -812,10 +825,14 @@ async function saveOC() {
         Producto: prod, Presentacion: pres, Cantidad: cant,
         Valor_Unitario: vunit, Valor_Total: vtotal || (cant * vunit),
         Total_Orden: '', Observaciones: observaciones, Estado: estado, Remision: remision, Remision_Origen: remision_origen,
+        _legalizar: esLegalizar,
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
       closeOCModal();
-      showToast('✅ Orden actualizada en la nube');
+      var toastOC = ['✅ Orden actualizada'];
+      if (result.remision_destino) toastOC.push('RE: ' + result.remision_destino);
+      if (result.remision_origen) toastOC.push('RS: ' + result.remision_origen);
+      showToast(toastOC.join(' · '));
       await loadOrdenes();
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');

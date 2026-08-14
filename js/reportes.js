@@ -177,9 +177,9 @@ async function loadReportes() {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Consecutivo,Fecha_Pedido,Cliente,Comercial,Producto,Presentacion,Cantidad,Cant_Entregada,Cant_Pendiente,Estado_Entrega,Estado_2,Remisiones,Fecha_Ult_Entrega' }),
       apiGet('getIngresos', { columns: 'id,Empresa_Origen,Empresa_Destino,Remision_Origen,Remision_Destino,Origen,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'id,Remision,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha,Tipo,Estado,Ref_Pedido,Observaciones' }).catch(function() { return { ok: true, ordenes: [] }; }),
+      apiGet('getOrdenesCompra', { columns: 'id,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha,Tipo,Estado,Ref_Pedido,Observaciones' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'id,Remision,Empresa,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Entrega,Fecha_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getReenvases', { columns: 'id,Remision,Remision_Destino,Empresa,Empresa_Destino,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getDevoluciones', { columns: 'id,Empresa,Consecutivo,Remision_Ingreso,Remision,Remision_Salida,Producto,Presentacion,Cantidad,Fecha_Ingreso,Fecha_Devolucion,Fecha,Fecha_Salida' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha,Observaciones' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
       apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision_Salida,Observaciones,Producto,Tipo_Linea,Cantidad,Fecha_Ingreso,Fecha_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
@@ -1099,17 +1099,33 @@ function _buildRemisionesInner() {
     });
   });
 
-  // 3. Órdenes de Compra — campo Remision
+  // 3. Órdenes de Compra — Remision (entrada destino) + Remision_Origen (salida origen)
   ordenesCompra.forEach(function(oc) {
+    var empDest = oc.Empresa_Destino || '';
+    var empOrig = oc.Empresa_Origen || '';
     var rem = String(oc.Remision || '').trim();
-    if (!rem) return;
-    var empNombre = oc.Empresa_Destino || oc.Empresa_Origen || '';
-    if (fEmp && empNombre !== fEmp && (oc.Empresa_Origen || '') !== fEmp) return;
-    if (fTxt && rem.toLowerCase().indexOf(fTxt) < 0 && getSigla(empNombre).toLowerCase().indexOf(fTxt) < 0) return;
-    var key = empNombre + '||' + rem + '||Orden de Compra';
-    _addRemision(map, key, empNombre, rem, 'Orden de Compra', 'OC ' + (oc.Consecutivo || ''), (oc.Producto || '') + ' (' + (oc.Presentacion || '') + ')', oc.Cantidad, oc.Fecha, oc.Empresa_Origen || '', oc.Empresa_Destino || '');
-    empresasSet[getSigla(empNombre)] = true;
-    totalLineas++;
+    if (rem) {
+      var empNombre = empDest || empOrig;
+      if (!fEmp || empNombre === fEmp || empOrig === fEmp) {
+        if (!fTxt || rem.toLowerCase().indexOf(fTxt) >= 0 || getSigla(empNombre).toLowerCase().indexOf(fTxt) >= 0) {
+          var key = empNombre + '||' + rem + '||OC Entrada';
+          _addRemision(map, key, empNombre, rem, 'OC Entrada', 'OC ' + (oc.Consecutivo || ''), (oc.Producto || '') + ' (' + (oc.Presentacion || '') + ')', oc.Cantidad, oc.Fecha, empOrig, empDest);
+          empresasSet[getSigla(empNombre)] = true;
+          totalLineas++;
+        }
+      }
+    }
+    var remOrig = String(oc.Remision_Origen || '').trim();
+    if (remOrig && empOrig) {
+      if (!fEmp || empOrig === fEmp) {
+        if (!fTxt || remOrig.toLowerCase().indexOf(fTxt) >= 0 || getSigla(empOrig).toLowerCase().indexOf(fTxt) >= 0) {
+          var keyO = empOrig + '||' + remOrig + '||OC Salida';
+          _addRemision(map, keyO, empOrig, remOrig, 'OC Salida', 'OC ' + (oc.Consecutivo || ''), (oc.Producto || '') + ' (' + (oc.Presentacion || '') + ')', oc.Cantidad, oc.Fecha, empOrig, empDest);
+          empresasSet[getSigla(empOrig)] = true;
+          totalLineas++;
+        }
+      }
+    }
   });
 
   // 4. Muestras — campo Remision
@@ -1125,17 +1141,32 @@ function _buildRemisionesInner() {
     totalLineas++;
   });
 
-  // 5. Reenvases — campo Remision
+  // 5. Reenvases — Remision (salida origen) + Remision_Destino (entrada destino)
   reenvases.forEach(function(re) {
-    var rem = String(re.Remision || '').trim();
-    if (!rem) return;
     var empNombre = re.Empresa || '';
-    if (fEmp && empNombre !== fEmp) return;
-    if (fTxt && rem.toLowerCase().indexOf(fTxt) < 0 && getSigla(empNombre).toLowerCase().indexOf(fTxt) < 0) return;
-    var key = empNombre + '||' + rem + '||Salida a producción';
-    _addRemision(map, key, empNombre, rem, 'Salida a producción', '', (re.Producto || '') + ' (' + (re.Presentacion || '') + ')', re.Cantidad, re.Fecha);
-    empresasSet[getSigla(empNombre)] = true;
-    totalLineas++;
+    var empDest = re.Empresa_Destino || '';
+    var rem = String(re.Remision || '').trim();
+    if (rem) {
+      if (!fEmp || empNombre === fEmp) {
+        if (!fTxt || rem.toLowerCase().indexOf(fTxt) >= 0 || getSigla(empNombre).toLowerCase().indexOf(fTxt) >= 0) {
+          var key = empNombre + '||' + rem + '||Salida a producción';
+          _addRemision(map, key, empNombre, rem, 'Salida a producción', '', (re.Producto || '') + ' (' + (re.Presentacion || '') + ')', re.Cantidad, re.Fecha);
+          empresasSet[getSigla(empNombre)] = true;
+          totalLineas++;
+        }
+      }
+    }
+    var remDest = String(re.Remision_Destino || '').trim();
+    if (remDest && empDest) {
+      if (!fEmp || empDest === fEmp) {
+        if (!fTxt || remDest.toLowerCase().indexOf(fTxt) >= 0 || getSigla(empDest).toLowerCase().indexOf(fTxt) >= 0) {
+          var keyD = empDest + '||' + remDest + '||Traslado Entrada';
+          _addRemision(map, keyD, empDest, remDest, 'Traslado Entrada', '', (re.Producto || '') + ' (' + (re.Presentacion || '') + ')', re.Cantidad, re.Fecha);
+          empresasSet[getSigla(empDest)] = true;
+          totalLineas++;
+        }
+      }
+    }
   });
 
   // 6. Devoluciones — Remisión de Ingreso y Remisión de Salida

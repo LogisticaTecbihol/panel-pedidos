@@ -5,6 +5,7 @@ var camLineasCambiar = [];
 var camLineasEntregar = [];
 var deleteCamGroupIds = null;
 var gestionarCamIds = null;
+var gestionarCamEmpresa = '';
 var catalogoProductosCam = [];
 var catalogoClientesCam = [];
 var camViewingKey = null;
@@ -706,6 +707,7 @@ function openGestionarCam(key) {
   if (!lines.length) return;
   var r = lines[0];
   gestionarCamIds = lines.map(function(l) { return l.__row || l.id; });
+  gestionarCamEmpresa = r.Empresa || '';
 
   document.getElementById('gestionar-cam-meta').innerHTML =
     '<span>📋 Consec: '+(r.Consecutivo||'—')+'</span>' +
@@ -718,6 +720,12 @@ function openGestionarCam(key) {
   document.getElementById('gestionar-cam-remision-salida').value = r.Remision_Salida || '';
   document.getElementById('gestionar-cam-bodega-salida').value = r.Bodega_Salida || 'Productos Buenos';
   document.getElementById('gestionar-cam-fecha-salida').value = r.Fecha_Salida ? toDateInput(r.Fecha_Salida) : today();
+  var _elGCRI = document.getElementById('gestionar-cam-remision-ingreso');
+  _elGCRI.readOnly = false; _elGCRI.style.background = ''; _elGCRI.placeholder = 'N° remisión';
+  var _chkGCRI = document.getElementById('gestionar-cam-remision-ingreso-auto'); if (_chkGCRI) _chkGCRI.checked = false;
+  var _elGCRS = document.getElementById('gestionar-cam-remision-salida');
+  _elGCRS.readOnly = false; _elGCRS.style.background = ''; _elGCRS.placeholder = 'N° remisión';
+  var _chkGCRS = document.getElementById('gestionar-cam-remision-salida-auto'); if (_chkGCRS) _chkGCRS.checked = false;
   document.getElementById('btn-gestionar-cam').disabled = false;
   document.getElementById('btn-gestionar-cam').textContent = '✓ Cerrar cambio';
   document.getElementById('gestionar-cam-overlay').classList.add('show');
@@ -747,6 +755,7 @@ async function saveGestionarCam() {
   try {
     var result = await apiPost({
       action: 'gestionarCambio',
+      Empresa: gestionarCamEmpresa,
       Remision_Ingreso: remIngreso,
       Bodega_Ingreso: bodegaIngreso,
       Fecha_Ingreso: fechaIngreso,
@@ -757,7 +766,10 @@ async function saveGestionarCam() {
     });
     if (!result.ok) throw new Error(result.error || 'Error al gestionar');
     closeGestionarCam();
-    showToast('✅ Cambio cerrado — ' + result.updated + ' línea(s) actualizadas');
+    var toastCam = ['✅ Cambio cerrado'];
+    if (result.remision_ingreso) toastCam.push('RE: ' + result.remision_ingreso);
+    if (result.remision_salida) toastCam.push('RS: ' + result.remision_salida);
+    showToast(toastCam.join(' · '));
     await loadCambios();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
