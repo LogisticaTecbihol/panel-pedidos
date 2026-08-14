@@ -3470,6 +3470,7 @@ async function openNuevoPedido() {
           actualizarConsecutivoNuevo();
         }
       }
+      _reapplyPreciosNuevo(); _toggleNvProductos();
     }
   });
   if (nitAC) { nitAC.destroy(); nitAC = null; }
@@ -3525,6 +3526,7 @@ async function openNuevoPedido() {
           actualizarConsecutivoNuevo();
         }
       }
+      _reapplyPreciosNuevo(); _toggleNvProductos();
     }
   });
   setupProductoAutocomplete();
