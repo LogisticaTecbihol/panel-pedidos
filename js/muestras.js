@@ -34,7 +34,9 @@ async function _resolveResponsableId(valor) {
 
 var allMuestras = [];
 var filteredMu = [];
-var muSortCols = [];
+var muSortCols = [
+  { key: 'Fecha_Solicitud', dir: 'desc' }
+];
 var muEditId = null;
 var muDeleteIds = [];
 var muLines = [{ producto: '', presentacion: '', cantidad: 0 }];

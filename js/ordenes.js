@@ -22,7 +22,9 @@ function matchEmpresa(name) {
 }
 
 // ── Sorting ──
-var sortLevelsOC = [];
+var sortLevelsOC = [
+  { id: 'fecha', dir: 'desc' }
+];
 
 var SORT_COLS_OC = [
   { id:'fecha',       label:'Fecha',        fn: function(r) { return +new Date(r.Fecha||0); } },
