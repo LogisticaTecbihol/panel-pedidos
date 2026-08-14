@@ -220,6 +220,7 @@ function groupCambios(rows) {
 function renderCamTable() {
   var filtered = filteredCam();
   var grouped = groupCambios(filtered);
+  grouped.sort(function(a, b) { return (b.Fecha_Solicitud || '').localeCompare(a.Fecha_Solicitud || ''); });
   var allGrouped = groupCambios(cambios);
 
   document.getElementById('sc-total').textContent = allGrouped.length;
