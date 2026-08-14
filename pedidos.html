@@ -450,7 +450,14 @@
         <div><label class="ef-label">Departamento</label><input class="ef" id="ed-departamento" type="text"></div>
         <div><label class="ef-label">Teléfono</label><input class="ef" id="ed-telefono" type="text"></div>
         <div><label class="ef-label">Plazo de Pago</label><input class="ef" id="ed-plazo" type="text"></div>
-        <div><label class="ef-label">Precio Facturación</label><input class="ef" id="ed-precio" type="text"></div>
+        <div><label class="ef-label">Precio Facturación</label>
+          <select class="ef" id="ed-precio">
+            <option value="">-- Seleccionar --</option>
+            <option value="Dealer">Dealer</option>
+            <option value="Mayorista">Mayorista</option>
+            <option value="Público">Público</option>
+          </select>
+        </div>
         <div><label class="ef-label">Facturar a nombre de</label><input class="ef" id="ed-facturar-a" type="text"></div>
         <div><label class="ef-label">NIT Adicional</label><input class="ef" id="ed-nit-adicional" type="text"></div>
         <div><label class="ef-label">Pedido en Consignación</label>
@@ -660,8 +667,12 @@
         </div>
         <div>
           <label class="ef-label">Precio Facturación</label>
-          <input class="ef" id="nv-precio" type="text" list="dl-precio" placeholder="Seleccionar o digitar">
-          <datalist id="dl-precio"></datalist>
+          <select class="ef" id="nv-precio">
+            <option value="">-- Seleccionar --</option>
+            <option value="Dealer">Dealer</option>
+            <option value="Mayorista">Mayorista</option>
+            <option value="Público">Público</option>
+          </select>
         </div>
         <div>
           <label class="ef-label">Facturar a nombre de</label>

@@ -3250,23 +3250,12 @@ function getLastOrderForClient(clienteName) {
 var nuevoProductos = [];
 
 function populateNuevoDataLists() {
-  var plazos = {}, precios = {};
+  var plazos = {};
   pedidos.forEach(function(p) {
     var pl = (p.Plazo_Pago || '').trim();
-    var pr = (p.Precio_Facturacion || '').trim();
     if (pl) plazos[pl] = true;
-    if (pr) precios[pr] = true;
   });
-  if (listaPreciosCache) {
-    listaPreciosCache.forEach(function(lp) {
-      var tp = (lp.Tipo_Precio || '').trim();
-      if (tp) precios[tp] = true;
-    });
-  }
   document.getElementById('dl-plazo').innerHTML = Object.keys(plazos).sort().map(function(v) {
-    return '<option value="' + v.replace(/"/g, '&quot;') + '">';
-  }).join('');
-  document.getElementById('dl-precio').innerHTML = Object.keys(precios).sort().map(function(v) {
     return '<option value="' + v.replace(/"/g, '&quot;') + '">';
   }).join('');
 }
