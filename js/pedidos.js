@@ -1526,9 +1526,10 @@ function renderAsignacionCell(i, l, empresaPedido) {
            '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
   }
 
+  var prodStock = _normProdSel(l.Producto);
   var opciones = '';
   if (existSnapshot && typeof Existencias !== 'undefined') {
-    var lista = Existencias.getPorEmpresa(existSnapshot, l.Producto, l.Presentacion);
+    var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion);
     // Ordenar: primero la empresa del pedido si tiene stock
     lista.sort(function(a, b) {
       var aEsPedido = norm(a.empresa) === norm(empresaPedido) ? 0 : 1;
@@ -1542,7 +1543,7 @@ function renderAsignacionCell(i, l, empresaPedido) {
       // Ajuste por sesión: restar lo ya asignado a esa (empresa,
       // producto) en TODAS las líneas del pedido, para que dos líneas
       // del mismo producto no puedan sobregirar el mismo pool.
-      var yaSesion = _asignadoEnSesion(x.empresa, l.Producto);
+      var yaSesion = _asignadoEnSesion(x.empresa, prodStock);
       var dispRest = Math.max(0, dispRaw - yaSesion);
       var etiqueta = (yaSesion > 0)
         ? x.sigla + marca + ' · ' + dispRest + ' disp. (base ' + dispRaw + ')'
@@ -1698,7 +1699,7 @@ function _pendienteRestante(i) {
 // (whitespace-collapse + trim, sin cambiar mayúsculas). Debe coincidir
 // para que el "disponible por empresa/producto" del snapshot y las
 // sumas de esta sesión hablen del mismo producto.
-function _normProdSel(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+function _normProdSel(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s*bonificado\s*/gi, ' ').replace(/\s+/g, ' ').trim(); }
 
 // Suma en TODA la sesión (todas las líneas del pedido) las cantidades
 // dirigidas a esa (empresa_stock, producto). Incluye:

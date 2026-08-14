@@ -20,7 +20,7 @@ var activeTab = 'kardex';
 
 function getSiglaKx(n) { return getSigla(n); }
 
-function _normProd(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+function _normProd(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }
 
 function _empresaTienePlanta(empresa) {
   var s = getSiglaKx(empresa);

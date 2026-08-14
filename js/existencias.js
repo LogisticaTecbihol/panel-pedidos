@@ -47,7 +47,7 @@
   }
 
   // Misma normalización que kardex.js:_normProd
-  function _normProd(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+  function _normProd(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }
 
   function _esBueno(bodega) {
     var b = (bodega || '').toLowerCase().trim();
