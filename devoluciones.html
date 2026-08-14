@@ -722,8 +722,8 @@
 </div>
 
 <!-- CAMBIO FORM MODAL -->
-<div class="overlay" id="cam-overlay">
-  <div class="modal-box" style="max-width:1060px">
+<div class="overlay" id="cam-overlay" style="padding:0;align-items:stretch">
+  <div class="modal-box" style="max-width:100%;height:100vh;border-radius:0;display:flex;flex-direction:column">
     <div class="mhdr" style="background:linear-gradient(135deg,#8e44ad,#9b59b6)">
       <div style="flex:1">
         <h2 id="cam-modal-title">🔁 Registrar Cambio de Mercancía</h2>
@@ -731,7 +731,7 @@
       </div>
       <button class="btn-close" onclick="closeCamModal()">✕</button>
     </div>
-    <div class="mbody" style="max-height:72vh;overflow-y:auto">
+    <div class="mbody" style="flex:1;overflow-y:auto">
       <!-- Empresa y datos generales -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">
         <div>
