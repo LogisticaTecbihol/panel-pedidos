@@ -4304,8 +4304,16 @@ function _exportarRemisionEspecifica(rem, opts) {
         if (!r) return null;
         var doc = r.doc;
         generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true, _doc: doc }));
+        var mergedByRem = {};
         ocGroups.forEach(function(ocLines) {
-          generarRemisionesTrasladoPDF(ocLines, { return_doc: true, _doc: doc, contabilidad: true });
+          if (!ocLines || !ocLines.length) return;
+          var h = ocLines[0];
+          var kRem = String(h.Remision || '').trim() + '||' + String(h.Remision_Origen || '').trim();
+          if (!mergedByRem[kRem]) mergedByRem[kRem] = [];
+          ocLines.forEach(function(l) { mergedByRem[kRem].push(l); });
+        });
+        Object.keys(mergedByRem).forEach(function(k) {
+          generarRemisionesTrasladoPDF(mergedByRem[k], { return_doc: true, _doc: doc, contabilidad: true });
         });
         return doc;
       }
