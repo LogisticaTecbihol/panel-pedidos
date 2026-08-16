@@ -95,17 +95,35 @@ var NOTIF = (function() {
   // Sonido de notificación (Web Audio API — sin archivos externos)
   // ────────────────────────────────────────────────────────────
   var _audioCtx = null;
+  var _audioUnlocked = false;
+
+  function _ensureAudioCtx() {
+    if (!_audioCtx) {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+    return _audioCtx;
+  }
+
+  function _unlockAudio() {
+    if (_audioUnlocked) return;
+    _audioUnlocked = true;
+    _ensureAudioCtx();
+    document.removeEventListener('click', _unlockAudio, true);
+    document.removeEventListener('keydown', _unlockAudio, true);
+  }
+  document.addEventListener('click', _unlockAudio, true);
+  document.addEventListener('keydown', _unlockAudio, true);
+
   function _playNotifSound() {
     try {
-      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      var ctx = _audioCtx;
+      var ctx = _ensureAudioCtx();
       var now = ctx.currentTime;
       var gain = ctx.createGain();
       gain.connect(ctx.destination);
       gain.gain.setValueAtTime(0.25, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
 
-      // Tono 1 — nota alta
       var osc1 = ctx.createOscillator();
       osc1.type = 'sine';
       osc1.frequency.setValueAtTime(880, now);
@@ -113,7 +131,6 @@ var NOTIF = (function() {
       osc1.start(now);
       osc1.stop(now + 0.15);
 
-      // Tono 2 — nota más alta (intervalo de tercera)
       var osc2 = ctx.createOscillator();
       osc2.type = 'sine';
       osc2.frequency.setValueAtTime(1108, now + 0.15);
@@ -121,7 +138,6 @@ var NOTIF = (function() {
       osc2.start(now + 0.15);
       osc2.stop(now + 0.35);
 
-      // Tono 3 — cierre
       var osc3 = ctx.createOscillator();
       osc3.type = 'sine';
       osc3.frequency.setValueAtTime(1320, now + 0.35);
