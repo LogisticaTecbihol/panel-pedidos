@@ -8,6 +8,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
 <title>Salidas a producción – Sistema de Gestión Logística</title>
 <link rel="stylesheet" href="css/panel.css">
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
 .ac-dropdown{position:fixed;background:white;border:1px solid #cbd5e0;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .ac-item{padding:8px 12px;cursor:pointer;font-size:.84rem;border-bottom:1px solid #f7fafc}
@@ -75,7 +77,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
   </div>
 
   <div class="stats">
-    <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total registros</div></div>
+    <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total salidas</div></div>
     <div class="sc entregado"><div class="num" id="s-con-remision">0</div><div class="lbl">Con remisión</div></div>
     <div class="sc recibido"><div class="num" id="s-sin-remision">0</div><div class="lbl">Sin remisión</div></div>
     <div class="sc parcial"><div class="num" id="s-cantidad">0</div><div class="lbl">Unidades totales</div></div>
@@ -106,6 +108,59 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
         </thead>
         <tbody id="t-body-re"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- REENVASE DETAIL MODAL -->
+<div class="overlay" id="re-detail-overlay" style="padding:0;align-items:stretch">
+  <div class="modal-box" style="max-width:100%;height:100vh;border-radius:0;display:flex;flex-direction:column">
+    <div class="mhdr" style="background:linear-gradient(135deg,#d35400,#e67e22)">
+      <div style="flex:1">
+        <h2 id="re-detail-title">🏭 Detalle de Salida</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px" id="re-detail-sub"></div>
+      </div>
+      <button class="btn-close" onclick="closeReDetail()">✕</button>
+    </div>
+    <div class="mbody" style="flex:1;overflow-y:auto">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+        <div><label class="ef-label">Bodega</label><div class="ef" id="red-bodega" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+        <div><label class="ef-label">Empresa</label><div class="ef" id="red-empresa" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+        <div><label class="ef-label">Emp. Destino</label><div class="ef" id="red-emp-dest" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+        <div><label class="ef-label">Planta</label><div class="ef" id="red-planta" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+        <div><label class="ef-label">Fecha</label><div class="ef" id="red-fecha" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+        <div><label class="ef-label">N° Remisión Salida</label><div class="ef" id="red-remision" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+        <div><label class="ef-label">N° Remisión Entrada</label><div class="ef" id="red-rem-dest" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+      </div>
+      <div style="border-top:1px solid #e2e8f0;padding-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-weight:700;font-size:0.88rem;color:#2d3748">📦 Productos <span id="red-line-ct" style="font-weight:400;color:#718096"></span></div>
+          <button class="auth-edit-only" onclick="addProductToReGroup()" style="background:#d35400;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">+ Agregar producto</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="font-size:0.85rem">
+            <thead>
+              <tr style="background:#f7fafc">
+                <th style="width:30px">#</th>
+                <th>Producto</th>
+                <th>Presentación</th>
+                <th style="text-align:right">Cantidad</th>
+                <th>Observaciones</th>
+                <th style="width:100px">Acción</th>
+              </tr>
+            </thead>
+            <tbody id="red-products"></tbody>
+          </table>
+        </div>
+        <div id="red-total" style="text-align:right;font-weight:700;font-size:0.9rem;margin-top:8px;color:#2d3748"></div>
+      </div>
+    </div>
+    <div class="mftr">
+      <div style="font-size:0.8rem;color:#718096" id="red-footer-info"></div>
+      <div class="mftr-btns">
+        <button class="btn-cancel auth-edit-only" onclick="enviarRemisionReenvase()" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar remisión con copia contabilidad a otro usuario del panel">📨 Enviar Remisión</button>
+        <button class="btn-cancel" onclick="closeReDetail()">Cerrar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -246,29 +301,13 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
   </div>
 </div>
 
-<!-- VIEW MODAL -->
-<div class="overlay" id="view-re-overlay">
-  <div class="modal-box" style="max-width:650px">
-    <div class="mhdr" style="background:linear-gradient(135deg,#d35400,#e67e22)">
-      <div style="flex:1">
-        <h2>🏭 Detalle de Salida</h2>
-        <div class="meta" id="view-re-meta"></div>
-      </div>
-      <button class="btn-close" onclick="closeViewRe()">✕</button>
-    </div>
-    <div class="mbody" id="view-re-body"></div>
-    <div class="mftr" style="justify-content:flex-end">
-      <button class="btn-cancel" onclick="closeViewRe()">Cerrar</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/notificaciones.js"></script>
-<script src="js/reenvases.js?v=20260811a"></script>
+<script src="js/pdf-remision.js?v=20260802n"></script>
+<script src="js/reenvases.js?v=20260816a"></script>
 </body>
 </html>
