@@ -507,6 +507,7 @@ function viewMuestra(id) {
     '</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem;background:#f0fdf4;padding:12px 14px;border-radius:8px;border:1px solid #bbf7d0">' +
     editField('N° Remisión', 'mu-view-remision', 'text', remVal, 'N° remisión') +
+    (AUTH.isAdmin() ? '<label style="font-size:0.72rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:3px;margin-top:2px"><input type="checkbox" id="mu-view-remision-auto" onchange="var el=document.getElementById(\'mu-view-remision\');if(this.checked){el.readOnly=true;el.style.background=\'#f0f4f8\';el.placeholder=\'(Auto al despachar)\';el.value=\'\';}else{el.readOnly=false;el.style.background=\'\';el.placeholder=\'N° remisión\';}">Auto</label>' : '') +
     editField('Fecha Despacho', 'mu-view-fecha-despacho', 'date', fDespachoVal, '') +
     '</div>';
 
@@ -574,6 +575,7 @@ async function saveEntregas() {
         continue;
       }
       var estado = 'Despachada';
+      var generarRem = !remision && !(row.Remision || '').trim();
       var res = await apiPost({
         action: 'editarMuestra', row: u.id,
         Empresa: row.Empresa, Consecutivo: row.Consecutivo,
@@ -585,7 +587,8 @@ async function saveEntregas() {
         Estado: estado, Objetivo: row.Objetivo, Observaciones: row.Observaciones,
         Producto: row.Producto, Presentacion: row.Presentacion,
         Cantidad: row.Cantidad, Cant_Entregada: u.Cant_Entregada,
-        Fecha_Entrega: row.Fecha_Entrega || ''
+        Fecha_Entrega: row.Fecha_Entrega || '',
+        _generar_remision: generarRem
       });
       if (!res.ok) throw new Error(res.error || 'Error al guardar línea ' + u.id);
     }
