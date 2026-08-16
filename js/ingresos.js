@@ -374,6 +374,73 @@ function addProductToGroup() {
   document.getElementById('ing-overlay').classList.add('show');
 }
 
+// ── Enviar Remisión PDF ──
+function enviarRemisionIngreso() {
+  if (!activeIngGroup) return;
+  var g = activeIngGroup;
+  var lines = getLinesForIng(g);
+  if (!lines.length) { showToast('No hay productos en este ingreso.', '#e67e22'); return; }
+
+  var remDest = (g.Remision_Destino || '').trim();
+  var remOrig = (g.Remision_Origen || '').trim();
+  var remNum = remDest || remOrig || '';
+  if (!remNum) { showToast('Este ingreso no tiene número de remisión asignado.', '#e67e22'); return; }
+
+  if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
+    showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
+  }
+
+  var empresa = g.Empresa_Origen || g.Empresa_Destino || '';
+  var entregas = lines.map(function(l) {
+    return {
+      producto: l.Producto || '',
+      presentacion: l.Presentacion || '',
+      cantidad: Number(l.Cantidad) || 0,
+      valor_unitario: 0,
+      valor_total: 0,
+      bonificado: 'No'
+    };
+  }).filter(function(p) { return p.cantidad > 0 || p.producto; });
+
+  var left = [
+    ['Origen', g.Origen || ''],
+    ['Emp. Origen', g.Empresa_Origen || ''],
+    ['Responsable', g.Responsable || '']
+  ];
+  var right = [
+    ['Emp. Destino', g.Empresa_Destino || ''],
+    ['Rem. Origen', g.Remision_Origen || ''],
+    ['Rem. Destino', g.Remision_Destino || '']
+  ];
+
+  var data = {
+    empresa: empresa,
+    consecutivo: '',
+    doc_title: 'REMISION DE INGRESO',
+    doc_number: remNum,
+    ref_label: null,
+    date_label: 'Fecha ingreso',
+    fecha_entrega: g.Fecha || '',
+    remision: remNum,
+    left_fields: left,
+    right_fields: right,
+    entregas: entregas,
+    qty_header: 'Cantidad',
+    file_prefix: 'Remision_Ingreso'
+  };
+
+  var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
+  NOTIF.openModalEnviar({
+    modulo: 'ingresos',
+    referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + remNum,
+    titulo: 'Remisión ingreso #' + remNum + ' — ' + (g.Origen || ''),
+    buildDoc: function() {
+      var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
+      return r ? r.doc : null;
+    }
+  });
+}
+
 // ── Product search/autocomplete ──
 var activeAutocomplete = null;
 

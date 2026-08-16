@@ -8,6 +8,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📥</text></svg>">
 <title>Ingresos – Sistema de Gestión Logística</title>
 <link rel="stylesheet" href="css/panel.css">
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -161,6 +163,7 @@
     <div class="mftr">
       <div style="font-size:0.8rem;color:#718096" id="igd-footer-info"></div>
       <div class="mftr-btns">
+        <button class="btn-cancel auth-edit-only" onclick="enviarRemisionIngreso()" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar remisión con copia contabilidad a otro usuario del panel">📨 Enviar Remisión</button>
         <button class="btn-cancel" onclick="closeIngDetail()">Cerrar</button>
       </div>
     </div>
@@ -307,6 +310,7 @@
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/notificaciones.js"></script>
-<script src="js/ingresos.js?v=4"></script>
+<script src="js/pdf-remision.js?v=20260802n"></script>
+<script src="js/ingresos.js?v=5"></script>
 </body>
 </html>
