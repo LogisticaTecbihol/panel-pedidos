@@ -92,6 +92,46 @@ var NOTIF = (function() {
   }
 
   // ────────────────────────────────────────────────────────────
+  // Sonido de notificación (Web Audio API — sin archivos externos)
+  // ────────────────────────────────────────────────────────────
+  var _audioCtx = null;
+  function _playNotifSound() {
+    try {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var ctx = _audioCtx;
+      var now = ctx.currentTime;
+      var gain = ctx.createGain();
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+
+      // Tono 1 — nota alta
+      var osc1 = ctx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, now);
+      osc1.connect(gain);
+      osc1.start(now);
+      osc1.stop(now + 0.15);
+
+      // Tono 2 — nota más alta (intervalo de tercera)
+      var osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1108, now + 0.15);
+      osc2.connect(gain);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.35);
+
+      // Tono 3 — cierre
+      var osc3 = ctx.createOscillator();
+      osc3.type = 'sine';
+      osc3.frequency.setValueAtTime(1320, now + 0.35);
+      osc3.connect(gain);
+      osc3.start(now + 0.35);
+      osc3.stop(now + 0.6);
+    } catch (e) {}
+  }
+
+  // ────────────────────────────────────────────────────────────
   // Bootstrap
   // ────────────────────────────────────────────────────────────
   async function mountBell(container) {
@@ -174,7 +214,7 @@ var NOTIF = (function() {
         schema: 'public',
         table: 'notificaciones',
         filter: 'para_usuario_id=eq.' + _uid
-      }, function() { loadUnread(); })
+      }, function() { _playNotifSound(); loadUnread(); })
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
