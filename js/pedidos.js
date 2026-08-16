@@ -4300,12 +4300,12 @@ function _exportarRemisionEspecifica(rem, opts) {
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
       titulo: 'Remisión #' + rem.remision + ' — ' + (data.cliente || 'sin cliente'),
       buildDoc: function() {
-        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
+        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
         if (!r) return null;
         var doc = r.doc;
         generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true, _doc: doc }));
         ocGroups.forEach(function(ocLines) {
-          generarRemisionesTrasladoPDF(ocLines, { return_doc: true, _doc: doc });
+          generarRemisionesTrasladoPDF(ocLines, { return_doc: true, _doc: doc, contabilidad: true });
         });
         return doc;
       }

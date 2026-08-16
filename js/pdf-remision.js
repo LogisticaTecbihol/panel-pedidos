@@ -589,7 +589,10 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
       left_fields: bf1.left_fields,
       right_fields: bf1.right_fields
     };
-    drawSide(dataDest, 'COPIA DESTINO (' + (siglaDest || 'DEST') + ') - N° Rem ' + remDest);
+    var footerDest = opts.contabilidad
+      ? 'COPIA - CONTABILIDAD'
+      : 'COPIA DESTINO (' + (siglaDest || 'DEST') + ') - N° Rem ' + remDest;
+    drawSide(dataDest, footerDest);
     firstPageAdded = true;
   }
 
@@ -616,7 +619,10 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
       left_fields: bf2.left_fields,
       right_fields: bf2.right_fields
     };
-    drawSide(dataOrig, 'COPIA ORIGEN (' + (siglaOrig || 'ORIG') + ') - N° Rem ' + remOrig);
+    var footerOrig = opts.contabilidad
+      ? 'COPIA - CONTABILIDAD'
+      : 'COPIA ORIGEN (' + (siglaOrig || 'ORIG') + ') - N° Rem ' + remOrig;
+    drawSide(dataOrig, footerOrig);
   }
 
   var fname = 'Remisiones_Traslado_' + (siglaDest || 'DEST') + '_' + (siglaOrig || 'ORIG') + '_' + (hdr.Consecutivo || '') + '.pdf';
