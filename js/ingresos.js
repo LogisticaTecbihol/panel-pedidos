@@ -3,6 +3,8 @@ var ingresos = [];
 var editIngreso = null;
 var catalogoProductos = [];
 var ingLineas = [];
+var ingGroups = [];
+var activeIngGroup = null;
 
 // ── Constants ──
 var ORIGENES = ['Planta Mosquera', 'Planta Cachipay', 'Proveedor Carval', 'Chia Abago', 'Bodega Villeta', 'Germisemillas'];
@@ -15,14 +17,42 @@ var sortLevelsIng = [
 ];
 
 var SORT_COLS_ING = [
-  { id:'fecha',     label:'Fecha',        fn: function(r) { return +new Date(r.Fecha||0); } },
-  { id:'origen',    label:'Origen',       fn: function(r) { return (r.Origen||'').toLowerCase(); } },
-  { id:'emp_orig',   label:'Emp. Origen',  fn: function(r) { return getSiglaIng(r.Empresa_Origen); } },
-  { id:'emp_dest',   label:'Emp. Destino', fn: function(r) { return getSiglaIng(r.Empresa_Destino); } },
-  { id:'producto',  label:'Producto',     fn: function(r) { return (r.Producto||'').toLowerCase(); } },
-  { id:'cantidad',  label:'Cantidad',     fn: function(r) { return Number(r.Cantidad)||0; } },
-  { id:'responsable', label:'Responsable', fn: function(r) { return (r.Responsable||'').toLowerCase(); } },
+  { id:'fecha',     label:'Fecha',        fn: function(g) { return +new Date(g.Fecha||0); } },
+  { id:'origen',    label:'Origen',       fn: function(g) { return (g.Origen||'').toLowerCase(); } },
+  { id:'emp_orig',   label:'Emp. Origen',  fn: function(g) { return getSiglaIng(g.Empresa_Origen); } },
+  { id:'emp_dest',   label:'Emp. Destino', fn: function(g) { return getSiglaIng(g.Empresa_Destino); } },
+  { id:'lineas',    label:'Líneas',       fn: function(g) { return getLinesForIng(g).length; } },
+  { id:'unidades',  label:'Unidades',     fn: function(g) { return getLinesForIng(g).reduce(function(s,r) { return s + (Number(r.Cantidad)||0); }, 0); } },
+  { id:'responsable', label:'Responsable', fn: function(g) { return (g.Responsable||'').toLowerCase(); } },
 ];
+
+// ── Grouping ──
+function keyOfIng(r) {
+  return [r.Fecha||'', r.Origen||'', r.Empresa_Origen||'', r.Empresa_Destino||'', r.Responsable||'', r.Remision_Origen||'', r.Remision_Destino||''].join('||');
+}
+
+function rebuildIngGroups() {
+  var seen = {};
+  var order = [];
+  ingresos.forEach(function(r) {
+    var k = keyOfIng(r);
+    if (!seen[k]) {
+      seen[k] = {
+        _key: k, Fecha: r.Fecha, Origen: r.Origen, Empresa_Origen: r.Empresa_Origen,
+        Empresa_Destino: r.Empresa_Destino, Responsable: r.Responsable,
+        Remision_Origen: r.Remision_Origen, Remision_Destino: r.Remision_Destino,
+        Observaciones: r.Observaciones,
+      };
+      order.push(k);
+    }
+    if (!seen[k].Observaciones && r.Observaciones) seen[k].Observaciones = r.Observaciones;
+  });
+  ingGroups = order.map(function(k) { return seen[k]; });
+}
+
+function getLinesForIng(g) {
+  return ingresos.filter(function(r) { return keyOfIng(r) === g._key; });
+}
 
 function toggleSortIng(id, e) {
   var shift = e && e.shiftKey;
@@ -88,7 +118,7 @@ async function loadIngresos() {
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
     setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
-    document.getElementById('hdr-status').textContent = '☁️ Supabase · ' + ingresos.length + ' registros';
+    document.getElementById('hdr-status').textContent = '☁️ Supabase · ' + ingGroups.length + ' ingresos · ' + ingresos.length + ' líneas';
   } catch (err) {
     if (mainEl.style.display === 'block') {
       setSyncStatus('error', 'Error al actualizar: ' + err.message);
@@ -140,15 +170,17 @@ function filteredIng() {
   var fp = document.getElementById('f-prod').value;
   var fr = document.getElementById('f-resp').value;
   var ft = document.getElementById('f-txt').value.toLowerCase();
-  return ingresos.filter(function(r) {
-    if (fo && r.Origen !== fo) return false;
-    if (feo && r.Empresa_Origen !== feo) return false;
-    if (fed && r.Empresa_Destino !== fed) return false;
-    if (fp && r.Producto !== fp) return false;
-    if (fr && r.Responsable !== fr) return false;
+  return ingGroups.filter(function(g) {
+    if (fo && g.Origen !== fo) return false;
+    if (feo && g.Empresa_Origen !== feo) return false;
+    if (fed && g.Empresa_Destino !== fed) return false;
+    if (fr && g.Responsable !== fr) return false;
+    var lines = getLinesForIng(g);
+    if (fp && !lines.some(function(l) { return l.Producto === fp; })) return false;
     if (ft) {
-      var hay = [r.Producto, r.Presentacion, r.Remision_Origen, r.Remision_Destino, r.Responsable, r.Observaciones].join(' ').toLowerCase();
-      if (hay.indexOf(ft) < 0) return false;
+      var hay = [g.Origen, g.Empresa_Origen, g.Empresa_Destino, g.Responsable, g.Remision_Origen, g.Remision_Destino, g.Observaciones].join(' ');
+      lines.forEach(function(l) { hay += ' ' + (l.Producto||'') + ' ' + (l.Presentacion||''); });
+      if (hay.toLowerCase().indexOf(ft) < 0) return false;
     }
     return true;
   });
@@ -172,9 +204,8 @@ function renderIngHeader() {
     { label:'Origen', id:'origen' },
     { label:'Emp. Origen', id:'emp_orig' },
     { label:'Emp. Destino', id:'emp_dest' },
-    { label:'Producto', id:'producto' },
-    { label:'Presentación', id:null },
-    { label:'Cantidad', id:'cantidad' },
+    { label:'Líneas', id:'lineas' },
+    { label:'Unidades', id:'unidades' },
     { label:'Responsable', id:'responsable' },
     { label:'Rem. Origen', id:null },
     { label:'Rem. Destino', id:null },
@@ -194,49 +225,153 @@ function renderIngHeader() {
 }
 
 function renderIngTable() {
-  var rows = applySortIng(filteredIng());
+  rebuildIngGroups();
+  var groups = applySortIng(filteredIng());
 
-  var totalRegs = ingresos.length;
+  var totalGroups = ingGroups.length;
   var totalUnidades = ingresos.reduce(function(s, r) { return s + (Number(r.Cantidad)||0); }, 0);
-  var mosquera = ingresos.filter(function(r) { return r.Origen === 'Planta Mosquera'; }).length;
-  var cachipay = ingresos.filter(function(r) { return r.Origen === 'Planta Cachipay'; }).length;
+  var mosquera = ingGroups.filter(function(g) { return g.Origen === 'Planta Mosquera'; }).length;
+  var cachipay = ingGroups.filter(function(g) { return g.Origen === 'Planta Cachipay'; }).length;
 
-  document.getElementById('s-total').textContent = totalRegs;
+  document.getElementById('s-total').textContent = totalGroups;
   document.getElementById('s-unidades').textContent = totalUnidades.toLocaleString('es-CO');
   document.getElementById('s-mosquera').textContent = mosquera;
   document.getElementById('s-cachipay').textContent = cachipay;
-  document.getElementById('row-ct-ing').textContent = '(' + rows.length + ' mostrados)';
+  document.getElementById('row-ct-ing').textContent = '(' + groups.length + ' mostrados)';
 
   renderIngHeader();
 
   var tbody = document.getElementById('t-body-ing');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="12"><div class="empty">No hay ingresos con los filtros seleccionados.</div></td></tr>';
+  if (!groups.length) {
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty">No hay ingresos con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
-  tbody.innerHTML = rows.map(function(r, i) {
-    var origenBadge = r.Origen === 'Devolución'
+  tbody.innerHTML = groups.map(function(g, i) {
+    var lines = getLinesForIng(g);
+    var totalQty = lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
+    var origenBadge = g.Origen === 'Devolución'
       ? '<span class="badge b-rec">Devolución</span>'
-      : '<span class="badge b-par">' + (r.Origen||'—') + '</span>';
+      : '<span class="badge b-par">' + (g.Origen||'—') + '</span>';
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
-      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(g.Fecha) + '</td>' +
       '<td>' + origenBadge + '</td>' +
-      '<td title="' + (r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Origen) + '">' + getSiglaIng(r.Empresa_Origen) + '</span></td>' +
-      '<td title="' + (r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Destino) + '">' + getSiglaIng(r.Empresa_Destino) + '</span></td>' +
-      '<td style="font-weight:700">' + (r.Producto||'—') + '</td>' +
-      '<td>' + (r.Presentacion||'—') + '</td>' +
-      '<td style="text-align:center;font-weight:700">' + (r.Cantidad||0) + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Responsable||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Remision_Origen||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Remision_Destino||'—') + '</td>' +
+      '<td title="' + (g.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Origen) + '">' + getSiglaIng(g.Empresa_Origen) + '</span></td>' +
+      '<td title="' + (g.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Destino) + '">' + getSiglaIng(g.Empresa_Destino) + '</span></td>' +
+      '<td style="text-align:center"><span style="background:#e8f4fb;color:#1a5276;padding:2px 9px;border-radius:12px;font-size:0.75rem;font-weight:700">' + lines.length + '</span></td>' +
+      '<td style="text-align:center;font-weight:700">' + totalQty.toLocaleString('es-CO') + '</td>' +
+      '<td style="font-size:0.78rem">' + (g.Responsable||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (g.Remision_Origen||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (g.Remision_Destino||'—') + '</td>' +
+      '<td><button class="btn-ver" onclick="openIngDetail(' + i + ')">📦 Ver ingreso</button></td>' +
+    '</tr>';
+  }).join('');
+
+  refreshIngDetail();
+}
+
+// ── Detail Modal ──
+function openIngDetail(idx) {
+  var groups = applySortIng(filteredIng());
+  activeIngGroup = groups[idx];
+  if (!activeIngGroup) return;
+
+  var g = activeIngGroup;
+  document.getElementById('ing-detail-title').textContent = '📥 Detalle de Ingreso';
+  document.getElementById('ing-detail-sub').textContent = fmtDate(g.Fecha) + ' · ' + (g.Origen||'') + ' → ' + getSiglaIng(g.Empresa_Destino);
+
+  document.getElementById('igd-fecha').textContent = fmtDate(g.Fecha);
+  document.getElementById('igd-origen').textContent = g.Origen || '—';
+  document.getElementById('igd-responsable').textContent = g.Responsable || '—';
+  document.getElementById('igd-emp-orig').textContent = g.Empresa_Origen || '—';
+  document.getElementById('igd-emp-dest').textContent = g.Empresa_Destino || '—';
+  document.getElementById('igd-rem-orig').textContent = g.Remision_Origen || '—';
+  document.getElementById('igd-rem-dest').textContent = g.Remision_Destino || '—';
+  document.getElementById('igd-obs').textContent = g.Observaciones || '—';
+
+  renderIngDetailProducts();
+  document.getElementById('ing-detail-overlay').classList.add('show');
+}
+
+function renderIngDetailProducts() {
+  var g = activeIngGroup;
+  if (!g) return;
+  var lines = getLinesForIng(g);
+
+  document.getElementById('igd-line-ct').textContent = '(' + lines.length + ' líneas)';
+  var totalUnits = lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
+  document.getElementById('igd-total').textContent = 'Total: ' + totalUnits.toLocaleString('es-CO') + ' unidades';
+  document.getElementById('igd-footer-info').textContent = lines.length + ' producto(s) · ' + totalUnits.toLocaleString('es-CO') + ' unidades';
+
+  var tbody = document.getElementById('igd-products');
+  if (!lines.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">No hay productos en este ingreso.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = lines.map(function(l, i) {
+    return '<tr>' +
+      '<td style="color:#a0aec0;font-size:0.78rem">' + (i+1) + '</td>' +
+      '<td style="font-weight:600">' + (l.Producto||'—') + '</td>' +
+      '<td>' + (l.Presentacion||'—') + '</td>' +
+      '<td style="text-align:right;font-weight:700">' + (Number(l.Cantidad)||0) + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditIng(' + r.__row + ')" title="Editar">✏️</button>' : '') +
-        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteIng(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
+        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditIng(' + l.__row + ')" title="Editar">✏️</button>' : '') +
+        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteIngFromDetail(' + i + ',' + (l.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
+}
+
+function closeIngDetail() {
+  document.getElementById('ing-detail-overlay').classList.remove('show');
+  activeIngGroup = null;
+}
+
+function refreshIngDetail() {
+  if (!activeIngGroup) return;
+  var overlay = document.getElementById('ing-detail-overlay');
+  if (!overlay || !overlay.classList.contains('show')) return;
+  var key = activeIngGroup._key;
+  var newGroup = null;
+  for (var i = 0; i < ingGroups.length; i++) {
+    if (ingGroups[i]._key === key) { newGroup = ingGroups[i]; break; }
+  }
+  if (newGroup) {
+    activeIngGroup = newGroup;
+    renderIngDetailProducts();
+  } else {
+    closeIngDetail();
+  }
+}
+
+function addProductToGroup() {
+  if (!activeIngGroup) return;
+  var g = activeIngGroup;
+  editIngreso = null;
+  document.getElementById('ing-modal-title').textContent = '📥 Agregar Producto';
+  document.getElementById('ing-fecha').value = toDateInput(g.Fecha);
+  document.getElementById('ing-origen').value = g.Origen || '';
+  document.getElementById('ing-empresa-origen').value = g.Empresa_Origen || '';
+  document.getElementById('ing-empresa-destino').value = g.Empresa_Destino || '';
+  document.getElementById('ing-responsable').value = g.Responsable || '';
+  document.getElementById('ing-remision-origen').value = g.Remision_Origen || '';
+  document.getElementById('ing-remision-destino').value = g.Remision_Destino || '';
+  document.getElementById('ing-observaciones').value = g.Observaciones || '';
+  var chkDestA = document.getElementById('ing-remision-destino-auto');
+  if (chkDestA) chkDestA.checked = false;
+  var elDest = document.getElementById('ing-remision-destino');
+  elDest.readOnly = false; elDest.style.background = ''; elDest.placeholder = 'N° remisión destino';
+  document.getElementById('btn-save-ing').disabled = false;
+  document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso';
+  document.getElementById('ing-edit-single').style.display = 'none';
+  document.getElementById('ing-multi-lines').style.display = 'block';
+
+  ingLineas = [{ Producto: '', Presentacion: '', Cantidad: '' }];
+  renderIngLines();
+  onOrigenChange();
+  document.getElementById('ing-overlay').classList.add('show');
 }
 
 // ── Product search/autocomplete ──
@@ -543,15 +678,17 @@ async function saveIngreso() {
 // ── Delete ──
 var deleteIngRow = null;
 
-function openDeleteIng(idx, row) {
+function openDeleteIngFromDetail(lineIdx, row) {
   deleteIngRow = row;
-  var rows = filteredIng();
-  var r = rows[idx] || {};
-  document.getElementById('del-ing-msg').textContent = '¿Eliminar este ingreso?';
+  var g = activeIngGroup;
+  if (!g) return;
+  var lines = getLinesForIng(g);
+  var r = lines[lineIdx] || {};
+  document.getElementById('del-ing-msg').textContent = '¿Eliminar este producto del ingreso?';
   document.getElementById('del-ing-detail').innerHTML =
     'Producto: <strong>' + (r.Producto||'—') + '</strong> · ' + (r.Cantidad||0) + ' uds<br>' +
-    'Origen: ' + (r.Origen||'—') + ' · Rem: ' + (r.Remision_Origen||'—') + '/' + (r.Remision_Destino||'—') + ' · ' + fmtDate(r.Fecha) + '<br><br>' +
-    '<span style="color:#e74c3c;font-weight:700">Se eliminará este registro de la base de datos.</span>';
+    'Ingreso: ' + (g.Origen||'—') + ' · ' + fmtDate(g.Fecha) + '<br><br>' +
+    '<span style="color:#e74c3c;font-weight:700">Se eliminará este producto del ingreso.</span>';
   document.getElementById('btn-del-ing-confirm').disabled = false;
   document.getElementById('btn-del-ing-confirm').textContent = '🗑️ Sí, eliminar';
   document.getElementById('delete-ing-overlay').classList.add('show');
@@ -563,6 +700,7 @@ function closeDeleteIng() {
 }
 
 document.getElementById('delete-ing-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeDeleteIng(); });
+document.getElementById('ing-detail-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeIngDetail(); });
 
 async function confirmDeleteIng() {
   if (!deleteIngRow) return;
