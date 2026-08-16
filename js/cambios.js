@@ -1203,20 +1203,9 @@ function exportarCamRemisionPDF(tipo, opts) {
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
       titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' cambio #' + remision,
       buildDoc: function() {
-        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
+        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
         return r ? r.doc : null;
-      },
-      extras: [{
-        buildDoc: function() {
-          var r = exportarCamSolicitudPDF({ return_doc: true });
-          return r ? r.doc : null;
-        },
-        meta: {
-          modulo: 'cambios',
-          referencia: head.Consecutivo || '',
-          titulo: 'Solicitud cambio #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente')
-        }
-      }]
+      }
     });
     return;
   }
