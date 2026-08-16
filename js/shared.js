@@ -752,7 +752,8 @@ async function apiPost(body) {
           Cantidad: Number(lin.Cantidad) || 0, Cant_Entregada: Number(lin.Cant_Entregada) || 0,
           Fecha_Entrega: lin.Fecha_Entrega || '', Solicitante: body.Solicitante || '',
           Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
-          Estado_Aprobacion: 'Por aprobar',
+          Estado_Aprobacion: body.Estado_Aprobacion || 'Por aprobar',
+          Aprobada_Por: body.Aprobada_Por || '', Fecha_Aprobacion: body.Fecha_Aprobacion || '',
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
           responsable_id: body.responsable_id || null,
           creado_por: _uid()
