@@ -50,6 +50,7 @@ var muViewProdACs = [];
 var muViewWorkingLines = [];
 var muViewEmpresa = '';
 var muAsig = null;
+var ocsLegalizadasPorMuestra = {};
 
 // ── Autocomplete engine ──
 
@@ -205,7 +206,14 @@ async function loadMuestras() {
   loadErr.style.display = 'none';
   btnRetry.style.display = 'none';
 
-  var res = await apiGet('getMuestras');
+  var results = await Promise.all([
+    apiGet('getMuestras'),
+    apiGet('getOrdenesCompra', {
+      columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido'
+    }).catch(function() { return { ok: true, ordenes: [] }; })
+  ]);
+  var res = results[0];
+  var ocData = results[1];
   if (!res.ok) {
     loadErr.textContent = res.error || 'Error al cargar';
     loadErr.style.display = 'block';
@@ -214,10 +222,34 @@ async function loadMuestras() {
   }
 
   allMuestras = res.muestras || [];
+  ocsLegalizadasPorMuestra = _buildOCsLegalizadasMu((ocData && ocData.ok && ocData.ordenes) || []);
   loadZone.style.display = 'none';
   main.style.display = 'block';
   populateMuFilters();
   applyMuFilters();
+}
+
+function _buildOCsLegalizadasMu(ordenes) {
+  var map = {};
+  (ordenes || []).forEach(function(oc) {
+    if (String(oc.Tipo || '').toLowerCase() !== 'traslado') return;
+    var remDest = String(oc.Remision || '').trim();
+    var remOrig = String(oc.Remision_Origen || '').trim();
+    if (!remDest && !remOrig) return;
+    var ref = String(oc.Ref_Pedido || '').trim();
+    var m = ref.match(/^(.+)\s+Muestra\s+#(.+)$/i);
+    if (!m) return;
+    var k = m[1].trim() + '||' + m[2].trim();
+    var consec = String(oc.Consecutivo || '');
+    if (!map[k]) map[k] = {};
+    if (!map[k][consec]) map[k][consec] = [];
+    map[k][consec].push(oc);
+  });
+  var result = {};
+  Object.keys(map).forEach(function(k) {
+    result[k] = Object.keys(map[k]).map(function(c) { return map[k][c]; });
+  });
+  return result;
 }
 
 // ── Filters ──
@@ -892,13 +924,28 @@ function exportarMuestraRemisionPDF(opts) {
         }
       });
     }
+    var ocKey = (head.Empresa || '') + '||' + (ctx.consec || '');
+    var ocGroups = ocsLegalizadasPorMuestra[ocKey] || [];
     NOTIF.openModalEnviar({
       modulo: 'muestras',
       referencia: (ctx.consec || '') + ' · Rem ' + remision,
       titulo: 'Remisión muestras #' + remision + ' — ' + (head.Solicitante || 'sin solicitante'),
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
-        return r ? r.doc : null;
+        if (!r) return null;
+        var doc = r.doc;
+        var mergedByRem = {};
+        ocGroups.forEach(function(ocLines) {
+          if (!ocLines || !ocLines.length) return;
+          var h = ocLines[0];
+          var kRem = String(h.Remision || '').trim() + '||' + String(h.Remision_Origen || '').trim();
+          if (!mergedByRem[kRem]) mergedByRem[kRem] = [];
+          ocLines.forEach(function(l) { mergedByRem[kRem].push(l); });
+        });
+        Object.keys(mergedByRem).forEach(function(k) {
+          generarRemisionesTrasladoPDF(mergedByRem[k], { return_doc: true, _doc: doc, contabilidad: true });
+        });
+        return doc;
       },
       extras: extras
     });

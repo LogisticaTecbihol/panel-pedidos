@@ -11,6 +11,7 @@ var camAsig = null;
 var catalogoProductosCam = [];
 var catalogoClientesCam = [];
 var camViewingKey = null;
+var ocsLegalizadasPorCambio = {};
 
 // ── Constants ──
 var EMPRESAS_CAM = [
@@ -35,18 +36,49 @@ async function loadCambios() {
   populateEmpresaSelect('cam-empresa');
   setSyncStatus('syncing', 'Cargando cambios...');
   try {
-    var data = await apiGet('getCambios');
+    var results = await Promise.all([
+      apiGet('getCambios'),
+      apiGet('getOrdenesCompra', {
+        columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido'
+      }).catch(function() { return { ok: true, ordenes: [] }; })
+    ]);
+    var data = results[0];
+    var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
     cambios = (data.cambios || []).map(function(r) {
       if (r.Fecha_Solicitud instanceof Date) r.Fecha_Solicitud = r.Fecha_Solicitud.toISOString().slice(0,10);
       return r;
     });
+    ocsLegalizadasPorCambio = _buildOCsLegalizadasCam((ocData && ocData.ok && ocData.ordenes) || []);
     populateCamFilters();
     renderCamTable();
     setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
   } catch (err) {
     setSyncStatus('error', 'Error al cargar cambios: ' + err.message);
   }
+}
+
+function _buildOCsLegalizadasCam(ordenes) {
+  var map = {};
+  (ordenes || []).forEach(function(oc) {
+    if (String(oc.Tipo || '').toLowerCase() !== 'traslado') return;
+    var remDest = String(oc.Remision || '').trim();
+    var remOrig = String(oc.Remision_Origen || '').trim();
+    if (!remDest && !remOrig) return;
+    var ref = String(oc.Ref_Pedido || '').trim();
+    var m = ref.match(/^(.+)\s+Cambio\s+#(.+)$/i);
+    if (!m) return;
+    var k = m[1].trim() + '||' + m[2].trim();
+    var consec = String(oc.Consecutivo || '');
+    if (!map[k]) map[k] = {};
+    if (!map[k][consec]) map[k][consec] = [];
+    map[k][consec].push(oc);
+  });
+  var result = {};
+  Object.keys(map).forEach(function(k) {
+    result[k] = Object.keys(map[k]).map(function(c) { return map[k][c]; });
+  });
+  return result;
 }
 
 async function loadCatalogoCam() {
@@ -1198,13 +1230,28 @@ function exportarCamRemisionPDF(tipo, opts) {
     if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
       showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
     }
+    var ocKey = getSiglaCam(head.Empresa) + '||' + (head.Consecutivo || '');
+    var ocGroups = ocsLegalizadasPorCambio[ocKey] || [];
     NOTIF.openModalEnviar({
       modulo: 'cambios',
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
       titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' cambio #' + remision,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
-        return r ? r.doc : null;
+        if (!r) return null;
+        var doc = r.doc;
+        var mergedByRem = {};
+        ocGroups.forEach(function(ocLines) {
+          if (!ocLines || !ocLines.length) return;
+          var h = ocLines[0];
+          var kRem = String(h.Remision || '').trim() + '||' + String(h.Remision_Origen || '').trim();
+          if (!mergedByRem[kRem]) mergedByRem[kRem] = [];
+          ocLines.forEach(function(l) { mergedByRem[kRem].push(l); });
+        });
+        Object.keys(mergedByRem).forEach(function(k) {
+          generarRemisionesTrasladoPDF(mergedByRem[k], { return_doc: true, _doc: doc, contabilidad: true });
+        });
+        return doc;
       }
     });
     return;
