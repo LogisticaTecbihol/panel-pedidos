@@ -539,8 +539,9 @@ async function apiPost(body) {
         if (!remIngCam) remIngCam = await generarRemisionConsecutivo(empCam, 'ENTRADA');
         if (!remSalCam) remSalCam = await generarRemisionConsecutivo(empCam, 'SALIDA');
       }
+      var entregasUpd = body.entregasUpdate || {};
       for (var i = 0; i < ids.length; i++) {
-        var res = await _sb.from('CambiosMercancia').update({
+        var updObj = {
           Remision_Ingreso: remIngCam,
           Bodega_Ingreso: body.Bodega_Ingreso || 'Productos Buenos',
           Fecha_Ingreso: body.Fecha_Ingreso || '',
@@ -549,7 +550,13 @@ async function apiPost(body) {
           Fecha_Salida: body.Fecha_Salida || '',
           Estado: 'Cerrado',
           modificado_por: _uid()
-        }).eq('id', ids[i]);
+        };
+        if (entregasUpd[ids[i]]) {
+          var rowRes = await _sb.from('CambiosMercancia').select('Cant_Entregada').eq('id', ids[i]).single();
+          var prev = (rowRes.data && Number(rowRes.data.Cant_Entregada)) || 0;
+          updObj.Cant_Entregada = prev + (entregasUpd[ids[i]].cantDirecta || 0);
+        }
+        var res = await _sb.from('CambiosMercancia').update(updObj).eq('id', ids[i]);
         if (res.error) return { ok: false, error: res.error.message };
       }
       return { ok: true, updated: ids.length, remision_ingreso: remIngCam, remision_salida: remSalCam };

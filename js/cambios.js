@@ -6,6 +6,8 @@ var camLineasEntregar = [];
 var deleteCamGroupIds = null;
 var gestionarCamIds = null;
 var gestionarCamEmpresa = '';
+var gestionarCamWorkingLines = [];
+var camAsig = null;
 var catalogoProductosCam = [];
 var catalogoClientesCam = [];
 var camViewingKey = null;
@@ -700,7 +702,7 @@ async function confirmDeleteCam() {
 }
 
 // ── Gestionar Cambio ──
-function openGestionarCam(key) {
+async function openGestionarCam(key) {
   var lines = cambios.filter(function(r) {
     return ((r.Empresa||'') + '||' + (r.Consecutivo || r.id)) === key;
   });
@@ -728,12 +730,68 @@ function openGestionarCam(key) {
   var _chkGCRS = document.getElementById('gestionar-cam-remision-salida-auto'); if (_chkGCRS) _chkGCRS.checked = false;
   document.getElementById('btn-gestionar-cam').disabled = false;
   document.getElementById('btn-gestionar-cam').textContent = '✓ Cerrar cambio';
+
+  var entregaLines = lines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+  var section = document.getElementById('gestionar-cam-lineas-section');
+  if (entregaLines.length && typeof createAsignacionEngine === 'function') {
+    gestionarCamWorkingLines = entregaLines.map(function(l) {
+      return {
+        Producto: l.Producto || '',
+        Presentacion: l.Presentacion || '',
+        Cantidad: Number(l.Cantidad) || 0,
+        Cant_Entregada: Number(l.Cant_Entregada) || 0,
+        _asignaciones: [],
+        __row: l.__row || l.id
+      };
+    });
+    camAsig = createAsignacionEngine({
+      getLines: function() { return gestionarCamWorkingLines; },
+      getEmpresa: function() { return gestionarCamEmpresa; },
+      globalName: 'camAsig',
+      prefix: 'cam'
+    });
+    await camAsig.loadSnapshot();
+
+    var tblHTML = '<div style="margin-top:12px">' +
+      '<h4 style="margin:0 0 8px;font-size:0.85rem;color:#2d3748">Productos a entregar — Asignación de inventario</h4>' +
+      '<div style="overflow-x:auto"><table class="detail-table" style="width:100%;font-size:0.78rem"><thead><tr>' +
+      '<th style="text-align:left">Producto</th>' +
+      '<th style="text-align:left">Presentación</th>' +
+      '<th style="text-align:center;width:60px">Cantidad</th>' +
+      '<th style="text-align:center;width:70px">Entregada</th>' +
+      '<th style="text-align:left;min-width:220px">Asignar entrega</th>' +
+      '</tr></thead><tbody>';
+    for (var i = 0; i < gestionarCamWorkingLines.length; i++) {
+      var wl = gestionarCamWorkingLines[i];
+      tblHTML += '<tr>' +
+        '<td>' + (wl.Producto || '') + '</td>' +
+        '<td>' + (wl.Presentacion || '') + '</td>' +
+        '<td style="text-align:center">' + wl.Cantidad + '</td>' +
+        '<td style="text-align:center">' + wl.Cant_Entregada + '</td>' +
+        '<td class="cam-asig-td" data-i="' + i + '">' + camAsig.renderCell(i, wl) + '</td>' +
+        '</tr>';
+    }
+    tblHTML += '</tbody></table></div></div>';
+    section.innerHTML = tblHTML;
+    section.style.display = '';
+  } else {
+    section.innerHTML = '';
+    section.style.display = 'none';
+    gestionarCamWorkingLines = [];
+    camAsig = null;
+  }
+
   document.getElementById('gestionar-cam-overlay').classList.add('show');
 }
 
 function closeGestionarCam() {
   document.getElementById('gestionar-cam-overlay').classList.remove('show');
   gestionarCamIds = null;
+  gestionarCamWorkingLines = [];
+  gestionarCamEmpresa = '';
+  camAsig = null;
+  var section = document.getElementById('gestionar-cam-lineas-section');
+  if (section) { section.innerHTML = ''; section.style.display = 'none'; }
 }
 document.getElementById('gestionar-cam-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeGestionarCam(); });
 
@@ -747,6 +805,26 @@ async function saveGestionarCam() {
   if (!fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
   if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
   if (!gestionarCamIds || !gestionarCamIds.length) return;
+
+  var entregas = [];
+  var solicitudesCompra = [];
+  if (camAsig) {
+    var split = camAsig.splitAsignaciones();
+    entregas = split.entregas;
+    solicitudesCompra = split.solicitudesCompra;
+  }
+
+  var entregasUpdate = {};
+  if (entregas.length) {
+    if (!fechaSalida) { showToast('Selecciona la fecha de salida para registrar entregas', '#e74c3c'); return; }
+    entregas.forEach(function(e) {
+      var wl = gestionarCamWorkingLines[e._idx];
+      if (!wl) return;
+      var rowId = wl.__row;
+      if (!entregasUpdate[rowId]) entregasUpdate[rowId] = { cantDirecta: 0 };
+      entregasUpdate[rowId].cantDirecta += e.cantidad;
+    });
+  }
 
   var btn = document.getElementById('btn-gestionar-cam');
   btn.disabled = true;
@@ -762,14 +840,30 @@ async function saveGestionarCam() {
       Remision_Salida: remSalida,
       Bodega_Salida: bodegaSalida,
       Fecha_Salida: fechaSalida,
-      ids: gestionarCamIds
+      ids: gestionarCamIds,
+      entregasUpdate: entregasUpdate
     });
     if (!result.ok) throw new Error(result.error || 'Error al gestionar');
+
+    if (solicitudesCompra.length && camAsig) {
+      var consec = '';
+      var camLines = cambios.filter(function(r) {
+        return gestionarCamIds.indexOf(r.__row || r.id) >= 0;
+      });
+      if (camLines.length) consec = camLines[0].Consecutivo || '';
+      await camAsig.persistirOCSolicitudes(solicitudesCompra, {
+        fecha: fechaSalida,
+        refLabel: getSiglaCam(gestionarCamEmpresa) + ' Cambio #' + consec
+      });
+    }
+
     closeGestionarCam();
-    var toastCam = ['✅ Cambio cerrado'];
-    if (result.remision_ingreso) toastCam.push('RE: ' + result.remision_ingreso);
-    if (result.remision_salida) toastCam.push('RS: ' + result.remision_salida);
-    showToast(toastCam.join(' · '));
+    var toastParts = ['✅ Cambio cerrado'];
+    if (result.remision_ingreso) toastParts.push('RE: ' + result.remision_ingreso);
+    if (result.remision_salida) toastParts.push('RS: ' + result.remision_salida);
+    if (entregas.length) toastParts.push(entregas.length + ' entrega(s) directa(s)');
+    if (solicitudesCompra.length) toastParts.push(solicitudesCompra.length + ' solicitud(es) de compra');
+    showToast(toastParts.join(' · '));
     await loadCambios();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');

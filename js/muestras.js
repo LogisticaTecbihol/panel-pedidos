@@ -47,6 +47,9 @@ var muGeoAC = null;
 var muViewingId = null;
 var muViewNewLines = [];
 var muViewProdACs = [];
+var muViewWorkingLines = [];
+var muViewEmpresa = '';
+var muAsig = null;
 
 // ── Autocomplete engine ──
 
@@ -437,7 +440,7 @@ function renderMuTable() {
 
 // ── View modal ──
 
-function viewMuestra(id) {
+async function viewMuestra(id) {
   var rows = allMuestras.filter(function(r) { return r.id === id; });
   if (!rows.length) return;
   var r = rows[0];
@@ -520,6 +523,20 @@ function viewMuestra(id) {
 
   if (sameConsec.length) {
     var despachoDisabled = aprEstado !== 'Aprobada';
+    muViewEmpresa = emp;
+    muViewWorkingLines = sameConsec.map(function(x) {
+      var copy = Object.assign({}, x);
+      copy._asignaciones = [];
+      return copy;
+    });
+    muAsig = createAsignacionEngine({
+      getLines: function() { return muViewWorkingLines; },
+      getEmpresa: function() { return muViewEmpresa; },
+      globalName: 'muAsig',
+      prefix: 'mu'
+    });
+    await muAsig.loadSnapshot();
+
     var saveBtn = despachoDisabled
       ? '<button disabled title="Requiere aprobación previa" style="background:#cbd5e0;color:#4a5568;border:none;padding:6px 14px;border-radius:6px;cursor:not-allowed;font-size:0.8rem;font-weight:700">🔒 Aprobación requerida</button>'
       : '<button onclick="saveEntregas()" style="background:#27ae60;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700" id="btn-save-entregas">💾 Guardar entregas</button>';
@@ -527,16 +544,19 @@ function viewMuestra(id) {
       '<div style="font-weight:700;font-size:0.84rem;color:#2d3748">📦 Productos solicitados (' + sameConsec.length + ')</div>' +
       saveBtn +
       '</div>';
-    html += '<table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc"><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th><th style="text-align:right;width:90px">Entregada</th><th></th></tr></thead><tbody>';
-    sameConsec.forEach(function(x) {
+    html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc"><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th><th style="text-align:right;width:90px">Entregada</th>' +
+      (despachoDisabled ? '' : '<th style="min-width:220px">Asignar entrega (empresa · cant.)</th>') +
+      '<th></th></tr></thead><tbody>';
+    muViewWorkingLines.forEach(function(x, i) {
       var cantEnt = x.Cant_Entregada != null && x.Cant_Entregada !== '' ? x.Cant_Entregada : '';
       var inpDis = despachoDisabled ? ' disabled' : '';
       html += '<tr><td>' + (x.Producto || '—') + '</td><td>' + (x.Presentacion || '—') + '</td><td style="text-align:right">' + (x.Cantidad || 0) + '</td>' +
-        '<td><input type="number" min="0" class="ef mu-view-cant-ent" data-id="' + x.id + '" value="' + cantEnt + '"' + inpDis + ' style="width:70px;text-align:right;padding:4px 6px;font-size:0.82rem' + (despachoDisabled ? ';background:#f1f5f9;color:#94a3b8' : '') + '"></td>' +
+        '<td><input type="number" min="0" class="ef mu-view-cant-ent" data-id="' + x.id + '" data-i="' + i + '" value="' + cantEnt + '"' + inpDis + ' style="width:70px;text-align:right;padding:4px 6px;font-size:0.82rem' + (despachoDisabled ? ';background:#f1f5f9;color:#94a3b8' : '') + '"' + (despachoDisabled ? '' : ' readonly tabindex="-1" title="Se calcula desde las asignaciones"') + '></td>' +
+        (despachoDisabled ? '' : '<td class="mu-asig-td" data-i="' + i + '" style="min-width:220px">' + muAsig.renderCell(i, x) + '</td>') +
         '<td style="white-space:nowrap">' + (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' : '') +
         (AUTH.canDelete() ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') + '</td></tr>';
     });
-    html += '<tbody id="mu-view-new-lines"></tbody></table>';
+    html += '<tbody id="mu-view-new-lines"></tbody></table></div>';
     if (AUTH.canEdit() && !despachoDisabled) {
       html += '<div style="margin-top:8px"><button onclick="addMuViewLine()" style="background:#d35400;color:white;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:700">+ Agregar línea</button></div>';
     }
@@ -556,18 +576,34 @@ function viewMuestra(id) {
 async function saveEntregas() {
   var remision = document.getElementById('mu-view-remision').value.trim();
   var fechaDespacho = document.getElementById('mu-view-fecha-despacho').value;
-  var cantInputs = document.querySelectorAll('.mu-view-cant-ent');
-  var updates = [];
-  cantInputs.forEach(function(el) {
-    var id = Number(el.getAttribute('data-id'));
-    var cantVal = Number(el.value) || 0;
-    updates.push({ id: id, Cant_Entregada: cantVal });
-  });
 
   syncMuViewNewLinesFromDOM();
   var newLines = muViewNewLines.filter(function(p) { return p.producto && p.cantidad > 0; });
 
-  if (!updates.length && !newLines.length) return;
+  var split = muAsig ? muAsig.splitAsignaciones() : { entregas: [], solicitudesCompra: [] };
+  var entregas = split.entregas;
+  var solicitudesCompra = split.solicitudesCompra;
+
+  var tieneAsignaciones = entregas.length > 0 || solicitudesCompra.length > 0;
+
+  if (!tieneAsignaciones && !newLines.length) {
+    showToast('Asigna al menos una entrega o agrega líneas nuevas', '#e67e22');
+    return;
+  }
+  if (tieneAsignaciones && !fechaDespacho) {
+    showToast('Selecciona la fecha de despacho', '#e74c3c');
+    return;
+  }
+
+  if (entregas.length > 0 && !remision) {
+    try {
+      remision = await generarRemisionConsecutivo(muViewEmpresa, 'SALIDA');
+      document.getElementById('mu-view-remision').value = remision;
+    } catch (err) {
+      showToast('Error generando remisión: ' + err.message, '#e74c3c');
+      return;
+    }
+  }
 
   var btn = document.getElementById('btn-save-entregas');
   btn.disabled = true;
@@ -576,18 +612,24 @@ async function saveEntregas() {
   try {
     await loadMuestras();
 
+    var entregasPorLinea = {};
+    entregas.forEach(function(ent) {
+      if (!entregasPorLinea[ent._idx]) entregasPorLinea[ent._idx] = 0;
+      entregasPorLinea[ent._idx] += ent.cantidad;
+    });
+
     var noEncontradas = [];
-    for (var i = 0; i < updates.length; i++) {
-      var u = updates[i];
-      var row = allMuestras.filter(function(r) { return r.id === u.id; })[0];
-      if (!row) {
-        noEncontradas.push(u.id);
-        continue;
-      }
-      var estado = 'Despachada';
+    for (var i = 0; i < muViewWorkingLines.length; i++) {
+      var wl = muViewWorkingLines[i];
+      var row = allMuestras.filter(function(r) { return r.id === wl.id; })[0];
+      if (!row) { noEncontradas.push(wl.id); continue; }
+      var cantDirecta = entregasPorLinea[i] || 0;
+      var cantEntAnterior = Number(row.Cant_Entregada) || 0;
+      var cantEntNueva = cantEntAnterior + cantDirecta;
+      var estado = cantDirecta > 0 ? 'Despachada' : row.Estado;
       var generarRem = !remision && !(row.Remision || '').trim();
       var res = await apiPost({
-        action: 'editarMuestra', row: u.id,
+        action: 'editarMuestra', row: wl.id,
         Empresa: row.Empresa, Consecutivo: row.Consecutivo,
         Fecha_Solicitud: row.Fecha_Solicitud, Fecha_Despacho: fechaDespacho || row.Fecha_Despacho,
         Responsable: row.Responsable, Departamento: row.Departamento, Municipio: row.Municipio,
@@ -596,31 +638,40 @@ async function saveEntregas() {
         Solicitante: row.Solicitante, Autoriza: row.Autoriza,
         Estado: estado, Objetivo: row.Objetivo, Observaciones: row.Observaciones,
         Producto: row.Producto, Presentacion: row.Presentacion,
-        Cantidad: row.Cantidad, Cant_Entregada: u.Cant_Entregada,
+        Cantidad: row.Cantidad, Cant_Entregada: cantEntNueva,
         Fecha_Entrega: row.Fecha_Entrega || '',
         _generar_remision: generarRem
       });
-      if (!res.ok) throw new Error(res.error || 'Error al guardar línea ' + u.id);
+      if (!res.ok) throw new Error(res.error || 'Error al guardar línea ' + wl.id);
     }
     if (noEncontradas.length) {
       throw new Error('No se encontraron ' + noEncontradas.length + ' línea(s) en la base de datos. Recargá la página e intentá de nuevo.');
     }
 
-    if (newLines.length) {
+    if (solicitudesCompra.length > 0 && muAsig) {
       var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
-      if (head) {
+      var refLabel = (muViewEmpresa || '') + ' Muestra #' + ((head && head.Consecutivo) || '');
+      await muAsig.persistirOCSolicitudes(solicitudesCompra, {
+        fecha: fechaDespacho,
+        refLabel: refLabel
+      });
+    }
+
+    if (newLines.length) {
+      var head2 = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+      if (head2) {
         var resNew = await apiPost({
           action: 'agregarMuestra',
-          Empresa: head.Empresa, Consecutivo: head.Consecutivo,
-          Fecha_Solicitud: head.Fecha_Solicitud, Fecha_Despacho: fechaDespacho || head.Fecha_Despacho,
-          Responsable: head.Responsable, Departamento: head.Departamento, Municipio: head.Municipio,
-          Tipo_Cultivo: head.Tipo_Cultivo, Fecha_Aplicacion: head.Fecha_Aplicacion,
-          Fecha_Seguimiento: head.Fecha_Seguimiento, Remision: remision,
-          Solicitante: head.Solicitante, Autoriza: head.Autoriza,
-          Estado: head.Estado || 'Despachada', Objetivo: head.Objetivo,
-          Estado_Aprobacion: head.Estado_Aprobacion || 'Aprobada',
-          Aprobada_Por: head.Aprobada_Por || '', Fecha_Aprobacion: head.Fecha_Aprobacion || '',
-          Observaciones: head.Observaciones,
+          Empresa: head2.Empresa, Consecutivo: head2.Consecutivo,
+          Fecha_Solicitud: head2.Fecha_Solicitud, Fecha_Despacho: fechaDespacho || head2.Fecha_Despacho,
+          Responsable: head2.Responsable, Departamento: head2.Departamento, Municipio: head2.Municipio,
+          Tipo_Cultivo: head2.Tipo_Cultivo, Fecha_Aplicacion: head2.Fecha_Aplicacion,
+          Fecha_Seguimiento: head2.Fecha_Seguimiento, Remision: remision,
+          Solicitante: head2.Solicitante, Autoriza: head2.Autoriza,
+          Estado: head2.Estado || 'Despachada', Objetivo: head2.Objetivo,
+          Estado_Aprobacion: head2.Estado_Aprobacion || 'Aprobada',
+          Aprobada_Por: head2.Aprobada_Por || '', Fecha_Aprobacion: head2.Fecha_Aprobacion || '',
+          Observaciones: head2.Observaciones,
           lineas: newLines.map(function(l) {
             return { Producto: l.producto, Presentacion: l.presentacion, Cantidad: l.cantidad };
           })
@@ -630,7 +681,14 @@ async function saveEntregas() {
     }
 
     closeViewMu();
-    showToast('✅ Entregas registradas' + (newLines.length ? ' (' + newLines.length + ' línea(s) nueva(s))' : ''));
+    var partes = [];
+    if (entregas.length > 0) partes.push(entregas.length + ' entrega(s) registrada(s)');
+    if (solicitudesCompra.length > 0) partes.push(solicitudesCompra.length + ' solicitud(es) de compra creada(s)');
+    if (newLines.length) partes.push(newLines.length + ' línea(s) nueva(s)');
+    showToast('✅ ' + (partes.length ? partes.join(' + ') : 'Guardado'));
+    if (solicitudesCompra.length > 0) {
+      showToast('⚠ ' + solicitudesCompra.length + ' solicitud(es) de compra pendiente(s) — legalizar la OC en Órdenes para que el stock quede en ' + muViewEmpresa, '#e67e22');
+    }
     await loadMuestras();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -652,6 +710,9 @@ function closeViewMu() {
   document.getElementById('view-mu-overlay').classList.remove('show');
   muViewingId = null;
   muViewNewLines = [];
+  muViewWorkingLines = [];
+  muViewEmpresa = '';
+  muAsig = null;
   muViewProdACs.forEach(function(ac) { ac.destroy(); });
   muViewProdACs = [];
 }
@@ -694,6 +755,7 @@ function renderMuViewNewLines() {
       '<td><input class="ef mu-view-new-pres" data-i="' + i + '" type="text" value="' + pres + '" placeholder="Presentación" style="width:100px;font-size:0.82rem;padding:4px 6px"></td>' +
       '<td><input class="ef mu-view-new-cant" data-i="' + i + '" type="number" min="0" value="' + (p.cantidad || '') + '" placeholder="0" style="width:70px;text-align:right;font-size:0.82rem;padding:4px 6px"></td>' +
       '<td></td>' +
+      (muAsig ? '<td></td>' : '') +
       '<td style="text-align:center"><button onclick="removeMuViewLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:3px 8px;border-radius:5px;cursor:pointer;font-size:0.75rem;font-weight:700">✕</button></td>' +
       '</tr>';
   }).join('');
