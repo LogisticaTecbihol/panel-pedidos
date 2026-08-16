@@ -1188,8 +1188,10 @@ async function openDetail(idx) {
 
   var tbody = document.getElementById('m-lines');
   if (!lines.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12"><div class="no-lines">⚠ Esta orden no tiene líneas de producto registradas.</div></td></tr>';
   } else {
+    var orderStatus = derivedStatus(detailWorkingLines);
+    var orderEntregado = orderStatus === 'Entregado' || orderStatus === 'Facturado';
     tbody.innerHTML = detailWorkingLines.map(function(l, i) {
       var pedida = Number(l.Cantidad)||0;
       var entregada = Number(l.Cant_Entregada)||0;
@@ -1225,6 +1227,13 @@ async function openDetail(idx) {
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td class="money" style="font-size:0.78rem" id="md-vtot-' + i + '">' + fmtMoney(l.Valor_Total) + '</td>' +
         '<td data-row="' + l.__row + '" data-idx="' + i + '" style="min-width:220px">' + renderAsignacionCell(i, l, c.Nombre_Empresa) + '</td>' +
+        '<td style="text-align:center">' +
+          (orderEntregado || lockEntregado
+            ? ''
+            : entregada > 0
+              ? '<span style="font-size:0.85rem;color:#a0aec0" title="Tiene entregas registradas — no se puede eliminar">🔒</span>'
+              : '<button onclick="removeDetailLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700" title="Eliminar línea">✕</button>') +
+        '</td>' +
       '</tr>';
     }).join('');
   }
@@ -2316,6 +2325,40 @@ async function agregarNuevaLinea() {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
     btn.textContent = '✓ Agregar línea al pedido';
+  }
+}
+
+async function removeDetailLine(i) {
+  var l = detailWorkingLines[i];
+  if (!l || !l.__row) return;
+  if (norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) {
+    showToast('Solo el administrador puede eliminar líneas entregadas', '#e74c3c');
+    return;
+  }
+  if ((Number(l.Cant_Entregada) || 0) > 0) {
+    showToast('No se puede eliminar una línea con entregas registradas', '#e74c3c');
+    return;
+  }
+  if (!confirm('¿Eliminar la línea "' + (l.Producto || '') + '" del pedido?')) return;
+  try {
+    var c = consecs[activeIdx];
+    var savedKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+    var res = await _sb.from('Pedidos').delete().eq('id', l.__row);
+    if (res.error) throw new Error(res.error.message);
+    detailWorkingLines.splice(i, 1);
+    var newTotal = detailWorkingLines.reduce(function(s, dl) { return s + (Number(dl.Valor_Total) || 0); }, 0);
+    if (detailWorkingLines.length > 0) {
+      await _sb.from('Pedidos')
+        .update({ Total_Orden: newTotal, modificado_por: _uid() })
+        .eq('Nombre_Empresa', c.Nombre_Empresa)
+        .eq('Consecutivo', String(c.Consecutivo));
+    }
+    showToast('✅ Línea eliminada del pedido');
+    await loadFromAPI();
+    var newIdx = consecs.findIndex(function(cc) { return keyOf(cc.Nombre_Empresa, cc.Consecutivo, cc.Cliente) === savedKey; });
+    if (newIdx >= 0) openDetail(newIdx);
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
   }
 }
 
