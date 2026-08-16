@@ -92,58 +92,59 @@ var NOTIF = (function() {
   }
 
   // ────────────────────────────────────────────────────────────
-  // Sonido de notificación (Web Audio API — sin archivos externos)
+  // Sonido de notificación (WAV generado en memoria + Audio element)
   // ────────────────────────────────────────────────────────────
-  var _audioCtx = null;
-  var _audioUnlocked = false;
+  var _notifAudioUrl = null;
+  var _audioWarmedUp = false;
 
-  function _ensureAudioCtx() {
-    if (!_audioCtx) {
-      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  function _buildNotifWav() {
+    var sr = 22050, dur = 0.5;
+    var n = Math.floor(sr * dur);
+    var buf = new ArrayBuffer(44 + n * 2);
+    var v = new DataView(buf);
+    var w = function(o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF');
+    v.setUint32(4, 36 + n * 2, true);
+    w(8, 'WAVE');
+    w(12, 'fmt ');
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true);
+    v.setUint32(28, sr * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    w(36, 'data');
+    v.setUint32(40, n * 2, true);
+    for (var i = 0; i < n; i++) {
+      var t = i / sr;
+      var freq = t < 0.15 ? 880 : t < 0.30 ? 1108 : 1320;
+      var env = Math.max(0, 1 - t / dur);
+      var sample = Math.sin(2 * Math.PI * freq * t) * env * 0.35;
+      v.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, sample * 32767)), true);
     }
-    if (_audioCtx.state === 'suspended') _audioCtx.resume();
-    return _audioCtx;
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
   }
 
-  function _unlockAudio() {
-    if (_audioUnlocked) return;
-    _audioUnlocked = true;
-    _ensureAudioCtx();
-    document.removeEventListener('click', _unlockAudio, true);
-    document.removeEventListener('keydown', _unlockAudio, true);
+  function _warmUpAudio() {
+    if (_audioWarmedUp) return;
+    _audioWarmedUp = true;
+    if (!_notifAudioUrl) _notifAudioUrl = _buildNotifWav();
+    var a = new Audio(_notifAudioUrl);
+    a.volume = 0;
+    a.play().then(function() { a.pause(); }).catch(function() {});
+    document.removeEventListener('click', _warmUpAudio, true);
+    document.removeEventListener('keydown', _warmUpAudio, true);
   }
-  document.addEventListener('click', _unlockAudio, true);
-  document.addEventListener('keydown', _unlockAudio, true);
+  document.addEventListener('click', _warmUpAudio, true);
+  document.addEventListener('keydown', _warmUpAudio, true);
 
   function _playNotifSound() {
     try {
-      var ctx = _ensureAudioCtx();
-      var now = ctx.currentTime;
-      var gain = ctx.createGain();
-      gain.connect(ctx.destination);
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
-
-      var osc1 = ctx.createOscillator();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(880, now);
-      osc1.connect(gain);
-      osc1.start(now);
-      osc1.stop(now + 0.15);
-
-      var osc2 = ctx.createOscillator();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(1108, now + 0.15);
-      osc2.connect(gain);
-      osc2.start(now + 0.15);
-      osc2.stop(now + 0.35);
-
-      var osc3 = ctx.createOscillator();
-      osc3.type = 'sine';
-      osc3.frequency.setValueAtTime(1320, now + 0.35);
-      osc3.connect(gain);
-      osc3.start(now + 0.35);
-      osc3.stop(now + 0.6);
+      if (!_notifAudioUrl) _notifAudioUrl = _buildNotifWav();
+      var a = new Audio(_notifAudioUrl);
+      a.volume = 0.5;
+      a.play().catch(function() {});
     } catch (e) {}
   }
 
