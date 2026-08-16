@@ -98,7 +98,7 @@ var NOTIF = (function() {
   var _audioWarmedUp = false;
 
   function _buildNotifWav() {
-    var sr = 22050, dur = 0.5;
+    var sr = 44100, dur = 0.45;
     var n = Math.floor(sr * dur);
     var buf = new ArrayBuffer(44 + n * 2);
     var v = new DataView(buf);
@@ -116,12 +116,31 @@ var NOTIF = (function() {
     v.setUint16(34, 16, true);
     w(36, 'data');
     v.setUint32(40, n * 2, true);
+
+    var PI2 = 2 * Math.PI;
     for (var i = 0; i < n; i++) {
       var t = i / sr;
-      var freq = t < 0.15 ? 880 : t < 0.30 ? 1108 : 1320;
-      var env = Math.max(0, 1 - t / dur);
-      var sample = Math.sin(2 * Math.PI * freq * t) * env * 0.35;
-      v.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, sample * 32767)), true);
+      var sample = 0;
+
+      // Nota 1: E6 (1318 Hz) — 0 a 0.12s, decay rápido tipo campana
+      if (t < 0.18) {
+        var e1 = Math.exp(-t * 18);
+        sample += Math.sin(PI2 * 1318 * t) * e1 * 0.40;
+        sample += Math.sin(PI2 * 2636 * t) * e1 * 0.15;
+        sample += Math.sin(PI2 * 3954 * t) * e1 * 0.06;
+      }
+
+      // Nota 2: A5 (880 Hz) — arranca en 0.11s, decay más lento
+      if (t >= 0.11) {
+        var t2 = t - 0.11;
+        var e2 = Math.exp(-t2 * 14);
+        sample += Math.sin(PI2 * 880 * t2) * e2 * 0.45;
+        sample += Math.sin(PI2 * 1760 * t2) * e2 * 0.12;
+        sample += Math.sin(PI2 * 2640 * t2) * e2 * 0.05;
+      }
+
+      sample = Math.max(-1, Math.min(1, sample));
+      v.setInt16(44 + i * 2, sample * 32767 | 0, true);
     }
     return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
   }
