@@ -275,10 +275,10 @@ function _drawRemisionCopy(doc, data, palette) {
 
   var pageTopY = drawPageTop();
 
+  var lastColHeader = data.last_col_header || 'Bonif.';
+  var useObs = lastColHeader === 'Observaciones';
+
   var tableBody = (data.entregas || []).map(function(p, i) {
-    var vUnit = Number(p.valor_unitario) || 0;
-    var textoTieneBonif = /bonificado/i.test(String(p.producto || ''));
-    var esBonif = (p.bonificado || '') === 'Si' || (p.bonificado || '') === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
     var prodName = String(p.producto || '');
     var presName = String(p.presentacion || '');
     var m = prodName.match(/^(.*?)\s+[xX]\s+(.+)$/);
@@ -286,29 +286,36 @@ function _drawRemisionCopy(doc, data, palette) {
       prodName = m[1].trim();
       presName = m[2].trim();
     }
+    var lastVal;
+    if (useObs) {
+      lastVal = String(p.observaciones || '');
+    } else {
+      var vUnit = Number(p.valor_unitario) || 0;
+      var textoTieneBonif = /bonificado/i.test(String(p.producto || ''));
+      var esBonif = (p.bonificado || '') === 'Si' || (p.bonificado || '') === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
+      lastVal = esBonif ? 'Sí' : 'No';
+    }
     return [
       i + 1,
       prodName,
       presName,
       Number(p.cantidad) || 0,
-      esBonif ? 'Sí' : 'No'
+      lastVal
     ];
   });
 
+  var colStyles = useObs
+    ? { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 60 }, 2: { halign: 'center', cellWidth: 32 }, 3: { halign: 'center', cellWidth: 28 }, 4: { cellWidth: 52 } }
+    : { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 82 }, 2: { halign: 'center', cellWidth: 40 }, 3: { halign: 'center', cellWidth: 32 }, 4: { halign: 'center', cellWidth: 18 } };
+
   doc.autoTable({
     startY: pageTopY,
-    head: [['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada', 'Bonif.']],
+    head: [['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada', lastColHeader]],
     body: tableBody,
     theme: 'grid',
     headStyles: { fillColor: accent, fontSize: 7.5, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.5 },
     bodyStyles: { fontSize: 7.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
-    columnStyles: {
-      0: { halign: 'center', cellWidth: 10 },
-      1: { cellWidth: 82 },
-      2: { halign: 'center', cellWidth: 40 },
-      3: { halign: 'center', cellWidth: 32 },
-      4: { halign: 'center', cellWidth: 18 }
-    },
+    columnStyles: colStyles,
     margin: { top: pageTopY, left: 14, right: 14, bottom: 15 },
     styles: { cellPadding: 1.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
     tableLineColor: [60, 60, 60],

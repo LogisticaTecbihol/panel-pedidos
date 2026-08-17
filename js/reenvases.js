@@ -538,7 +538,8 @@ function enviarRemisionReenvase() {
       cantidad: Number(l.Cantidad) || 0,
       valor_unitario: 0,
       valor_total: 0,
-      bonificado: 'No'
+      bonificado: 'No',
+      observaciones: l.Observaciones || ''
     };
   }).filter(function(p) { return p.cantidad > 0 || p.producto; });
 
@@ -553,10 +554,11 @@ function enviarRemisionReenvase() {
     ['Rem. Entrada', g.Remision_Destino || '']
   ];
 
+  var tienePlanta = !!(g.Planta && /planta/i.test(g.Planta));
   var data = {
     empresa: empresa,
     consecutivo: '',
-    doc_title: 'REMISION DE SALIDA A PRODUCCION',
+    doc_title: tienePlanta ? 'REMISION DE SALIDA A PRODUCCION' : 'REMISION DE SALIDA',
     doc_number: remNum,
     ref_label: null,
     date_label: 'Fecha salida',
@@ -566,7 +568,8 @@ function enviarRemisionReenvase() {
     right_fields: right,
     entregas: entregas,
     qty_header: 'Cantidad',
-    file_prefix: 'Remision_Salida'
+    file_prefix: 'Remision_Salida',
+    last_col_header: 'Observaciones'
   };
 
   var sigla = EMPRESAS_SIGLA[empresa] || '';
