@@ -182,10 +182,19 @@ function _drawRemisionCopy(doc, data, palette) {
       } catch (e) {}
     }
 
-    doc.setTextColor(accent[0], accent[1], accent[2]);
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text(docTitle + (docNumber ? '  N° ' + docNumber : ''), titleX, 13);
+    if (docNumber) {
+      doc.setTextColor(accent[0], accent[1], accent[2]);
+      var titlePart = docTitle + '  N° ';
+      doc.text(titlePart, titleX, 13);
+      var titlePartW = doc.getTextWidth(titlePart);
+      doc.setTextColor(200, 30, 30);
+      doc.text(docNumber, titleX + titlePartW, 13);
+    } else {
+      doc.setTextColor(accent[0], accent[1], accent[2]);
+      doc.text(docTitle, titleX, 13);
+    }
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
