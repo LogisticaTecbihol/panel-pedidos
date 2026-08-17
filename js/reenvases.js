@@ -122,19 +122,23 @@ function switchReTab(tab) {
 
   var isBuenos = tab === 'buenos';
   document.getElementById('card-title-re').textContent = isBuenos
-    ? 'Salidas — Productos Buenos'
+    ? 'Salidas — Producto Terminado'
     : 'Salidas — Producto No Conforme';
 
   var btnNew = document.getElementById('btn-new-re');
   btnNew.style.background = isBuenos ? '#d35400' : '#c0392b';
-  btnNew.textContent = isBuenos ? '🏭 Nueva Salida (Buenos)' : '🏭 Nueva Salida (No Conforme)';
+  btnNew.textContent = isBuenos ? '🏭 Nueva Salida (Terminado)' : '🏭 Nueva Salida (No Conforme)';
 
   populateReFilters();
   applyReFilters();
 }
 
 function getBodegaFromTab() {
-  return activeTab === 'buenos' ? 'Productos Buenos' : 'Producto No Conforme';
+  return activeTab === 'buenos' ? 'Producto Terminado' : 'Producto No Conforme';
+}
+
+function isBodegaBuenos(bod) {
+  return bod === 'Producto Terminado' || bod === 'Productos Buenos';
 }
 
 var EMPRESAS_SIGLA = {
@@ -147,8 +151,12 @@ var EMPRESAS_SIGLA = {
 
 // ── Grouping ──
 
+function normBodegaRe(v) {
+  return isBodegaBuenos(v || 'Producto Terminado') ? 'Producto Terminado' : (v || 'Producto Terminado');
+}
+
 function keyOfRe(r) {
-  return [r.Fecha||'', r.Empresa||'', r.Empresa_Destino||'', r.Planta||'', r.Remision||'', r.Remision_Destino||'', r.Bodega||'Productos Buenos'].join('||');
+  return [r.Fecha||'', r.Empresa||'', r.Empresa_Destino||'', r.Planta||'', r.Remision||'', r.Remision_Destino||'', normBodegaRe(r.Bodega)].join('||');
 }
 
 function rebuildReGroups() {
@@ -156,7 +164,7 @@ function rebuildReGroups() {
   var order = [];
   var bodegaActual = getBodegaFromTab();
   allReenvases.forEach(function(r) {
-    var bod = r.Bodega || 'Productos Buenos';
+    var bod = normBodegaRe(r.Bodega);
     if (bod !== bodegaActual) return;
     var k = keyOfRe(r);
     if (!seen[k]) {
@@ -223,7 +231,7 @@ function populateReFilters() {
   var empresas = {};
   var bodegaActual = getBodegaFromTab();
   allReenvases.forEach(function(r) {
-    var bod = r.Bodega || 'Productos Buenos';
+    var bod = normBodegaRe(r.Bodega);
     if (bod !== bodegaActual) return;
     if (r.Empresa && AUTH.hasCompany(r.Empresa)) empresas[r.Empresa] = 1;
   });
@@ -362,7 +370,7 @@ function renderReTable() {
   var tbody = document.getElementById('t-body-re');
   if (!groups.length) {
     var emptyMsg = activeTab === 'buenos'
-      ? 'No hay registros en Bodega Productos Buenos'
+      ? 'No hay registros en Bodega Producto Terminado'
       : 'No hay registros en Bodega Producto No Conforme';
     tbody.innerHTML = '<tr><td colspan="10" class="empty">' + emptyMsg + '</td></tr>';
     return;
@@ -640,7 +648,7 @@ async function editReenvase(id) {
   if (!r) return;
 
   reEditId = id;
-  document.getElementById('re-bodega').value = r.Bodega || 'Productos Buenos';
+  document.getElementById('re-bodega').value = normBodegaRe(r.Bodega);
   document.getElementById('re-modal-title').textContent = '✏️ Editar Salida';
   document.getElementById('btn-save-re').textContent = '✓ Guardar cambios';
   document.getElementById('btn-save-re').disabled = false;
