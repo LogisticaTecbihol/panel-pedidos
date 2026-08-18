@@ -932,6 +932,7 @@ function exportarMuestraRemisionPDF(opts) {
       modulo: 'muestras',
       referencia: (ctx.consec || '') + ' · Rem ' + remision,
       titulo: 'Remisión muestras #' + remision + ' — ' + (head.Solicitante || 'sin solicitante'),
+      triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
         if (!r) return null;
@@ -1008,7 +1009,8 @@ function exportarMuestraSolicitudPDF(opts) {
     enviarRemisionPDF(data, {
       modulo: 'muestras',
       referencia: ctx.consec || '',
-      titulo: 'Solicitud muestras #' + (ctx.consec || '') + ' — ' + (head.Solicitante || 'sin solicitante')
+      titulo: 'Solicitud muestras #' + (ctx.consec || '') + ' — ' + (head.Solicitante || 'sin solicitante'),
+      triggerBtn: opts.triggerBtn || null
     });
     return;
   }

@@ -667,7 +667,8 @@ function exportarDevSolicitudPDF(opts) {
     enviarRemisionPDF(data, {
       modulo: 'devoluciones',
       referencia: head.Consecutivo || '',
-      titulo: 'Solicitud devolución #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente')
+      titulo: 'Solicitud devolución #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente'),
+      triggerBtn: opts.triggerBtn || null
     });
     return;
   }
@@ -747,6 +748,7 @@ function exportarDevRemisionPDF(tipo, opts) {
       modulo: 'devoluciones',
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
       titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' devolución #' + remision,
+      triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
         return r ? r.doc : null;

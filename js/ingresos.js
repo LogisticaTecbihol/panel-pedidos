@@ -375,7 +375,7 @@ function addProductToGroup() {
 }
 
 // ── Enviar Remisión PDF ──
-function enviarRemisionIngreso() {
+function enviarRemisionIngreso(btn) {
   if (!activeIngGroup) return;
   var g = activeIngGroup;
   var lines = getLinesForIng(g);
@@ -434,6 +434,7 @@ function enviarRemisionIngreso() {
     modulo: 'ingresos',
     referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + remNum,
     titulo: 'Remisión ingreso #' + remNum + ' — ' + (g.Origen || ''),
+    triggerBtn: btn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
       return r ? r.doc : null;

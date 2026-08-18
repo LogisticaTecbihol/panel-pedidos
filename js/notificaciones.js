@@ -565,6 +565,13 @@ var NOTIF = (function() {
                       ' a ' + dests.length + ' usuario' + (dests.length === 1 ? '' : 's');
           showToast(msgOk, '#27ae60');
           close();
+          if (meta.triggerBtn) {
+            meta.triggerBtn.disabled = true;
+            meta.triggerBtn.style.opacity = '0.5';
+            meta.triggerBtn.style.cursor = 'not-allowed';
+            meta.triggerBtn.title = 'Ya enviada';
+            meta.triggerBtn.textContent = '✅ Enviada';
+          }
           if (typeof meta.onSent === 'function') meta.onSent({ ok: true, sent: totalSent, docs: docCount, errors: errores });
         } else {
           showToast('Error: ' + (errores[0] || 'sin enviar'), '#e74c3c');

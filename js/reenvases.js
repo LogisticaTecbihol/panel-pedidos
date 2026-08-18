@@ -675,7 +675,7 @@ function addProductToReGroup() {
 
 // ── Enviar Remisión PDF ──
 
-function enviarRemisionReenvase() {
+function enviarRemisionReenvase(btn) {
   if (!activeReGroup) return;
   var g = activeReGroup;
   var lines = getLinesForRe(g);
@@ -735,6 +735,7 @@ function enviarRemisionReenvase() {
     modulo: 'reenvases',
     referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + remNum,
     titulo: 'Remisión salida #' + remNum + ' — ' + (EMPRESAS_SIGLA[g.Empresa] || g.Empresa || ''),
+    triggerBtn: btn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
       return r ? r.doc : null;

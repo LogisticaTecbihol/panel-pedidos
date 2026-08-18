@@ -1157,6 +1157,7 @@ function exportarCamSolicitudPDF(opts) {
       modulo: 'cambios',
       referencia: head.Consecutivo || '',
       titulo: 'Solicitud cambio #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente'),
+      triggerBtn: opts.triggerBtn || null,
       buildDoc: function() { return doc; }
     });
     return;
@@ -1236,6 +1237,7 @@ function exportarCamRemisionPDF(tipo, opts) {
       modulo: 'cambios',
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
       titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' cambio #' + remision,
+      triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
         if (!r) return null;
