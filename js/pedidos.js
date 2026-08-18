@@ -4653,6 +4653,8 @@ function generarPedidoPDF(data) {
 var ADJUNTOS_BUCKET = 'pedidos-adjuntos';
 var adjuntosCache = {};
 var adjuntosIndex = {};
+var adjuntosUploaders = {};
+var _usuariosNombresCache = {};
 
 async function loadAdjuntosIndex() {
   adjuntosIndex = {};
@@ -4667,8 +4669,60 @@ async function loadAdjuntosIndex() {
   });
   await Promise.all(promises);
   updateAdjuntosBadges();
+  loadAdjuntosUploaders();
 }
 
+async function loadAdjuntosUploaders() {
+  var keys = Object.keys(adjuntosIndex);
+  if (!keys.length) return;
+
+  var folderMap = {};
+  keys.forEach(function(k) {
+    var idx = k.indexOf('_');
+    if (idx < 0) return;
+    var sigla = k.substring(0, idx);
+    var rest = k.substring(idx + 1);
+    folderMap[k] = sigla + '/' + rest;
+  });
+
+  var allOwners = {};
+  var folderEntries = Object.keys(folderMap);
+  var batchSize = 10;
+  for (var b = 0; b < folderEntries.length; b += batchSize) {
+    var batch = folderEntries.slice(b, b + batchSize);
+    var batchPromises = batch.map(function(key) {
+      var folder = folderMap[key];
+      return _sb.storage.from(ADJUNTOS_BUCKET).list(folder, { limit: 100 }).then(function(res) {
+        var files = (res.data || []).filter(function(f) { return f.name && f.id; });
+        var owners = {};
+        files.forEach(function(f) {
+          if (f.owner) owners[f.owner] = true;
+        });
+        adjuntosUploaders[key] = Object.keys(owners);
+        Object.keys(owners).forEach(function(uid) { allOwners[uid] = true; });
+      }).catch(function() {});
+    });
+    await Promise.all(batchPromises);
+  }
+
+  var uidsToFetch = Object.keys(allOwners).filter(function(uid) { return !_usuariosNombresCache[uid]; });
+  if (uidsToFetch.length) {
+    var res = await _sb.from('usuarios').select('id, nombre, email').in('id', uidsToFetch);
+    if (res.data) {
+      res.data.forEach(function(u) {
+        _usuariosNombresCache[u.id] = u.nombre || u.email || u.id.substring(0, 8);
+      });
+    }
+  }
+
+  Object.keys(adjuntosUploaders).forEach(function(key) {
+    adjuntosUploaders[key] = adjuntosUploaders[key].map(function(uid) {
+      return _usuariosNombresCache[uid] || uid.substring(0, 8);
+    });
+  });
+
+  renderDespachos();
+}
 
 function updateAdjuntosBadges() {
   var badges = document.querySelectorAll('.adjunto-badge-cell');
@@ -4939,7 +4993,7 @@ function renderDespachos() {
 
   var tbody = document.getElementById('desp-body');
   if (!despachosFiltered.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:#718096">No hay despachos con los filtros seleccionados.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:#718096">No hay despachos con los filtros seleccionados.</td></tr>';
     return;
   }
 
@@ -4948,6 +5002,10 @@ function renderDespachos() {
     var key = adjuntoKey(d.empresa, d.consecutivo, d.cliente);
     var badge = adjuntosIndex[key] ? '📎' : '';
     var fechaFmt = d.fecha ? formatDateShort(d.fecha) : '';
+    var uploaders = adjuntosUploaders[key] || [];
+    var uploadersHtml = uploaders.length
+      ? uploaders.map(function(n) { return '<span style="display:inline-block;background:#ebf5fb;color:#1a5276;padding:1px 7px;border-radius:10px;font-size:0.72rem;font-weight:600;margin:1px 2px">' + n + '</span>'; }).join('')
+      : '<span style="color:#cbd5e0;font-size:0.75rem">—</span>';
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
       '<td style="font-size:0.82rem;font-weight:600">' + sig + '</td>' +
@@ -4955,6 +5013,7 @@ function renderDespachos() {
       '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + d.cliente.replace(/"/g, '&quot;') + '">' + d.cliente + '</td>' +
       '<td style="font-size:0.82rem">' + fechaFmt + '</td>' +
       '<td style="text-align:center;font-size:0.9rem">' + badge + '</td>' +
+      '<td style="font-size:0.78rem">' + uploadersHtml + '</td>' +
       '<td><button class="btn-export" style="background:#1a5276;font-size:0.76rem;padding:4px 10px" onclick="openDespachoAdjuntos(' + i + ')">📤 Adjuntos</button></td>' +
       '</tr>';
   }).join('');
@@ -5064,7 +5123,13 @@ async function handleDespachoUpload(input) {
   setTimeout(function() { progWrap.style.display = 'none'; progFill.style.width = '0%'; }, 1200);
 
   showToast('Archivo adjuntado correctamente', '#27ae60');
-  adjuntosIndex[adjuntoKey(_despActivo.empresa, _despActivo.consecutivo, _despActivo.cliente)] = true;
+  var _dKey = adjuntoKey(_despActivo.empresa, _despActivo.consecutivo, _despActivo.cliente);
+  adjuntosIndex[_dKey] = true;
+  var _prof = (typeof AUTH !== 'undefined' && AUTH.getProfile) ? AUTH.getProfile() : null;
+  var _myName = _prof ? (_prof.nombre || _prof.email || '') : '';
+  if (_myName && (!adjuntosUploaders[_dKey] || adjuntosUploaders[_dKey].indexOf(_myName) < 0)) {
+    adjuntosUploaders[_dKey] = (adjuntosUploaders[_dKey] || []).concat(_myName);
+  }
   renderDespachos();
   await loadDespachoAdjuntos();
 }
