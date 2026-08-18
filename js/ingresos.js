@@ -291,7 +291,13 @@ function openIngDetail(idx) {
   document.getElementById('igd-obs').textContent = g.Observaciones || '—';
 
   renderIngDetailProducts();
+
+  var canUpload = AUTH.canUploadAdjuntos();
+  document.getElementById('ing-btn-adjuntar').style.display = canUpload ? '' : 'none';
+  document.getElementById('ing-adjunto-dropzone').style.display = canUpload ? '' : 'none';
+
   document.getElementById('ing-detail-overlay').classList.add('show');
+  loadIngAdjuntos();
 
   var _envBtn = document.querySelector('#ing-detail-overlay button[onclick*="enviarRemisionIngreso"]');
   if (_envBtn && typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
@@ -868,6 +874,185 @@ async function confirmDeleteIng() {
     btn.textContent = '🗑️ Sí, eliminar';
   }
 }
+
+// ── Adjuntos (Supabase Storage) ──
+var ING_ADJUNTOS_BUCKET = 'ingresos-adjuntos';
+
+function ingAdjuntoFolder(g) {
+  var empOrig = (typeof getSigla === 'function' ? getSigla(g.Empresa_Origen) : '') || 'SIN';
+  var empDest = (typeof getSigla === 'function' ? getSigla(g.Empresa_Destino) : '') || 'SIN';
+  var rem = (g.Remision_Destino || g.Remision_Origen || '').trim();
+  var fecha = (g.Fecha || '').replace(/-/g, '');
+  var folder = empOrig + '_' + empDest + '/' + (rem || fecha || 'sin_remision');
+  return folder.replace(/[^a-zA-Z0-9_/\-]/g, '_');
+}
+
+function ingFormatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+async function loadIngAdjuntos() {
+  if (!activeIngGroup) return;
+  var listEl = document.getElementById('ing-adjuntos-list');
+  var countEl = document.getElementById('ing-adjuntos-count');
+  listEl.innerHTML = '<div class="adjuntos-loading">Cargando adjuntos...</div>';
+
+  var folder = ingAdjuntoFolder(activeIngGroup);
+  var res = await _sb.storage.from(ING_ADJUNTOS_BUCKET).list(folder, { limit: 50 });
+
+  var files = (res.data || []).filter(function(f) { return f.name && f.id; });
+
+  if (!files.length) {
+    listEl.innerHTML = '<div class="adjuntos-empty">Sin archivos adjuntos</div>';
+    countEl.textContent = '';
+    return;
+  }
+
+  countEl.textContent = '(' + files.length + ')';
+  listEl.innerHTML = files.map(function(f) {
+    var ext = (f.name.split('.').pop() || '').toLowerCase();
+    var icon = ext === 'pdf' ? '📄' : '🖼️';
+    var size = f.metadata && f.metadata.size ? ingFormatFileSize(f.metadata.size) : '';
+    var path = folder + '/' + f.name;
+    var nameEsc = f.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    var pathEsc = path.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return '<div class="adjunto-item">' +
+      '<div class="adjunto-icon">' + icon + '</div>' +
+      '<div class="adjunto-info">' +
+        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
+      '</div>' +
+      '<div class="adjunto-actions">' +
+        '<button class="btn-adj-ver" onclick="previewIngAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
+        '<button class="btn-adj-ver" onclick="downloadIngAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
+        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteIngAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function handleIngAdjuntoUpload(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  var maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    showToast('El archivo excede 5 MB. Selecciona un archivo más pequeño.', '#e74c3c');
+    return;
+  }
+
+  var allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (allowed.indexOf(file.type) < 0) {
+    showToast('Tipo de archivo no permitido. Usa PDF, JPG, PNG o WEBP.', '#e74c3c');
+    return;
+  }
+
+  if (!activeIngGroup) return;
+  var folder = ingAdjuntoFolder(activeIngGroup);
+  var timestamp = Date.now();
+  var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var finalName = timestamp + '_' + safeName;
+  var path = folder + '/' + finalName;
+
+  var progWrap = document.getElementById('ing-adjunto-progress');
+  var progFill = document.getElementById('ing-adjunto-prog-fill');
+  var progText = document.getElementById('ing-adjunto-prog-text');
+  progWrap.style.display = 'block';
+  progFill.style.width = '30%';
+  progText.textContent = 'Subiendo ' + file.name + '...';
+
+  var res = await _sb.storage.from(ING_ADJUNTOS_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    upsert: false
+  });
+
+  progFill.style.width = '100%';
+
+  if (res.error) {
+    progWrap.style.display = 'none';
+    showToast('Error al subir: ' + res.error.message, '#e74c3c');
+    return;
+  }
+
+  progText.textContent = 'Listo';
+  setTimeout(function() { progWrap.style.display = 'none'; progFill.style.width = '0%'; }, 1200);
+
+  showToast('Archivo adjuntado correctamente', '#27ae60');
+  await loadIngAdjuntos();
+}
+
+async function previewIngAdjunto(path, ext) {
+  var res = _sb.storage.from(ING_ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(ING_ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+
+  var contentEl = document.getElementById('ing-adjunto-preview-content');
+  if (ext === 'pdf') {
+    contentEl.innerHTML = '<iframe src="' + url + '"></iframe>';
+  } else {
+    contentEl.innerHTML = '<img src="' + url + '" alt="Preview">';
+  }
+  document.getElementById('ing-adjunto-preview-overlay').classList.add('show');
+}
+
+function closeIngAdjuntoPreview() {
+  document.getElementById('ing-adjunto-preview-overlay').classList.remove('show');
+  document.getElementById('ing-adjunto-preview-content').innerHTML = '';
+}
+
+async function downloadIngAdjunto(path, filename) {
+  var res = _sb.storage.from(ING_ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(ING_ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'archivo';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function deleteIngAdjunto(path) {
+  if (!confirm('¿Eliminar este archivo adjunto?')) return;
+  var res = await _sb.storage.from(ING_ADJUNTOS_BUCKET).remove([path]);
+  if (res.error) {
+    showToast('Error al eliminar: ' + res.error.message, '#e74c3c');
+    return;
+  }
+  showToast('Archivo eliminado', '#e67e22');
+  await loadIngAdjuntos();
+}
+
+// Drag & drop for ingresos adjuntos
+(function() {
+  var dz = document.getElementById('ing-adjunto-dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    var input = document.getElementById('ing-adjunto-input');
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    handleIngAdjuntoUpload(input);
+  });
+})();
 
 // ── Auto-load ──
 loadIngresos();
