@@ -168,7 +168,7 @@
       var estado = (c.Estado || '').toLowerCase();
       if (estado !== 'cerrado' && estado !== 'cerrada') return;
       var bodegaSal = (c.Bodega_Salida || 'Productos Buenos').trim();
-      if (bodegaSal !== 'Productos Buenos') return;
+      if (bodegaSal !== 'Productos Buenos' && bodegaSal !== 'Producto Terminado') return;
       var rem = String(c.Remision_Salida || '').trim();
       if (!rem) return;
       movs.push({
@@ -219,10 +219,10 @@
       });
     });
 
-    // Reenvases (Producción) — SALIDA (solo Productos Buenos)
+    // Reenvases (Producción) — SALIDA (solo Producto Terminado)
     (src.reenvases || []).forEach(function(re) {
       var bodega = re.Bodega || 'Productos Buenos';
-      if (bodega !== 'Productos Buenos') return;
+      if (bodega !== 'Productos Buenos' && bodega !== 'Producto Terminado') return;
       var cant = Number(re.Cantidad) || 0;
       if (cant <= 0) return;
       var rem = String(re.Remision || '').trim();
