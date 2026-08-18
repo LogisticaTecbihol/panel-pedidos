@@ -5035,6 +5035,7 @@ async function buildDespachos() {
       return '<option value="' + e.replace(/"/g, '&quot;') + '">' + sig + '</option>';
     }).join('');
   selEmp.value = prev || '';
+  renderDespachos();
 
   var allRems = despachosData.map(function(d) { return d.remision; }).filter(Boolean);
   if (allRems.length) {
@@ -5067,7 +5068,8 @@ function renderDespachos() {
   var filtered = despachosData.filter(function(d) {
     if (empresa && d.empresa !== empresa) return false;
     if (buscar) {
-      var txt = (d.cliente + ' ' + d.remision + ' ' + d.consecutivo).toLowerCase();
+      var fac = _despFacturaMap[d.remision] || {};
+      var txt = (d.cliente + ' ' + d.remision + ' ' + d.consecutivo + ' ' + (fac.num_factura || '')).toLowerCase();
       if (txt.indexOf(buscar) < 0) return false;
     }
     return true;
