@@ -742,6 +742,62 @@ function enviarRemisionReenvase() {
   });
 }
 
+function exportarRemisionReenvase() {
+  if (!activeReGroup) return;
+  var g = activeReGroup;
+  var lines = getLinesForRe(g);
+  if (!lines.length) { showToast('No hay productos en esta salida.', '#e67e22'); return; }
+
+  var remNum = (g.Remision || '').trim();
+  if (!remNum) { showToast('Esta salida no tiene número de remisión asignado.', '#e67e22'); return; }
+
+  if (typeof generarRemisionPDF !== 'function') {
+    showToast('Módulo de PDF no cargado. Intenta de nuevo en unos segundos.', '#e74c3c'); return;
+  }
+
+  var empresa = g.Empresa || '';
+  var entregas = lines.map(function(l) {
+    return {
+      producto: l.Producto || '',
+      presentacion: l.Presentacion || '',
+      cantidad: Number(l.Cantidad) || 0,
+      valor_unitario: 0,
+      valor_total: 0,
+      bonificado: 'No',
+      observaciones: l.Observaciones || ''
+    };
+  }).filter(function(p) { return p.cantidad > 0 || p.producto; });
+
+  var left = [
+    ['Empresa', EMPRESAS_SIGLA[g.Empresa] || g.Empresa || ''],
+    ['Bodega', g.Bodega || ''],
+    ['Planta', g.Planta || '']
+  ];
+  var right = [
+    ['Emp. Destino', g.Empresa_Destino ? (EMPRESAS_SIGLA[g.Empresa_Destino] || g.Empresa_Destino) : ''],
+    ['Rem. Salida', g.Remision || ''],
+    ['Rem. Entrada', g.Remision_Destino || '']
+  ];
+
+  var tienePlanta = !!(g.Planta && /planta/i.test(g.Planta));
+  generarRemisionPDF({
+    empresa: empresa,
+    consecutivo: '',
+    doc_title: tienePlanta ? 'REMISION DE SALIDA A PRODUCCION' : 'REMISION DE SALIDA',
+    doc_number: remNum,
+    ref_label: null,
+    date_label: 'Fecha salida',
+    fecha_entrega: g.Fecha || '',
+    remision: remNum,
+    left_fields: left,
+    right_fields: right,
+    entregas: entregas,
+    qty_header: 'Cantidad',
+    file_prefix: 'Remision_Salida',
+    last_col_header: 'Observaciones'
+  });
+}
+
 // ── View modal (legacy removed — now using detail modal) ──
 
 // ── New / Edit modal ──
