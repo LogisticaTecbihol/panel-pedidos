@@ -3839,7 +3839,11 @@ function initDespachosTab() {
   }
   var despEmpSel = document.getElementById('desp-f-empresa');
   if (despEmpSel) {
-    despEmpSel.addEventListener('change', function() { renderDespachos(); });
+    despEmpSel.addEventListener('change', function() {
+      var v = despEmpSel.value;
+      alert('Filtro empresa seleccionado: "' + (v || 'Todas') + '"\nTotal despachos: ' + despachosData.length);
+      renderDespachos();
+    });
   }
   var despBuscar = document.getElementById('desp-f-buscar');
   if (despBuscar) {
