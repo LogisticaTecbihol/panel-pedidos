@@ -21,6 +21,11 @@ button.re-tab{padding:11px 22px;border:none;background:none;cursor:pointer;font-
 button.re-tab:hover{color:#4a5568;background:#f7fafc}
 button.re-tab.active-buenos{color:#d35400;border-bottom-color:#d35400;background:#fef5ec}
 button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fdf0ef}
+.re-view-toggle{display:inline-flex;gap:0;border:1px solid #cbd5e0;border-radius:6px;overflow:hidden;margin-left:16px;vertical-align:middle}
+.re-view-btn{padding:6px 14px;border:none;background:none;cursor:pointer;font-size:0.78rem;font-weight:600;color:#718096;transition:all .2s}
+.re-view-btn:not(:last-child){border-right:1px solid #cbd5e0}
+.re-view-btn.active{background:#1a5276;color:white}
+.re-view-btn:hover:not(.active){background:#f7fafc;color:#4a5568}
 </style>
 </head>
 <body>
@@ -94,7 +99,12 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
 
   <div class="card">
     <div class="card-head">
-      <h3><span id="card-title-re">Salidas — Producto Terminado</span> <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <h3><span id="card-title-re">Salidas — Producto Terminado</span> <span id="row-ct" style="font-weight:400;color:#718096"></span>
+        <span class="re-view-toggle">
+          <button class="re-view-btn active" id="vbtn-salidas" onclick="switchReView('salidas')">Por salidas</button>
+          <button class="re-view-btn" id="vbtn-productos" onclick="switchReView('productos')">Por productos</button>
+        </span>
+      </h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort-re" onclick="clearSortRe()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
         <button class="btn-dl auth-edit-only" id="btn-new-re" onclick="openNewReenvase()" style="background:#d35400">🏭 Nueva Salida (Buenos)</button>
