@@ -795,5 +795,15 @@
 <script src="js/existencias.js?v=20260812c"></script>
 <script src="js/pdf-remision.js?v=20260802n"></script>
 <script src="js/pedidos.js?v=20260818c"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var sel = document.getElementById('desp-f-empresa');
+  if (sel) {
+    sel.addEventListener('change', function() {
+      alert('v20260818c - Empresa: ' + (sel.value || 'Todas') + ' | Data: ' + (typeof despachosData !== 'undefined' ? despachosData.length : 'N/A'));
+    });
+  }
+});
+</script>
 </body>
 </html>
