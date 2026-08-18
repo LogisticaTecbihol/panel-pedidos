@@ -22,6 +22,7 @@ var NOTIF = (function() {
   var _cache = [];
   var _stylesInjected = false;
   var _directorioPromise = null;
+  var _enviadasCache = null;
 
   // Directorio de usuarios (id, nombre, email, rol, activo) resuelto vía
   // RPC SECURITY DEFINER — la RLS estricta de `usuarios` sólo deja a un
@@ -451,6 +452,12 @@ var NOTIF = (function() {
       var u = AUTH.getUser(); if (u) _uid = u.id;
     }
 
+    if (fueEnviada(meta.modulo, meta.referencia)) {
+      _disableBtn(meta.triggerBtn);
+      showToast('Esta remisión ya fue enviada anteriormente.', '#e67e22');
+      return;
+    }
+
     var overlay = document.createElement('div');
     overlay.className = 'overlay show';
     overlay.style.zIndex = 2000;
@@ -565,12 +572,17 @@ var NOTIF = (function() {
                       ' a ' + dests.length + ' usuario' + (dests.length === 1 ? '' : 's');
           showToast(msgOk, '#27ae60');
           close();
-          if (meta.triggerBtn) {
-            meta.triggerBtn.disabled = true;
-            meta.triggerBtn.style.opacity = '0.5';
-            meta.triggerBtn.style.cursor = 'not-allowed';
-            meta.triggerBtn.title = 'Ya enviada';
-            meta.triggerBtn.textContent = '✅ Enviada';
+          _disableBtn(meta.triggerBtn);
+          if (meta.modulo && meta.referencia) {
+            var ek = _enviadaKey(meta.modulo, meta.referencia);
+            if (!_enviadasCache) _enviadasCache = {};
+            _enviadasCache[ek] = true;
+            if (typeof _sb !== 'undefined') {
+              _sb.from('remisiones_enviadas').upsert(
+                { modulo: meta.modulo, referencia: meta.referencia },
+                { onConflict: 'user_id,modulo,referencia' }
+              ).then(function() {});
+            }
           }
           if (typeof meta.onSent === 'function') meta.onSent({ ok: true, sent: totalSent, docs: docCount, errors: errores });
         } else {
@@ -629,6 +641,51 @@ var NOTIF = (function() {
       .sort(function(a, b) { return (a.nombre || '').localeCompare(b.nombre || ''); });
   }
 
+  async function _loadEnviadas() {
+    if (typeof _sb === 'undefined') return;
+    try {
+      var res = await _sb.from('remisiones_enviadas').select('modulo,referencia');
+      if (res.data) {
+        _enviadasCache = {};
+        res.data.forEach(function(r) {
+          _enviadasCache[r.modulo + '||' + r.referencia] = true;
+        });
+      }
+    } catch (e) { _enviadasCache = {}; }
+  }
+
+  function _enviadaKey(modulo, referencia) {
+    return (modulo || '') + '||' + (referencia || '');
+  }
+
+  function fueEnviada(modulo, referencia) {
+    if (!_enviadasCache) return false;
+    return !!_enviadasCache[_enviadaKey(modulo, referencia)];
+  }
+
+  function _disableBtn(btn) {
+    if (!btn) return;
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.style.cursor = 'not-allowed';
+    btn.title = 'Ya enviada';
+    btn.textContent = '✅ Enviada';
+  }
+
+  function _enableBtn(btn, originalText, originalTitle) {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.cursor = '';
+    btn.title = originalTitle || '';
+    btn.textContent = originalText || '';
+  }
+
+  function verificarBtn(btn, modulo, referencia) {
+    if (!btn) return;
+    if (fueEnviada(modulo, referencia)) _disableBtn(btn);
+  }
+
   return {
     mountBell: mountBell,
     loadUnread: loadUnread,
@@ -637,6 +694,11 @@ var NOTIF = (function() {
     compartirPDF: compartirPDF,
     openModalEnviar: openModalEnviar,
     getDirectorio: _loadDirectorio,
-    notifyUsers: notifyUsers
+    notifyUsers: notifyUsers,
+    loadEnviadas: _loadEnviadas,
+    fueEnviada: fueEnviada,
+    verificarBtn: verificarBtn
   };
 })();
+
+if (typeof NOTIF !== 'undefined' && NOTIF.loadEnviadas) NOTIF.loadEnviadas();

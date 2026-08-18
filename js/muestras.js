@@ -605,6 +605,21 @@ async function viewMuestra(id) {
   if (_muViewRem) { _muViewRem.readOnly = true; _muViewRem.style.background = '#f0f4f8'; }
   document.getElementById('view-mu-overlay').classList.add('show');
   loadProductosCache();
+
+  if (typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
+    var _remMu = (r.Remision || '').trim();
+    var _cMu = consec || '';
+    var _btnSol = document.querySelector('#view-mu-overlay button[onclick*="exportarMuestraSolicitudPDF"]');
+    var _btnRem = document.querySelector('#view-mu-overlay button[onclick*="exportarMuestraRemisionPDF"]');
+    if (_btnSol) {
+      if (_cMu) NOTIF.verificarBtn(_btnSol, 'muestras', _cMu);
+      else { _btnSol.disabled = false; _btnSol.style.opacity = ''; _btnSol.style.cursor = ''; _btnSol.textContent = '📨 Enviar Solicitud'; }
+    }
+    if (_btnRem) {
+      if (_remMu) NOTIF.verificarBtn(_btnRem, 'muestras', _cMu + ' · Rem ' + _remMu);
+      else { _btnRem.disabled = false; _btnRem.style.opacity = ''; _btnRem.style.cursor = ''; _btnRem.textContent = '📨 Enviar Remisión'; }
+    }
+  }
 }
 
 async function saveEntregas() {

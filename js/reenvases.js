@@ -579,6 +579,20 @@ function openReDetail(idx) {
 
   renderReDetailProducts();
   document.getElementById('re-detail-overlay').classList.add('show');
+
+  var _envBtn = document.querySelector('#re-detail-overlay button[onclick*="enviarRemisionReenvase"]');
+  if (_envBtn && typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
+    var _remNum = (g.Remision || '').trim();
+    var _sig = EMPRESAS_SIGLA[g.Empresa] || '';
+    var _ref = (_sig ? _sig + ' · ' : '') + 'Rem ' + _remNum;
+    if (_remNum) {
+      NOTIF.verificarBtn(_envBtn, 'reenvases', _ref);
+    } else {
+      _envBtn.disabled = false; _envBtn.style.opacity = ''; _envBtn.style.cursor = '';
+      _envBtn.title = 'Enviar remisión con copia contabilidad a otro usuario del panel';
+      _envBtn.textContent = '📨 Enviar Remisión';
+    }
+  }
 }
 
 function renderReDetailProducts() {

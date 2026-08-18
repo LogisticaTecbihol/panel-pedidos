@@ -434,6 +434,25 @@ function viewCamDetail(key) {
   if (btnOut) btnOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
   if (sendIn) sendIn.style.display = r.Remision_Ingreso ? 'inline-block' : 'none';
   if (sendOut) sendOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
+
+  if (typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
+    var _cCam = r.Consecutivo || '';
+    var _remIngC = (r.Remision_Ingreso || '').trim();
+    var _remSalC = (r.Remision_Salida || '').trim();
+    var _btnSolCam = document.querySelector('#view-cam-overlay button[onclick*="exportarCamSolicitudPDF"]');
+    if (_btnSolCam) {
+      if (_cCam) NOTIF.verificarBtn(_btnSolCam, 'cambios', _cCam);
+      else { _btnSolCam.disabled = false; _btnSolCam.style.opacity = ''; _btnSolCam.style.cursor = ''; _btnSolCam.textContent = '📨 Enviar Solicitud'; }
+    }
+    if (sendIn) {
+      if (_remIngC) NOTIF.verificarBtn(sendIn, 'cambios', _cCam + ' · Rem ' + _remIngC);
+      else { sendIn.disabled = false; sendIn.style.opacity = ''; sendIn.style.cursor = ''; sendIn.textContent = '📨 Enviar Ingreso'; }
+    }
+    if (sendOut) {
+      if (_remSalC) NOTIF.verificarBtn(sendOut, 'cambios', _cCam + ' · Rem ' + _remSalC);
+      else { sendOut.disabled = false; sendOut.style.opacity = ''; sendOut.style.cursor = ''; sendOut.textContent = '📨 Enviar Salida'; }
+    }
+  }
 }
 function closeViewCam() {
   document.getElementById('view-cam-overlay').classList.remove('show');

@@ -292,6 +292,23 @@ function openIngDetail(idx) {
 
   renderIngDetailProducts();
   document.getElementById('ing-detail-overlay').classList.add('show');
+
+  var _envBtn = document.querySelector('#ing-detail-overlay button[onclick*="enviarRemisionIngreso"]');
+  if (_envBtn && typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
+    var _remDest = (g.Remision_Destino || '').trim();
+    var _remOrig = (g.Remision_Origen || '').trim();
+    var _remNum = _remDest || _remOrig || '';
+    var _emp = g.Empresa_Origen || g.Empresa_Destino || '';
+    var _sig = (typeof getSigla === 'function' ? getSigla(_emp) : '') || '';
+    var _ref = (_sig ? _sig + ' · ' : '') + 'Rem ' + _remNum;
+    if (_remNum) {
+      NOTIF.verificarBtn(_envBtn, 'ingresos', _ref);
+    } else {
+      _envBtn.disabled = false; _envBtn.style.opacity = ''; _envBtn.style.cursor = '';
+      _envBtn.title = 'Enviar remisión con copia contabilidad a otro usuario del panel';
+      _envBtn.textContent = '📨 Enviar Remisión';
+    }
+  }
 }
 
 function renderIngDetailProducts() {

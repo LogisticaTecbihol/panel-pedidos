@@ -1291,6 +1291,22 @@ async function openDetail(idx) {
     document.getElementById('md-municipio')
   );
   loadAdjuntos(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+
+  if (typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
+    var _sigP = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
+    var _btnPed = document.querySelector('#overlay button[onclick*="exportarPedidoDesdeModal"]');
+    if (_btnPed) {
+      var _refPed = (_sigP ? _sigP + ' ' : '') + (c.Consecutivo || '');
+      NOTIF.verificarBtn(_btnPed, 'pedidos', _refPed);
+      if (!_btnPed.disabled) { _btnPed.textContent = '📨 Enviar Pedido'; _btnPed.title = 'Enviar el PDF del pedido a otro usuario del panel'; }
+    }
+    var _btnRem = document.getElementById('btn-export-rem-share');
+    if (_btnRem) {
+      _btnRem.disabled = false; _btnRem.style.opacity = ''; _btnRem.style.cursor = '';
+      _btnRem.textContent = '📨 Enviar Remisión ▾';
+      _btnRem.title = 'Enviar remisión a otro usuario del panel';
+    }
+  }
 }
 
 function closeModal() {
