@@ -597,6 +597,160 @@ function _mergeClientesEmbedded() {
   });
 }
 
+// ── Lista de precios PARCELAR (fuente: lista_precios_parcelar_18082026.xlsx) ──
+// [producto, precio_dealer, precio_mayorista]
+var _PRECIOS_PARCELAR_RAW = [
+  ['DESESTRES P X GALON',195520,150400],
+  ['DESESTRES P X 20 LITROS',951600,732000],
+  ['DESESTRES P X 250 ML',16770,12900],
+  ['DESESTRES P X 500 ML',27690,21300],
+  ['DESESTRES P X LITRO',51480,39600],
+  ['ENGORDE K X BIDON 20 LITROS',1023100,787000],
+  ['ENGORDE K X 250 ML',17680,13600],
+  ['ENGORDE K X GALON',209820,161400],
+  ['ENGORDE K X 500 ML',33280,25600],
+  ['ENGORDE K X LITRO',55055,42350],
+  ['AFINADOR CAB X BIDON 20 LITROS',403000,310000],
+  ['AFINADOR CAB X 250 ML',9750,7500],
+  ['AFINADOR CAB X 500 ML',0,12000],
+  ['AFINADOR CAB X GALON',83200,64000],
+  ['AFINADOR CAB X LITRO',23400,18000],
+  ['MERO BRIO X BIDON 20 LITROS',2353000,1810000],
+  ['MERO BRIO X 250 ML',34320,26400],
+  ['MERO BRIO X GALON',475800,366000],
+  ['MERO BRIO X LITRO',121550,93500],
+  ['FERTI-HUMI 16 X BIDON 20 LITROS',265200,204000],
+  ['FERTI-HUMI 16 X GALON',58240,44800],
+  ['FERTI-HUMI 16 X LITRO',17160,13200],
+  ['MICROZUL FZ&V LOMBRI-CROP  X 20 LITROS',379600,292000],
+  ['MICROZUL FZ&V LOMBRI-CROP  X GALON',81120,62400],
+  ['MICROZUL FZ&V LOMBRI-CROP  X LITRO',22880,17600],
+  ['CALIMAN X GALON',128196,94960],
+  ['CALIMAN X CANECA 10 LITROS',308000,237400],
+  ['CALIMAN X BIDON 20 LITROS',613980,454800],
+  ['CALIMAN X LITRO',34749,25740],
+  ['CLEAN CROP X 20 LITROS',2697435,1998100],
+  ['CLEAN CROP X 250 ML',38780,28726],
+  ['CLEAN CROP X GALON',544887,403620],
+  ['CLEAN CROP X LITRO',138922,102905],
+  ['BORDEL CROP X BIDON 20 LITROS',810000,600000],
+  ['BORDEL CROP X 250 ML',15188,11250],
+  ['BORDEL CROP X GALON',167400,124000],
+  ['BORDEL CROP X LITRO',44550,33000],
+  ['TRIP CROP X LITRO',156668,116050],
+  ['TRIP CROP X 250 ML',43216,32012],
+  ['TRIP CROP X GALON',615870,456200],
+  ['TRIP CROP X BIDON 20 LITROS',3052350,2261000],
+  ['ESPAIDER CROP X BIDON 20 LITROS',2874150,2129000],
+  ['ESPAIDER CROP X 250 ML',40989,30362],
+  ['ESPAIDER CROP X LITRO',147758,109450],
+  ['ESPAIDER CROP X GALON',580230,429800],
+  ['NOI-1 X BIDON 20 LITROS',4026510,2982600],
+  ['NOI-1 X 250 ML',55393,41032],
+  ['NOI-1 X GALON',810702,600520],
+  ['NOI-1 X LITRO',205376,152130],
+  ['NEMATO CROP X BIDON 20 LITROS',1914300,1418000],
+  ['NEMATO CROP X 250 ML',0,21500],
+  ['NEMATO CROP X GALON',388260,287600],
+  ['NEMATO CROP X 500 ML',51908,38450],
+  ['NEMATO CROP X LITRO',99765,73900],
+  ['YODO X GALON',153360,113600],
+  ['YODO X LITRO',41040,30400],
+  ['YODO X BIDON 20 LITROS',739800,548000],
+  ['YODO X 250 ML',14310,10600],
+  ['JABOLAN X 250 ML',11475,8500],
+  ['JABOLAN X BIDON 20 LITROS',507060,375600],
+  ['JABOLAN X GALON',106812,79120],
+  ['JABOLAN X LITRO',29403,21780],
+  ['CREOLINA X 20 LITROS',481883,356950],
+  ['CREOLINA X 250 ML',10395,7700],
+  ['CREOLINA X GALON',103208,76450],
+  ['CREOLINA X 500 ML',19157,14190],
+  ['CREOLINA X LITRO',29700,22000],
+  ['PEGASSO PH X BIDON 20 LITROS',546000,420000],
+  ['PEGASSO PH X 250 ML',11700,9000],
+  ['PEGASSO PH X 60 LITROS',0,1150000],
+  ['PEGASSO PH X GALON',114400,88000],
+  ['PEGASSO PH X LITRO',31200,24000],
+  ['PEGASSO PH X CANECA 200 LITROS',0,3800000],
+  ['PEGASSO OIL X BIDON 20 LITROS',468000,360000],
+  ['PEGASSO OIL X 250 ML',10725,8250],
+  ['PEGASSO OIL X 60 LITROS',0,950000],
+  ['PEGASSO OIL X GALON',98800,76000],
+  ['PEGASSO OIL X LITRO',27300,21000],
+  ['PEGASSO OIL X CANECA 200 LITROS',0,3200000],
+  ['GREEN 40F X BIDON 20 LITROS',2697500,0],
+  ['GREEN 40F X 250 ML',39000,0],
+  ['GREEN 40F X 500 ML',74300,0],
+  ['GREEN 40F X GALON',545000,0],
+  ['GREEN 40F X LITRO',139000,0],
+  ['GREEN MOLUS-KILL X 250 ML',37400,0],
+  ['GREEN MOLUS-KILL X 500 ML',72400,0],
+  ['GREEN MOLUS-KILL X BIDON 20 LITROS',1958900,0],
+  ['GREEN MOLUS-KILL X GALON',417000,0],
+  ['GREEN MOLUS-KILL X LITRO',110500,0],
+  ['GREEN VAX X 500 ML',52700,0],
+  ['GREEN VAX X LITRO',94500,0],
+  ['GREEN VAX X GALON',357800,0],
+  ['GREEN VAX X BIDON 20 LITROS',1755000,0],
+  ['FOSTAL 80 WP X 500 GR CV',13500,0],
+  ['CUFIGA 80 WP X 500 GR CV',12300,0],
+  ['TABUS 50 WG X 40 GR CV',13500,0],
+  ['SAGUM 25 SC X 500 ML CV',48000,0],
+  ['SAGUM X LITRO CV',65000,0],
+  ['CERTUS 70 WS X 50 GR',18800,0],
+  ['CERTUS 70 WS X 100 GR CV',32000,0],
+  ['CERTUS 70 WS X 500 GR CV',142000,0],
+  ['FIPRID 75 SC 100ML CV',20600,0],
+  ['FIPRID X 500 ML',78800,0],
+  ['LAMBDA CIHALOTRINA X 100 ML',10300,0],
+  ['LAMBDA CIHALOTRINA X 500 ML',41200,0],
+  ['LAMBDA CIHALOTRINA X LITRO',80000,0],
+  ['SHOCK UPI 36 EG X 500G',181000,0],
+  ['SHOCK UPI 36 EG X KG',345000,0],
+  ['AMETRINA 80WG X KILO',45000,0],
+  ['HEXAZINONA 300 GR',35500,0],
+  ['HEXAZINONA 75 X KILO',94000,0],
+  ['DIRVO 60% WG X 20 GR CV',2200,0],
+  ['DIRVO 60% WG X KILO ( METSULFURON) CV',53000,0],
+  ['FICLORAM LITRO',21000,0],
+  ['FICLORAM SL X GALON',67000,0],
+  ['FICLORAM SL X 20 LITROS',271000,0],
+  ['RUDOWN X 1 KG',26000,0],
+  ['RUDOWN X 50 GR',2200,0],
+  ['RUDOWN X 500 GR',13000,0]
+];
+
+function _mergePreciosEmbedded() {
+  if (!listaPreciosCache) listaPreciosCache = [];
+  if (!productosCache) productosCache = [];
+  var empresa = 'PARCELAR DE COLOMBIA SAS';
+  var existingP = {};
+  listaPreciosCache.forEach(function(lp) {
+    existingP[_normStr(lp.Empresa) + '||' + _normStr(lp.Tipo_Precio) + '||' + _normStr(lp.Producto)] = true;
+  });
+  var existingM = {};
+  productosCache.forEach(function(p) {
+    existingM[_normStr(p.producto)] = true;
+  });
+  _PRECIOS_PARCELAR_RAW.forEach(function(r) {
+    var prod = r[0], dealer = r[1], mayo = r[2];
+    var prodNorm = _normStr(prod);
+    if (!existingM[prodNorm]) {
+      existingM[prodNorm] = true;
+      productosCache.push({ producto: prod, presentacion: '', empresa: empresa });
+    }
+    if (dealer) {
+      var kd = _normStr(empresa) + '||dealer||' + prodNorm;
+      if (!existingP[kd]) { existingP[kd] = true; listaPreciosCache.push({ Empresa: empresa, Tipo_Precio: 'Dealer', Producto: prod, Precio: dealer }); }
+    }
+    if (mayo) {
+      var km = _normStr(empresa) + '||mayorista||' + prodNorm;
+      if (!existingP[km]) { existingP[km] = true; listaPreciosCache.push({ Empresa: empresa, Tipo_Precio: 'Mayorista', Producto: prod, Precio: mayo }); }
+    }
+  });
+}
+
 // ── State ──
 var consecs = [];
 var pedidos = [];
@@ -1228,6 +1382,7 @@ async function openDetail(idx) {
   try { existSnapshot = await Existencias.loadSnapshot(); }
   catch (e) { existSnapshot = null; console.warn('No se pudo cargar existencias:', e); }
   if (_acP.length) await Promise.all(_acP);
+  _mergePreciosEmbedded();
 
   // Cargar datos de factura de entregas existentes (por remisión).
   var _facturaMap = {};
@@ -2480,6 +2635,7 @@ async function openEdit(idx) {
   if (!productosCache) acPromises.push(apiGet('getMaestroProductos').then(function(r) { if (r.ok) productosCache = r.productos || []; }).catch(function() { productosCache = []; }));
   if (!listaPreciosCache) acPromises.push(apiGet('getListaPrecios').then(function(r) { if (r.ok) listaPreciosCache = r.precios || []; }).catch(function() { listaPreciosCache = []; }));
   if (acPromises.length) await Promise.all(acPromises);
+  _mergePreciosEmbedded();
   editKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
   editWorkingLines = getLinesFor(c).map(function(l) { return Object.assign({}, l); });
 
@@ -3268,6 +3424,7 @@ async function loadAutocompleteData() {
   if (!listaPreciosCache) promises.push(apiGet('getListaPrecios').then(function(r) { if (r.ok) listaPreciosCache = r.precios || []; }).catch(function() { listaPreciosCache = []; }));
   if (promises.length) await Promise.all(promises);
   _mergeClientesEmbedded();
+  _mergePreciosEmbedded();
 }
 
 function initAutocomplete(input, opts) {
