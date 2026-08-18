@@ -16,7 +16,10 @@
     pedidos:      '📋 Pedidos',
     devoluciones: '🔄 Devoluciones',
     cambios:      '🔁 Cambios',
-    muestras:     '🧪 Muestras'
+    muestras:     '🧪 Muestras',
+    ordenes:      '🛒 Órdenes',
+    ingresos:     '📦 Ingresos',
+    reenvases:    '🔃 Reenvases'
   };
 
   async function loadInbox() {
@@ -277,7 +280,12 @@
         schema: 'public',
         table: 'notificaciones',
         filter: 'para_usuario_id=eq.' + user.id
-      }, function() { loadInbox(); })
+      }, function(payload) {
+        if (payload.eventType === 'INSERT' && typeof NOTIF !== 'undefined' && NOTIF.playSound) {
+          NOTIF.playSound();
+        }
+        loadInbox();
+      })
       .subscribe();
   }
 

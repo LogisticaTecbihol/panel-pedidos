@@ -10,7 +10,9 @@ var NOTIF = (function() {
     devoluciones: '🔄 Devolución',
     cambios:      '🔁 Cambio',
     muestras:     '🧪 Muestra',
-    ordenes:      '🛒 Orden de compra'
+    ordenes:      '🛒 Orden de compra',
+    ingresos:     '📦 Ingreso',
+    reenvases:    '🔃 Reenvase'
   };
 
   var _uid = null;
@@ -602,7 +604,7 @@ var NOTIF = (function() {
   // Notificación de sólo texto (sin PDF).
   // meta: { para_ids:[uuid,...], modulo, referencia, titulo, mensaje }
   //   modulo debe estar en el CHECK de notificaciones.sql
-  //   ('pedidos'|'devoluciones'|'cambios'|'muestras').
+  //   ('pedidos'|'devoluciones'|'cambios'|'muestras'|'ordenes'|'ingresos'|'reenvases').
   // ────────────────────────────────────────────────────────────
   async function notifyUsers(meta) {
     if (!meta || !meta.modulo || !meta.titulo) return { ok: false, error: 'meta incompleta' };
@@ -695,6 +697,7 @@ var NOTIF = (function() {
     openModalEnviar: openModalEnviar,
     getDirectorio: _loadDirectorio,
     notifyUsers: notifyUsers,
+    playSound: _playNotifSound,
     loadEnviadas: _loadEnviadas,
     fueEnviada: fueEnviada,
     verificarBtn: verificarBtn
