@@ -159,7 +159,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort" onclick="clearSort()" title="Quitar todos los ordenamientos">✕ Limpiar orden</button>
         <button class="btn-dl auth-edit-only" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
-        <button class="btn-dl auth-edit-only" onclick="document.getElementById('file-upload').click()" style="background:#27ae60">📥 Cargar Pedido</button>
+        <button class="btn-dl auth-admin-only" onclick="document.getElementById('file-upload').click()" style="background:#27ae60;display:none">📥 Cargar Pedido</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
         <button class="btn-dl auth-admin-only" onclick="document.getElementById('client-import-file').click()" style="background:#8e44ad;display:none">📋 Importar Clientes</button>
         <input type="file" id="client-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleClientImport(this)">
