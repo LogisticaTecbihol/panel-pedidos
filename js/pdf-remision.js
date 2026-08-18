@@ -438,12 +438,12 @@ function generarSolicitudOCPDF(ocs) {
   var totalOrden = (ocs || []).reduce(function(s, r) { return s + (Number(r.Valor_Total) || 0); }, 0);
   var data = {
     empresa: hdr.Empresa_Destino,
-    consecutivo: hdr.Consecutivo,
+    consecutivo: '',
     fecha_entrega: _ocFmtDate(hdr.Fecha),
     doc_title: 'SOLICITUD DE OC',
     doc_number: hdr.Consecutivo,
     date_label: 'Fecha OC',
-    ref_label: hdr.Ref_Pedido ? 'Pedido origen' : null,
+    ref_label: null,
     file_prefix: 'Solicitud_OC',
     copies: ['ORIGINAL - SOLICITUD DE OC'],
     hide_signatures: true,
