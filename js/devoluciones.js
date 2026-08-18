@@ -1457,11 +1457,11 @@ function openTramitarDev(key) {
   document.getElementById('tramitar-bodega-salida').value = r.Bodega_Salida || 'Productos Buenos';
   document.getElementById('tramitar-fecha-salida').value = r.Fecha_Salida ? toDateInput(r.Fecha_Salida) : today();
   var _elTRI = document.getElementById('tramitar-remision-ingreso');
-  _elTRI.readOnly = false; _elTRI.style.background = ''; _elTRI.placeholder = 'N° remisión';
-  var _chkTRI = document.getElementById('tramitar-remision-ingreso-auto'); if (_chkTRI) _chkTRI.checked = false;
+  _elTRI.readOnly = true; _elTRI.style.background = '#f0f4f8'; _elTRI.placeholder = '(Auto al guardar)';
+  var _chkTRI = document.getElementById('tramitar-remision-ingreso-auto'); if (_chkTRI) _chkTRI.checked = true;
   var _elTRS = document.getElementById('tramitar-remision-salida');
-  _elTRS.readOnly = false; _elTRS.style.background = ''; _elTRS.placeholder = 'N° remisión';
-  var _chkTRS = document.getElementById('tramitar-remision-salida-auto'); if (_chkTRS) _chkTRS.checked = false;
+  _elTRS.readOnly = true; _elTRS.style.background = '#f0f4f8'; _elTRS.placeholder = '(Auto al guardar)';
+  var _chkTRS = document.getElementById('tramitar-remision-salida-auto'); if (_chkTRS) _chkTRS.checked = true;
 
   var tbody = document.getElementById('tramitar-lines');
   tbody.innerHTML = tramitarDevLines.map(function(l, i) {
@@ -1990,9 +1990,15 @@ function bulkTramitarNext() {
   document.getElementById('bulk-tramitar-lines').innerHTML = linesHtml;
 
   document.getElementById('bulk-tramitar-remision-ingreso').value = '';
+  var _elBRI = document.getElementById('bulk-tramitar-remision-ingreso');
+  _elBRI.readOnly = true; _elBRI.style.background = '#f0f4f8'; _elBRI.placeholder = '(Auto al guardar)';
+  var _chkBRI = document.getElementById('bulk-tramitar-remision-ingreso-auto'); if (_chkBRI) _chkBRI.checked = true;
   document.getElementById('bulk-tramitar-bodega-ingreso').value = 'Productos Buenos';
   document.getElementById('bulk-tramitar-fecha-ingreso').value = today();
   document.getElementById('bulk-tramitar-remision-salida').value = '';
+  var _elBRS = document.getElementById('bulk-tramitar-remision-salida');
+  _elBRS.readOnly = true; _elBRS.style.background = '#f0f4f8'; _elBRS.placeholder = '(Auto al guardar)';
+  var _chkBRS = document.getElementById('bulk-tramitar-remision-salida-auto'); if (_chkBRS) _chkBRS.checked = true;
   document.getElementById('bulk-tramitar-bodega-salida').value = 'Productos Buenos';
   document.getElementById('bulk-tramitar-fecha-salida').value = today();
 

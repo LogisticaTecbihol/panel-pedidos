@@ -1174,8 +1174,8 @@ async function openDetail(idx) {
   document.getElementById('m-remision').value = '';
   document.getElementById('m-remision').classList.remove('error');
   var _elPR = document.getElementById('m-remision');
-  _elPR.readOnly = false; _elPR.style.background = ''; _elPR.placeholder = 'N° remisión';
-  var _chkPR = document.getElementById('m-remision-auto'); if (_chkPR) _chkPR.checked = false;
+  _elPR.readOnly = true; _elPR.style.background = '#f0f4f8'; _elPR.placeholder = '(Auto al guardar)';
+  var _chkPR = document.getElementById('m-remision-auto'); if (_chkPR) _chkPR.checked = true;
   document.getElementById('btn-confirmar').disabled = false;
   document.getElementById('btn-confirmar').textContent = '✓ Guardar cambios';
 

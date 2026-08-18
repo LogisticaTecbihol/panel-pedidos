@@ -190,13 +190,13 @@
         </div>
         <div>
           <label class="ef-label">N° Remisión Destino</label>
-          <input class="ef" id="oc-remision" type="text" placeholder="Registrar para cerrar orden" oninput="onOCRemisionChange()">
-          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="oc-remision-auto" onchange="var el=document.getElementById('oc-remision');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al legalizar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='Registrar para cerrar orden';}">Auto</label>
+          <input class="ef" id="oc-remision" type="text" placeholder="(Auto al legalizar)" readonly style="background:#f0f4f8" oninput="onOCRemisionChange()">
+          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="oc-remision-auto" checked onchange="var el=document.getElementById('oc-remision');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al legalizar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='Registrar para cerrar orden';}">Auto</label>
         </div>
         <div>
           <label class="ef-label">N° Remisión Origen</label>
-          <input class="ef" id="oc-remision-origen" type="text" placeholder="Remisión del proveedor">
-          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="oc-remision-origen-auto" onchange="var el=document.getElementById('oc-remision-origen');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al legalizar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='Remisión del proveedor';}">Auto</label>
+          <input class="ef" id="oc-remision-origen" type="text" placeholder="(Auto al legalizar)" readonly style="background:#f0f4f8">
+          <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="oc-remision-origen-auto" checked onchange="var el=document.getElementById('oc-remision-origen');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al legalizar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='Remisión del proveedor';}">Auto</label>
         </div>
         <div>
           <label class="ef-label">Estado</label>

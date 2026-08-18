@@ -543,8 +543,8 @@ async function viewMuestra(id) {
     field('Fecha Seguimiento', fmtDate(r.Fecha_Seguimiento)) +
     '</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem;background:#f0fdf4;padding:12px 14px;border-radius:8px;border:1px solid #bbf7d0">' +
-    editField('N° Remisión', 'mu-view-remision', 'text', remVal, 'N° remisión') +
-    (AUTH.isAdmin() ? '<label style="font-size:0.72rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:3px;margin-top:2px"><input type="checkbox" id="mu-view-remision-auto" onchange="var el=document.getElementById(\'mu-view-remision\');if(this.checked){el.readOnly=true;el.style.background=\'#f0f4f8\';el.placeholder=\'(Auto al despachar)\';el.value=\'\';}else{el.readOnly=false;el.style.background=\'\';el.placeholder=\'N° remisión\';}">Auto</label>' : '') +
+    editField('N° Remisión', 'mu-view-remision', 'text', remVal, '(Auto al despachar)') +
+    (AUTH.isAdmin() ? '<label style="font-size:0.72rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:3px;margin-top:2px"><input type="checkbox" id="mu-view-remision-auto" checked onchange="var el=document.getElementById(\'mu-view-remision\');if(this.checked){el.readOnly=true;el.style.background=\'#f0f4f8\';el.placeholder=\'(Auto al despachar)\';el.value=\'\';}else{el.readOnly=false;el.style.background=\'\';el.placeholder=\'N° remisión\';}">Auto</label>' : '') +
     editField('Fecha Despacho', 'mu-view-fecha-despacho', 'date', fDespachoVal, '') +
     '</div>';
 
@@ -601,6 +601,8 @@ async function viewMuestra(id) {
 
   muViewNewLines = [];
   document.getElementById('view-mu-body').innerHTML = html;
+  var _muViewRem = document.getElementById('mu-view-remision');
+  if (_muViewRem) { _muViewRem.readOnly = true; _muViewRem.style.background = '#f0f4f8'; }
   document.getElementById('view-mu-overlay').classList.add('show');
   loadProductosCache();
 }
@@ -1079,8 +1081,8 @@ async function openNewMuestra() {
   document.getElementById('mu-fecha-seguimiento').value = '';
   document.getElementById('mu-remision').value = '';
   var _elMuR = document.getElementById('mu-remision');
-  _elMuR.readOnly = false; _elMuR.style.background = ''; _elMuR.placeholder = 'N° remisión';
-  var _chkMuR = document.getElementById('mu-remision-auto'); if (_chkMuR) _chkMuR.checked = false;
+  _elMuR.readOnly = true; _elMuR.style.background = '#f0f4f8'; _elMuR.placeholder = '(Auto al despachar)';
+  var _chkMuR = document.getElementById('mu-remision-auto'); if (_chkMuR) _chkMuR.checked = true;
   document.getElementById('mu-solicitante').value = '';
   document.getElementById('mu-autoriza').value = '';
   document.getElementById('mu-estado').value = 'Pendiente';
@@ -1132,8 +1134,8 @@ async function editMuestra(id) {
   document.getElementById('mu-fecha-seguimiento').value = toDateInput(r.Fecha_Seguimiento);
   document.getElementById('mu-remision').value = r.Remision || '';
   var _elMuRe = document.getElementById('mu-remision');
-  _elMuRe.readOnly = false; _elMuRe.style.background = ''; _elMuRe.placeholder = 'N° remisión';
-  var _chkMuRe = document.getElementById('mu-remision-auto'); if (_chkMuRe) _chkMuRe.checked = false;
+  _elMuRe.readOnly = true; _elMuRe.style.background = '#f0f4f8'; _elMuRe.placeholder = '(Auto al despachar)';
+  var _chkMuRe = document.getElementById('mu-remision-auto'); if (_chkMuRe) _chkMuRe.checked = true;
   document.getElementById('mu-solicitante').value = r.Solicitante || '';
   document.getElementById('mu-autoriza').value = r.Autoriza || '';
   document.getElementById('mu-estado').value = r.Estado || 'Pendiente';

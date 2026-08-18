@@ -755,11 +755,11 @@ async function openGestionarCam(key) {
   document.getElementById('gestionar-cam-bodega-salida').value = r.Bodega_Salida || 'Productos Buenos';
   document.getElementById('gestionar-cam-fecha-salida').value = r.Fecha_Salida ? toDateInput(r.Fecha_Salida) : today();
   var _elGCRI = document.getElementById('gestionar-cam-remision-ingreso');
-  _elGCRI.readOnly = false; _elGCRI.style.background = ''; _elGCRI.placeholder = 'N° remisión';
-  var _chkGCRI = document.getElementById('gestionar-cam-remision-ingreso-auto'); if (_chkGCRI) _chkGCRI.checked = false;
+  _elGCRI.readOnly = true; _elGCRI.style.background = '#f0f4f8'; _elGCRI.placeholder = '(Auto al guardar)';
+  var _chkGCRI = document.getElementById('gestionar-cam-remision-ingreso-auto'); if (_chkGCRI) _chkGCRI.checked = true;
   var _elGCRS = document.getElementById('gestionar-cam-remision-salida');
-  _elGCRS.readOnly = false; _elGCRS.style.background = ''; _elGCRS.placeholder = 'N° remisión';
-  var _chkGCRS = document.getElementById('gestionar-cam-remision-salida-auto'); if (_chkGCRS) _chkGCRS.checked = false;
+  _elGCRS.readOnly = true; _elGCRS.style.background = '#f0f4f8'; _elGCRS.placeholder = '(Auto al guardar)';
+  var _chkGCRS = document.getElementById('gestionar-cam-remision-salida-auto'); if (_chkGCRS) _chkGCRS.checked = true;
   document.getElementById('btn-gestionar-cam').disabled = false;
   document.getElementById('btn-gestionar-cam').textContent = '✓ Cerrar cambio';
 

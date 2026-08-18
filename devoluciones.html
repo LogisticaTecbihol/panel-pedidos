@@ -556,8 +556,8 @@
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div>
             <label class="ef-label">N° Remisión Ingreso</label>
-            <input class="ef" id="tramitar-remision-ingreso" type="text" placeholder="N° remisión">
-            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="tramitar-remision-ingreso-auto" onchange="var el=document.getElementById('tramitar-remision-ingreso');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+            <input class="ef" id="tramitar-remision-ingreso" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="tramitar-remision-ingreso-auto" checked onchange="var el=document.getElementById('tramitar-remision-ingreso');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
           </div>
           <div>
             <label class="ef-label">Bodega de Ingreso</label>
@@ -578,8 +578,8 @@
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div>
             <label class="ef-label">N° Remisión Salida</label>
-            <input class="ef" id="tramitar-remision-salida" type="text" placeholder="N° remisión">
-            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="tramitar-remision-salida-auto" onchange="var el=document.getElementById('tramitar-remision-salida');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+            <input class="ef" id="tramitar-remision-salida" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="tramitar-remision-salida-auto" checked onchange="var el=document.getElementById('tramitar-remision-salida');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
           </div>
           <div>
             <label class="ef-label">Bodega de Salida</label>
@@ -673,8 +673,8 @@
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
             <div>
               <label class="ef-label">N° Remisión Ingreso</label>
-              <input class="ef" id="bulk-tramitar-remision-ingreso" type="text" placeholder="N° remisión">
-              <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="bulk-tramitar-remision-ingreso-auto" onchange="var el=document.getElementById('bulk-tramitar-remision-ingreso');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+              <input class="ef" id="bulk-tramitar-remision-ingreso" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+              <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="bulk-tramitar-remision-ingreso-auto" checked onchange="var el=document.getElementById('bulk-tramitar-remision-ingreso');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
             </div>
             <div>
               <label class="ef-label">Bodega de Ingreso</label>
@@ -695,8 +695,8 @@
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
             <div>
               <label class="ef-label">N° Remisión Salida</label>
-              <input class="ef" id="bulk-tramitar-remision-salida" type="text" placeholder="N° remisión">
-              <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="bulk-tramitar-remision-salida-auto" onchange="var el=document.getElementById('bulk-tramitar-remision-salida');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+              <input class="ef" id="bulk-tramitar-remision-salida" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+              <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="bulk-tramitar-remision-salida-auto" checked onchange="var el=document.getElementById('bulk-tramitar-remision-salida');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
             </div>
             <div>
               <label class="ef-label">Bodega de Salida</label>
@@ -935,8 +935,8 @@
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div>
             <label class="ef-label">N° Remisión Ingreso</label>
-            <input class="ef" id="gestionar-cam-remision-ingreso" type="text" placeholder="N° remisión">
-            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="gestionar-cam-remision-ingreso-auto" onchange="var el=document.getElementById('gestionar-cam-remision-ingreso');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+            <input class="ef" id="gestionar-cam-remision-ingreso" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="gestionar-cam-remision-ingreso-auto" checked onchange="var el=document.getElementById('gestionar-cam-remision-ingreso');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
           </div>
           <div>
             <label class="ef-label">Bodega de Ingreso</label>
@@ -957,8 +957,8 @@
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div>
             <label class="ef-label">N° Remisión Salida</label>
-            <input class="ef" id="gestionar-cam-remision-salida" type="text" placeholder="N° remisión">
-            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="gestionar-cam-remision-salida-auto" onchange="var el=document.getElementById('gestionar-cam-remision-salida');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+            <input class="ef" id="gestionar-cam-remision-salida" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+            <label class="auth-admin-only" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="gestionar-cam-remision-salida-auto" checked onchange="var el=document.getElementById('gestionar-cam-remision-salida');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
           </div>
           <div>
             <label class="ef-label">Bodega de Salida</label>

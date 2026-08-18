@@ -657,12 +657,12 @@ function addProductToReGroup() {
   var elRemDest = document.getElementById('re-remision-destino');
   if (elRemDest) elRemDest.value = g.Remision_Destino || '';
   var elRem = document.getElementById('re-remision');
-  elRem.readOnly = false; elRem.style.background = ''; elRem.placeholder = 'N° remisión';
-  if (elRemDest) { elRemDest.readOnly = false; elRemDest.style.background = ''; elRemDest.placeholder = 'N° remisión destino'; }
+  elRem.readOnly = true; elRem.style.background = '#f0f4f8'; elRem.placeholder = '(Auto al guardar)';
+  if (elRemDest) { elRemDest.readOnly = true; elRemDest.style.background = '#f0f4f8'; elRemDest.placeholder = '(Auto al guardar)'; }
   var chkRem = document.getElementById('re-remision-auto');
-  if (chkRem) chkRem.checked = false;
+  if (chkRem) chkRem.checked = true;
   var chkRemDest = document.getElementById('re-remision-destino-auto');
-  if (chkRemDest) chkRemDest.checked = false;
+  if (chkRemDest) chkRemDest.checked = true;
 
   document.getElementById('re-multi-lines').style.display = '';
   document.getElementById('re-edit-single').style.display = 'none';
@@ -775,13 +775,13 @@ async function openNewReenvase() {
   document.getElementById('re-fecha').value = today();
   document.getElementById('re-remision').value = '';
   var elRemDest = document.getElementById('re-remision-destino');
-  if (elRemDest) { elRemDest.value = ''; elRemDest.readOnly = false; elRemDest.style.background = ''; elRemDest.placeholder = 'N° remisión destino'; }
+  if (elRemDest) { elRemDest.value = ''; elRemDest.readOnly = true; elRemDest.style.background = '#f0f4f8'; elRemDest.placeholder = '(Auto al guardar)'; }
   var chkRem = document.getElementById('re-remision-auto');
-  if (chkRem) chkRem.checked = false;
+  if (chkRem) chkRem.checked = true;
   var chkRemDest = document.getElementById('re-remision-destino-auto');
-  if (chkRemDest) chkRemDest.checked = false;
+  if (chkRemDest) chkRemDest.checked = true;
   var elRem = document.getElementById('re-remision');
-  elRem.readOnly = false; elRem.style.background = ''; elRem.placeholder = 'N° remisión';
+  elRem.readOnly = true; elRem.style.background = '#f0f4f8'; elRem.placeholder = '(Auto al guardar)';
 
   document.getElementById('re-multi-lines').style.display = '';
   document.getElementById('re-edit-single').style.display = 'none';
@@ -813,10 +813,10 @@ async function editReenvase(id) {
   var elRemDest = document.getElementById('re-remision-destino');
   if (elRemDest) elRemDest.value = r.Remision_Destino || '';
   var elRemE = document.getElementById('re-remision');
-  elRemE.readOnly = false; elRemE.style.background = ''; elRemE.placeholder = 'N° remisión';
-  var chkRemE = document.getElementById('re-remision-auto'); if (chkRemE) chkRemE.checked = false;
-  if (elRemDest) { elRemDest.readOnly = false; elRemDest.style.background = ''; elRemDest.placeholder = 'N° remisión destino'; }
-  var chkRemDestE = document.getElementById('re-remision-destino-auto'); if (chkRemDestE) chkRemDestE.checked = false;
+  elRemE.readOnly = true; elRemE.style.background = '#f0f4f8'; elRemE.placeholder = '(Auto al guardar)';
+  var chkRemE = document.getElementById('re-remision-auto'); if (chkRemE) chkRemE.checked = true;
+  if (elRemDest) { elRemDest.readOnly = true; elRemDest.style.background = '#f0f4f8'; elRemDest.placeholder = '(Auto al guardar)'; }
+  var chkRemDestE = document.getElementById('re-remision-destino-auto'); if (chkRemDestE) chkRemDestE.checked = true;
 
   document.getElementById('re-multi-lines').style.display = 'none';
   document.getElementById('re-edit-single').style.display = '';
