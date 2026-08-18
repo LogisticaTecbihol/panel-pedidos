@@ -478,12 +478,105 @@ var _CLIENTES_RESO_RAW = [
   ['ANA MARIA ORTEGA RESTREPO','NIT','43758456-5','AV LAS AMERICAS SEC BELMONTE MERCASA BL 4 BG 11','3152492350','PEREIRA','RISARALDA']
 ];
 
+// ── Listado clientes PARCELAR (fuente: listado_clientes_parcelar.xlsx) ──
+// [cliente, tipo_id, nit, direccion, telefono, municipio, departamento, cupo_credito, plazo_pago, lista_precio]
+var _CLIENTES_PARCELAR_RAW = [
+  ['AGRICOLA CADENA SAS','NIT','900983749-1','almacen zipaquira','3229475308','Zipaquirá','CUNDINAMARCA',100000000,'120','Dealer'],
+  ['AGRICOLA DE LA ONCE SAS','NIT','901390224-3','CL 11 15 A 38','3105598846','Bogota D.C.','cundinamarca',5000000,'60','Dealer'],
+  ['AGRICOLA EL MERCHANERO SAS','NIT','901267767-5','calle 7# 8-23 esquina centro','3133291542','Saboyá','boyaca',12000000,'90','Dealer'],
+  ['AGRICOLA LA PLAYA SAS','NIT','900889093-5','est de servicio la playabrio','3142401003','Sesquilé','cundinamarca',15000000,'90','Dealer'],
+  ['AGRICOLA LOS PINOS SAS','NIT','800159028-1','almacen Madrid','6018209914','Madrid','CUNDINAMARCA',5000000,'90','Dealer'],
+  ['AGROALIANZA HYG SAS','NIT','901555789-2','CR 7 15A 54','3108027376','Villa De San Diego De Ubate','cundinamarca',0,'90','Dealer'],
+  ['AGROANDINA GS SAS','NIT','900429519-8','choconta cund','3114821047','Chocontá','cundinamarca',10000000,'90','Dealer'],
+  ['AGROCENTRO LA PALMA','NIT','1053343656-7','calle 7# 8-23 esquina centro','3112771793','Saboyá','boyaca',10000000,'90','Dealer'],
+  ['AGROCENTROJH SAS','NIT','901480773-1','CL 11 15 53','3166814545','Bogota D.C.','cundinamarca',8000000,'60','Dealer'],
+  ['AGROCES SAS CENTRO DE SOLUCIONES AGROPECUARIAS','NIT','901559526-0','CR 3 3 48 BRR EL SOCOREERO','3122913206','Buesaco','nariño',30000000,'120','Mayorista'],
+  ['AGROINSUMOS LA ISLA SAS','NIT','901501543-6','CR 20 12 21','3115067585','Sogamoso','boyaca',5000000,'90','Dealer'],
+  ['AGROINSUMOS MENDEZ TAUTA SAS','NIT','901397882-1','san bernardo cund','3186138368','San Bernardo','cundinamarca',0,'90','Dealer'],
+  ['AGROMOCHUELO SAS','NIT','901633612-2','mochuelo bajo bogota','3117181596','Bogota D.C.','cundinamarca',50000000,'90','Mayorista'],
+  ['AGROPECUARIA CARUPA SU ALIADO SAS','NIT','901819788-1','almacen carmen de carupa','3142534220','Carmen De Carupa','CUNDINAMARCA',10000000,'90','Dealer'],
+  ['AGROPECUARIA HOLSTEIN SAS','NIT','832003502-8','almacen Ubate','3108574730','Villa De San Diego De Ubate','CUNDINAMARCA',5000000,'90','Dealer'],
+  ['AGROPECUARIA INTERNACIONAL SAS "AGROINTER"','NIT','860522063-4','bogota','3203039965','Bogota D.C.','cundinamarca',100000000,'120','Mayorista'],
+  ['AGROPECUARIA LA ESPERANZA RRR SAS','NIT','900878589-9','CR 3 5 78','3022316066','Quebradanegra','cundinamarca',10000000,'60','Dealer'],
+  ['AGROPSALINAS ANGELA PATRICIA CEPEDA SALINAS','CC','1019004848','CL 1 2 41','3232101812','Guaduas','cundinamarca',2000000,'60','Dealer'],
+  ['AGROSAES SAS','NIT','901813939-8','la que el cliente indique','3134791075','Villavicencio','meta',150000000,'240','Mayorista'],
+  ['AGROVERT SAS','NIT','901067015-7','almacen subia','3058816728','Mosquera','cundinamarca',5000000,'90','Mayorista'],
+  ['AGROZAM FACATATIVA','NIT','901042166-2','almacen Facatativa','3217563772','Facatativá','CUNDINAMARCA',0,'120','Dealer'],
+  ['ALMACEN AGRICOLA AGRICENTRO SAS','NIT','832009053-1','almacen cota','3112574381','Cota','CUNDINAMARCA',10000000,'90','Dealer'],
+  ['ALMACEN AGRICOLA LA QUINTA SAS','NIT','901505874-7','villapinzon cund','3142351107','Villapinzón','cundinamarca',15000000,'90','Dealer'],
+  ['ALMACEN EL AMIGO SAS','NIT','832005100-1','villapinzon cund','3158998195','Villapinzón','cundinamarca',3000000,'60','Dealer'],
+  ['ALVARADO FORERO OSCAR YESID','NIT','7124528-5','calle 3 # 2-68','3133972477','Sutamarchán','boyaca',0,'90','Dealer'],
+  ['AREVALO CASTILLO MYRIAM YANETH','CC','40031087','CLL 20 #14-47','3115311560','Tunja','boyaca',0,'90','Dealer'],
+  ['AVILA SANCHEZ NESTOR ROLANDO','CC','1057214047','CR 9 7 37 BRR LOS OLIVOS','','Villa De Leyva','boyaca',10000000,'90','Dealer'],
+  ['CASTELLANOS SANCHEZ PEDRO ADALBERTO','NIT','7316692-1','CL 9 4 5 4','3103039442','Simijaca','CUNDINAMARCA',20000000,'60','Dealer'],
+  ['COMERCIALIZADORA DE INSUMOS PA LA FINCA SAS','NIT','900444743-4','CR 1 9 39','3118452437','Guatavita','CUNDINAMARCA',3000000,'60','Dealer'],
+  ['COMERCIALIZADORA MACRI SAS','NIT','900679623-8','sibate parque principal','3213701546','Sibaté','CUNDINAMARCA',0,'90','Dealer'],
+  ['COMERCIALIZADORA NUEVA VISION AGROPECUARIA SAS','NIT','832005340-0','almacen ubate','3124388002','Villa De San Diego De Ubate','CUNDINAMARCA',100000000,'120','Dealer'],
+  ['COMPAÑÍA AGRICOLA TOLIMENSE SAS','NIT','901986272-6','calle 7 # 4-70 chicoral','3223261762','chicoral','tolima',10000000,'60','Dealer'],
+  ['CORREDOR ALIADO JUAN CARLOS','CC','7128002','CRA 3 #4-46','3208520512','Sáchica','boyaca',0,'90','Dealer'],
+  ['CUBILLOS JIMENEZ DIDIMO ALEXANDER','CC','82393300','CLL 22 8 39 CASA 7','3156303297','Fusagasugá','cundinamarca',2000000,'90','Mayorista'],
+  ['DIAZ BOHORQUEZ AGRODIAZ DE COLOMBIA DEHISY CRISTINA','CC','52270251','CL 6 N 2 65 - Centro','3166246402','Sutamarchán','boyaca',0,'90','Dealer'],
+  ['DIAZ RODRIGUEZ ZULMA MILENA','CC','52888194','venecia cund parque principal','3133956529','Venecia','cundinamarca',12000000,'90','Dealer'],
+  ['DISTRIBUIDORA AGRICOLA DEL SUMAPAZ SAS','NIT','900086526-6','CL 19B 6 40','','Fusagasugá','cundinamarca',0,'90','Mayorista'],
+  ['DISTRIBUIDORA DE INSUMOS AGROPECUARIOS DEL HATO SAS','NIT','901813137-8','CARRERA 6 # 13A -22','3103563717','Málaga','santander',20000000,'90','Mayorista'],
+  ['DUQUE ARAQUE HERNAN ANTONIO','CC','70030033','CR 73 A 135 20 CONJ GRATAMIRA','6436814','Bogota D.C.','cundinamarca',20000000,'90','Mayorista'],
+  ['EL ESTABLO COLOMBIA SAS','NIT','901488581-0','CRA 7 5 51 CENTRO','3009122041','Villeta','cundinamarca',10000000,'60','Dealer'],
+  ['ENCISO AVILA MARINA','NIT','41578295-6','almacen cota','6018640500','Cota','CUNDINAMARCA',3000000,'90','Dealer'],
+  ['EXIAGRICOLA J D LTDA','NIT','830119428-2','CR 20 A 73 01','3123503966','Bogota D.C.','cundinamarca',10000000,'90','Dealer'],
+  ['FITOFERTIL SAS','NIT','900982097-1','villapinzon','3133494351','Villapinzón','cundinamarca',30000000,'120','Dealer'],
+  ['GALINDO GARCIA JORGE ELIECER','NIT','11510798-7','almacen facatativa','3132610087','Mosquera','CUNDINAMARCA',3000000,'90','Dealer'],
+  ['GARCIA GARZON LUIS CARLOS','CC','1077145788','CL 3# 6-50 PLAZA','','Villapinzón','CUNDINAMARCA',0,'90','Dealer'],
+  ['GRUPO SIEMSO SAS','NIT','901852586-8','CR 34B 23 65 SUR','3175405799','Neiva','',0,'90','Mayorista'],
+  ['GRUPO TECNOAGRO SAS','NIT','901376672-1','CL 5 2 77','3184374719','Sáchica','Boyaca',5000000,'90','Dealer'],
+  ['HORTALIZAS AGROFER SAS','NIT','902047368-1','almacen soacha','3208578306','SOACHA','CUNDINAMARCA',2000000,'60','Dealer'],
+  ['HORTALIZAS EL MANA SAS','NIT','901256777-1','almacen soacha','3138694258','Mosquera','CUNDINAMARCA',10000000,'60','Dealer'],
+  ['IASO INSUMOS AGROPECUARIOS SOSTENIBLES SAS','NIT','901924101-1','AV TRONCAL DE OCCIDENTE #11E-03','3103616741','Mosquera','cundinamarca',30000000,'90','Mayorista'],
+  ['INVERSIONES AGRICOLAS SAN MARTIN SAS','NIT','900617062-0','almacen zipaquira','3125363500','Zipaquirá','CUNDINAMARCA',5000000,'90','Dealer'],
+  ['JANAGRO DISTRIBUCIONES SAS','NIT','901445314-6','Cr 10A CON 129-26 BARRIO MALABAR','3103234095','Ibagué','tolima',30000000,'90','Mayorista'],
+  ['LA FINCA AGROPECUARIA PARA EL CAMPO SAS','NIT','901568256-5','CR 3 7 24','3102404991','Yacopí','cundinamarca',2000000,'60','Dealer'],
+  ['LANCHEROS LIDA JOHANA','CC','35251076','cabrera cund','3134613851','Fusagasugá','cundinamarca',5000000,'90','Dealer'],
+  ['LINARES MARQUEZ LUZ STELLA','CC','39623629','CRA 8N 15F 13','3125225230','Facatativá','cundinamarca',2000000,'90','Mayorista'],
+  ['LOPEZ CUERVO JOSE RICARDO','CC','80468373','villapinzon','3002668058','Villapinzón','cundinamarca',30000000,'90','Dealer'],
+  ['LOPEZ RODRIGUEZ CARLOS JULIO','CC','74245482','SANTA','3133823308','Santa Sofía','boyaca',0,'90','Dealer'],
+  ['MALAGON MARTHA YOLANDA','CC','23315189','AV 3 #5-85','3133775436','Arcabuco','boyaca',0,'90','Dealer'],
+  ['MAZORCA VALERO WILFREDO ANTONIO','CC','74150689','CL 11 9 68 BRR LAS FERIAS','','Chiquinquirá','boyaca',10000000,'90','Dealer'],
+  ['MEJIA TRIANA FRANCY YASMIN','CC','52654461','CR 7 3 116','3133910156','Villeta','cundinamarca',15000000,'60','Dealer'],
+  ['MISAKGRO','NIT','901472748-3','almacen funza','3115746582','Mosquera','CUNDINAMARCA',5000000,'90','Dealer'],
+  ['MORENO CLARA INES','CC','24197076','VEREDA PUNTA DEL LLANO','3114621501','Sotaquirá','boyaca',0,'90','Dealer'],
+  ['NAGLES ZAPATA INGRID JOHANA','CC','1123059650','RANCHO GANADERO','3227434051','La Sierra','cundinamarca',5000000,'60','Dealer'],
+  ['NARVAEZ BARRERA OSCAR DARIO','CC','1086924421','BRR LAS FERIAS','3135899029','Caparrapí','cundinamarca',3000000,'60','Dealer'],
+  ['NIÑO GARAY DIEGO ALEJANDRO','CC','1070968224','almacen cartagenita','3106968122','Facatativá','CUNDINAMARCA',0,'90','Dealer'],
+  ['PABON MEDINA ALEX JAIR','CC','1295450','VIA JAGUITO LA MARIA','3186507106','Santander De Quilichao','',0,'90','Mayorista'],
+  ['PADILLA ORTIZ ZULMA CRISTINA','CC','1061654023','VDA CHIMBE FCA MIRANDA','3174663828','Albán','cundinamarca',3000000,'60','Dealer'],
+  ['PEDRAZA GARCIA DIANA MAYERLI','CC','1000784737-4','pasquilla bogota','3227165012','Bogota D.C.','cundinamarca',5000000,'90','Dealer'],
+  ['PINZON CERINZA CARLOS','CC','1053611291','CRA 8 N 5 -56','3209517482','Tuta','boyaca',15000000,'90','Dealer'],
+  ['PULGARIN LOZANO ANA FLOR','CC','20705077','CRA 3 2A 50','3105611358','La Peña','cundinamarca',20000000,'60','Dealer'],
+  ['RAMIREZ BONILLA CARLOS ANDRES','CC','80282454','VEREDA NARANJAL','3125867890','Villeta','cundinamarca',2000000,'90','Mayorista'],
+  ['RAMIREZ RUBIELA MEJIA','CC','21082568','BRR CENTRO CR3 5 44','3215436540','Útica','cundinamarca',2000000,'60','Dealer'],
+  ['SALAZAR ARDILA LUZ ADRIANA','CC','63533760','CR 16 12 26 AP 101 BRR CABECERA','3123207475','sogamoso','boyaca',0,'90','Mayorista'],
+  ['SAVITOL-CROP SAS','NIT','901746562-8','km 2 autopista medellin parque empresarial oikos la florida bod. 12','3118785680','cota','cundinamarca',30000000,'120','Mayorista'],
+  ['SERVIAGRO PASCA SAS','NIT','901555328-0','pasca barrio flandes','3104605163','Pasca','cundinamarca',50000000,'90','Dealer'],
+  ['TELLEZ RODRIGUEZ MASSIEL PAOLA','CC','1057488459','calle 1 # 4-166','310579478','villeta','cundinamarca',10000000,'60','Mayorista'],
+  ['TODOCAMPO FAJARDO SAS','NIT','901737428-1','vda san raimundo silvania','3125460551','Granada','cundinamarca',2000000,'90','Dealer'],
+  ['TRIANA PALACIO DIEGO MAURICIO','CC','80280896','CL 4 3 25 IMP LA MAGDALENA','3143475918','la magdalena','cundinamarca',5000000,'60','Dealer'],
+  ['VALDERRAMA RATIVA EPIGMENIO','CC','19058872','almacen cota','3144447613','Cota','CUNDINAMARCA',3000000,'90','Dealer'],
+  ['VARGAS AGUILERA INGRITH YOHANA','CC','24134755','CR 9 7A 16 BRR LOS OLIVOS','3112050379','Tunja','boyaca',15000000,'90','Mayorista'],
+  ['VARGAS MOLLENO MAURICIO','CC','72326554','CLL 9 #7-18','3112062811','Ramiriquí','boyaca',0,'90','Dealer'],
+  ['ZAMBRANO SANCHEZ COMERCIALIZADORA AGROPECUARIA AMIA ANA CONSUELO','NIT','1056029656-2','calle 7# 8-23 esquina centro','3134848169','Chiquinquirá','boyaca',12000000,'90','Dealer'],
+  ['SAMVET S.A.S','NIT','901675165-1','CL 5 # 12-48','3202624680','Tauramena','casanare',5000000,'60','Mayorista'],
+  ['LEOAGRO JC SAS','NIT','901943667-7','fusagasuga','3104769036','Fusagasugá','cundinamarca',10000000,'90','Dealer'],
+  ['QUIMICOS ESPECIALES Y SILICONAS SAS','NIT','901310216-2','SIBATE','3204844375','sibate','cundinamarca',5000000,'90','Dealer'],
+  ['EDILSON DIAZ PATIÑO','CC','4276421','CL 5 #2-33','3115824268','tibana','boyaca',0,'90','Dealer'],
+  ['NILSON JULIAN CARRILLO MORALES','CC','7182039-2','CR 16  4 33B','3212021989','tunja','boyaca',12000000,'90','Dealer']
+];
+
 function _mergeClientesEmbedded() {
   if (!clientesCache) clientesCache = [];
   var sets = [
     { raw: _CLIENTES_GREEN_RAW, empresa: 'GREEN AGROSOLUCIONES DE COLOMBIA SAS' },
     { raw: _CLIENTES_IAS_RAW, empresa: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS' },
-    { raw: _CLIENTES_RESO_RAW, empresa: 'SOLUCIONES INTEGRALES RESO SAS' }
+    { raw: _CLIENTES_RESO_RAW, empresa: 'SOLUCIONES INTEGRALES RESO SAS' },
+    { raw: _CLIENTES_PARCELAR_RAW, empresa: 'PARCELAR DE COLOMBIA SAS' }
   ];
   sets.forEach(function(s) {
     var existing = {};
@@ -497,7 +590,8 @@ function _mergeClientesEmbedded() {
       clientesCache.push({
         cliente: r[0], tipo_identificacion: r[1], nit: r[2],
         direccion: r[3], telefono: r[4], municipio: r[5],
-        departamento: r[6] || '', empresa: s.empresa, correo: '', cupo_credito: '', plazo_pago: ''
+        departamento: r[6] || '', empresa: s.empresa, correo: '',
+        cupo_credito: r[7] || '', plazo_pago: r[8] || '', lista_precio: r[9] || ''
       });
     });
   });
@@ -3501,6 +3595,7 @@ async function openNuevoPedido() {
       if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
       if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
       if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
+      if (c.lista_precio) document.getElementById('nv-precio').value = c.lista_precio;
       var cupoEl = document.getElementById('nv-cupo-info');
       if (c.cupo_credito && c.cupo_credito !== 'NA') {
         document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
@@ -3561,6 +3656,7 @@ async function openNuevoPedido() {
       if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
       if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
       if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
+      if (c.lista_precio) document.getElementById('nv-precio').value = c.lista_precio;
       if (c.cupo_credito && c.cupo_credito !== 'NA') {
         document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
         document.getElementById('nv-cupo-info').style.display = 'block';
