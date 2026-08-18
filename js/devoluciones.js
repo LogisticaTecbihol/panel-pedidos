@@ -5,6 +5,7 @@ var catalogoProductosDev = [];
 var catalogoClientesDev = [];
 var devLineas = [];
 var tramitarDevLines = [];
+var tramitarNewLines = [];
 var tramitarDevKey = null;
 var selectedDevKeys = {};
 var devCurrentPage = 1;
@@ -1462,6 +1463,7 @@ function openTramitarDev(key) {
   tramitarDevLines = lines.map(function(l) {
     return { id: l.__row || l.id, Consecutivo: l.Consecutivo || '', Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada || 0 };
   });
+  tramitarNewLines = [];
 
   var r = lines[0];
   var consecSetT = {}; lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSetT[l.Consecutivo] = 1; });
@@ -1484,27 +1486,154 @@ function openTramitarDev(key) {
   _elTRS.readOnly = true; _elTRS.style.background = '#f0f4f8'; _elTRS.placeholder = '(Auto al guardar)';
   var _chkTRS = document.getElementById('tramitar-remision-salida-auto'); if (_chkTRS) _chkTRS.checked = true;
 
-  var tbody = document.getElementById('tramitar-lines');
-  tbody.innerHTML = tramitarDevLines.map(function(l, i) {
-    return '<tr>' +
-      '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
-      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + (l.Consecutivo || '—') + '</td>' +
-      '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
-      '<td>' + (l.Presentacion || '—') + '</td>' +
-      '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
-      '<td><input class="ef tramitar-cant" data-line="' + i + '" type="number" min="0" max="' + (l.Cantidad||9999) + '" value="' + (l.Cant_Entregada || '') + '" placeholder="0" style="width:100px;text-align:right"></td>' +
-    '</tr>';
-  }).join('');
+  renderTramitarTable();
 
   document.getElementById('btn-tramitar-dev').disabled = false;
   document.getElementById('btn-tramitar-dev').textContent = '✓ Tramitar devolución';
   document.getElementById('tramitar-dev-overlay').classList.add('show');
 }
 
+function renderTramitarTable() {
+  var tbody = document.getElementById('tramitar-lines');
+  var html = '';
+
+  tramitarDevLines.forEach(function(l, i) {
+    html += '<tr>' +
+      '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + (l.Consecutivo || '—') + '</td>' +
+      '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
+      '<td>' + (l.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
+      '<td><input class="ef tramitar-cant" data-line="' + i + '" type="number" min="0" max="' + (l.Cantidad||9999) + '" value="' + (l.Cant_Entregada || '') + '" placeholder="0" style="width:100px;text-align:right"></td>' +
+      '<td></td>' +
+    '</tr>';
+  });
+
+  if (tramitarNewLines.length) {
+    html += '<tr><td colspan="7" style="padding:8px 0 4px;border-top:2px dashed #c6f6d5"><span style="font-size:0.76rem;font-weight:700;color:#27ae60">Líneas adicionales</span></td></tr>';
+    tramitarNewLines.forEach(function(l, i) {
+      var idx = tramitarDevLines.length + i;
+      html += '<tr style="background:#f0faf4">' +
+        '<td style="color:#27ae60;font-size:0.74rem;font-weight:700">' + (idx+1) + '</td>' +
+        '<td style="text-align:center;font-size:0.76rem;color:#27ae60;font-weight:600">Nuevo</td>' +
+        '<td style="position:relative;min-width:200px"><div style="position:relative"><input class="ef tramitar-new-prod" data-newline="' + i + '" type="text" value="' + ((l.Producto||'').replace(/"/g,'&quot;')) + '" placeholder="Buscar producto..." autocomplete="off" style="width:100%;min-width:200px"></div></td>' +
+        '<td><input class="ef tramitar-new-pres" data-newline="' + i + '" type="text" value="' + ((l.Presentacion||'').replace(/"/g,'&quot;')) + '" placeholder="Pres." style="width:100px"></td>' +
+        '<td><input class="ef tramitar-new-cant" data-newline="' + i + '" type="number" min="0" value="' + (l.Cantidad||'') + '" placeholder="0" style="width:75px;text-align:right"></td>' +
+        '<td><input class="ef tramitar-new-cantdev" data-newline="' + i + '" type="number" min="0" value="' + (l.Cant_Entregada||'') + '" placeholder="0" style="width:100px;text-align:right"></td>' +
+        '<td style="text-align:center"><button onclick="removeTramitarNewLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
+      '</tr>';
+    });
+  }
+
+  tbody.innerHTML = html;
+
+  tramitarNewLines.forEach(function(l, i) {
+    buildTramitarProductSearch(i);
+  });
+}
+
+function addTramitarNewLine() {
+  readTramitarNewLines();
+  tramitarNewLines.push({ Producto: '', Presentacion: '', Cantidad: '', Cant_Entregada: '' });
+  renderTramitarTable();
+  var lastInput = document.querySelector('.tramitar-new-prod[data-newline="' + (tramitarNewLines.length - 1) + '"]');
+  if (lastInput) lastInput.focus();
+}
+
+function removeTramitarNewLine(i) {
+  readTramitarNewLines();
+  tramitarNewLines.splice(i, 1);
+  renderTramitarTable();
+}
+
+function readTramitarNewLines() {
+  document.querySelectorAll('.tramitar-new-prod').forEach(function(inp) {
+    var i = Number(inp.dataset.newline);
+    if (tramitarNewLines[i]) tramitarNewLines[i].Producto = inp.value.trim();
+  });
+  document.querySelectorAll('.tramitar-new-pres').forEach(function(inp) {
+    var i = Number(inp.dataset.newline);
+    if (tramitarNewLines[i]) tramitarNewLines[i].Presentacion = inp.value.trim();
+  });
+  document.querySelectorAll('.tramitar-new-cant').forEach(function(inp) {
+    var i = Number(inp.dataset.newline);
+    if (tramitarNewLines[i]) tramitarNewLines[i].Cantidad = Number(inp.value) || 0;
+  });
+  document.querySelectorAll('.tramitar-new-cantdev').forEach(function(inp) {
+    var i = Number(inp.dataset.newline);
+    if (tramitarNewLines[i]) tramitarNewLines[i].Cant_Entregada = Number(inp.value) || 0;
+  });
+}
+
+function buildTramitarProductSearch(lineIdx) {
+  var inp = document.querySelector('.tramitar-new-prod[data-newline="' + lineIdx + '"]');
+  if (!inp) return;
+
+  inp.addEventListener('input', function() {
+    var q = this.value.toLowerCase().trim();
+    var empSel = '';
+    if (tramitarDevKey) {
+      var devLinesRef = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
+      if (devLinesRef.length) empSel = devLinesRef[0].Empresa || '';
+    }
+    closeAllAutocompleteDev();
+    if (q.length < 1) return;
+
+    var matches = catalogoProductosDev.filter(function(p) {
+      var matchName = (p.producto||'').toLowerCase().indexOf(q) >= 0;
+      var matchEmp = !empSel || !p.empresa || p.empresa === empSel;
+      return matchName && matchEmp;
+    });
+
+    var seen = {};
+    matches = matches.filter(function(p) {
+      var key = p.producto + '||' + p.presentacion;
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+
+    if (!matches.length) return;
+
+    var list = document.createElement('div');
+    list.className = 'autocomplete-list';
+    list.style.cssText = 'position:absolute;z-index:100;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:320px;overflow-y:auto;width:100%;min-width:300px;left:0;top:100%';
+
+    matches.slice(0, 15).forEach(function(p) {
+      var item = document.createElement('div');
+      item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.84rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center;gap:16px';
+      item.innerHTML = '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (p.producto||'') + '</span><span style="color:#718096;font-size:0.76rem;white-space:nowrap;flex-shrink:0">' + (p.presentacion||'') + '</span>';
+      item.addEventListener('mousedown', function(ev) {
+        ev.preventDefault();
+        inp.value = p.producto;
+        tramitarNewLines[lineIdx].Producto = p.producto;
+        tramitarNewLines[lineIdx].Presentacion = p.presentacion || '';
+        var presInp = document.querySelector('.tramitar-new-pres[data-newline="' + lineIdx + '"]');
+        if (presInp) presInp.value = p.presentacion || '';
+        closeAllAutocompleteDev();
+      });
+      item.addEventListener('mouseover', function() { this.style.background = '#f0f8ff'; });
+      item.addEventListener('mouseout', function() { this.style.background = 'white'; });
+      list.appendChild(item);
+    });
+
+    var wrapper = inp.parentElement;
+    wrapper.style.position = 'relative';
+    wrapper.appendChild(list);
+    activeAutocompleteDev = list;
+  });
+
+  inp.addEventListener('blur', function() {
+    setTimeout(closeAllAutocompleteDev, 150);
+  });
+}
+
 function closeTramitarDev() {
   document.getElementById('tramitar-dev-overlay').classList.remove('show');
   tramitarDevKey = null;
   tramitarDevLines = [];
+  tramitarNewLines = [];
+  closeAllAutocompleteDev();
 }
 
 document.getElementById('tramitar-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeTramitarDev(); });
@@ -1524,6 +1653,9 @@ async function saveTramitarDev() {
     if (tramitarDevLines[i]) tramitarDevLines[i].Cant_Entregada = Number(inp.value) || 0;
   });
 
+  readTramitarNewLines();
+  var validNewLines = tramitarNewLines.filter(function(l) { return l.Producto; });
+
   var devLines = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
   var empresaDev = devLines.length ? (devLines[0].Empresa || '') : '';
 
@@ -1532,7 +1664,7 @@ async function saveTramitarDev() {
   btn.textContent = '⏳ Guardando...';
 
   try {
-    var result = await apiPost({
+    var payload = {
       action: 'tramitarDevolucion',
       Empresa: empresaDev,
       Remision_Ingreso: remIngreso,
@@ -1542,10 +1674,17 @@ async function saveTramitarDev() {
       Bodega_Salida: bodegaSalida,
       Fecha_Salida: fechaSalida,
       lineas: tramitarDevLines.map(function(l) { return { id: l.id, Cant_Entregada: l.Cant_Entregada }; })
-    });
+    };
+    if (validNewLines.length) {
+      payload.nuevas_lineas = validNewLines.map(function(l) {
+        return { Producto: l.Producto, Presentacion: l.Presentacion || '', Cantidad: Number(l.Cantidad) || 0, Cant_Entregada: Number(l.Cant_Entregada) || 0 };
+      });
+    }
+    var result = await apiPost(payload);
     if (!result.ok) throw new Error(result.error || 'Error al tramitar');
     closeTramitarDev();
     var toastDev = ['✅ Devolución tramitada'];
+    if (result.nuevas_added) toastDev.push(result.nuevas_added + ' línea(s) agregada(s)');
     if (result.remision_ingreso) toastDev.push('RE: ' + result.remision_ingreso);
     if (result.remision_salida) toastDev.push('RS: ' + result.remision_salida);
     showToast(toastDev.join(' · '));

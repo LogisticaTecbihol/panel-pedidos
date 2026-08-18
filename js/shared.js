@@ -453,12 +453,47 @@ async function apiPost(body) {
 
     if (action === 'tramitarDevolucion') {
       var lineas = body.lineas || [];
+      var nuevasLineas = body.nuevas_lineas || [];
       var remIngDev = (body.Remision_Ingreso || '').trim();
       var remSalDev = (body.Remision_Salida || '').trim();
       var empDev = (body.Empresa || '').trim();
       if (empDev) {
         if (!remIngDev) remIngDev = await generarRemisionConsecutivo(empDev, 'ENTRADA');
         if (!remSalDev) remSalDev = await generarRemisionConsecutivo(empDev, 'SALIDA');
+      }
+      var nuevasAdded = 0;
+      if (nuevasLineas.length && lineas.length) {
+        var refRes = await _sb.from('Devoluciones').select('*').eq('id', lineas[0].id).single();
+        if (refRes.data) {
+          var ref = refRes.data;
+          var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+          var newRows = nuevasLineas.map(function(nl) {
+            var cant = Number(nl.Cantidad) || 0;
+            return {
+              Fecha: ref.Fecha || '', Empresa: ref.Empresa || '', Consecutivo: ref.Consecutivo || '',
+              Vendedor: ref.Vendedor || '', Cliente: ref.Cliente || '', NIT: ref.NIT || '',
+              Direccion: ref.Direccion || '', Municipio: ref.Municipio || '',
+              Departamento: ref.Departamento || '', Telefono: ref.Telefono || '',
+              Num_Factura: nl.Num_Factura || '', Producto: nl.Producto || '',
+              Presentacion: nl.Presentacion || '', Cantidad: cant,
+              Cant_Entregada: Number(nl.Cant_Entregada) || 0,
+              Valor_Unitario: Number(nl.Valor_Unitario) || 0,
+              Valor_Total: Number(nl.Valor_Total) || 0,
+              Motivo: ref.Motivo || '', Observaciones: ref.Observaciones || '',
+              Remision: remIngDev, Fecha_Devolucion: body.Fecha_Ingreso || '',
+              Remision_Ingreso: remIngDev, Bodega_Ingreso: body.Bodega_Ingreso || 'Productos Buenos',
+              Fecha_Ingreso: body.Fecha_Ingreso || '',
+              Remision_Salida: remSalDev, Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
+              Fecha_Salida: body.Fecha_Salida || '',
+              Estado: 'Tramitada',
+              Fecha_Registro: now,
+              creado_por: _uid(), modificado_por: _uid()
+            };
+          });
+          var insRes = await _sb.from('Devoluciones').insert(newRows);
+          if (insRes.error) return { ok: false, error: insRes.error.message };
+          nuevasAdded = newRows.length;
+        }
       }
       for (var i = 0; i < lineas.length; i++) {
         var lin = lineas[i];
@@ -477,7 +512,7 @@ async function apiPost(body) {
         }).eq('id', lin.id);
         if (res.error) return { ok: false, error: res.error.message };
       }
-      return { ok: true, updated: lineas.length, remision_ingreso: remIngDev, remision_salida: remSalDev };
+      return { ok: true, updated: lineas.length, nuevas_added: nuevasAdded, remision_ingreso: remIngDev, remision_salida: remSalDev };
     }
 
     if (action === 'eliminarDevolucion') {
@@ -750,17 +785,17 @@ async function apiPost(body) {
       }
       var rows = lineas.map(function(lin) {
         return {
-          Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || '',
-          Fecha_Despacho: body.Fecha_Despacho || '', Responsable: body.Responsable || '',
+          Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || null,
+          Fecha_Despacho: body.Fecha_Despacho || null, Responsable: body.Responsable || '',
           Departamento: body.Departamento || '', Municipio: body.Municipio || '', Tipo_Cultivo: body.Tipo_Cultivo || '',
-          Fecha_Aplicacion: body.Fecha_Aplicacion || '', Fecha_Seguimiento: body.Fecha_Seguimiento || '',
+          Fecha_Aplicacion: body.Fecha_Aplicacion || null, Fecha_Seguimiento: body.Fecha_Seguimiento || null,
           Remision: body.Remision || '', Objetivo: body.Objetivo || '',
           Producto: lin.Producto || '', Presentacion: lin.Presentacion || '',
           Cantidad: Number(lin.Cantidad) || 0, Cant_Entregada: Number(lin.Cant_Entregada) || 0,
-          Fecha_Entrega: lin.Fecha_Entrega || '', Solicitante: body.Solicitante || '',
+          Fecha_Entrega: lin.Fecha_Entrega || null, Solicitante: body.Solicitante || '',
           Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
           Estado_Aprobacion: body.Estado_Aprobacion || 'Por aprobar',
-          Aprobada_Por: body.Aprobada_Por || '', Fecha_Aprobacion: body.Fecha_Aprobacion || '',
+          Aprobada_Por: body.Aprobada_Por || '', Fecha_Aprobacion: body.Fecha_Aprobacion || null,
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
           responsable_id: body.responsable_id || null,
           creado_por: _uid()
@@ -830,14 +865,14 @@ async function apiPost(body) {
         remMuE = await generarRemisionConsecutivo(body.Empresa, 'SALIDA');
       }
       var res = await _sb.from('SolicitudMuestras').update({
-        Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || '',
-        Fecha_Despacho: body.Fecha_Despacho || '', Responsable: body.Responsable || '',
+        Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || null,
+        Fecha_Despacho: body.Fecha_Despacho || null, Responsable: body.Responsable || '',
         Departamento: body.Departamento || '', Municipio: body.Municipio || '', Tipo_Cultivo: body.Tipo_Cultivo || '',
-        Fecha_Aplicacion: body.Fecha_Aplicacion || '', Fecha_Seguimiento: body.Fecha_Seguimiento || '',
+        Fecha_Aplicacion: body.Fecha_Aplicacion || null, Fecha_Seguimiento: body.Fecha_Seguimiento || null,
         Remision: remMuE, Objetivo: body.Objetivo || '',
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
         Cantidad: Number(body.Cantidad) || 0, Cant_Entregada: Number(body.Cant_Entregada) || 0,
-        Fecha_Entrega: body.Fecha_Entrega || '', Solicitante: body.Solicitante || '',
+        Fecha_Entrega: body.Fecha_Entrega || null, Solicitante: body.Solicitante || '',
         Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
         Observaciones: body.Observaciones || '',
         modificado_por: _uid()
