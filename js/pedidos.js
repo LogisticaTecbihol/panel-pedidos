@@ -4936,6 +4936,66 @@ var despachosData = [];
 var despachosFiltered = [];
 var _despActivo = null;
 
+var sortLevelsDesp = [];
+var SORT_COLS_DESP = [
+  { id:'empresa',   label:'Empresa',       fn: function(d) { return (getSigla(d.empresa)||'').toLowerCase(); } },
+  { id:'remision',  label:'Remisión',      fn: function(d) { return (d.remision||'').toLowerCase(); } },
+  { id:'cliente',   label:'Cliente',       fn: function(d) { return (d.cliente||'').toLowerCase(); } },
+  { id:'fecha',     label:'Fecha',         fn: function(d) { return d.fecha || ''; } },
+  { id:'adjuntos',  label:'📎',            fn: function(d) { return adjuntosIndex[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] ? 1 : 0; }, style:'width:60px;text-align:center' },
+  { id:'uploaders', label:'Adjuntado por', fn: function(d) { return (adjuntosUploaders[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] || []).join(', ').toLowerCase(); } },
+];
+
+function toggleSortDesp(id, e) {
+  var shift = e && e.shiftKey;
+  var idx = sortLevelsDesp.findIndex(function(l) { return l.id === id; });
+  if (shift) { if (idx >= 0) sortLevelsDesp.splice(idx, 1); }
+  else if (idx >= 0) { if (sortLevelsDesp[idx].dir === 'asc') sortLevelsDesp[idx].dir = 'desc'; else sortLevelsDesp.splice(idx, 1); }
+  else { sortLevelsDesp.push({ id: id, dir: 'asc' }); }
+  renderDespachos();
+}
+
+function clearSortDesp() { sortLevelsDesp = []; renderDespachos(); }
+
+function applySortDesp(rows) {
+  if (!sortLevelsDesp.length) return rows;
+  return [].concat(rows).sort(function(a, b) {
+    for (var si = 0; si < sortLevelsDesp.length; si++) {
+      var lvl = sortLevelsDesp[si];
+      var col = null;
+      for (var ci = 0; ci < SORT_COLS_DESP.length; ci++) { if (SORT_COLS_DESP[ci].id === lvl.id) { col = SORT_COLS_DESP[ci]; break; } }
+      if (!col) continue;
+      var va = col.fn(a), vb = col.fn(b);
+      var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+      if (cmp !== 0) return lvl.dir === 'asc' ? cmp : -cmp;
+    }
+    return 0;
+  });
+}
+
+function renderDespHeader() {
+  var cols = [
+    { label:'#', id:null, style:'width:30px' },
+  ];
+  SORT_COLS_DESP.forEach(function(c) {
+    cols.push({ label: c.label, id: c.id, style: c.style || '' });
+  });
+  cols.push({ label:'Acción', id:null, style:'width:90px' });
+
+  document.getElementById('desp-thead').innerHTML = cols.map(function(col) {
+    if (!col.id) return '<th' + (col.style ? ' style="' + col.style + '"' : '') + '>' + col.label + '</th>';
+    var lvlIdx = sortLevelsDesp.findIndex(function(l) { return l.id === col.id; });
+    var active = lvlIdx >= 0;
+    var lvl = active ? sortLevelsDesp[lvlIdx] : null;
+    var dirCls = active ? (lvl.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    var badge = sortLevelsDesp.length > 1 && active ? '<span class="sort-badge">' + (lvlIdx+1) + '</span>' : '';
+    return '<th class="sortable ' + dirCls + '"' + (col.style ? ' style="' + col.style + '"' : '') + ' onclick="toggleSortDesp(\'' + col.id + '\',event)">' + col.label + badge + '<span class="sort-icon"></span></th>';
+  }).join('');
+
+  var btn = document.getElementById('btn-clear-sort-desp');
+  if (btn) btn.style.display = sortLevelsDesp.length ? 'inline-block' : 'none';
+}
+
 function buildDespachos() {
   var remMap = {};
   pedidos.forEach(function(p) {
@@ -4977,10 +5037,11 @@ function buildDespachos() {
 }
 
 function renderDespachos() {
+  renderDespHeader();
   var buscar = (document.getElementById('desp-f-buscar').value || '').toLowerCase().trim();
   var empresa = document.getElementById('desp-f-empresa').value;
 
-  despachosFiltered = despachosData.filter(function(d) {
+  var filtered = despachosData.filter(function(d) {
     if (empresa && d.empresa !== empresa) return false;
     if (buscar) {
       var txt = (d.cliente + ' ' + d.remision + ' ' + d.consecutivo).toLowerCase();
@@ -4988,6 +5049,7 @@ function renderDespachos() {
     }
     return true;
   });
+  despachosFiltered = applySortDesp(filtered);
 
   document.getElementById('desp-count').textContent = '(' + despachosFiltered.length + ' remisiones)';
 
