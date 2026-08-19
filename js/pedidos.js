@@ -3592,21 +3592,33 @@ function _populateSucursalDL(clienteName) {
   _sucursalMap = {};
   if (!clienteName) return;
   var normCli = clienteName.toLowerCase().trim();
+  var munCount = {};
   pedidos.forEach(function(p) {
     if ((p.Cliente || '').toLowerCase().trim() !== normCli) return;
+    var mun = (p.Municipio || '').trim();
+    if (!mun) return;
+    var mk = mun.toLowerCase();
+    if (!munCount[mk]) munCount[mk] = [];
     var dir = (p.Direccion_Envio || '').trim();
-    if (!dir) return;
     var suc = (p.Sucursal || '').trim();
-    var label = suc || dir;
-    var key = label.toLowerCase();
-    if (seen[key]) return;
-    seen[key] = true;
-    opts.push(label);
-    _sucursalMap[key] = {
-      direccion: dir,
-      municipio: (p.Municipio || '').trim(),
-      departamento: (p.Departamento || '').trim()
-    };
+    var exists = munCount[mk].some(function(e) { return e.dir === dir; });
+    if (!exists) munCount[mk].push({ dir: dir, suc: suc, mun: mun, dep: (p.Departamento || '').trim() });
+  });
+  Object.keys(munCount).forEach(function(mk) {
+    var entries = munCount[mk];
+    var needDisambig = entries.length > 1;
+    entries.forEach(function(e) {
+      var label = e.suc || (needDisambig && e.dir ? e.mun + ' – ' + e.dir : e.mun);
+      var key = label.toLowerCase();
+      if (seen[key]) return;
+      seen[key] = true;
+      opts.push(label);
+      _sucursalMap[key] = {
+        direccion: e.dir,
+        municipio: e.mun,
+        departamento: e.dep
+      };
+    });
   });
   var dl = document.getElementById('dl-sucursal');
   if (dl) dl.innerHTML = opts.map(function(o) {
