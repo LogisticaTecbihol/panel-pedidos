@@ -597,6 +597,60 @@ function _mergeClientesEmbedded() {
   });
 }
 
+// ── Lista de precios IAS (fuente: lista_precios_ias_19082026.xlsx) ──
+// [producto, precio_dealer, precio_mayorista]
+var _PRECIOS_IAS_RAW = [
+  ['AJO AJI ORTIGA X 250 ML',12500,9250],
+  ['AJO AJI ORTIGA X GALON',164084,121545],
+  ['AJO AJI ORTIGA X LITRO',43251,32038],
+  ['AJO AJI ORTIGA X BIDON 20 LITROS',779615,577500],
+  ['COOL PLANT X 25 KILOS',621622,460000],
+  ['COOL PLANT X KILO',27027,20000],
+  ['GREEN FUNGY-BAC X 250 ML',14527,10750],
+  ['GREEN FUNGY-BAC X GALON',184613,136752],
+  ['GREEN FUNGY-BAC X 500 ML',26351,19500],
+  ['GREEN FUNGY-BAC X LITRO',47252,35002],
+  ['GREEN FUNGY-BAC X BIDON 20 LITROS',882889,654000],
+  ['ACTIV CEL X BIDON 20 LITROS',830068,614250],
+  ['ACTIV CEL X GALON',175405,129800],
+  ['ACTIV CEL X LITRO',54054,40000],
+  ['ACTIV CEL X 250 ML',13378,9900],
+  ['NUTRI ROOTS X 250 ML',17432,12900],
+  ['NUTRI ROOTS X BIDON 20 LITROS',989189,732000],
+  ['NUTRI ROOTS X GALON',203243,150400],
+  ['NUTRI ROOTS X LITRO',53514,39600],
+  ['ACTIV K 50 X LITRO',57230,42350],
+  ['ACTIV K 50 X 250 ML',18378,13600],
+  ['ACTIV K 50 X GALON',218108,161400],
+  ['ACTIV K 50 X BIDON 20 LITROS',1063514,787000],
+  ['AR-SIL-TRU X LITRO',74324,55000],
+  ['AR-SIL-TRU X GALON',286486,212000],
+  ['NITRATO DE ZINC X BIDON 20 LITROS',635135,470000],
+  ['NITRATO DE ZINC X GALON',127027,94000],
+  ['NITRATO DE ZINC X LITRO',33784,25000],
+  ['UREA FOSFATO X KILO',7432,5500],
+  ['CREOLINA X 20 LITROS',482365,356950],
+  ['CREOLINA X 250 ML',10405,7700],
+  ['CREOLINA X 500 ML',19176,14190],
+  ['CREOLINA X GALON',103311,76450],
+  ['CREOLINA X LITRO',29730,22000],
+  ['DEKATIN X LITRO',70270,52000],
+  ['DEKATIN X GALON',267568,198000],
+  ['DEKATIN X BIDON 20 LITROS',1324324,980000],
+  ['HUMI 61 X KILO',12162,9000],
+  ['HUMI 61 X 25 KILOS',279730,207000],
+  ['VASTAGO 9-13-28 PRODUCCION X 25 KILOS',12582,9311],
+  ['VASTAGO 9-13-28 PRODUCCION X KILO',290236,214774],
+  ['AGROHUMICOL X BIDON 20 LITROS',175676,130000],
+  ['AGROHUMICOL X GALON',43243,32000],
+  ['AGROHUMICOL X LITRO',12162,9000],
+  ['URSUDOL X BLT 25 KILOS',159179,117793],
+  ['URSUDOL X KILOS',7340,5432],
+  ['20-20-20 DESARROLLO X KILO',12116,8966],
+  ['20-20-20 DESARROLLO X 25 KILOS',278576,206146],
+  ['25-4-24 PRODUCCION X KILO',11299,8361]
+];
+
 // ── Lista de precios PARCELAR (fuente: lista_precios_parcelar_18082026.xlsx) ──
 // [producto, precio_dealer, precio_mayorista]
 var _PRECIOS_PARCELAR_RAW = [
@@ -733,21 +787,28 @@ function _mergePreciosEmbedded() {
   productosCache.forEach(function(p) {
     existingM[_normStr(p.producto)] = true;
   });
-  _PRECIOS_PARCELAR_RAW.forEach(function(r) {
-    var prod = r[0], dealer = r[1], mayo = r[2];
-    var prodNorm = _normStr(prod);
-    if (!existingM[prodNorm]) {
-      existingM[prodNorm] = true;
-      productosCache.push({ producto: prod, presentacion: '', empresa: empresa });
-    }
-    if (dealer) {
-      var kd = _normStr(empresa) + '||dealer||' + prodNorm;
-      if (!existingP[kd]) { existingP[kd] = true; listaPreciosCache.push({ Empresa: empresa, Tipo_Precio: 'Dealer', Producto: prod, Precio: dealer }); }
-    }
-    if (mayo) {
-      var km = _normStr(empresa) + '||mayorista||' + prodNorm;
-      if (!existingP[km]) { existingP[km] = true; listaPreciosCache.push({ Empresa: empresa, Tipo_Precio: 'Mayorista', Producto: prod, Precio: mayo }); }
-    }
+  var sets = [
+    { raw: _PRECIOS_PARCELAR_RAW, empresa: 'PARCELAR DE COLOMBIA SAS' },
+    { raw: _PRECIOS_IAS_RAW, empresa: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS' }
+  ];
+  sets.forEach(function(set) {
+    var emp = set.empresa;
+    set.raw.forEach(function(r) {
+      var prod = r[0], dealer = r[1], mayo = r[2];
+      var prodNorm = _normStr(prod);
+      if (!existingM[prodNorm]) {
+        existingM[prodNorm] = true;
+        productosCache.push({ producto: prod, presentacion: '', empresa: emp });
+      }
+      if (dealer) {
+        var kd = _normStr(emp) + '||dealer||' + prodNorm;
+        if (!existingP[kd]) { existingP[kd] = true; listaPreciosCache.push({ Empresa: emp, Tipo_Precio: 'Dealer', Producto: prod, Precio: dealer }); }
+      }
+      if (mayo) {
+        var km = _normStr(emp) + '||mayorista||' + prodNorm;
+        if (!existingP[km]) { existingP[km] = true; listaPreciosCache.push({ Empresa: emp, Tipo_Precio: 'Mayorista', Producto: prod, Precio: mayo }); }
+      }
+    });
   });
 }
 
@@ -1512,10 +1573,16 @@ async function openDetail(idx) {
         nlProd.value = p.producto || '';
         var nlPres = document.getElementById('nl-presentacion');
         if (nlPres) nlPres.value = p.presentacion || '';
-        var precio = _lookupPrecio(c.Nombre_Empresa, document.getElementById('md-precio').value.trim(), p.producto);
-        if (precio !== null) {
-          document.getElementById('nl-vunitario').value = precio;
+        var nlBonif = document.getElementById('nl-bonificado');
+        if (nlBonif && nlBonif.checked) {
+          document.getElementById('nl-vunitario').value = 1;
           calcNewLineTotal();
+        } else {
+          var precio = _lookupPrecio(c.Nombre_Empresa, document.getElementById('md-precio').value.trim(), p.producto);
+          if (precio !== null) {
+            document.getElementById('nl-vunitario').value = precio;
+            calcNewLineTotal();
+          }
         }
       }
     });
@@ -2743,12 +2810,16 @@ function renderEditLines() {
           var presInputs = document.querySelectorAll('.ed-pres');
           var idx = [].slice.call(document.querySelectorAll('.ed-prod')).indexOf(input);
           if (idx >= 0 && presInputs[idx]) presInputs[idx].value = p.presentacion || '';
-          var precio = _lookupPrecio(emp, document.getElementById('ed-precio').value.trim(), p.producto);
-          if (precio !== null) {
+          var bonifInputs = document.querySelectorAll('.ed-bonif');
+          var esBonif = idx >= 0 && bonifInputs[idx] && bonifInputs[idx].checked;
+          if (esBonif) {
             var vunis = document.querySelectorAll('.ed-vuni');
-            if (idx >= 0 && vunis[idx]) {
-              vunis[idx].value = precio;
-              updateLineTotal(idx);
+            if (idx >= 0 && vunis[idx]) { vunis[idx].value = 1; updateLineTotal(idx); }
+          } else {
+            var precio = _lookupPrecio(emp, document.getElementById('ed-precio').value.trim(), p.producto);
+            if (precio !== null) {
+              var vunis = document.querySelectorAll('.ed-vuni');
+              if (idx >= 0 && vunis[idx]) { vunis[idx].value = precio; updateLineTotal(idx); }
             }
           }
         }
@@ -3519,7 +3590,15 @@ function _applyPrecioToLine(lineIdx) {
   var tipoPrecio = document.getElementById('nv-precio').value.trim();
   var prodInputs = document.querySelectorAll('.nv-prod');
   var vuniInputs = document.querySelectorAll('.nv-vuni');
+  var bonifInputs = document.querySelectorAll('.nv-bonif');
   if (!prodInputs[lineIdx] || !vuniInputs[lineIdx]) return;
+  var esBonif = bonifInputs[lineIdx] && bonifInputs[lineIdx].checked;
+  if (esBonif) {
+    vuniInputs[lineIdx].value = 1;
+    syncNuevoFromDOM();
+    updateNuevoLine(lineIdx);
+    return;
+  }
   var producto = prodInputs[lineIdx].value.trim();
   var precio = _lookupPrecio(empresa, tipoPrecio, producto);
   if (precio !== null) {
@@ -4042,8 +4121,10 @@ function onNvBonifChange(i, checked) {
   if (checked) {
     var vunis = document.querySelectorAll('.nv-vuni');
     if (vunis[i]) vunis[i].value = 1;
+    updateNuevoLine(i);
+  } else {
+    _applyPrecioToLine(i);
   }
-  updateNuevoLine(i);
 }
 
 function updateNuevoTotal() {

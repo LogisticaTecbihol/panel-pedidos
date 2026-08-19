@@ -294,16 +294,26 @@ function handleImportExcel(input) {
   reader.readAsArrayBuffer(file);
 }
 
+var importMultiTipo = false;
+
 function parseImportRows(rows, fileName) {
   var headerIdx = -1;
   var colProducto = -1, colPrecio = -1, colProveedor = -1;
+  var precioCols = [];
   for (var r = 0; r < Math.min(rows.length, 10); r++) {
     var row = rows[r] || [];
     for (var c = 0; c < row.length; c++) {
       var val = String(row[c] || '').toUpperCase().trim();
       if (val.indexOf('PROVEEDOR') >= 0) colProveedor = c;
       if (val.indexOf('PRODUCTO') >= 0) colProducto = c;
-      if (val.indexOf('PRECIO') >= 0) colPrecio = c;
+      if (val.indexOf('PRECIO') >= 0) {
+        var tipo = 'Dealer';
+        if (val.indexOf('MAYORISTA') >= 0) tipo = 'Mayorista';
+        else if (val.indexOf('PUBLICO') >= 0 || val.indexOf('PÚBLICO') >= 0) tipo = 'Público';
+        else if (val.indexOf('DEALER') >= 0) tipo = 'Dealer';
+        precioCols.push({ col: c, tipo: tipo });
+        if (colPrecio < 0) colPrecio = c;
+      }
     }
     if (colProducto >= 0 && colPrecio >= 0) { headerIdx = r; break; }
   }
@@ -312,6 +322,7 @@ function parseImportRows(rows, fileName) {
     colProveedor = 0;
     colProducto = 1;
     colPrecio = 2;
+    precioCols = [{ col: 2, tipo: 'Dealer' }];
     headerIdx = 2;
     for (var r2 = 0; r2 < Math.min(rows.length, 10); r2++) {
       var row2 = rows[r2] || [];
@@ -325,16 +336,24 @@ function parseImportRows(rows, fileName) {
     }
   }
 
+  importMultiTipo = precioCols.length > 1;
   importRows = [];
   var hasProvCol = colProveedor >= 0;
   for (var i = headerIdx + 1; i < rows.length; i++) {
     var row = rows[i] || [];
     var producto = String(row[colProducto] || '').trim();
     while (producto.indexOf('  ') >= 0) producto = producto.replace(/  /g, ' ');
-    var precio = Number(row[colPrecio]) || 0;
-    if (!producto || !precio) continue;
+    if (!producto) continue;
     var prov = hasProvCol ? String(row[colProveedor] || '').trim() : '';
-    importRows.push({ producto: producto, precio: precio, proveedor: prov });
+    if (importMultiTipo) {
+      precioCols.forEach(function(pc) {
+        var precio = Number(row[pc.col]) || 0;
+        if (precio) importRows.push({ producto: producto, precio: precio, proveedor: prov, tipo: pc.tipo });
+      });
+    } else {
+      var precio = Number(row[precioCols[0] ? precioCols[0].col : colPrecio]) || 0;
+      if (precio) importRows.push({ producto: producto, precio: precio, proveedor: prov });
+    }
   }
 
   if (!importRows.length) {
@@ -345,21 +364,41 @@ function parseImportRows(rows, fileName) {
   _populateEdEmpresa('imp-empresa');
   document.getElementById('imp-archivo').textContent = fileName;
   document.getElementById('imp-proveedor').value = '';
-  document.getElementById('imp-summary').textContent = importRows.length + ' productos encontrados en el archivo';
+  var impTipoWrap = document.getElementById('imp-tipo').parentElement;
+  if (importMultiTipo) {
+    impTipoWrap.style.display = 'none';
+    var tipos = {};
+    importRows.forEach(function(r) { if (r.tipo) tipos[r.tipo] = true; });
+    document.getElementById('imp-summary').textContent = importRows.length + ' precios encontrados (' + Object.keys(tipos).join(' + ') + ')';
+  } else {
+    impTipoWrap.style.display = '';
+    document.getElementById('imp-summary').textContent = importRows.length + ' productos encontrados en el archivo';
+  }
+  var showTipoCol = importMultiTipo;
   document.getElementById('imp-lines').innerHTML = importRows.map(function(r, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
       '<td>' + escHtml(r.proveedor || '') + '</td>' +
       '<td>' + escHtml(r.producto) + '</td>' +
+      (showTipoCol ? '<td>' + escHtml(r.tipo || '') + '</td>' : '') +
       '<td class="money">' + fmtMoney(r.precio) + '</td>' +
       '</tr>';
   }).join('');
+  var impThead = document.querySelector('#import-overlay .prod-table thead tr');
+  if (impThead) {
+    impThead.innerHTML = '<th>#</th><th>Proveedor</th><th>Producto</th>' +
+      (showTipoCol ? '<th>Tipo Precio</th>' : '') +
+      '<th class="money">Precio</th>';
+  }
   document.getElementById('import-overlay').style.display = 'flex';
 }
 
 function closeImport() {
   document.getElementById('import-overlay').style.display = 'none';
   importRows = [];
+  importMultiTipo = false;
+  var impTipoWrap = document.getElementById('imp-tipo').parentElement;
+  if (impTipoWrap) impTipoWrap.style.display = '';
 }
 
 async function confirmImport() {
@@ -369,7 +408,7 @@ async function confirmImport() {
   var reemplazar = document.getElementById('imp-reemplazar').checked;
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
-  if (!tipo) { showToast('Selecciona el tipo de precio', '#e74c3c'); return; }
+  if (!importMultiTipo && !tipo) { showToast('Selecciona el tipo de precio', '#e74c3c'); return; }
   if (!importRows.length) { showToast('No hay productos para importar', '#e74c3c'); return; }
 
   var btn = document.getElementById('btn-import');
@@ -378,34 +417,40 @@ async function confirmImport() {
 
   try {
     if (reemplazar) {
-      await apiPost({
-        action: 'eliminarListaPreciosBulk',
-        Empresa: empresa,
-        Tipo_Precio: tipo
-      });
+      if (importMultiTipo) {
+        var tiposSet = {};
+        importRows.forEach(function(r) { if (r.tipo) tiposSet[r.tipo] = true; });
+        var tiposArr = Object.keys(tiposSet);
+        for (var t = 0; t < tiposArr.length; t++) {
+          await apiPost({ action: 'eliminarListaPreciosBulk', Empresa: empresa, Tipo_Precio: tiposArr[t] });
+        }
+      } else {
+        await apiPost({ action: 'eliminarListaPreciosBulk', Empresa: empresa, Tipo_Precio: tipo });
+      }
     }
 
-    // Group by proveedor for correct upsert
-    var byProv = {};
+    // Group by proveedor+tipo for correct upsert
+    var byKey = {};
     importRows.forEach(function(r) {
       var prov = r.proveedor || provGlobal || '';
-      if (!byProv[prov]) byProv[prov] = [];
-      byProv[prov].push(r);
+      var t = importMultiTipo ? (r.tipo || 'Dealer') : tipo;
+      var key = prov + '||' + t;
+      if (!byKey[key]) byKey[key] = { prov: prov, tipo: t, items: [] };
+      byKey[key].items.push(r);
     });
 
     var chunkSize = 50;
     var total = 0;
-    var provKeys = Object.keys(byProv);
-    for (var pk = 0; pk < provKeys.length; pk++) {
-      var prov = provKeys[pk];
-      var items = byProv[prov];
-      for (var i = 0; i < items.length; i += chunkSize) {
-        var chunk = items.slice(i, i + chunkSize);
+    var keys = Object.keys(byKey);
+    for (var k = 0; k < keys.length; k++) {
+      var group = byKey[keys[k]];
+      for (var i = 0; i < group.items.length; i += chunkSize) {
+        var chunk = group.items.slice(i, i + chunkSize);
         var result = await apiPost({
           action: 'agregarListaPrecio',
           Empresa: empresa,
-          Proveedor: prov,
-          Tipo_Precio: tipo,
+          Proveedor: group.prov,
+          Tipo_Precio: group.tipo,
           lineas: chunk.map(function(r) {
             return { Producto: r.producto, Precio: r.precio };
           })
