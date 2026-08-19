@@ -67,9 +67,15 @@ async function apiGet(action, opts) {
   var cols = (opts && opts.columns) || '*';
   try {
     if (action === 'getPedidos') {
-      var res = await _sb.from('Pedidos').select(cols).order('id');
-      if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, pedidos: _addRow(res.data) };
+      var all = [], from = 0, size = 5000;
+      while (true) {
+        var res = await _sb.from('Pedidos').select(cols).order('id').range(from, from + size - 1);
+        if (res.error) return { ok: false, error: res.error.message };
+        all = all.concat(res.data);
+        if (res.data.length < size) break;
+        from += size;
+      }
+      return { ok: true, pedidos: _addRow(all) };
     }
     if (action === 'getConsecutivos') {
       var res = await _sb.from('Consecutivos').select(cols).order('"N"');
