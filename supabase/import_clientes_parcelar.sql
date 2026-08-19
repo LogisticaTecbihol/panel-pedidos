@@ -8,13 +8,23 @@ ALTER TABLE "ClientesUnicos" ADD COLUMN IF NOT EXISTS "Direccion_Envio" text DEF
 -- 2) Limpiar clientes PARCELAR existentes (antes de cambiar indice)
 DELETE FROM "ClientesUnicos" WHERE "Nombre_Empresa" = 'PARCELAR';
 
--- 3) Cambiar indice unico para permitir multiples sucursales por cliente
+-- 3) Eliminar duplicados de TODAS las empresas (conservar el de menor id)
+DELETE FROM "ClientesUnicos" a
+  USING "ClientesUnicos" b
+  WHERE a.id > b.id
+    AND a."Nombre_Empresa" = b."Nombre_Empresa"
+    AND a."Identificacion" = b."Identificacion"
+    AND a."Municipio" = b."Municipio"
+    AND a."Identificacion" IS NOT NULL
+    AND a."Identificacion" != '';
+
+-- 4) Cambiar indice unico para permitir multiples sucursales por cliente
 DROP INDEX IF EXISTS "ClientesUnicos_empresa_nit_uq";
 CREATE UNIQUE INDEX IF NOT EXISTS "ClientesUnicos_empresa_nit_mun_uq"
   ON "ClientesUnicos" ("Nombre_Empresa", "Identificacion", "Municipio")
   WHERE "Identificacion" IS NOT NULL AND "Identificacion" != '';
 
--- 4) Insertar clientes PARCELAR desde Excel maestro
+-- 5) Insertar clientes PARCELAR desde Excel maestro
 
 INSERT INTO "ClientesUnicos" ("Cliente", "Identificacion", "Tipo_Identificacion", "Telefono", "Direccion", "Direccion_Envio", "Municipio", "Departamento", "Nombre_Empresa", "Cupo_Credito", "Plazo_Pago", "Lista_Precio") VALUES ('AGRICOLA CADENA SAS', '900983749-1', 'NIT', '3229475308', 'calle 4 # 7a-26', 'almacen zipaquira', 'Zipaquirá', 'CUNDINAMARCA', 'PARCELAR', '100000000', '120', 'Dealer');
 INSERT INTO "ClientesUnicos" ("Cliente", "Identificacion", "Tipo_Identificacion", "Telefono", "Direccion", "Direccion_Envio", "Municipio", "Departamento", "Nombre_Empresa", "Cupo_Credito", "Plazo_Pago", "Lista_Precio") VALUES ('AGRICOLA CADENA SAS', '900983749-1', 'NIT', '3229475308', 'calle 4 # 7a-26', 'almacen la paz zipaquira', 'la paz ( zipaquira)', 'CUNDINAMARCA', 'PARCELAR', '', '120', 'Dealer');
