@@ -3984,9 +3984,12 @@ function _toggleBodegaField(prefix, empresa) {
   var wrap = document.getElementById(prefix + '-bodega-wrap');
   if (!wrap) return;
   wrap.style.display = (getSigla(empresa) === 'PARCELAR') ? '' : 'none';
+  var sel = document.getElementById(prefix + '-bodega-facturacion');
+  if (!sel) return;
   if (wrap.style.display === 'none') {
-    var sel = document.getElementById(prefix + '-bodega-facturacion');
-    if (sel) sel.value = '';
+    sel.value = '';
+  } else if (!sel.value) {
+    sel.value = 'Productos Buenos';
   }
 }
 
@@ -5216,10 +5219,10 @@ function generarPedidoPDF(data) {
     ['Plazo de Pago', data.plazo],
     ['Precio Facturación', data.precio],
     ['Dir. Envío', data.direccion],
-    ['Bodega Fact.', data.bodega_facturacion || ''],
     ['Consignación', data.consignacion || ''],
     ['Observaciones', data.observaciones],
   ];
+  if (data.bodega_facturacion) right.splice(4, 0, ['Bodega Fact.', data.bodega_facturacion]);
 
   var totalW = pw - 28;
   var leftBlockW = totalW * 0.58;
