@@ -1018,6 +1018,7 @@ function rebuildConsecs() {
     if (!seen[k]) seen[k] = {
       Nombre_Empresa: p.Nombre_Empresa, Consecutivo: p.Consecutivo,
       Fecha_Pedido: p.Fecha_Pedido, Cliente: p.Cliente, NIT: p.NIT,
+      Sucursal: p.Sucursal,
       Telefono: p.Telefono, Direccion_Envio: p.Direccion_Envio,
       Comercial: p.Comercial, Municipio: p.Municipio, Departamento: p.Departamento,
       Plazo_Pago: p.Plazo_Pago, Precio_Facturacion: p.Precio_Facturacion, Total_Orden: p.Total_Orden,
@@ -1411,6 +1412,7 @@ async function openDetail(idx) {
   document.getElementById('md-precio').value = c.Precio_Facturacion || '';
   document.getElementById('md-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('md-nit-adicional').value = c.NIT_Adicional || '';
+  document.getElementById('md-sucursal').value = c.Sucursal || '';
   document.getElementById('md-consignacion').value = c.Consignacion || 'No';
   document.getElementById('md-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('md', c.Nombre_Empresa);
@@ -2258,6 +2260,7 @@ async function guardarTodo() {
     Precio_Facturacion: document.getElementById('md-precio').value.trim(),
     Facturar_A: document.getElementById('md-facturar-a').value.trim(),
     NIT_Adicional: document.getElementById('md-nit-adicional').value.trim(),
+    Sucursal: document.getElementById('md-sucursal').value.trim(),
     Consignacion: document.getElementById('md-consignacion').value,
     Bodega_Facturacion: document.getElementById('md-bodega-facturacion').value,
     Total_Orden: detailWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
@@ -2335,6 +2338,7 @@ async function guardarTodo() {
         consignacion: hdr.Consignacion,
         facturar_a: hdr.Facturar_A,
         nit_adicional: hdr.NIT_Adicional,
+        sucursal: hdr.Sucursal,
         observaciones: obs,
         remision: rem,
         fecha_entrega: fecha,
@@ -2651,6 +2655,7 @@ async function openEdit(idx) {
   document.getElementById('ed-precio').value = c.Precio_Facturacion || '';
   document.getElementById('ed-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('ed-nit-adicional').value = c.NIT_Adicional || '';
+  document.getElementById('ed-sucursal').value = c.Sucursal || '';
   document.getElementById('ed-consignacion').value = c.Consignacion || 'No';
   document.getElementById('ed-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('ed', c.Nombre_Empresa);
@@ -2826,6 +2831,7 @@ async function saveEdit() {
     Precio_Facturacion: document.getElementById('ed-precio').value.trim(),
     Facturar_A: document.getElementById('ed-facturar-a').value.trim(),
     NIT_Adicional: document.getElementById('ed-nit-adicional').value.trim(),
+    Sucursal: document.getElementById('ed-sucursal').value.trim(),
     Consignacion: document.getElementById('ed-consignacion').value,
     Bodega_Facturacion: document.getElementById('ed-bodega-facturacion').value,
     Total_Orden: editWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
@@ -3651,6 +3657,7 @@ async function openNuevoPedido() {
   }
   document.getElementById('nv-cliente').value = '';
   document.getElementById('nv-nit').value = '';
+  document.getElementById('nv-sucursal').value = '';
   document.getElementById('nv-comercial').value = '';
   document.getElementById('nv-telefono').value = '';
   document.getElementById('nv-direccion').value = '';
@@ -3766,6 +3773,7 @@ async function openNuevoPedido() {
       }
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
+        if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
         if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
         if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
         if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
@@ -3823,6 +3831,7 @@ async function openNuevoPedido() {
       }
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
+        if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
         if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
         if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
         if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
@@ -4010,6 +4019,7 @@ async function guardarNuevoPedido() {
       fecha_pedido: fecha,
       cliente: cliente,
       nit: document.getElementById('nv-nit').value.trim(),
+      sucursal: document.getElementById('nv-sucursal').value.trim(),
       telefono: document.getElementById('nv-telefono').value.trim(),
       direccion_envio: document.getElementById('nv-direccion').value.trim(),
       municipio: document.getElementById('nv-municipio').value.trim(),
@@ -4040,6 +4050,7 @@ async function guardarNuevoPedido() {
       fecha: fecha,
       cliente: cliente,
       nit: document.getElementById('nv-nit').value.trim(),
+      sucursal: document.getElementById('nv-sucursal').value.trim(),
       telefono: document.getElementById('nv-telefono').value.trim(),
       direccion: document.getElementById('nv-direccion').value.trim(),
       municipio: document.getElementById('nv-municipio').value.trim(),
@@ -4264,6 +4275,7 @@ function exportDetalleExcel() {
     return {
       'Empresa': getSigla(p.Nombre_Empresa),
       'Cliente': p.Cliente || '',
+      'Sucursal': p.Sucursal || '',
       'Consecutivo': p.Consecutivo || '',
       'Fecha Pedido': p.Fecha_Pedido ? new Date(p.Fecha_Pedido) : '',
       'Producto': p.Producto || '',
@@ -4434,6 +4446,7 @@ function _exportarRemisionExcelEspecifica(rem) {
   rows.push(['NIT', document.getElementById('md-nit').value.trim() || c.NIT || '']);
   rows.push(['Comercial', document.getElementById('md-comercial').value.trim() || c.Comercial || '']);
   rows.push(['Telefono', document.getElementById('md-telefono').value.trim() || c.Telefono || '']);
+  rows.push(['Sucursal', document.getElementById('md-sucursal').value.trim() || c.Sucursal || '']);
   rows.push(['Direccion', c.Direccion_Envio || '']);
   rows.push(['Municipio', document.getElementById('md-municipio').value.trim() || c.Municipio || '']);
   rows.push(['Departamento', document.getElementById('md-departamento').value.trim() || c.Departamento || '']);
@@ -4563,6 +4576,7 @@ function _exportarRemisionEspecifica(rem, opts) {
     bodega_facturacion: (document.getElementById('md-bodega-facturacion') && document.getElementById('md-bodega-facturacion').value) || c.Bodega_Facturacion || '',
     facturar_a: document.getElementById('md-facturar-a') ? (document.getElementById('md-facturar-a').value.trim() || c.Facturar_A || '') : (c.Facturar_A || ''),
     nit_adicional: document.getElementById('md-nit-adicional') ? (document.getElementById('md-nit-adicional').value.trim() || c.NIT_Adicional || '') : (c.NIT_Adicional || ''),
+    sucursal: document.getElementById('md-sucursal') ? (document.getElementById('md-sucursal').value.trim() || c.Sucursal || '') : (c.Sucursal || ''),
     observaciones: obsPed,
     remision: rem.remision,
     fecha_entrega: rem.fecha,
@@ -4670,6 +4684,7 @@ function _dataPedidoDesdeModal(c) {
     precio: _v('md-precio', c.Precio_Facturacion),
     facturar_a: _v('md-facturar-a', c.Facturar_A || c.Cliente),
     nit_adicional: _v('md-nit-adicional', c.NIT_Adicional),
+    sucursal: _v('md-sucursal', c.Sucursal || ''),
     consignacion: _v('md-consignacion', c.Consignacion || 'No'),
     bodega_facturacion: _v('md-bodega-facturacion', c.Bodega_Facturacion || ''),
     observaciones: obsText,
@@ -4776,6 +4791,7 @@ function generarPedidoPDF(data) {
 
   var left = [
     ['Cliente', data.cliente],
+    ['Sucursal', data.sucursal],
     ['NIT', data.nit],
     ['Facturar a', data.facturar_a && data.facturar_a !== data.cliente ? data.facturar_a : null],
     ['NIT Adicional', data.nit_adicional],

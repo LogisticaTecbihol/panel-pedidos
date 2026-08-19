@@ -158,6 +158,7 @@ function _drawRemisionCopy(doc, data, palette) {
 
   var left = data.left_fields || [
     ['Cliente', data.cliente || ''],
+    ['Sucursal', data.sucursal || ''],
     ['NIT', data.nit || ''],
     ['Comercial', data.comercial || ''],
     ['Telefono', data.telefono || ''],

@@ -291,6 +291,7 @@ async function apiPost(body) {
           NIT_Adicional: body.nit_adicional || '',
           Consignacion: body.consignacion || 'No',
           Bodega_Facturacion: body.bodega_facturacion || '',
+          Sucursal: body.sucursal || '',
           comercial_id: body.comercial_id || null,
           creado_por: _uid()
         });
