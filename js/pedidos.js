@@ -4447,15 +4447,22 @@ function exportOrdenesExcel() {
 
 // ── PDF Export ──
 function closeRemPicker() {
-  var el = document.getElementById('rem-picker');
-  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  ['rem-picker', 'rem-picker-share'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  });
   document.removeEventListener('mousedown', _remPickerOutside, true);
 }
 function _remPickerOutside(ev) {
   var picker = document.getElementById('rem-picker');
+  var pickerShare = document.getElementById('rem-picker-share');
   var btn = document.getElementById('btn-export-rem');
-  if (!picker) return;
-  if (picker.contains(ev.target) || (btn && btn.contains(ev.target))) return;
+  var btnShare = document.getElementById('btn-export-rem-share');
+  var inside = false;
+  [picker, pickerShare, btn, btnShare].forEach(function(el) {
+    if (el && el.contains(ev.target)) inside = true;
+  });
+  if (inside) return;
   closeRemPicker();
 }
 
@@ -4756,13 +4763,22 @@ function exportarRemisionDesdeModal(ev, opts) {
   });
   picker.innerHTML = html;
   picker.style.display = 'block';
+  var sigPicker = (typeof getSigla === 'function' ? getSigla(consecs[activeIdx].Nombre_Empresa) : '') || '';
+  var consPicker = consecs[activeIdx].Consecutivo || '';
   picker.querySelectorAll('.rem-picker-item').forEach(function(el) {
+    var idx = Number(el.getAttribute('data-idx'));
+    var refCheck = (sigPicker ? sigPicker + ' ' : '') + consPicker + ' · Rem ' + remisiones[idx].remision;
+    if (typeof NOTIF !== 'undefined' && NOTIF.fueEnviada && NOTIF.fueEnviada('pedidos', refCheck)) {
+      el.style.opacity = '0.55';
+      el.querySelector('div').insertAdjacentHTML('afterend', '<span style="font-size:0.7rem;color:#27ae60;font-weight:700;margin-left:6px">✅ Enviada</span>');
+    }
     el.addEventListener('mouseover', function() { this.style.background = '#f0f8ff'; });
     el.addEventListener('mouseout', function() { this.style.background = 'white'; });
     el.addEventListener('click', function() {
-      var idx = Number(this.getAttribute('data-idx'));
       closeRemPicker();
-      _exportarRemisionEspecifica(remisiones[idx], opts);
+      var perRemOpts = Object.assign({}, opts);
+      delete perRemOpts.triggerBtn;
+      _exportarRemisionEspecifica(remisiones[idx], perRemOpts);
     });
   });
   setTimeout(function() {

@@ -1486,6 +1486,11 @@ function openTramitarDev(key) {
   _elTRS.readOnly = true; _elTRS.style.background = '#f0f4f8'; _elTRS.placeholder = '(Auto al guardar)';
   var _chkTRS = document.getElementById('tramitar-remision-salida-auto'); if (_chkTRS) _chkTRS.checked = true;
 
+  var _chkIngEn = document.getElementById('tramitar-ingreso-enabled');
+  var _chkSalEn = document.getElementById('tramitar-salida-enabled');
+  if (_chkIngEn) { _chkIngEn.checked = true; toggleTramitarSeccion('ingreso', true); }
+  if (_chkSalEn) { _chkSalEn.checked = true; toggleTramitarSeccion('salida', true); }
+
   renderTramitarTable();
 
   document.getElementById('btn-tramitar-dev').disabled = false;
@@ -1628,6 +1633,20 @@ function buildTramitarProductSearch(lineIdx) {
   });
 }
 
+function toggleTramitarSeccion(tipo, enabled) {
+  var fields = document.getElementById('tramitar-' + tipo + '-fields');
+  var seccion = document.getElementById('tramitar-seccion-' + tipo);
+  if (fields) fields.style.display = enabled ? 'grid' : 'none';
+  if (seccion) seccion.style.opacity = enabled ? '1' : '0.5';
+}
+
+function toggleBulkTramitarSeccion(tipo, enabled) {
+  var fields = document.getElementById('bulk-tramitar-' + tipo + '-fields');
+  var seccion = document.getElementById('bulk-tramitar-seccion-' + tipo);
+  if (fields) fields.style.display = enabled ? 'grid' : 'none';
+  if (seccion) seccion.style.opacity = enabled ? '1' : '0.5';
+}
+
 function closeTramitarDev() {
   document.getElementById('tramitar-dev-overlay').classList.remove('show');
   tramitarDevKey = null;
@@ -1639,14 +1658,16 @@ function closeTramitarDev() {
 document.getElementById('tramitar-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeTramitarDev(); });
 
 async function saveTramitarDev() {
-  var remIngreso = document.getElementById('tramitar-remision-ingreso').value.trim();
-  var bodegaIngreso = document.getElementById('tramitar-bodega-ingreso').value;
-  var fechaIngreso = document.getElementById('tramitar-fecha-ingreso').value;
-  var remSalida = document.getElementById('tramitar-remision-salida').value.trim();
-  var bodegaSalida = document.getElementById('tramitar-bodega-salida').value;
-  var fechaSalida = document.getElementById('tramitar-fecha-salida').value;
-  if (!fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
-  if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
+  var ingresoEnabled = document.getElementById('tramitar-ingreso-enabled').checked;
+  var salidaEnabled = document.getElementById('tramitar-salida-enabled').checked;
+  var remIngreso = ingresoEnabled ? document.getElementById('tramitar-remision-ingreso').value.trim() : '';
+  var bodegaIngreso = ingresoEnabled ? document.getElementById('tramitar-bodega-ingreso').value : '';
+  var fechaIngreso = ingresoEnabled ? document.getElementById('tramitar-fecha-ingreso').value : '';
+  var remSalida = salidaEnabled ? document.getElementById('tramitar-remision-salida').value.trim() : '';
+  var bodegaSalida = salidaEnabled ? document.getElementById('tramitar-bodega-salida').value : '';
+  var fechaSalida = salidaEnabled ? document.getElementById('tramitar-fecha-salida').value : '';
+  if (ingresoEnabled && !fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
+  if (salidaEnabled && !fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
 
   document.querySelectorAll('.tramitar-cant').forEach(function(inp) {
     var i = Number(inp.dataset.line);
@@ -1667,9 +1688,11 @@ async function saveTramitarDev() {
     var payload = {
       action: 'tramitarDevolucion',
       Empresa: empresaDev,
+      generar_remision_ingreso: ingresoEnabled,
       Remision_Ingreso: remIngreso,
       Bodega_Ingreso: bodegaIngreso,
       Fecha_Ingreso: fechaIngreso,
+      generar_remision_salida: salidaEnabled,
       Remision_Salida: remSalida,
       Bodega_Salida: bodegaSalida,
       Fecha_Salida: fechaSalida,
@@ -2162,6 +2185,11 @@ function bulkTramitarNext() {
   document.getElementById('bulk-tramitar-bodega-salida').value = 'Productos Buenos';
   document.getElementById('bulk-tramitar-fecha-salida').value = today();
 
+  var _chkBIngEn = document.getElementById('bulk-tramitar-ingreso-enabled');
+  var _chkBSalEn = document.getElementById('bulk-tramitar-salida-enabled');
+  if (_chkBIngEn) { _chkBIngEn.checked = true; toggleBulkTramitarSeccion('ingreso', true); }
+  if (_chkBSalEn) { _chkBSalEn.checked = true; toggleBulkTramitarSeccion('salida', true); }
+
   document.getElementById('btn-bulk-tramitar-dev').disabled = false;
   document.getElementById('btn-bulk-tramitar-dev').textContent = '✓ Tramitar ' + bulkTramitarData.keys.length + ' devolución(es)';
 }
@@ -2183,15 +2211,17 @@ function closeBulkTramitarDev() {
 document.getElementById('bulk-tramitar-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeBulkTramitarDev(); });
 
 async function saveBulkTramitarDev() {
-  var remIngreso = document.getElementById('bulk-tramitar-remision-ingreso').value.trim();
-  var bodegaIngreso = document.getElementById('bulk-tramitar-bodega-ingreso').value;
-  var fechaIngreso = document.getElementById('bulk-tramitar-fecha-ingreso').value;
-  var remSalida = document.getElementById('bulk-tramitar-remision-salida').value.trim();
-  var bodegaSalida = document.getElementById('bulk-tramitar-bodega-salida').value;
-  var fechaSalida = document.getElementById('bulk-tramitar-fecha-salida').value;
+  var ingresoEnabled = document.getElementById('bulk-tramitar-ingreso-enabled').checked;
+  var salidaEnabled = document.getElementById('bulk-tramitar-salida-enabled').checked;
+  var remIngreso = ingresoEnabled ? document.getElementById('bulk-tramitar-remision-ingreso').value.trim() : '';
+  var bodegaIngreso = ingresoEnabled ? document.getElementById('bulk-tramitar-bodega-ingreso').value : '';
+  var fechaIngreso = ingresoEnabled ? document.getElementById('bulk-tramitar-fecha-ingreso').value : '';
+  var remSalida = salidaEnabled ? document.getElementById('bulk-tramitar-remision-salida').value.trim() : '';
+  var bodegaSalida = salidaEnabled ? document.getElementById('bulk-tramitar-bodega-salida').value : '';
+  var fechaSalida = salidaEnabled ? document.getElementById('bulk-tramitar-fecha-salida').value : '';
 
-  if (!fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
-  if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
+  if (ingresoEnabled && !fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
+  if (salidaEnabled && !fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
 
   document.querySelectorAll('.bulk-cant-dev').forEach(function(inp) {
     var idx = Number(inp.dataset.idx);
@@ -2225,9 +2255,12 @@ async function saveBulkTramitarDev() {
     try {
       var result = await apiPost({
         action: 'tramitarDevolucion',
+        Empresa: lines[0].Empresa || '',
+        generar_remision_ingreso: ingresoEnabled,
         Remision_Ingreso: remIngreso,
         Bodega_Ingreso: bodegaIngreso,
         Fecha_Ingreso: fechaIngreso,
+        generar_remision_salida: salidaEnabled,
         Remision_Salida: remSalida,
         Bodega_Salida: bodegaSalida,
         Fecha_Salida: fechaSalida,
