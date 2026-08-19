@@ -15,13 +15,15 @@ DELETE FROM "ClientesUnicos" a
     AND a."Nombre_Empresa" = b."Nombre_Empresa"
     AND a."Identificacion" = b."Identificacion"
     AND a."Municipio" = b."Municipio"
+    AND COALESCE(a."Direccion_Envio", '') = COALESCE(b."Direccion_Envio", '')
     AND a."Identificacion" IS NOT NULL
     AND a."Identificacion" != '';
 
 -- 4) Cambiar indice unico para permitir multiples sucursales por cliente
 DROP INDEX IF EXISTS "ClientesUnicos_empresa_nit_uq";
-CREATE UNIQUE INDEX IF NOT EXISTS "ClientesUnicos_empresa_nit_mun_uq"
-  ON "ClientesUnicos" ("Nombre_Empresa", "Identificacion", "Municipio")
+DROP INDEX IF EXISTS "ClientesUnicos_empresa_nit_mun_uq";
+CREATE UNIQUE INDEX "ClientesUnicos_empresa_nit_mun_dir_uq"
+  ON "ClientesUnicos" ("Nombre_Empresa", "Identificacion", "Municipio", "Direccion_Envio")
   WHERE "Identificacion" IS NOT NULL AND "Identificacion" != '';
 
 -- 5) Insertar clientes PARCELAR desde Excel maestro
