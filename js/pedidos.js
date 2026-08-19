@@ -3976,7 +3976,7 @@ function actualizarConsecutivoNuevo() {
 }
 
 function _normBodegaFacturacion(v) {
-  if (v === 'Bodega principal') return 'Productos Buenos';
+  if (v === 'Productos Buenos' || v === 'Bodega principal') return 'Bodega Principal';
   return v;
 }
 
@@ -3989,7 +3989,7 @@ function _toggleBodegaField(prefix, empresa) {
   if (wrap.style.display === 'none') {
     sel.value = '';
   } else if (!sel.value) {
-    sel.value = 'Productos Buenos';
+    sel.value = 'Bodega Principal';
   }
 }
 
