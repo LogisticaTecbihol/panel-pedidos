@@ -580,6 +580,7 @@ function renderKardexTable() {
     var salidaStr = m.tipo === 'Salida' ? '<span style="color:#e74c3c;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#2c3e50';
     var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var pdfBtn = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'kx\')" title="Exportar PDF remision" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 4px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button>' : '';
     var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.producto || '').replace(/"/g, '&quot;') + '">' + (m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.modulo === 'Saldo Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
@@ -588,7 +589,7 @@ function renderKardexTable() {
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#27ae60' : '#e74c3c') + '">' + m.tipo + '</span></td>' +
       '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + m.modulo + '</span></td>' +
       prodCol +
-      '<td style="font-size:0.8rem;font-weight:600">' + (m.remision || '—') + '</td>' +
+      '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + (m.remision || '—') + pdfBtn + '</td>' +
       '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.referencia || '').replace(/"/g, '&quot;') + '">' + (m.referencia || '—') + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
@@ -1599,6 +1600,7 @@ function renderNCTable() {
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#c0392b';
     var editBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditNC(' + m._ajusteId + ')" title="Editar registro" style="font-size:0.72rem;padding:3px 8px">✏️</button>' : '';
     var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteNC(' + m._ajusteId + ',\'' + (m.tipo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar registro" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var pdfBtn = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'nc\')" title="Exportar PDF remision" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 4px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button>' : '';
 
     return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
@@ -1607,7 +1609,7 @@ function renderNCTable() {
       '<td><span style="background:' + motivoColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + motivoLabel + '</span></td>' +
       '<td style="font-size:0.82rem;font-weight:600">' + (m.producto || '—') + '</td>' +
       '<td style="font-size:0.78rem">' + (m.presentacion || '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (m.remision || '—') + '</td>' +
+      '<td style="font-size:0.78rem;white-space:nowrap">' + (m.remision || '—') + pdfBtn + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
       '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldo.toLocaleString('es-CO') + '</td>' +
@@ -2585,6 +2587,7 @@ function renderKardexNCTable() {
     if (motivoLbl && m.motivo !== 'Saldo_Inicial' && m.motivo !== 'Produccion_NC' && m.motivo !== 'Devolucion_NC') {
       referencia = motivoLbl + (referencia ? ' — ' + referencia : '');
     }
+    var pdfBtn = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'kxnc\')" title="Exportar PDF remision" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 4px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button>' : '';
     var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.producto || '').replace(/"/g, '&quot;') + '">' + (m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
@@ -2593,7 +2596,7 @@ function renderKardexNCTable() {
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#e67e22' : '#27ae60') + '">' + (m.tipo === 'Entrada' ? 'Ingreso' : 'Salida') + '</span></td>' +
       '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + modulo + '</span></td>' +
       prodCol +
-      '<td style="font-size:0.8rem;font-weight:600">' + (m.remision || '—') + '</td>' +
+      '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + (m.remision || '—') + pdfBtn + '</td>' +
       '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + referencia.replace(/"/g, '&quot;') + '">' + (referencia || '—') + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
@@ -3157,6 +3160,71 @@ function exportCompExcel() {
     : ('Comparativo_Bueno_vs_NC_' + today() + '.xlsx');
   XLSX.writeFile(wb, fname);
   showToast('Excel exportado: ' + compFiltered.length + ' productos');
+}
+
+// ══════════════════════════════════════════
+// ── EXPORTAR PDF REMISIÓN DESDE KARDEX ──
+// ══════════════════════════════════════════
+
+function exportarRemisionKardexPDF(idx, source) {
+  var movimientos = source === 'nc' ? ncFiltered : source === 'kxnc' ? kxncFiltered : kxFiltered;
+  var allMovimientos = source === 'nc' ? ncMovimientos : source === 'kxnc' ? ncMovimientos : kxMovimientos;
+  var m = movimientos[idx];
+  if (!m || !m.remision) { showToast('Este movimiento no tiene remisión', '#e74c3c'); return; }
+
+  if (typeof generarRemisionPDF !== 'function') {
+    showToast('Módulo PDF no cargado. Recarga la página.', '#e74c3c');
+    return;
+  }
+
+  var related = allMovimientos.filter(function(mv) {
+    return mv.remision === m.remision && mv.empresa === m.empresa && mv.tipo === m.tipo;
+  });
+
+  var prodMap = {};
+  related.forEach(function(mv) {
+    var key = mv.producto + '||' + (mv.presentacion || '');
+    if (!prodMap[key]) {
+      prodMap[key] = { producto: mv.producto, presentacion: mv.presentacion || '', cantidad: 0 };
+    }
+    prodMap[key].cantidad += mv.cantidad;
+  });
+  var entregas = Object.keys(prodMap).map(function(key) { return prodMap[key]; });
+
+  var tipoLabel = m.tipo === 'Entrada' ? 'ENTRADA' : 'SALIDA';
+  var moduloLabel;
+  if (source === 'nc' || source === 'kxnc') {
+    moduloLabel = NC_MOTIVO_LABELS[m.motivo] || m.motivo || '';
+  } else {
+    moduloLabel = m.modulo || '';
+  }
+
+  generarRemisionPDF({
+    empresa: m.empresa,
+    consecutivo: '',
+    remision: m.remision,
+    fecha_entrega: fmtDate(m.fecha),
+    doc_title: 'REMISION',
+    doc_number: m.remision,
+    date_label: 'Fecha',
+    ref_label: null,
+    file_prefix: 'Remision_Kardex',
+    copies: ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD'],
+    last_col_header: 'Observaciones',
+    entregas: entregas,
+    left_fields: [
+      ['Tipo', tipoLabel],
+      ['Modulo', moduloLabel],
+      ['Referencia', m.referencia || ''],
+    ],
+    right_fields: [
+      ['Fecha', fmtDate(m.fecha)],
+      ['N° Remision', m.remision],
+      ['Productos', entregas.length + ' linea(s)'],
+    ]
+  });
+
+  showToast('PDF de remision ' + m.remision + ' generado');
 }
 
 // ── Auto-load ──
