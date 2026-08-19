@@ -3815,7 +3815,6 @@ async function openNuevoPedido() {
       if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
       if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
       if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
-      if (c.lista_precio) document.getElementById('nv-precio').value = c.lista_precio;
       var cupoEl = document.getElementById('nv-cupo-info');
       if (c.cupo_credito && c.cupo_credito !== 'NA') {
         document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
@@ -3839,11 +3838,17 @@ async function openNuevoPedido() {
         }
         if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
         if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
+        if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
+        if (lastOrder.NIT_Adicional) document.getElementById('nv-nit-adicional').value = lastOrder.NIT_Adicional;
+        if (lastOrder.Consignacion) document.getElementById('nv-consignacion').value = lastOrder.Consignacion;
+        if (lastOrder.Bodega_Facturacion) document.getElementById('nv-bodega-facturacion').value = lastOrder.Bodega_Facturacion;
         if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
           document.getElementById('nv-comercial').value = lastOrder.Comercial;
           actualizarConsecutivoNuevo();
         }
       }
+      var emp = document.getElementById('nv-empresa').value;
+      _toggleBodegaField('nv', emp);
       _reapplyPreciosNuevo(); _toggleNvProductos();
     }
   });
@@ -3882,7 +3887,6 @@ async function openNuevoPedido() {
       if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
       if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
       if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
-      if (c.lista_precio) document.getElementById('nv-precio').value = c.lista_precio;
       if (c.cupo_credito && c.cupo_credito !== 'NA') {
         document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
         document.getElementById('nv-cupo-info').style.display = 'block';
@@ -3902,11 +3906,17 @@ async function openNuevoPedido() {
         }
         if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
         if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
+        if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
+        if (lastOrder.NIT_Adicional) document.getElementById('nv-nit-adicional').value = lastOrder.NIT_Adicional;
+        if (lastOrder.Consignacion) document.getElementById('nv-consignacion').value = lastOrder.Consignacion;
+        if (lastOrder.Bodega_Facturacion) document.getElementById('nv-bodega-facturacion').value = lastOrder.Bodega_Facturacion;
         if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
           document.getElementById('nv-comercial').value = lastOrder.Comercial;
           actualizarConsecutivoNuevo();
         }
       }
+      var emp = document.getElementById('nv-empresa').value;
+      _toggleBodegaField('nv', emp);
       _reapplyPreciosNuevo(); _toggleNvProductos();
     }
   });
