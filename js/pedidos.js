@@ -3593,16 +3593,25 @@ function _populateSucursalDL(clienteName) {
   if (!clienteName) return;
   var normCli = clienteName.toLowerCase().trim();
   var munCount = {};
-  pedidos.forEach(function(p) {
-    if ((p.Cliente || '').toLowerCase().trim() !== normCli) return;
-    var mun = (p.Municipio || '').trim();
+  var addEntry = function(mun, dir, suc, dep) {
+    mun = (mun || '').trim();
     if (!mun) return;
     var mk = mun.toLowerCase();
     if (!munCount[mk]) munCount[mk] = [];
-    var dir = (p.Direccion_Envio || '').trim();
-    var suc = (p.Sucursal || '').trim();
+    dir = (dir || '').trim();
+    suc = (suc || '').trim();
     var exists = munCount[mk].some(function(e) { return e.dir === dir; });
-    if (!exists) munCount[mk].push({ dir: dir, suc: suc, mun: mun, dep: (p.Departamento || '').trim() });
+    if (!exists) munCount[mk].push({ dir: dir, suc: suc, mun: mun, dep: (dep || '').trim() });
+  };
+  if (clientesCache) {
+    clientesCache.forEach(function(c) {
+      if ((c.cliente || '').toLowerCase().trim() !== normCli) return;
+      addEntry(c.municipio, c.direccion_envio || c.direccion, '', c.departamento);
+    });
+  }
+  pedidos.forEach(function(p) {
+    if ((p.Cliente || '').toLowerCase().trim() !== normCli) return;
+    addEntry(p.Municipio, p.Direccion_Envio, p.Sucursal, p.Departamento);
   });
   Object.keys(munCount).forEach(function(mk) {
     var entries = munCount[mk];
@@ -3794,7 +3803,13 @@ async function openNuevoPedido() {
         var exact = cls.filter(function(c) { return c.empresa === emp; });
         cls = exact.length ? exact : cls;
       }
-      return cls;
+      var seen = {};
+      return cls.filter(function(c) {
+        var key = (c.cliente || '').toLowerCase() + '|' + (c.nit || '').toLowerCase();
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
     },
     display: function(c) {
       var sigla = c.empresa ? getSigla(c.empresa) : '';
@@ -3811,10 +3826,8 @@ async function openNuevoPedido() {
       document.getElementById('nv-facturar-a').value = c.cliente || '';
       if (c.nit) document.getElementById('nv-nit').value = c.nit;
       if (c.telefono) document.getElementById('nv-telefono').value = c.telefono;
-      if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
-      if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
-      if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
       if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
+      if (c.lista_precio) document.getElementById('nv-precio').value = c.lista_precio;
       var cupoEl = document.getElementById('nv-cupo-info');
       if (c.cupo_credito && c.cupo_credito !== 'NA') {
         document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
@@ -3828,16 +3841,16 @@ async function openNuevoPedido() {
       _populateSucursalDL(c.cliente);
       var multiDir = Object.keys(_sucursalMap).length > 1;
       document.getElementById('nv-sucursal').value = '';
+      if (!multiDir) {
+        if (c.direccion_envio || c.direccion) document.getElementById('nv-direccion').value = c.direccion_envio || c.direccion;
+        if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
+        if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
+      }
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
         if (!multiDir) {
-          if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
-          if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
-          if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
           if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
         }
-        if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
-        if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
         if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
         if (lastOrder.NIT_Adicional) document.getElementById('nv-nit-adicional').value = lastOrder.NIT_Adicional;
         if (lastOrder.Consignacion) document.getElementById('nv-consignacion').value = lastOrder.Consignacion;
@@ -3862,7 +3875,13 @@ async function openNuevoPedido() {
         var exact = cls.filter(function(c) { return c.empresa === emp; });
         if (exact.length) cls = exact;
       }
-      return cls;
+      var seen = {};
+      return cls.filter(function(c) {
+        var key = (c.cliente || '').toLowerCase() + '|' + (c.nit || '').toLowerCase();
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
     },
     display: function(c) {
       var sigla = c.empresa ? getSigla(c.empresa) : '';
@@ -3883,10 +3902,8 @@ async function openNuevoPedido() {
       var fa = document.getElementById('nv-facturar-a');
       if (!fa.dataset.edited) fa.value = c.cliente || '';
       if (c.telefono) document.getElementById('nv-telefono').value = c.telefono;
-      if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
-      if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
-      if (c.direccion) document.getElementById('nv-direccion').value = c.direccion;
       if (c.plazo_pago) document.getElementById('nv-plazo').value = c.plazo_pago;
+      if (c.lista_precio) document.getElementById('nv-precio').value = c.lista_precio;
       if (c.cupo_credito && c.cupo_credito !== 'NA') {
         document.getElementById('nv-cupo-text').textContent = 'Cupo Crédito: ' + fmtMoney(Number(c.cupo_credito) || 0);
         document.getElementById('nv-cupo-info').style.display = 'block';
@@ -3896,16 +3913,16 @@ async function openNuevoPedido() {
       _populateSucursalDL(c.cliente);
       var multiDir = Object.keys(_sucursalMap).length > 1;
       document.getElementById('nv-sucursal').value = '';
+      if (!multiDir) {
+        if (c.direccion_envio || c.direccion) document.getElementById('nv-direccion').value = c.direccion_envio || c.direccion;
+        if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
+        if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
+      }
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
         if (!multiDir) {
-          if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
-          if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
-          if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
           if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
         }
-        if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
-        if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
         if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
         if (lastOrder.NIT_Adicional) document.getElementById('nv-nit-adicional').value = lastOrder.NIT_Adicional;
         if (lastOrder.Consignacion) document.getElementById('nv-consignacion').value = lastOrder.Consignacion;

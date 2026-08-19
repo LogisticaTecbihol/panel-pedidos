@@ -138,10 +138,11 @@ async function apiGet(action, opts) {
           return {
             cliente: r.Cliente, nit: r.Identificacion || '',
             telefono: r.Telefono || '', direccion: r.Direccion || '',
+            direccion_envio: r.Direccion_Envio || '',
             municipio: r.Municipio || '', departamento: r.Departamento || '',
             empresa: r.Nombre_Empresa || '', tipo_identificacion: r.Tipo_Identificacion || '',
             correo: r.Correo_Electronico || '', cupo_credito: r.Cupo_Credito || '',
-            plazo_pago: r.Plazo_Pago || ''
+            plazo_pago: r.Plazo_Pago || '', lista_precio: r.Lista_Precio || ''
           };
         }),
         source: 'ClientesUnicos'
