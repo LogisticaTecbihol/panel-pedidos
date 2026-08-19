@@ -954,7 +954,8 @@ function exportarCamSolicitudPDF(opts) {
   var head = ctx.head;
 
   var jsPDF = window.jspdf.jsPDF;
-  var doc = new jsPDF();
+  var doc = opts._doc || new jsPDF();
+  if (opts._doc) doc.addPage();
   var pw = doc.internal.pageSize.getWidth();
   var palette = _pdfPaletteFor(head.Empresa);
   var accent = palette.accent;
@@ -1264,6 +1265,7 @@ function exportarCamRemisionPDF(tipo, opts) {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
         if (!r) return null;
         var doc = r.doc;
+        exportarCamSolicitudPDF({ return_doc: true, _doc: doc });
         var mergedByRem = {};
         ocGroups.forEach(function(ocLines) {
           if (!ocLines || !ocLines.length) return;

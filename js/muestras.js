@@ -928,20 +928,6 @@ function exportarMuestraRemisionPDF(opts) {
       showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
     }
     var solicitudData = _dataMuestraSolicitud(ctx, head);
-    var extras = [];
-    if (solicitudData) {
-      extras.push({
-        buildDoc: function() {
-          var r = generarRemisionPDF(Object.assign({}, solicitudData, { return_doc: true }));
-          return r ? r.doc : null;
-        },
-        meta: {
-          modulo: 'muestras',
-          referencia: ctx.consec || '',
-          titulo: 'Solicitud muestras #' + (ctx.consec || '') + ' — ' + (head.Solicitante || 'sin solicitante')
-        }
-      });
-    }
     var ocKey = (head.Empresa || '') + '||' + (ctx.consec || '');
     var ocGroups = ocsLegalizadasPorMuestra[ocKey] || [];
     NOTIF.openModalEnviar({
@@ -953,6 +939,9 @@ function exportarMuestraRemisionPDF(opts) {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
         if (!r) return null;
         var doc = r.doc;
+        if (solicitudData) {
+          generarRemisionPDF(Object.assign({}, solicitudData, { return_doc: true, _doc: doc }));
+        }
         var mergedByRem = {};
         ocGroups.forEach(function(ocLines) {
           if (!ocLines || !ocLines.length) return;
@@ -965,8 +954,7 @@ function exportarMuestraRemisionPDF(opts) {
           generarRemisionesTrasladoPDF(mergedByRem[k], { return_doc: true, _doc: doc, contabilidad: true });
         });
         return doc;
-      },
-      extras: extras
+      }
     });
     return;
   }

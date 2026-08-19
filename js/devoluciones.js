@@ -753,30 +753,20 @@ function exportarDevRemisionPDF(tipo, opts) {
       showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
     }
     var solicitudData = _dataDevSolicitud(ctx);
-    var extras = [];
-    if (solicitudData) {
-      extras.push({
-        buildDoc: function() {
-          var r = generarRemisionPDF(Object.assign({}, solicitudData, { return_doc: true }));
-          return r ? r.doc : null;
-        },
-        meta: {
-          modulo: 'devoluciones',
-          referencia: head.Consecutivo || '',
-          titulo: 'Solicitud devolución #' + (head.Consecutivo || '') + ' — ' + (head.Cliente || 'sin cliente')
-        }
-      });
-    }
     NOTIF.openModalEnviar({
       modulo: 'devoluciones',
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
       titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' devolución #' + remision,
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
-        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));
-        return r ? r.doc : null;
-      },
-      extras: extras
+        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
+        if (!r) return null;
+        var doc = r.doc;
+        if (solicitudData) {
+          generarRemisionPDF(Object.assign({}, solicitudData, { return_doc: true, _doc: doc }));
+        }
+        return doc;
+      }
     });
     return;
   }
