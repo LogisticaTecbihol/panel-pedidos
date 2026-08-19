@@ -3842,13 +3842,20 @@ async function openNuevoPedido() {
       var multiDir = Object.keys(_sucursalMap).length > 1;
       document.getElementById('nv-sucursal').value = '';
       if (!multiDir) {
-        if (c.direccion_envio || c.direccion) document.getElementById('nv-direccion').value = c.direccion_envio || c.direccion;
+        if (c.direccion_envio) {
+          document.getElementById('nv-direccion').value = c.direccion_envio;
+        } else if (c.direccion) {
+          document.getElementById('nv-direccion').value = c.direccion;
+        }
         if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
         if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
       }
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
         if (!multiDir) {
+          if (!c.direccion_envio && lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
+          if (!c.municipio && lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
+          if (!c.departamento && lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
           if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
         }
         if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
@@ -3914,13 +3921,20 @@ async function openNuevoPedido() {
       var multiDir = Object.keys(_sucursalMap).length > 1;
       document.getElementById('nv-sucursal').value = '';
       if (!multiDir) {
-        if (c.direccion_envio || c.direccion) document.getElementById('nv-direccion').value = c.direccion_envio || c.direccion;
+        if (c.direccion_envio) {
+          document.getElementById('nv-direccion').value = c.direccion_envio;
+        } else if (c.direccion) {
+          document.getElementById('nv-direccion').value = c.direccion;
+        }
         if (c.municipio) document.getElementById('nv-municipio').value = c.municipio;
         if (c.departamento) document.getElementById('nv-departamento').value = c.departamento;
       }
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
         if (!multiDir) {
+          if (!c.direccion_envio && lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
+          if (!c.municipio && lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
+          if (!c.departamento && lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
           if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
         }
         if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
