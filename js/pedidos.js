@@ -3280,6 +3280,7 @@ async function confirmUpload() {
       comercial: uploadData.comercial,
       plazo: uploadData.plazo_pago,
       precio: uploadData.precio_facturacion,
+      bodega_facturacion: uploadData.bodega_facturacion || '',
       observaciones: uploadData.observaciones,
       total: uploadData.total_orden,
       productos: uploadData.productos,
@@ -4783,7 +4784,8 @@ function generarPedidoPDF(data) {
     ['Comercial', data.comercial],
     ['Plazo de Pago', data.plazo],
     ['Precio Facturación', data.precio],
-    ['Dirección', data.direccion],
+    ['Dir. Envío', data.direccion],
+    ['Bodega Fact.', data.bodega_facturacion || null],
     ['Consignación', data.consignacion === 'Sí' ? 'Sí' : null],
   ];
 

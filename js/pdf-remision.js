@@ -162,11 +162,15 @@ function _drawRemisionCopy(doc, data, palette) {
     ['Comercial', data.comercial || ''],
     ['Telefono', data.telefono || ''],
   ];
-  var right = data.right_fields || [
-    ['Direccion', data.direccion || ''],
-    ['Municipio', data.municipio || ''],
-    ['Departamento', data.departamento || ''],
-  ];
+  var right = data.right_fields || (function() {
+    var r = [
+      ['Dir. Envío', data.direccion || ''],
+      ['Municipio', data.municipio || ''],
+      ['Departamento', data.departamento || ''],
+    ];
+    if (data.bodega_facturacion) r.push(['Bodega Fact.', data.bodega_facturacion]);
+    return r;
+  })();
 
   function drawPageTop() {
     doc.setFillColor(255, 255, 255);
