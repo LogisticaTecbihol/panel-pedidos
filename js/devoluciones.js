@@ -577,16 +577,19 @@ function viewDevDetail(key) {
     var _remSal = (r.Remision_Salida || '').trim();
     var _btnSolDev = document.querySelector('#view-dev-overlay button[onclick*="exportarDevSolicitudPDF"]');
     if (_btnSolDev) {
+      _btnSolDev.disabled = false; _btnSolDev.style.opacity = ''; _btnSolDev.style.cursor = '';
+      _btnSolDev.textContent = '📨 Enviar Solicitud';
       if (_cDev) NOTIF.verificarBtn(_btnSolDev, 'devoluciones', _cDev);
-      else { _btnSolDev.disabled = false; _btnSolDev.style.opacity = ''; _btnSolDev.style.cursor = ''; _btnSolDev.textContent = '📨 Enviar Solicitud'; }
     }
     if (sendIn) {
+      sendIn.disabled = false; sendIn.style.opacity = ''; sendIn.style.cursor = '';
+      sendIn.textContent = '📨 Enviar Ingreso';
       if (_remIng) NOTIF.verificarBtn(sendIn, 'devoluciones', _cDev + ' · Rem ' + _remIng);
-      else { sendIn.disabled = false; sendIn.style.opacity = ''; sendIn.style.cursor = ''; sendIn.textContent = '📨 Enviar Ingreso'; }
     }
     if (sendOut) {
+      sendOut.disabled = false; sendOut.style.opacity = ''; sendOut.style.cursor = '';
+      sendOut.textContent = '📨 Enviar Salida';
       if (_remSal) NOTIF.verificarBtn(sendOut, 'devoluciones', _cDev + ' · Rem ' + _remSal);
-      else { sendOut.disabled = false; sendOut.style.opacity = ''; sendOut.style.cursor = ''; sendOut.textContent = '📨 Enviar Salida'; }
     }
   }
 }

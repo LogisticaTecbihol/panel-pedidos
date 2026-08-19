@@ -441,16 +441,19 @@ function viewCamDetail(key) {
     var _remSalC = (r.Remision_Salida || '').trim();
     var _btnSolCam = document.querySelector('#view-cam-overlay button[onclick*="exportarCamSolicitudPDF"]');
     if (_btnSolCam) {
+      _btnSolCam.disabled = false; _btnSolCam.style.opacity = ''; _btnSolCam.style.cursor = '';
+      _btnSolCam.textContent = '📨 Enviar Solicitud';
       if (_cCam) NOTIF.verificarBtn(_btnSolCam, 'cambios', _cCam);
-      else { _btnSolCam.disabled = false; _btnSolCam.style.opacity = ''; _btnSolCam.style.cursor = ''; _btnSolCam.textContent = '📨 Enviar Solicitud'; }
     }
     if (sendIn) {
+      sendIn.disabled = false; sendIn.style.opacity = ''; sendIn.style.cursor = '';
+      sendIn.textContent = '📨 Enviar Ingreso';
       if (_remIngC) NOTIF.verificarBtn(sendIn, 'cambios', _cCam + ' · Rem ' + _remIngC);
-      else { sendIn.disabled = false; sendIn.style.opacity = ''; sendIn.style.cursor = ''; sendIn.textContent = '📨 Enviar Ingreso'; }
     }
     if (sendOut) {
+      sendOut.disabled = false; sendOut.style.opacity = ''; sendOut.style.cursor = '';
+      sendOut.textContent = '📨 Enviar Salida';
       if (_remSalC) NOTIF.verificarBtn(sendOut, 'cambios', _cCam + ' · Rem ' + _remSalC);
-      else { sendOut.disabled = false; sendOut.style.opacity = ''; sendOut.style.cursor = ''; sendOut.textContent = '📨 Enviar Salida'; }
     }
   }
 }

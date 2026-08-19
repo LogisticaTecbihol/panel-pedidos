@@ -616,8 +616,9 @@ async function viewMuestra(id) {
       else { _btnSol.disabled = false; _btnSol.style.opacity = ''; _btnSol.style.cursor = ''; _btnSol.textContent = '📨 Enviar Solicitud'; }
     }
     if (_btnRem) {
+      _btnRem.disabled = false; _btnRem.style.opacity = ''; _btnRem.style.cursor = '';
+      _btnRem.textContent = '📨 Enviar Remisión';
       if (_remMu) NOTIF.verificarBtn(_btnRem, 'muestras', _cMu + ' · Rem ' + _remMu);
-      else { _btnRem.disabled = false; _btnRem.style.opacity = ''; _btnRem.style.cursor = ''; _btnRem.textContent = '📨 Enviar Remisión'; }
     }
   }
 }
