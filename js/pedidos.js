@@ -3976,6 +3976,9 @@ async function guardarNuevoPedido() {
   if (!fecha) { showToast('Selecciona la fecha del pedido', '#e74c3c'); return; }
   if (!AUTH.isAdmin() && fecha < today()) { showToast('La fecha del pedido no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
+  if (getSigla(empresa) === 'PARCELAR' && !document.getElementById('nv-bodega-facturacion').value) {
+    showToast('Selecciona la Bodega de Facturación', '#e74c3c'); return;
+  }
 
   var productosValidos = nuevoProductos.filter(function(p) { return p.producto && p.cantidad > 0; });
   if (!productosValidos.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }
