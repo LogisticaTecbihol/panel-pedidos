@@ -4862,7 +4862,7 @@ function generarPedidoPDF(data) {
     ['Cliente', data.cliente],
     ['Sucursal', data.sucursal],
     ['NIT', data.nit],
-    ['Facturar a', data.facturar_a && data.facturar_a !== data.cliente ? data.facturar_a : null],
+    ['Facturar a', data.facturar_a && data.facturar_a !== data.cliente ? data.facturar_a : ''],
     ['NIT Adicional', data.nit_adicional],
     ['Teléfono', data.telefono],
     ['Municipio', data.municipio],
@@ -4873,8 +4873,9 @@ function generarPedidoPDF(data) {
     ['Plazo de Pago', data.plazo],
     ['Precio Facturación', data.precio],
     ['Dir. Envío', data.direccion],
-    ['Bodega Fact.', data.bodega_facturacion || null],
-    ['Consignación', data.consignacion === 'Sí' ? 'Sí' : null],
+    ['Bodega Fact.', data.bodega_facturacion || ''],
+    ['Consignación', data.consignacion || ''],
+    ['Observaciones', data.observaciones],
   ];
 
   var totalW = pw - 28;
@@ -4890,23 +4891,25 @@ function generarPedidoPDF(data) {
   var rowGap = 6;
   for (var fi = 0; fi < maxF; fi++) {
     var rowH = 0;
-    if (fi < left.length && left[fi][1]) {
+    if (fi < left.length) {
       doc.setFont(undefined, 'bold');
       doc.setTextColor(primary[0], primary[1], primary[2]);
       doc.text(left[fi][0] + ':', 16, y);
       doc.setFont(undefined, 'normal');
-      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-      var lLines = doc.splitTextToSize(String(left[fi][1]), leftValMaxW);
+      var lVal = left[fi][1] ? String(left[fi][1]) : '—';
+      doc.setTextColor(left[fi][1] ? darkText[0] : grayText[0], left[fi][1] ? darkText[1] : grayText[1], left[fi][1] ? darkText[2] : grayText[2]);
+      var lLines = doc.splitTextToSize(lVal, leftValMaxW);
       doc.text(lLines, leftValX, y);
       rowH = Math.max(rowH, (lLines.length - 1) * 3.5);
     }
-    if (fi < right.length && right[fi][1]) {
+    if (fi < right.length) {
       doc.setFont(undefined, 'bold');
       doc.setTextColor(primary[0], primary[1], primary[2]);
       doc.text(right[fi][0] + ':', rightLabelX + 2, y);
       doc.setFont(undefined, 'normal');
-      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-      var rLines = doc.splitTextToSize(String(right[fi][1]), rightValMaxW);
+      var rVal = right[fi][1] ? String(right[fi][1]) : '—';
+      doc.setTextColor(right[fi][1] ? darkText[0] : grayText[0], right[fi][1] ? darkText[1] : grayText[1], right[fi][1] ? darkText[2] : grayText[2]);
+      var rLines = doc.splitTextToSize(rVal, rightValMaxW);
       doc.text(rLines, rightValX, y);
       rowH = Math.max(rowH, (rLines.length - 1) * 3.5);
     }
