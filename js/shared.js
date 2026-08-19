@@ -67,7 +67,7 @@ async function apiGet(action, opts) {
   var cols = (opts && opts.columns) || '*';
   try {
     if (action === 'getPedidos') {
-      var all = [], from = 0, size = 5000;
+      var all = [], from = 0, size = 1000;
       while (true) {
         var res = await _sb.from('Pedidos').select(cols).order('id').range(from, from + size - 1);
         if (res.error) return { ok: false, error: res.error.message };
