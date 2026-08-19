@@ -155,9 +155,11 @@ function populateIngFilters() {
   fr.innerHTML = '<option value="">Todos</option>' + responsables.map(function(r) { return '<option value="' + r + '">' + r + '</option>'; }).join('');
 
   if (!ingFiltersAttached) {
-    ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-txt'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', renderIngTable);
-      document.getElementById(id).addEventListener('input', renderIngTable);
+    ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta','f-txt'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', function() { renderIngTable(); renderDetalleIng(); });
+      el.addEventListener('input', function() { renderIngTable(); renderDetalleIng(); });
     });
     ingFiltersAttached = true;
   }
@@ -169,12 +171,22 @@ function filteredIng() {
   var fed = document.getElementById('f-emp-dest').value;
   var fp = document.getElementById('f-prod').value;
   var fr = document.getElementById('f-resp').value;
+  var fdEl = document.getElementById('f-fec-desde');
+  var fhEl = document.getElementById('f-fec-hasta');
+  var fdesde = fdEl ? fdEl.value : '';
+  var fhasta = fhEl ? fhEl.value : '';
   var ft = document.getElementById('f-txt').value.toLowerCase();
   return ingGroups.filter(function(g) {
     if (fo && g.Origen !== fo) return false;
     if (feo && g.Empresa_Origen !== feo) return false;
     if (fed && g.Empresa_Destino !== fed) return false;
     if (fr && g.Responsable !== fr) return false;
+    if (fdesde || fhasta) {
+      var fp10 = String(g.Fecha || '').slice(0, 10);
+      if (!fp10) return false;
+      if (fdesde && fp10 < fdesde) return false;
+      if (fhasta && fp10 > fhasta) return false;
+    }
     var lines = getLinesForIng(g);
     if (fp && !lines.some(function(l) { return l.Producto === fp; })) return false;
     if (ft) {
@@ -192,8 +204,11 @@ function clearIngFilters() {
   document.getElementById('f-emp-dest').value = '';
   document.getElementById('f-prod').value = '';
   document.getElementById('f-resp').value = '';
+  var fd = document.getElementById('f-fec-desde'); if (fd) fd.value = '';
+  var fh = document.getElementById('f-fec-hasta'); if (fh) fh.value = '';
   document.getElementById('f-txt').value = '';
   renderIngTable();
+  renderDetalleIng();
 }
 
 // ── Render ──
@@ -1053,6 +1068,202 @@ async function deleteIngAdjunto(path) {
     handleIngAdjuntoUpload(input);
   });
 })();
+
+// ── Tab switching ──
+function switchIngTab(tab) {
+  var tabs = ['ingresos', 'ing-detalle'];
+  tabs.forEach(function(t) {
+    var panel = document.getElementById('panel-' + t);
+    var btn = document.getElementById('tab-' + t);
+    if (panel) panel.style.display = t === tab ? 'block' : 'none';
+    if (btn) btn.style.background = t === tab ? '#1a5276' : '#718096';
+  });
+  if (tab === 'ing-detalle') renderDetalleIng();
+}
+
+// ── Excel export (grouped) ──
+function exportIngresosExcel() {
+  var groups = applySortIng(filteredIng());
+  if (!groups.length) { showToast('No hay ingresos para exportar', '#e74c3c'); return; }
+
+  var data = groups.map(function(g) {
+    var lines = getLinesForIng(g);
+    var totalQty = lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
+    return {
+      'Fecha': g.Fecha || '',
+      'Origen': g.Origen || '',
+      'Emp. Origen': getSiglaIng(g.Empresa_Origen),
+      'Emp. Destino': getSiglaIng(g.Empresa_Destino),
+      'Líneas': lines.length,
+      'Unidades': totalQty,
+      'Responsable': g.Responsable || '',
+      'Rem. Origen': g.Remision_Origen || '',
+      'Rem. Destino': g.Remision_Destino || '',
+      'Observaciones': g.Observaciones || ''
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{wch:12},{wch:18},{wch:14},{wch:14},{wch:8},{wch:10},{wch:18},{wch:14},{wch:14},{wch:30}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ingresos');
+  XLSX.writeFile(wb, 'Ingresos_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + groups.length + ' ingresos', '#27ae60');
+}
+
+// ── Detail view (flat per-product line) ──
+var detIngSort = [];
+
+function filteredIngLines() {
+  var fo = document.getElementById('f-origen').value;
+  var feo = document.getElementById('f-emp-orig').value;
+  var fed = document.getElementById('f-emp-dest').value;
+  var fp = document.getElementById('f-prod').value;
+  var fr = document.getElementById('f-resp').value;
+  var fdEl = document.getElementById('f-fec-desde');
+  var fhEl = document.getElementById('f-fec-hasta');
+  var fdesde = fdEl ? fdEl.value : '';
+  var fhasta = fhEl ? fhEl.value : '';
+  var ft = document.getElementById('f-txt').value.toLowerCase();
+
+  return ingresos.filter(function(r) {
+    if (fo && r.Origen !== fo) return false;
+    if (feo && r.Empresa_Origen !== feo) return false;
+    if (fed && r.Empresa_Destino !== fed) return false;
+    if (fr && r.Responsable !== fr) return false;
+    if (fp && r.Producto !== fp) return false;
+    if (fdesde || fhasta) {
+      var fp10 = String(r.Fecha || '').slice(0, 10);
+      if (!fp10) return false;
+      if (fdesde && fp10 < fdesde) return false;
+      if (fhasta && fp10 > fhasta) return false;
+    }
+    if (ft) {
+      var hay = [r.Origen, r.Empresa_Origen, r.Empresa_Destino, r.Responsable, r.Remision_Origen, r.Remision_Destino, r.Producto, r.Presentacion, r.Observaciones].join(' ').toLowerCase();
+      if (hay.indexOf(ft) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function toggleDetIngSort(col, e) {
+  var shift = e && e.shiftKey;
+  var idx = detIngSort.findIndex(function(l) { return l.col === col; });
+  if (shift) { if (idx >= 0) detIngSort.splice(idx, 1); }
+  else if (idx >= 0) { if (detIngSort[idx].dir === 'asc') detIngSort[idx].dir = 'desc'; else detIngSort.splice(idx, 1); }
+  else { detIngSort.push({ col: col, dir: 'asc' }); }
+  renderDetalleIng();
+}
+
+function clearDetIngSort() { detIngSort = []; renderDetalleIng(); }
+
+function renderDetalleIng() {
+  var panel = document.getElementById('panel-ing-detalle');
+  if (!panel || panel.style.display === 'none') return;
+
+  var rows = filteredIngLines();
+
+  if (detIngSort.length) {
+    rows = [].concat(rows).sort(function(a, b) {
+      for (var s = 0; s < detIngSort.length; s++) {
+        var col = detIngSort[s].col, dir = detIngSort[s].dir;
+        var va, vb;
+        if (col === 'fecha') { va = +(new Date(a.Fecha||0)); vb = +(new Date(b.Fecha||0)); }
+        else if (col === 'origen') { va = (a.Origen||'').toLowerCase(); vb = (b.Origen||'').toLowerCase(); }
+        else if (col === 'emp_orig') { va = getSiglaIng(a.Empresa_Origen); vb = getSiglaIng(b.Empresa_Origen); }
+        else if (col === 'emp_dest') { va = getSiglaIng(a.Empresa_Destino); vb = getSiglaIng(b.Empresa_Destino); }
+        else if (col === 'producto') { va = (a.Producto||'').toLowerCase(); vb = (b.Producto||'').toLowerCase(); }
+        else if (col === 'presentacion') { va = (a.Presentacion||'').toLowerCase(); vb = (b.Presentacion||'').toLowerCase(); }
+        else if (col === 'cantidad') { va = Number(a.Cantidad)||0; vb = Number(b.Cantidad)||0; }
+        else if (col === 'responsable') { va = (a.Responsable||'').toLowerCase(); vb = (b.Responsable||'').toLowerCase(); }
+        else if (col === 'rem_orig') { va = (a.Remision_Origen||''); vb = (b.Remision_Origen||''); }
+        else if (col === 'rem_dest') { va = (a.Remision_Destino||''); vb = (b.Remision_Destino||''); }
+        else { va = ''; vb = ''; }
+        var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+        if (cmp !== 0) return dir === 'asc' ? cmp : -cmp;
+      }
+      return 0;
+    });
+  }
+
+  document.getElementById('det-ing-count').textContent = '(' + rows.length + ' líneas)';
+
+  var cols = [
+    { id: 'fecha', label: 'Fecha' },
+    { id: 'origen', label: 'Origen' },
+    { id: 'emp_orig', label: 'Emp. Origen' },
+    { id: 'emp_dest', label: 'Emp. Destino' },
+    { id: 'producto', label: 'Producto' },
+    { id: 'presentacion', label: 'Presentación' },
+    { id: 'cantidad', label: 'Cantidad' },
+    { id: 'responsable', label: 'Responsable' },
+    { id: 'rem_orig', label: 'Rem. Origen' },
+    { id: 'rem_dest', label: 'Rem. Destino' },
+  ];
+
+  document.getElementById('det-ing-head').innerHTML = cols.map(function(c) {
+    var idx = detIngSort.findIndex(function(l) { return l.col === c.id; });
+    var cls = idx >= 0 ? (detIngSort[idx].dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    var badge = idx >= 0 && detIngSort.length > 1 ? '<span style="font-size:0.6rem;vertical-align:super;color:#2980b9">' + (idx+1) + '</span>' : '';
+    return '<th class="sortable ' + cls + '" onclick="toggleDetIngSort(\'' + c.id + '\',event)">' + c.label + badge + '<span class="sort-icon"></span></th>';
+  }).join('');
+
+  var btn = document.getElementById('btn-clear-sort-det-ing');
+  if (btn) btn.style.display = detIngSort.length ? 'inline-block' : 'none';
+
+  var tbody = document.getElementById('det-ing-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty">No hay líneas con los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function(r) {
+    var origenBadge = r.Origen === 'Devolución'
+      ? '<span class="badge b-rec">Devolución</span>'
+      : '<span class="badge b-par">' + (r.Origen||'—') + '</span>';
+    return '<tr>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
+      '<td>' + origenBadge + '</td>' +
+      '<td title="' + (r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Origen) + '">' + getSiglaIng(r.Empresa_Origen) + '</span></td>' +
+      '<td title="' + (r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Destino) + '">' + getSiglaIng(r.Empresa_Destino) + '</span></td>' +
+      '<td style="font-weight:600">' + (r.Producto||'—') + '</td>' +
+      '<td>' + (r.Presentacion||'—') + '</td>' +
+      '<td class="money" style="font-weight:700">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Responsable||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Remision_Origen||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Remision_Destino||'—') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── Excel export (detail/flat) ──
+function exportDetalleIngExcel() {
+  var rows = filteredIngLines();
+  if (!rows.length) { showToast('No hay líneas para exportar', '#e74c3c'); return; }
+
+  var data = rows.map(function(r) {
+    return {
+      'Fecha': r.Fecha || '',
+      'Origen': r.Origen || '',
+      'Emp. Origen': getSiglaIng(r.Empresa_Origen),
+      'Emp. Destino': getSiglaIng(r.Empresa_Destino),
+      'Producto': r.Producto || '',
+      'Presentación': r.Presentacion || '',
+      'Cantidad': Number(r.Cantidad) || 0,
+      'Responsable': r.Responsable || '',
+      'Rem. Origen': r.Remision_Origen || '',
+      'Rem. Destino': r.Remision_Destino || '',
+      'Observaciones': r.Observaciones || ''
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{wch:12},{wch:18},{wch:14},{wch:14},{wch:30},{wch:14},{wch:10},{wch:18},{wch:14},{wch:14},{wch:30}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalle Ingresos');
+  XLSX.writeFile(wb, 'Ingresos_Detalle_' + today() + '.xlsx');
+  showToast('Excel detalle exportado: ' + rows.length + ' líneas', '#27ae60');
+}
 
 // ── Auto-load ──
 loadIngresos();

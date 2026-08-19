@@ -130,15 +130,24 @@
     </div>
     <div class="fg"><label>Producto</label><select id="f-prod"><option value="">Todos</option></select></div>
     <div class="fg"><label>Responsable</label><select id="f-resp"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Desde</label><input type="date" id="f-fec-desde" title="Fecha — desde" style="width:150px"></div>
+    <div class="fg"><label>Hasta</label><input type="date" id="f-fec-hasta" title="Fecha — hasta" style="width:150px"></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="producto, remisión…" style="width:160px"></div>
     <button onclick="clearIngFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
   </div>
 
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="btn-export" id="tab-ingresos" onclick="switchIngTab('ingresos')" style="background:#1a5276;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700">📋 Ingresos</button>
+    <button class="btn-export" id="tab-ing-detalle" onclick="switchIngTab('ing-detalle')" style="background:#718096;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700">📑 Vista detallada</button>
+  </div>
+
+  <div id="panel-ingresos">
   <div class="card">
     <div class="card-head">
       <h3>Ingresos registrados <span id="row-ct-ing" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort-ing" onclick="clearSortIng()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
+        <button class="btn-dl" onclick="exportIngresosExcel()" style="background:#217346">📊 Exportar Excel</button>
         <button class="btn-dl auth-edit-only" onclick="openNewIngreso()" style="background:#27ae60">📥 Nuevo Ingreso</button>
         <button class="btn-dl" onclick="loadIngresos()">🔄 Actualizar datos</button>
       </div>
@@ -151,6 +160,27 @@
         <tbody id="t-body-ing"></tbody>
       </table>
     </div>
+  </div>
+  </div>
+
+  <div id="panel-ing-detalle" style="display:none">
+  <div class="card">
+    <div class="card-head">
+      <h3>Vista detallada por productos <span id="det-ing-count" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="btn-clear-sort-det-ing" onclick="clearDetIngSort()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
+        <button class="btn-dl" onclick="exportDetalleIngExcel()" style="background:#217346">📊 Exportar Excel</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr id="det-ing-head"></tr>
+        </thead>
+        <tbody id="det-ing-body"></tbody>
+      </table>
+    </div>
+  </div>
   </div>
 </div>
 
@@ -370,6 +400,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/auth.js"></script>
