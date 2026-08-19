@@ -1412,6 +1412,7 @@ async function openDetail(idx) {
   document.getElementById('md-precio').value = c.Precio_Facturacion || '';
   document.getElementById('md-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('md-nit-adicional').value = c.NIT_Adicional || '';
+  _populateSucursalDL(c.Cliente);
   document.getElementById('md-sucursal').value = c.Sucursal || '';
   document.getElementById('md-consignacion').value = c.Consignacion || 'No';
   document.getElementById('md-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
@@ -2655,6 +2656,7 @@ async function openEdit(idx) {
   document.getElementById('ed-precio').value = c.Precio_Facturacion || '';
   document.getElementById('ed-facturar-a').value = c.Facturar_A || c.Cliente || '';
   document.getElementById('ed-nit-adicional').value = c.NIT_Adicional || '';
+  _populateSucursalDL(c.Cliente);
   document.getElementById('ed-sucursal').value = c.Sucursal || '';
   document.getElementById('ed-consignacion').value = c.Consignacion || 'No';
   document.getElementById('ed-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
@@ -3583,6 +3585,47 @@ function getLastOrderForClient(clienteName) {
   return clientOrders[0];
 }
 
+var _sucursalMap = {};
+function _populateSucursalDL(clienteName) {
+  var seen = {};
+  var opts = [];
+  _sucursalMap = {};
+  if (!clienteName) return;
+  var normCli = clienteName.toLowerCase().trim();
+  pedidos.forEach(function(p) {
+    if ((p.Cliente || '').toLowerCase().trim() !== normCli) return;
+    var dir = (p.Direccion_Envio || '').trim();
+    if (!dir) return;
+    var suc = (p.Sucursal || '').trim();
+    var label = suc || dir;
+    var key = label.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    opts.push(label);
+    _sucursalMap[key] = {
+      direccion: dir,
+      municipio: (p.Municipio || '').trim(),
+      departamento: (p.Departamento || '').trim()
+    };
+  });
+  var dl = document.getElementById('dl-sucursal');
+  if (dl) dl.innerHTML = opts.map(function(o) {
+    return '<option value="' + o.replace(/"/g, '&quot;') + '">';
+  }).join('');
+}
+
+function _onSucursalChange(prefix) {
+  var val = document.getElementById(prefix + '-sucursal').value.trim().toLowerCase();
+  var match = _sucursalMap[val];
+  if (!match) return;
+  var dirEl = document.getElementById(prefix + '-direccion');
+  if (dirEl) dirEl.value = match.direccion;
+  var munEl = document.getElementById(prefix + '-municipio');
+  if (munEl) munEl.value = match.municipio;
+  var depEl = document.getElementById(prefix + '-departamento');
+  if (depEl) depEl.value = match.departamento;
+}
+
 var nuevoProductos = [];
 
 function populateNuevoDataLists() {
@@ -3771,12 +3814,17 @@ async function openNuevoPedido() {
       } else {
         cupoEl.style.display = 'none';
       }
+      _populateSucursalDL(c.cliente);
+      var multiDir = Object.keys(_sucursalMap).length > 1;
+      document.getElementById('nv-sucursal').value = '';
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
-        if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
-        if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
-        if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
-        if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
+        if (!multiDir) {
+          if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
+          if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
+          if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
+          if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
+        }
         if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
         if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
         if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
@@ -3829,12 +3877,17 @@ async function openNuevoPedido() {
       } else {
         document.getElementById('nv-cupo-info').style.display = 'none';
       }
+      _populateSucursalDL(c.cliente);
+      var multiDir = Object.keys(_sucursalMap).length > 1;
+      document.getElementById('nv-sucursal').value = '';
       var lastOrder = getLastOrderForClient(c.cliente);
       if (lastOrder) {
-        if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
-        if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
-        if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
-        if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
+        if (!multiDir) {
+          if (lastOrder.Direccion_Envio) document.getElementById('nv-direccion').value = lastOrder.Direccion_Envio;
+          if (lastOrder.Municipio) document.getElementById('nv-municipio').value = lastOrder.Municipio;
+          if (lastOrder.Departamento) document.getElementById('nv-departamento').value = lastOrder.Departamento;
+          if (lastOrder.Sucursal) document.getElementById('nv-sucursal').value = lastOrder.Sucursal;
+        }
         if (lastOrder.Plazo_Pago) document.getElementById('nv-plazo').value = lastOrder.Plazo_Pago;
         if (lastOrder.Precio_Facturacion) document.getElementById('nv-precio').value = lastOrder.Precio_Facturacion;
         if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
@@ -3866,6 +3919,10 @@ document.getElementById('nuevo-overlay').addEventListener('click', function(e) {
 document.getElementById('nuevo-overlay').addEventListener('scroll', function() {
   [].slice.call(document.querySelectorAll('.ac-dropdown')).forEach(function(dd) { dd.style.display = 'none'; });
 }, true);
+
+document.getElementById('nv-sucursal').addEventListener('change', function() { _onSucursalChange('nv'); });
+document.getElementById('md-sucursal').addEventListener('change', function() { _onSucursalChange('md'); });
+document.getElementById('ed-sucursal').addEventListener('change', function() { _onSucursalChange('ed'); });
 
 function _toggleNvProductos() {
   var precio = (document.getElementById('nv-precio').value || '').trim();

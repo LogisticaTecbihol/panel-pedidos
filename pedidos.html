@@ -257,7 +257,7 @@
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
         <div><label class="ef-label">Cliente</label><input class="ef" id="md-cliente" type="text"></div>
         <div><label class="ef-label">NIT</label><input class="ef" id="md-nit" type="text"></div>
-        <div><label class="ef-label">Sucursal</label><input class="ef" id="md-sucursal" type="text" placeholder="Sucursal del cliente"></div>
+        <div><label class="ef-label">Sucursal</label><input class="ef" id="md-sucursal" type="text" list="dl-sucursal" placeholder="Seleccionar sucursal"></div>
         <div><label class="ef-label">Fecha Pedido</label><input class="ef" id="md-fecha-pedido" type="date"></div>
         <div><label class="ef-label">Comercial</label><input class="ef" id="md-comercial" type="text"></div>
         <div><label class="ef-label">Municipio</label><input class="ef" id="md-municipio" type="text"></div>
@@ -448,7 +448,7 @@
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
         <div><label class="ef-label">Cliente</label><input class="ef" id="ed-cliente" type="text"></div>
         <div><label class="ef-label">NIT</label><input class="ef" id="ed-nit" type="text"></div>
-        <div><label class="ef-label">Sucursal</label><input class="ef" id="ed-sucursal" type="text" placeholder="Sucursal del cliente"></div>
+        <div><label class="ef-label">Sucursal</label><input class="ef" id="ed-sucursal" type="text" list="dl-sucursal" placeholder="Seleccionar sucursal"></div>
         <div><label class="ef-label">Fecha Pedido</label><input class="ef" id="ed-fecha" type="date"></div>
         <div><label class="ef-label">Comercial</label><input class="ef" id="ed-comercial" type="text"></div>
         <div><label class="ef-label">Municipio</label><input class="ef" id="ed-municipio" type="text"></div>
@@ -647,7 +647,8 @@
         </div>
         <div>
           <label class="ef-label">Sucursal</label>
-          <input class="ef" id="nv-sucursal" type="text" placeholder="Sucursal del cliente (opcional)">
+          <input class="ef" id="nv-sucursal" type="text" list="dl-sucursal" placeholder="Seleccionar sucursal">
+          <datalist id="dl-sucursal"></datalist>
         </div>
         <div>
           <label class="ef-label">Comercial</label>
