@@ -462,12 +462,14 @@ async function apiPost(body) {
     if (action === 'tramitarDevolucion') {
       var lineas = body.lineas || [];
       var nuevasLineas = body.nuevas_lineas || [];
-      var remIngDev = (body.Remision_Ingreso || '').trim();
-      var remSalDev = (body.Remision_Salida || '').trim();
+      var genIngreso = body.generar_remision_ingreso !== false;
+      var genSalida = body.generar_remision_salida !== false;
+      var remIngDev = genIngreso ? (body.Remision_Ingreso || '').trim() : '';
+      var remSalDev = genSalida ? (body.Remision_Salida || '').trim() : '';
       var empDev = (body.Empresa || '').trim();
       if (empDev) {
-        if (!remIngDev) remIngDev = await generarRemisionConsecutivo(empDev, 'ENTRADA');
-        if (!remSalDev) remSalDev = await generarRemisionConsecutivo(empDev, 'SALIDA');
+        if (genIngreso && !remIngDev) remIngDev = await generarRemisionConsecutivo(empDev, 'ENTRADA');
+        if (genSalida && !remSalDev) remSalDev = await generarRemisionConsecutivo(empDev, 'SALIDA');
       }
       var nuevasAdded = 0;
       if (nuevasLineas.length && lineas.length) {
@@ -477,7 +479,7 @@ async function apiPost(body) {
           var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
           var newRows = nuevasLineas.map(function(nl) {
             var cant = Number(nl.Cantidad) || 0;
-            return {
+            var row = {
               Fecha: ref.Fecha || '', Empresa: ref.Empresa || '', Consecutivo: ref.Consecutivo || '',
               Vendedor: ref.Vendedor || '', Cliente: ref.Cliente || '', NIT: ref.NIT || '',
               Direccion: ref.Direccion || '', Municipio: ref.Municipio || '',
@@ -488,15 +490,20 @@ async function apiPost(body) {
               Valor_Unitario: Number(nl.Valor_Unitario) || 0,
               Valor_Total: Number(nl.Valor_Total) || 0,
               Motivo: ref.Motivo || '', Observaciones: ref.Observaciones || '',
-              Remision: remIngDev, Fecha_Devolucion: body.Fecha_Ingreso || '',
-              Remision_Ingreso: remIngDev, Bodega_Ingreso: body.Bodega_Ingreso || 'Productos Buenos',
-              Fecha_Ingreso: body.Fecha_Ingreso || '',
-              Remision_Salida: remSalDev, Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
-              Fecha_Salida: body.Fecha_Salida || '',
               Estado: 'Tramitada',
               Fecha_Registro: now,
               creado_por: _uid(), modificado_por: _uid()
             };
+            if (genIngreso) {
+              row.Remision = remIngDev; row.Fecha_Devolucion = body.Fecha_Ingreso || '';
+              row.Remision_Ingreso = remIngDev; row.Bodega_Ingreso = body.Bodega_Ingreso || 'Productos Buenos';
+              row.Fecha_Ingreso = body.Fecha_Ingreso || '';
+            }
+            if (genSalida) {
+              row.Remision_Salida = remSalDev; row.Bodega_Salida = body.Bodega_Salida || 'Productos Buenos';
+              row.Fecha_Salida = body.Fecha_Salida || '';
+            }
+            return row;
           });
           var insRes = await _sb.from('Devoluciones').insert(newRows);
           if (insRes.error) return { ok: false, error: insRes.error.message };
@@ -505,19 +512,24 @@ async function apiPost(body) {
       }
       for (var i = 0; i < lineas.length; i++) {
         var lin = lineas[i];
-        var res = await _sb.from('Devoluciones').update({
-          Remision: remIngDev,
-          Fecha_Devolucion: body.Fecha_Ingreso || '',
-          Remision_Ingreso: remIngDev,
-          Bodega_Ingreso: body.Bodega_Ingreso || 'Productos Buenos',
-          Fecha_Ingreso: body.Fecha_Ingreso || '',
-          Remision_Salida: remSalDev,
-          Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
-          Fecha_Salida: body.Fecha_Salida || '',
+        var upd = {
           Cant_Entregada: Number(lin.Cant_Entregada) || 0,
           Estado: 'Tramitada',
           modificado_por: _uid()
-        }).eq('id', lin.id);
+        };
+        if (genIngreso) {
+          upd.Remision = remIngDev;
+          upd.Fecha_Devolucion = body.Fecha_Ingreso || '';
+          upd.Remision_Ingreso = remIngDev;
+          upd.Bodega_Ingreso = body.Bodega_Ingreso || 'Productos Buenos';
+          upd.Fecha_Ingreso = body.Fecha_Ingreso || '';
+        }
+        if (genSalida) {
+          upd.Remision_Salida = remSalDev;
+          upd.Bodega_Salida = body.Bodega_Salida || 'Productos Buenos';
+          upd.Fecha_Salida = body.Fecha_Salida || '';
+        }
+        var res = await _sb.from('Devoluciones').update(upd).eq('id', lin.id);
         if (res.error) return { ok: false, error: res.error.message };
       }
       return { ok: true, updated: lineas.length, nuevas_added: nuevasAdded, remision_ingreso: remIngDev, remision_salida: remSalDev };
