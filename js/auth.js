@@ -115,11 +115,6 @@ var AUTH = (function() {
       e.style.display = canManageUsers() ? (e.dataset.display || 'inline-block') : 'none';
     });
 
-    var navUsuarios = document.getElementById('nav-usuarios');
-    if (navUsuarios) {
-      navUsuarios.style.display = canManageUsers() ? '' : 'none';
-    }
-
     // Ocultar enlaces del navbar y tarjetas del home cuyo módulo no esté permitido
     document.querySelectorAll('[data-modulo]').forEach(function(el) {
       var mod = el.getAttribute('data-modulo');

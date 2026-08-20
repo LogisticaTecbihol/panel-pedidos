@@ -30,6 +30,41 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #2d3748;
   color: #1a5276; background: #f0f4f8;
   pointer-events: none;
 }
+/* ── Dropdown Admin en Navbar ── */
+.nav-dropdown {
+  position: relative;
+}
+.nav-dropdown-toggle {
+  color: rgba(255,255,255,0.7); text-decoration: none;
+  padding: 9px 20px; font-size: 0.84rem; font-weight: 600;
+  border-radius: 8px 8px 0 0; transition: all 0.2s;
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; border: none; background: none;
+  font-family: inherit;
+}
+.nav-dropdown-toggle:hover { color: white; background: rgba(255,255,255,0.1); }
+.nav-dropdown-toggle.has-active { color: #1a5276; background: #f0f4f8; }
+.nav-dropdown-toggle::after {
+  content: '▾'; font-size: 0.7rem; margin-left: 2px; opacity: 0.7;
+}
+.nav-dropdown-menu {
+  display: none; position: absolute; top: 100%; left: 0; z-index: 999;
+  background: #fff; border-radius: 0 8px 8px 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18); min-width: 180px;
+  padding: 4px 0; margin-top: 0;
+}
+.nav-dropdown.open .nav-dropdown-menu { display: block; }
+.nav-dropdown-menu a {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 18px; color: #2d3748; text-decoration: none;
+  font-size: 0.84rem; font-weight: 600; transition: background 0.15s;
+  white-space: nowrap;
+}
+.nav-dropdown-menu a:hover { background: #edf2f7; }
+.nav-dropdown-menu a.active {
+  color: #1a5276; background: #ebf5fb; pointer-events: none;
+}
+
 .nav-badge {
   display: inline-block;
   min-width: 18px; height: 18px; padding: 0 5px;

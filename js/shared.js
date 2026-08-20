@@ -1532,3 +1532,20 @@ window.addEventListener('scroll', _closeNotifDropdown, true);
     });
   } catch (e) { /* silencioso */ }
 })();
+
+// ── Nav-dropdown toggle (Admin menu) ──
+(function() {
+  document.querySelectorAll('.nav-dropdown').forEach(function(dd) {
+    var toggle = dd.querySelector('.nav-dropdown-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('click', function(e) {
+      e.stopPropagation();
+      dd.classList.toggle('open');
+    });
+  });
+  document.addEventListener('click', function() {
+    document.querySelectorAll('.nav-dropdown.open').forEach(function(dd) {
+      dd.classList.remove('open');
+    });
+  });
+})();
