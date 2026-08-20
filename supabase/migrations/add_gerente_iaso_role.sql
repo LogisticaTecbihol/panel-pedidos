@@ -1,41 +1,32 @@
 -- ============================================================
--- FASE 4: Row Level Security en tablas de datos
--- Ejecutar en Supabase SQL Editor
+-- Migración: Agregar rol 'gerente_iaso'
 --
--- Usa las funciones helper de Fase 1:
---   get_user_role()      → rol del usuario autenticado
---   user_has_company(p)  → true si el usuario tiene acceso a esa empresa
+-- Comportamiento: idéntico a 'editor', pero puede LEER datos
+-- de TODAS las empresas en todas las tablas (necesario para
+-- calcular el Kardex completo, ya que IASO no maneja inventario
+-- propio). INSERT/UPDATE/DELETE siguen restringidos a su empresa.
+--
+-- En la UI, solo el módulo Kardex muestra todas las empresas
+-- en los dropdowns; los demás módulos muestran solo IASO.
+--
+-- Ejecutar en: Supabase Dashboard → SQL Editor → New Query
+-- Fecha: 2026-08-20
 -- ============================================================
 
 
--- ══════════════════════════════════════════════════════════════
--- 0. LIMPIAR políticas permisivas preexistentes (anon_all,
---    authenticated_full_access, etc.) que anulan el filtrado
--- ══════════════════════════════════════════════════════════════
+-- ── 1. Ampliar CHECK constraint ──
 
-DO $$
-DECLARE
-  t text;
-  p text;
-BEGIN
-  FOR t, p IN
-    SELECT tablename, policyname FROM pg_policies
-    WHERE schemaname = 'public'
-    AND policyname IN ('anon_all','anon_full_access','anon_full_clientesunicos','authenticated_full_access')
-    AND tablename IN ('Pedidos','Productos','Ingresos','Devoluciones','CambiosMercancia',
-      'Inventario','OrdenesCompra','SolicitudMuestras','Reenvases','KardexAjustes',
-      'KardexNC','RemisionesAnuladas','Consecutivos','ClientesUnicos','maestro_productos')
-  LOOP
-    EXECUTE format('DROP POLICY %I ON %I', p, t);
-  END LOOP;
-END $$;
+ALTER TABLE usuarios
+  DROP CONSTRAINT IF EXISTS usuarios_rol_check;
+
+ALTER TABLE usuarios
+  ADD CONSTRAINT usuarios_rol_check
+  CHECK (rol IN ('admin','editor','lector','comercial','despachador','contabilidad','gerente_iaso'));
 
 
--- ══════════════════════════════════════════════════════════════
--- 1. TABLAS CON COLUMNA "Empresa" (texto = nombre completo)
---    Devoluciones, CambiosMercancia, Inventario, SolicitudMuestras,
---    Reenvases, KardexAjustes, KardexNC, RemisionesAnuladas
--- ══════════════════════════════════════════════════════════════
+-- ── 2. Tablas con columna "Empresa" ──
+--    SELECT: gerente_iaso puede leer TODO (bypass de empresa)
+--    INSERT/UPDATE/DELETE: gerente_iaso puede escribir solo su empresa
 
 DO $$
 DECLARE
@@ -46,8 +37,6 @@ BEGIN
     'Reenvases','KardexAjustes','KardexNC','RemisionesAnuladas'
   ]
   LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
-
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_select', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_insert', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_update', t);
@@ -69,10 +58,7 @@ BEGIN
 END $$;
 
 
--- ══════════════════════════════════════════════════════════════
--- 2. TABLAS CON COLUMNA "Nombre_Empresa"
---    Pedidos, Productos
--- ══════════════════════════════════════════════════════════════
+-- ── 3. Tablas con columna "Nombre_Empresa" ──
 
 DO $$
 DECLARE
@@ -80,8 +66,6 @@ DECLARE
 BEGIN
   FOREACH t IN ARRAY ARRAY['Pedidos','Productos']
   LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
-
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_select', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_insert', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_update', t);
@@ -103,15 +87,7 @@ BEGIN
 END $$;
 
 
--- ══════════════════════════════════════════════════════════════
--- 3a. Ingresos (Empresa_Origen + Empresa_Destino)
---     SELECT: rol contabilidad solo ve registros donde su empresa
---     es Empresa_Destino; los demás roles ven ambas direcciones.
---     INSERT/UPDATE/DELETE permiten acceso si el usuario tiene
---     cualquiera de las dos empresas.
--- ══════════════════════════════════════════════════════════════
-
-ALTER TABLE "Ingresos" ENABLE ROW LEVEL SECURITY;
+-- ── 4. Ingresos ──
 
 DROP POLICY IF EXISTS "Ingresos_select" ON "Ingresos";
 DROP POLICY IF EXISTS "Ingresos_insert" ON "Ingresos";
@@ -146,12 +122,7 @@ CREATE POLICY "Ingresos_delete" ON "Ingresos"
     AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
 
 
--- ══════════════════════════════════════════════════════════════
--- 3b. OrdenesCompra (Empresa_Origen + Empresa_Destino)
---     Visible si el usuario tiene acceso a CUALQUIERA de las dos
--- ══════════════════════════════════════════════════════════════
-
-ALTER TABLE "OrdenesCompra" ENABLE ROW LEVEL SECURITY;
+-- ── 5. OrdenesCompra ──
 
 DROP POLICY IF EXISTS "OrdenesCompra_select" ON "OrdenesCompra";
 DROP POLICY IF EXISTS "OrdenesCompra_insert" ON "OrdenesCompra";
@@ -180,11 +151,7 @@ CREATE POLICY "OrdenesCompra_delete" ON "OrdenesCompra"
     AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
 
 
--- ══════════════════════════════════════════════════════════════
--- 4. TABLAS DE REFERENCIA (sin columna empresa)
---    Consecutivos, ClientesUnicos, maestro_productos
---    Todos pueden leer, solo editores/admins pueden modificar
--- ══════════════════════════════════════════════════════════════
+-- ── 6. Tablas de referencia ──
 
 DO $$
 DECLARE
@@ -192,16 +159,10 @@ DECLARE
 BEGIN
   FOREACH t IN ARRAY ARRAY['Consecutivos','ClientesUnicos','maestro_productos']
   LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
-
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_select', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_insert', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_update', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_delete', t);
 
-    EXECUTE format(
-      'CREATE POLICY %I ON %I FOR SELECT TO authenticated USING (true)',
-      t || '_select', t);
     EXECUTE format(
       'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor'',''contabilidad'',''gerente_iaso''))',
       t || '_insert', t);
@@ -215,27 +176,6 @@ BEGIN
 END $$;
 
 
--- ══════════════════════════════════════════════════════════════
--- 5. GRANTS para authenticated en todas las tablas de datos
--- ══════════════════════════════════════════════════════════════
-
-GRANT ALL ON "Pedidos" TO authenticated;
-GRANT ALL ON "Productos" TO authenticated;
-GRANT ALL ON "Consecutivos" TO authenticated;
-GRANT ALL ON "ClientesUnicos" TO authenticated;
-GRANT ALL ON "Ingresos" TO authenticated;
-GRANT ALL ON "Devoluciones" TO authenticated;
-GRANT ALL ON "CambiosMercancia" TO authenticated;
-GRANT ALL ON "Inventario" TO authenticated;
-GRANT ALL ON "OrdenesCompra" TO authenticated;
-GRANT ALL ON maestro_productos TO authenticated;
-GRANT ALL ON "SolicitudMuestras" TO authenticated;
-GRANT ALL ON "Reenvases" TO authenticated;
-GRANT ALL ON "KardexAjustes" TO authenticated;
-GRANT ALL ON "KardexNC" TO authenticated;
-GRANT ALL ON "RemisionesAnuladas" TO authenticated;
-
-
--- ══════════════════════════════════════════════════════════════
--- FIN FASE 4
--- ══════════════════════════════════════════════════════════════
+-- ============================================================
+-- FIN migración gerente_iaso
+-- ============================================================

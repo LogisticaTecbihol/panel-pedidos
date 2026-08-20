@@ -35,15 +35,16 @@ function _esOrigenPlanta(origen) {
 async function loadKardex() {
   await _authReady;
   var kxExtras = ['CHIA ABAGO'];
-  populateEmpresaSelect('f-empresa', '— Seleccionar —', kxExtras);
-  populateEmpresaSelect('nc-f-empresa', '— Seleccionar —', kxExtras);
-  populateEmpresaSelect('nc-empresa', '— Seleccionar —', kxExtras);
-  populateEmpresaSelect('ncsi-empresa', '— Seleccionar —', kxExtras);
-  populateEmpresaSelect('aj-empresa', '— Seleccionar —', kxExtras);
-  populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras);
-  populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras);
-  populateEmpresaSelect('kxnc-f-empresa', '— Seleccionar —', kxExtras);
-  EMPRESAS_EXIST = AUTH.getFilteredEmpresas(EMPRESAS_HOLDING);
+  var kxAll = true;
+  populateEmpresaSelect('f-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('nc-f-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('nc-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('ncsi-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('aj-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('kxnc-f-empresa', '— Seleccionar —', kxExtras, kxAll);
+  EMPRESAS_EXIST = (AUTH.isGerenteIaso() || AUTH.isAdmin()) ? EMPRESAS_HOLDING : AUTH.getFilteredEmpresas(EMPRESAS_HOLDING);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');

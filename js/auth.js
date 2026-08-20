@@ -159,7 +159,7 @@ var AUTH = (function() {
 
   function canEdit() {
     if (!_profile) return false;
-    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'comercial';
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial';
   }
 
   // El rol 'comercial' solo puede crear/ver/editar sus propios pedidos
@@ -172,13 +172,17 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'comercial';
   }
 
+  function isGerenteIaso() {
+    return _profile && _profile.rol === 'gerente_iaso';
+  }
+
   function isDespachador() {
     return _profile && _profile.rol === 'despachador';
   }
 
   function canUploadAdjuntos() {
     if (!_profile) return false;
-    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'comercial' || _profile.rol === 'despachador';
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial' || _profile.rol === 'despachador';
   }
 
   function canManageUsers() {
@@ -274,6 +278,7 @@ var AUTH = (function() {
     canManageUsers: canManageUsers,
     isAdmin: isAdmin,
     isComercial: isComercial,
+    isGerenteIaso: isGerenteIaso,
     isDespachador: isDespachador,
     canUploadAdjuntos: canUploadAdjuntos,
     hasCompany: hasCompany,

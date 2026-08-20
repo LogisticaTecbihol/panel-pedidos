@@ -43,10 +43,15 @@ async function generarRemisionDual(empresaSalida, empresaEntrada) {
   return res.data;
 }
 
-function populateEmpresaSelect(id, defaultLabel, extras) {
+function populateEmpresaSelect(id, defaultLabel, extras, allAccess) {
   var sel = document.getElementById(id);
   if (!sel) return;
-  var empresas = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas) ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING) : EMPRESAS_HOLDING;
+  var empresas;
+  if (allAccess && typeof AUTH !== 'undefined' && AUTH.isGerenteIaso && AUTH.isGerenteIaso()) {
+    empresas = EMPRESAS_HOLDING;
+  } else {
+    empresas = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas) ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING) : EMPRESAS_HOLDING;
+  }
   var opts = '<option value="">' + (defaultLabel || '— Seleccionar —') + '</option>';
   empresas.forEach(function(e) {
     opts += '<option value="' + e.value + '">' + e.sigla + '</option>';
