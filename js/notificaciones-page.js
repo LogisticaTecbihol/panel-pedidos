@@ -133,11 +133,15 @@
   window.loadInbox = loadInbox;
 
   function renderStats() {
-    var total = _all.length;
+    var visible = _all.filter(function(r) {
+      var dest = _senders[r.para_usuario_id];
+      return !(dest && dest.rol === 'admin');
+    });
+    var total = visible.length;
     var unread = 0, week = 0;
     var senders = {};
     var weekAgo = Date.now() - 7 * 86400000;
-    _all.forEach(function(r) {
+    visible.forEach(function(r) {
       if (!r.leida) unread++;
       if (new Date(r.created_at).getTime() >= weekAgo) week++;
       if (r.de_usuario_id) senders[r.de_usuario_id] = true;
@@ -174,6 +178,8 @@
     var emp = (document.getElementById('f-empresa') || {}).value || '';
 
     _filtered = _all.filter(function(r) {
+      var dest = _senders[r.para_usuario_id];
+      if (dest && dest.rol === 'admin') return false;
       if (est === 'unread' && r.leida) return false;
       if (est === 'read' && !r.leida) return false;
       if (mod && r.modulo !== mod) return false;
