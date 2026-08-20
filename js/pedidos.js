@@ -4492,9 +4492,7 @@ function switchPedidoTab(tab) {
 function initDespachosTab() {
   var btn = document.getElementById('tab-despachos');
   if (!btn) return;
-  if (AUTH.isAdmin() || AUTH.isDespachador() || (AUTH.getProfile() && AUTH.getProfile().rol === 'editor')) {
-    btn.style.display = 'inline-block';
-  }
+  btn.style.display = 'inline-block';
   if (AUTH.isDespachador()) {
     document.getElementById('tab-ordenes').style.display = 'none';
     document.getElementById('tab-detalle').style.display = 'none';
