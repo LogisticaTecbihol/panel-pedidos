@@ -111,6 +111,7 @@
 
       _selected = {};
       updateBulkBtn();
+      populateEmpresaFilter();
       applyFilters();
       renderStats();
 
@@ -147,15 +148,39 @@
     document.getElementById('s-senders').textContent = Object.keys(senders).length;
   }
 
+  function populateEmpresaFilter() {
+    var sel = document.getElementById('f-empresa');
+    if (!sel) return;
+    var prev = sel.value;
+    var siglas = (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : [];
+    var found = {};
+    _all.forEach(function(r) {
+      var text = (r.referencia || '') + ' ' + (r.titulo || '');
+      siglas.forEach(function(e) {
+        if (text.indexOf(e.sigla) >= 0) found[e.sigla] = e.value;
+      });
+    });
+    sel.innerHTML = '<option value="">Todas las empresas</option>' +
+      Object.keys(found).sort().map(function(sig) {
+        return '<option value="' + sig + '">' + sig + '</option>';
+      }).join('');
+    sel.value = prev || '';
+  }
+
   function applyFilters() {
     var q = (document.getElementById('f-search').value || '').toLowerCase().trim();
     var est = document.getElementById('f-estado').value;
     var mod = document.getElementById('f-modulo').value;
+    var emp = (document.getElementById('f-empresa') || {}).value || '';
 
     _filtered = _all.filter(function(r) {
       if (est === 'unread' && r.leida) return false;
       if (est === 'read' && !r.leida) return false;
       if (mod && r.modulo !== mod) return false;
+      if (emp) {
+        var refTit = (r.referencia || '') + ' ' + (r.titulo || '');
+        if (refTit.indexOf(emp) < 0) return false;
+      }
       if (q) {
         var sDe = _senders[r.de_usuario_id];
         var sPara = _senders[r.para_usuario_id];
@@ -353,6 +378,7 @@
   document.getElementById('f-search').addEventListener('input', debounce(applyFilters, 200));
   document.getElementById('f-estado').addEventListener('change', applyFilters);
   document.getElementById('f-modulo').addEventListener('change', applyFilters);
+  document.getElementById('f-empresa').addEventListener('change', applyFilters);
   document.getElementById('btn-mark-selected').addEventListener('click', markSelected);
   document.getElementById('btn-mark-all').addEventListener('click', markAllUnread);
   document.getElementById('np-prev').addEventListener('click', function() { if (_page > 1) { _page--; render(); } });
