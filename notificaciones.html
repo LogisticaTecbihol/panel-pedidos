@@ -116,20 +116,22 @@
         <option value="ordenes">🛒 Órdenes</option>
         <option value="ingresos">📦 Ingresos</option>
         <option value="reenvases">🔃 Reenvases</option>
+        <option value="kardex">📋 Kardex</option>
       </select>
       <button class="btn-bulk" id="btn-mark-selected" disabled>Marcar seleccionadas como leídas</button>
       <button class="btn-bulk" id="btn-mark-all" style="background:#27ae60">Marcar todas como leídas</button>
     </div>
     <div style="overflow-x:auto">
       <table>
-        <thead>
+        <thead id="np-thead">
           <tr>
             <th style="width:36px"><input type="checkbox" id="np-check-all"></th>
-            <th style="width:60px">Estado</th>
-            <th style="width:140px">Fecha</th>
-            <th style="width:120px">Módulo</th>
-            <th>Título / mensaje</th>
-            <th style="width:180px">De</th>
+            <th class="sortable" data-sort="estado" onclick="toggleSortNp('estado',event)" style="width:60px">Estado <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="fecha" onclick="toggleSortNp('fecha',event)" style="width:140px">Fecha <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="modulo" onclick="toggleSortNp('modulo',event)" style="width:120px">Módulo <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="titulo" onclick="toggleSortNp('titulo',event)">Título / mensaje <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="para" onclick="toggleSortNp('para',event)" style="width:160px">Para <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="de" onclick="toggleSortNp('de',event)" style="width:160px">De <span class="sort-icon"></span></th>
             <th style="width:130px">Acciones</th>
           </tr>
         </thead>

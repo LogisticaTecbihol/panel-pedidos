@@ -19,8 +19,66 @@
     muestras:     '🧪 Muestras',
     ordenes:      '🛒 Órdenes',
     ingresos:     '📦 Ingresos',
-    reenvases:    '🔃 Reenvases'
+    reenvases:    '🔃 Reenvases',
+    kardex:       '📋 Kardex'
   };
+
+  // ── Sorting ──
+  var sortLevelsNp = [
+    { id: 'fecha', dir: 'desc' }
+  ];
+
+  var SORT_COLS_NP = [
+    { id: 'estado', fn: function(r) { return r.leida ? 1 : 0; } },
+    { id: 'fecha',  fn: function(r) { return +new Date(r.created_at || 0); } },
+    { id: 'modulo', fn: function(r) { return (r.modulo || '').toLowerCase(); } },
+    { id: 'titulo', fn: function(r) { return (r.titulo || '').toLowerCase(); } },
+    { id: 'para',   fn: function(r) { var s = _senders[r.para_usuario_id]; return s ? (s.nombre || s.email || '').toLowerCase() : ''; } },
+    { id: 'de',     fn: function(r) { var s = _senders[r.de_usuario_id]; return s ? (s.nombre || s.email || '').toLowerCase() : ''; } }
+  ];
+
+  function toggleSortNp(id, e) {
+    var shift = e && e.shiftKey;
+    var idx = -1;
+    for (var i = 0; i < sortLevelsNp.length; i++) { if (sortLevelsNp[i].id === id) { idx = i; break; } }
+    if (shift) {
+      if (idx >= 0) sortLevelsNp.splice(idx, 1);
+    } else if (idx >= 0) {
+      if (sortLevelsNp[idx].dir === 'asc') sortLevelsNp[idx].dir = 'desc';
+      else sortLevelsNp.splice(idx, 1);
+    } else {
+      sortLevelsNp.push({ id: id, dir: 'asc' });
+    }
+    _page = 1;
+    render();
+  }
+  window.toggleSortNp = toggleSortNp;
+
+  function applySortNp(rows) {
+    if (!sortLevelsNp.length) return rows;
+    return [].concat(rows).sort(function(a, b) {
+      for (var si = 0; si < sortLevelsNp.length; si++) {
+        var lvl = sortLevelsNp[si];
+        var col = null;
+        for (var ci = 0; ci < SORT_COLS_NP.length; ci++) { if (SORT_COLS_NP[ci].id === lvl.id) { col = SORT_COLS_NP[ci]; break; } }
+        if (!col) continue;
+        var va = col.fn(a), vb = col.fn(b);
+        var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+        if (cmp !== 0) return lvl.dir === 'asc' ? cmp : -cmp;
+      }
+      return 0;
+    });
+  }
+
+  function updateSortIndicators() {
+    document.querySelectorAll('#np-thead th.sortable').forEach(function(th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+    });
+    sortLevelsNp.forEach(function(lvl) {
+      var th = document.querySelector('#np-thead th[data-sort="' + lvl.id + '"]');
+      if (th) th.classList.add(lvl.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+    });
+  }
 
   async function loadInbox() {
     await _authReady;
@@ -36,19 +94,17 @@
     }
 
     try {
-      var res = await _sb.from('notificaciones')
-        .select('id, created_at, de_usuario_id, modulo, referencia, titulo, mensaje, storage_path, leida, leida_at')
-        .eq('para_usuario_id', user.id)
+      var query = _sb.from('notificaciones')
+        .select('id, created_at, para_usuario_id, de_usuario_id, modulo, referencia, titulo, mensaje, storage_path, leida, leida_at')
         .order('created_at', { ascending: false })
         .limit(1000);
+      if (!AUTH.isAdmin()) query = query.eq('para_usuario_id', user.id);
+      var res = await query;
       if (res.error) throw new Error(res.error.message);
       _all = res.data || [];
 
-      // Resolver remitentes desde el directorio expuesto por NOTIF (RPC
-      // SECURITY DEFINER — evita el bloqueo de RLS para no-admins).
       _senders = {};
-      var anyEmisor = _all.some(function(r) { return !!r.de_usuario_id; });
-      if (anyEmisor && NOTIF && NOTIF.getDirectorio) {
+      if (NOTIF && NOTIF.getDirectorio) {
         var dir = await NOTIF.getDirectorio();
         (dir || []).forEach(function(x) { _senders[x.id] = x; });
       }
@@ -101,9 +157,11 @@
       if (est === 'read' && !r.leida) return false;
       if (mod && r.modulo !== mod) return false;
       if (q) {
-        var s = _senders[r.de_usuario_id];
+        var sDe = _senders[r.de_usuario_id];
+        var sPara = _senders[r.para_usuario_id];
         var text = (r.titulo || '') + ' ' + (r.mensaje || '') + ' ' + (r.referencia || '') +
-                   ' ' + (s ? (s.nombre || '') + ' ' + (s.email || '') : '');
+                   ' ' + (sDe ? (sDe.nombre || '') + ' ' + (sDe.email || '') : '') +
+                   ' ' + (sPara ? (sPara.nombre || '') + ' ' + (sPara.email || '') : '');
         if (text.toLowerCase().indexOf(q) < 0) return false;
       }
       return true;
@@ -114,23 +172,28 @@
   }
 
   function render() {
+    var sorted = applySortNp(_filtered);
     var tbody = document.getElementById('np-tbody');
     var ct = document.getElementById('row-ct');
     ct.textContent = '(' + _filtered.length + ')';
 
-    if (!_filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7"><div class="np-empty">Sin notificaciones que coincidan con los filtros.</div></td></tr>';
+    updateSortIndicators();
+
+    if (!sorted.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="np-empty">Sin notificaciones que coincidan con los filtros.</div></td></tr>';
       renderPager();
       return;
     }
 
     var start = (_page - 1) * PAGE_SIZE;
-    var end = Math.min(start + PAGE_SIZE, _filtered.length);
-    var slice = _filtered.slice(start, end);
+    var end = Math.min(start + PAGE_SIZE, sorted.length);
+    var slice = sorted.slice(start, end);
 
     tbody.innerHTML = slice.map(function(r) {
       var sender = _senders[r.de_usuario_id];
       var senderName = sender ? escHtml(sender.nombre || sender.email || '—') : '—';
+      var recipient = _senders[r.para_usuario_id];
+      var recipientName = recipient ? escHtml(recipient.nombre || recipient.email || '—') : '—';
       var modLbl = MOD_LABEL[r.modulo] || r.modulo;
       var modClass = r.modulo || '';
       var checked = _selected[r.id] ? 'checked' : '';
@@ -143,6 +206,7 @@
         '<td>' + fmtDateTime(r.created_at) + '</td>' +
         '<td><span class="np-badge-mod ' + modClass + '">' + modLbl + '</span>' + refText + '</td>' +
         '<td>' + titulo + mensaje + '</td>' +
+        '<td>' + recipientName + '</td>' +
         '<td>' + senderName + '</td>' +
         '<td onclick="event.stopPropagation()">' +
           '<button class="np-act-btn" data-open="' + r.id + '" title="Abrir PDF">📄 Abrir</button>' +
@@ -151,7 +215,6 @@
       '</tr>';
     }).join('');
 
-    // Bind rows
     tbody.querySelectorAll('tr.np-row').forEach(function(tr) {
       tr.addEventListener('click', function() { openItem(tr.getAttribute('data-id')); });
     });
@@ -206,11 +269,8 @@
   async function openItem(id) {
     var row = _all.filter(function(r) { return r.id === id; })[0];
     if (!row) return;
-    // Delegamos en NOTIF para reutilizar la lógica de signedUrl + mark read.
     if (typeof NOTIF !== 'undefined' && NOTIF.openItem) {
       await NOTIF.openItem(row);
-      // NOTIF muta row.leida en el objeto cache local; nosotros también lo tenemos.
-      // Volvemos a leer estado para refrescar la UI y los stats.
       applyFilters();
       renderStats();
     }
@@ -269,18 +329,18 @@
     });
   }
 
-  // Realtime: refrescar cuando llegue algo nuevo o cambie estado.
   function subscribeRealtime() {
     if (_channel) return;
     var user = AUTH.getUser();
     if (!user) return;
+    var channelOpts = {
+      event: '*',
+      schema: 'public',
+      table: 'notificaciones'
+    };
+    if (!AUTH.isAdmin()) channelOpts.filter = 'para_usuario_id=eq.' + user.id;
     _channel = _sb.channel('inbox-' + user.id)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'notificaciones',
-        filter: 'para_usuario_id=eq.' + user.id
-      }, function(payload) {
+      .on('postgres_changes', channelOpts, function(payload) {
         if (payload.eventType === 'INSERT' && typeof NOTIF !== 'undefined' && NOTIF.playSound) {
           NOTIF.playSound();
         }
