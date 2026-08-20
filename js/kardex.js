@@ -363,9 +363,10 @@ function buildMovimientos() {
   //   - Traslado_NC:        traslado explícito entre bodegas NC de distintas empresas.
   ncAjustes.forEach(function(a) {
     if (a.Tipo !== 'Ingreso_NC') return;
-    if (a.Motivo === 'Devolucion_cliente') return;
-    if (a.Motivo === 'Retorno_conforme') return;
-    if (a.Motivo === 'Traslado_NC') return;
+    var _mn = (a.Motivo || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+    if (_mn === 'devolucioncliente' || _mn === 'devcliente') return;
+    if (_mn === 'retornoconforme' || _mn === 'retornobodegaconforme') return;
+    if (_mn === 'trasladonc' || _mn === 'trasladoentrebodegasnc') return;
     var cant = Number(a.Cantidad) || 0;
     if (cant <= 0) return;
     var motivoLbl = NC_MOTIVO_LABELS[a.Motivo] || a.Motivo || '';
