@@ -1674,6 +1674,7 @@ async function openDetail(idx) {
   document.getElementById('md-municipio').value = c.Municipio || '';
   document.getElementById('md-departamento').value = c.Departamento || '';
   document.getElementById('md-telefono').value = c.Telefono || '';
+  document.getElementById('md-direccion').value = c.Direccion_Envio || '';
   document.getElementById('md-plazo').value = c.Plazo_Pago || '';
   document.getElementById('md-precio').value = c.Precio_Facturacion || '';
   document.getElementById('md-facturar-a').value = c.Facturar_A || c.Cliente || '';
@@ -2529,6 +2530,7 @@ async function guardarTodo() {
     Municipio: document.getElementById('md-municipio').value.trim(),
     Departamento: document.getElementById('md-departamento').value.trim(),
     Telefono: document.getElementById('md-telefono').value.trim(),
+    Direccion_Envio: document.getElementById('md-direccion').value.trim(),
     Plazo_Pago: document.getElementById('md-plazo').value.trim(),
     Precio_Facturacion: document.getElementById('md-precio').value.trim(),
     Facturar_A: document.getElementById('md-facturar-a').value.trim(),
@@ -4851,7 +4853,7 @@ function _exportarRemisionExcelEspecifica(rem) {
   rows.push(['Comercial', document.getElementById('md-comercial').value.trim() || c.Comercial || '']);
   rows.push(['Telefono', document.getElementById('md-telefono').value.trim() || c.Telefono || '']);
   rows.push(['Sucursal', document.getElementById('md-sucursal').value.trim() || c.Sucursal || '']);
-  rows.push(['Direccion', c.Direccion_Envio || '']);
+  rows.push(['Direccion', document.getElementById('md-direccion').value.trim() || c.Direccion_Envio || '']);
   rows.push(['Municipio', document.getElementById('md-municipio').value.trim() || c.Municipio || '']);
   rows.push(['Departamento', document.getElementById('md-departamento').value.trim() || c.Departamento || '']);
   rows.push([]);
@@ -4973,7 +4975,7 @@ function _exportarRemisionEspecifica(rem, opts) {
     comercial: document.getElementById('md-comercial').value.trim() || c.Comercial,
     municipio: document.getElementById('md-municipio').value.trim() || c.Municipio,
     departamento: document.getElementById('md-departamento').value.trim() || c.Departamento,
-    direccion: c.Direccion_Envio || '',
+    direccion: document.getElementById('md-direccion').value.trim() || c.Direccion_Envio || '',
     plazo: document.getElementById('md-plazo').value.trim() || c.Plazo_Pago || '',
     precio: document.getElementById('md-precio').value.trim() || c.Precio_Facturacion || '',
     consignacion: (document.getElementById('md-consignacion') && document.getElementById('md-consignacion').value) || c.Consignacion || 'No',
@@ -5089,7 +5091,7 @@ function _dataPedidoDesdeModal(c) {
     cliente: _v('md-cliente', c.Cliente),
     nit: _v('md-nit', c.NIT),
     telefono: _v('md-telefono', c.Telefono),
-    direccion: c.Direccion_Envio,
+    direccion: _v('md-direccion', c.Direccion_Envio),
     municipio: _v('md-municipio', c.Municipio),
     departamento: _v('md-departamento', c.Departamento),
     comercial: _v('md-comercial', c.Comercial),
