@@ -1660,6 +1660,105 @@ function exportNCExcel() {
 var ncLineas = [];
 var ncModalTipo = 'Ingreso_NC';
 
+var NC_MOTIVOS_INGRESO = {
+  afectan: [
+    { value: 'Vencimiento',     label: 'Vencimiento' },
+    { value: 'Daño',            label: 'Daño en producto' },
+    { value: 'Calidad',         label: 'Problema de calidad' },
+    { value: 'Etiquetado',      label: 'Error de etiquetado' },
+    { value: 'Contaminacion',   label: 'Contaminación' },
+    { value: 'Reacondicionamiento', label: 'Reacondicionamiento' },
+    { value: 'Otro',            label: 'Otro' }
+  ],
+  noAfectan: [
+    { value: 'Devolucion_cliente', label: 'Devolución de cliente' },
+    { value: 'Retorno_conforme',   label: 'Retorno conforme (desde otra NC)' },
+    { value: 'Traslado_NC',        label: 'Traslado entre bodegas NC' }
+  ]
+};
+
+var NC_MOTIVOS_SALIDA = {
+  afectan: [
+    { value: 'Retorno_conforme',     label: 'Retorno a bodega conforme' },
+    { value: 'Reacondicionamiento',  label: 'Reacondicionamiento (retorna a buenos)' }
+  ],
+  noAfectan: [
+    { value: 'Disposicion_final',    label: 'Disposición final' },
+    { value: 'Devolucion_proveedor', label: 'Devolución a proveedor' },
+    { value: 'Traslado_NC',          label: 'Traslado entre bodegas NC' },
+    { value: 'Otro',                 label: 'Otro' }
+  ]
+};
+
+var NC_MOTIVO_HINTS = {
+  ingreso: {
+    afectan:   'Sale de Bodega Productos Buenos → entra a Bodega NC',
+    noAfectan: 'Entra a Bodega NC sin afectar Bodega Productos Buenos'
+  },
+  salida: {
+    afectan:   'Sale de Bodega NC → retorna a Bodega Productos Buenos',
+    noAfectan: 'Sale de Bodega NC sin afectar Bodega Productos Buenos'
+  }
+};
+
+function _populateNCMotivos(isIngreso, selectedValue) {
+  var sel = document.getElementById('nc-motivo');
+  var motivos = isIngreso ? NC_MOTIVOS_INGRESO : NC_MOTIVOS_SALIDA;
+  var hints = isIngreso ? NC_MOTIVO_HINTS.ingreso : NC_MOTIVO_HINTS.salida;
+  sel.innerHTML = '';
+
+  var g1 = document.createElement('optgroup');
+  g1.label = isIngreso
+    ? '▼ Descuentan de Bodega Productos Buenos'
+    : '▲ Retornan a Bodega Productos Buenos';
+  motivos.afectan.forEach(function(m) {
+    var opt = document.createElement('option');
+    opt.value = m.value;
+    opt.textContent = m.label;
+    g1.appendChild(opt);
+  });
+  sel.appendChild(g1);
+
+  var g2 = document.createElement('optgroup');
+  g2.label = '○ No afectan Bodega Productos Buenos';
+  motivos.noAfectan.forEach(function(m) {
+    var opt = document.createElement('option');
+    opt.value = m.value;
+    opt.textContent = m.label;
+    g2.appendChild(opt);
+  });
+  sel.appendChild(g2);
+
+  if (selectedValue) sel.value = selectedValue;
+  _updateNCMotivoHint();
+}
+
+function _updateNCMotivoHint() {
+  var sel = document.getElementById('nc-motivo');
+  var hint = document.getElementById('nc-motivo-hint');
+  if (!hint) return;
+  var val = sel.value;
+  var isIngreso = ncModalTipo === 'Ingreso_NC';
+  var motivos = isIngreso ? NC_MOTIVOS_INGRESO : NC_MOTIVOS_SALIDA;
+  var hints = isIngreso ? NC_MOTIVO_HINTS.ingreso : NC_MOTIVO_HINTS.salida;
+  var inAfectan = motivos.afectan.some(function(m) { return m.value === val; });
+  if (inAfectan) {
+    hint.textContent = hints.afectan;
+    hint.style.display = 'block';
+    hint.style.background = isIngreso ? '#fff5f5' : '#f0fff4';
+    hint.style.color = isIngreso ? '#c53030' : '#276749';
+    hint.style.border = isIngreso ? '1px solid #feb2b2' : '1px solid #9ae6b4';
+  } else {
+    hint.textContent = hints.noAfectan;
+    hint.style.display = 'block';
+    hint.style.background = '#f7fafc';
+    hint.style.color = '#718096';
+    hint.style.border = '1px solid #e2e8f0';
+  }
+}
+
+document.getElementById('nc-motivo').addEventListener('change', _updateNCMotivoHint);
+
 function openNCModal(tipo) {
   editNCId = null;
   ncModalTipo = tipo;
@@ -1671,7 +1770,7 @@ function openNCModal(tipo) {
   document.getElementById('btn-save-nc').textContent = isIngreso ? '✓ Registrar ingreso' : '✓ Registrar salida';
   document.getElementById('nc-fecha').value = today();
   document.getElementById('nc-empresa').value = document.getElementById('nc-f-empresa').value || '';
-  document.getElementById('nc-motivo').value = isIngreso ? 'Vencimiento' : 'Disposicion_final';
+  _populateNCMotivos(isIngreso, isIngreso ? 'Vencimiento' : 'Disposicion_final');
   document.getElementById('nc-remision').value = '';
   document.getElementById('nc-observaciones').value = '';
   document.getElementById('btn-save-nc').disabled = false;
@@ -1791,7 +1890,7 @@ function openEditNC(id) {
 
   document.getElementById('nc-fecha').value = reg.Fecha || '';
   document.getElementById('nc-empresa').value = reg.Empresa || '';
-  document.getElementById('nc-motivo').value = reg.Motivo || 'Otro';
+  _populateNCMotivos(isIngreso, reg.Motivo || 'Otro');
   document.getElementById('nc-remision').value = reg.Remision || '';
   document.getElementById('nc-observaciones').value = reg.Observaciones || '';
 

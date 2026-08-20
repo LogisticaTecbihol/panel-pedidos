@@ -297,6 +297,8 @@ tbody tr:last-child td { border-bottom: none; }
   transition: border-color 0.2s; background: white;
 }
 .ef:focus { border-color: #1a5276; }
+select.ef optgroup { font-weight: 700; font-size: 0.82rem; color: #2d3748; padding: 6px 0 2px; }
+select.ef optgroup option { font-weight: 400; padding-left: 8px; }
 .ef-label {
   display: block; font-size: 0.76rem; font-weight: 700;
   color: #4a5568; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px;
