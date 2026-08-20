@@ -454,12 +454,6 @@ var NOTIF = (function() {
       var u = AUTH.getUser(); if (u) _uid = u.id;
     }
 
-    if (fueEnviada(meta.modulo, meta.referencia)) {
-      _disableBtn(meta.triggerBtn);
-      showToast('Esta remisión ya fue enviada anteriormente.', '#e67e22');
-      return;
-    }
-
     var overlay = document.createElement('div');
     overlay.className = 'overlay show';
     overlay.style.zIndex = 2000;
@@ -574,18 +568,6 @@ var NOTIF = (function() {
                       ' a ' + dests.length + ' usuario' + (dests.length === 1 ? '' : 's');
           showToast(msgOk, '#27ae60');
           close();
-          _disableBtn(meta.triggerBtn);
-          if (meta.modulo && meta.referencia) {
-            var ek = _enviadaKey(meta.modulo, meta.referencia);
-            if (!_enviadasCache) _enviadasCache = {};
-            _enviadasCache[ek] = true;
-            if (typeof _sb !== 'undefined') {
-              _sb.from('remisiones_enviadas').upsert(
-                { modulo: meta.modulo, referencia: meta.referencia },
-                { onConflict: 'user_id,modulo,referencia' }
-              ).then(function() {});
-            }
-          }
           if (typeof meta.onSent === 'function') meta.onSent({ ok: true, sent: totalSent, docs: docCount, errors: errores });
         } else {
           showToast('Error: ' + (errores[0] || 'sin enviar'), '#e74c3c');
@@ -660,9 +642,8 @@ var NOTIF = (function() {
     return (modulo || '') + '||' + (referencia || '');
   }
 
-  function fueEnviada(modulo, referencia) {
-    if (!_enviadasCache) return false;
-    return !!_enviadasCache[_enviadaKey(modulo, referencia)];
+  function fueEnviada() {
+    return false;
   }
 
   function _disableBtn(btn) {
@@ -683,9 +664,7 @@ var NOTIF = (function() {
     btn.textContent = originalText || '';
   }
 
-  function verificarBtn(btn, modulo, referencia) {
-    if (!btn) return;
-    if (fueEnviada(modulo, referencia)) _disableBtn(btn);
+  function verificarBtn() {
   }
 
   return {
@@ -704,4 +683,3 @@ var NOTIF = (function() {
   };
 })();
 
-if (typeof NOTIF !== 'undefined' && NOTIF.loadEnviadas) NOTIF.loadEnviadas();
