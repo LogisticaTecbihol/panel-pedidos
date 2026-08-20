@@ -11,6 +11,7 @@
   var _page = 1;
   var _selected = {};
   var _channel = null;
+  var _isAdmin = false;
 
   var MOD_LABEL = {
     pedidos:      '📋 Pedidos',
@@ -84,6 +85,11 @@
     await _authReady;
     var user = AUTH.getUser();
     if (!user) return;
+    _isAdmin = AUTH.isAdmin();
+
+    document.getElementById('btn-mark-selected').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('btn-mark-all').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('np-check-all').style.display = _isAdmin ? '' : 'none';
 
     var loadZone = document.getElementById('load-zone');
     var mainEl = document.getElementById('main');
@@ -231,8 +237,14 @@
       var titulo = escHtml(r.titulo || '');
       var mensaje = r.mensaje ? '<div class="np-msg-preview">' + escHtml(r.mensaje) + '</div>' : '';
       var refText = r.referencia ? ' <span style="color:#a0aec0;font-weight:400">· ' + escHtml(r.referencia) + '</span>' : '';
+      var checkTd = _isAdmin
+        ? '<td onclick="event.stopPropagation()"><input type="checkbox" class="np-check" data-id="' + r.id + '" ' + checked + '></td>'
+        : '<td></td>';
+      var toggleBtn = _isAdmin
+        ? '<button class="np-act-btn" data-toggle="' + r.id + '" title="' + (r.leida ? 'Marcar como no leída' : 'Marcar como leída') + '">' + (r.leida ? '↻' : '✓') + '</button>'
+        : '';
       return '<tr class="np-row ' + (r.leida ? '' : 'unread') + '" data-id="' + r.id + '">' +
-        '<td onclick="event.stopPropagation()"><input type="checkbox" class="np-check" data-id="' + r.id + '" ' + checked + '></td>' +
+        checkTd +
         '<td><span class="np-state-dot ' + (r.leida ? '' : 'unread') + '"></span>' + (r.leida ? '<span style="color:#a0aec0;font-size:0.75rem">Leída</span>' : '<span style="color:#e74c3c;font-size:0.75rem;font-weight:700">Nueva</span>') + '</td>' +
         '<td>' + fmtDateTime(r.created_at) + '</td>' +
         '<td><span class="np-badge-mod ' + modClass + '">' + modLbl + '</span>' + refText + '</td>' +
@@ -241,7 +253,7 @@
         '<td>' + senderName + '</td>' +
         '<td onclick="event.stopPropagation()">' +
           '<button class="np-act-btn" data-open="' + r.id + '" title="Abrir PDF">📄 Abrir</button>' +
-          '<button class="np-act-btn" data-toggle="' + r.id + '" title="' + (r.leida ? 'Marcar como no leída' : 'Marcar como leída') + '">' + (r.leida ? '↻' : '✓') + '</button>' +
+          toggleBtn +
         '</td>' +
       '</tr>';
     }).join('');
@@ -301,13 +313,23 @@
     var row = _all.filter(function(r) { return r.id === id; })[0];
     if (!row) return;
     if (typeof NOTIF !== 'undefined' && NOTIF.openItem) {
-      await NOTIF.openItem(row);
-      applyFilters();
-      renderStats();
+      if (!_isAdmin) {
+        // Solo abrir el PDF sin marcar como leída
+        if (row.storage_path) {
+          var sig = await _sb.storage.from('pedidos-adjuntos').createSignedUrl(row.storage_path, 3600);
+          if (sig.data && sig.data.signedUrl) window.open(sig.data.signedUrl, '_blank', 'noopener');
+          else showToast('No se pudo abrir el PDF', '#e74c3c');
+        }
+      } else {
+        await NOTIF.openItem(row);
+        applyFilters();
+        renderStats();
+      }
     }
   }
 
   async function toggleLeida(id) {
+    if (!_isAdmin) return;
     var row = _all.filter(function(r) { return r.id === id; })[0];
     if (!row) return;
     var newVal = !row.leida;
@@ -322,6 +344,7 @@
   }
 
   async function markSelected() {
+    if (!_isAdmin) return;
     var ids = Object.keys(_selected);
     if (!ids.length) return;
     var upd = await _sb.from('notificaciones')
@@ -338,6 +361,7 @@
   }
 
   async function markAllUnread() {
+    if (!_isAdmin) return;
     var ids = _all.filter(function(r) { return !r.leida; }).map(function(r) { return r.id; });
     if (!ids.length) { showToast('No hay notificaciones sin leer.', '#4a5568'); return; }
     var upd = await _sb.from('notificaciones')
