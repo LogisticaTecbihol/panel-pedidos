@@ -98,7 +98,7 @@
         .select('id, created_at, para_usuario_id, de_usuario_id, modulo, referencia, titulo, mensaje, storage_path, leida, leida_at')
         .order('created_at', { ascending: false })
         .limit(1000);
-      if (!AUTH.isAdmin()) query = query.eq('para_usuario_id', user.id);
+      if (!AUTH.isAdmin()) query = query.or('para_usuario_id.eq.' + user.id + ',de_usuario_id.eq.' + user.id);
       var res = await query;
       if (res.error) throw new Error(res.error.message);
       _all = res.data || [];

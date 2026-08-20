@@ -55,7 +55,7 @@ DROP POLICY IF EXISTS "notif_delete_admin"  ON notificaciones;
 CREATE POLICY "notif_select_own"
   ON notificaciones FOR SELECT
   TO authenticated
-  USING (para_usuario_id = auth.uid() OR get_user_role() = 'admin');
+  USING (para_usuario_id = auth.uid() OR de_usuario_id = auth.uid() OR get_user_role() = 'admin');
 
 CREATE POLICY "notif_insert_authed"
   ON notificaciones FOR INSERT
