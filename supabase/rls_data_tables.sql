@@ -57,13 +57,13 @@ BEGIN
       'CREATE POLICY %I ON %I FOR SELECT TO authenticated USING (user_has_company("Empresa"))',
       t || '_select', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor'') AND user_has_company("Empresa"))',
+      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Empresa"))',
       t || '_insert', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (get_user_role() IN (''admin'',''editor'') AND user_has_company("Empresa")) WITH CHECK (get_user_role() IN (''admin'',''editor'') AND user_has_company("Empresa"))',
+      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Empresa")) WITH CHECK (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Empresa"))',
       t || '_update', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR DELETE TO authenticated USING (get_user_role() IN (''admin'',''editor'') AND user_has_company("Empresa"))',
+      'CREATE POLICY %I ON %I FOR DELETE TO authenticated USING (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Empresa"))',
       t || '_delete', t);
   END LOOP;
 END $$;
@@ -91,51 +91,92 @@ BEGIN
       'CREATE POLICY %I ON %I FOR SELECT TO authenticated USING (user_has_company("Nombre_Empresa"))',
       t || '_select', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor'') AND user_has_company("Nombre_Empresa"))',
+      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Nombre_Empresa"))',
       t || '_insert', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (get_user_role() IN (''admin'',''editor'') AND user_has_company("Nombre_Empresa")) WITH CHECK (get_user_role() IN (''admin'',''editor'') AND user_has_company("Nombre_Empresa"))',
+      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Nombre_Empresa")) WITH CHECK (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Nombre_Empresa"))',
       t || '_update', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR DELETE TO authenticated USING (get_user_role() IN (''admin'',''editor'') AND user_has_company("Nombre_Empresa"))',
+      'CREATE POLICY %I ON %I FOR DELETE TO authenticated USING (get_user_role() IN (''admin'',''editor'',''contabilidad'') AND user_has_company("Nombre_Empresa"))',
       t || '_delete', t);
   END LOOP;
 END $$;
 
 
 -- ══════════════════════════════════════════════════════════════
--- 3. TABLAS CON Empresa_Origen + Empresa_Destino
---    Ingresos, OrdenesCompra
---    Visible si el usuario tiene acceso a CUALQUIERA de las dos
+-- 3a. Ingresos (Empresa_Origen + Empresa_Destino)
+--     SELECT: rol contabilidad solo ve registros donde su empresa
+--     es Empresa_Destino; los demás roles ven ambas direcciones.
+--     INSERT/UPDATE/DELETE permiten acceso si el usuario tiene
+--     cualquiera de las dos empresas.
 -- ══════════════════════════════════════════════════════════════
 
-DO $$
-DECLARE
-  t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['Ingresos','OrdenesCompra']
-  LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+ALTER TABLE "Ingresos" ENABLE ROW LEVEL SECURITY;
 
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_select', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_insert', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_update', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_delete', t);
+DROP POLICY IF EXISTS "Ingresos_select" ON "Ingresos";
+DROP POLICY IF EXISTS "Ingresos_insert" ON "Ingresos";
+DROP POLICY IF EXISTS "Ingresos_update" ON "Ingresos";
+DROP POLICY IF EXISTS "Ingresos_delete" ON "Ingresos";
 
-    EXECUTE format(
-      'CREATE POLICY %I ON %I FOR SELECT TO authenticated USING (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino"))',
-      t || '_select', t);
-    EXECUTE format(
-      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor'') AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")))',
-      t || '_insert', t);
-    EXECUTE format(
-      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (get_user_role() IN (''admin'',''editor'') AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino"))) WITH CHECK (get_user_role() IN (''admin'',''editor'') AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")))',
-      t || '_update', t);
-    EXECUTE format(
-      'CREATE POLICY %I ON %I FOR DELETE TO authenticated USING (get_user_role() IN (''admin'',''editor'') AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")))',
-      t || '_delete', t);
-  END LOOP;
-END $$;
+CREATE POLICY "Ingresos_select" ON "Ingresos"
+  FOR SELECT TO authenticated
+  USING (
+    CASE WHEN get_user_role() = 'contabilidad'
+      THEN user_has_company("Empresa_Destino")
+      ELSE user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")
+    END
+  );
+
+CREATE POLICY "Ingresos_insert" ON "Ingresos"
+  FOR INSERT TO authenticated
+  WITH CHECK (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
+
+CREATE POLICY "Ingresos_update" ON "Ingresos"
+  FOR UPDATE TO authenticated
+  USING (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")))
+  WITH CHECK (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
+
+CREATE POLICY "Ingresos_delete" ON "Ingresos"
+  FOR DELETE TO authenticated
+  USING (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 3b. OrdenesCompra (Empresa_Origen + Empresa_Destino)
+--     Visible si el usuario tiene acceso a CUALQUIERA de las dos
+-- ══════════════════════════════════════════════════════════════
+
+ALTER TABLE "OrdenesCompra" ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "OrdenesCompra_select" ON "OrdenesCompra";
+DROP POLICY IF EXISTS "OrdenesCompra_insert" ON "OrdenesCompra";
+DROP POLICY IF EXISTS "OrdenesCompra_update" ON "OrdenesCompra";
+DROP POLICY IF EXISTS "OrdenesCompra_delete" ON "OrdenesCompra";
+
+CREATE POLICY "OrdenesCompra_select" ON "OrdenesCompra"
+  FOR SELECT TO authenticated
+  USING (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino"));
+
+CREATE POLICY "OrdenesCompra_insert" ON "OrdenesCompra"
+  FOR INSERT TO authenticated
+  WITH CHECK (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
+
+CREATE POLICY "OrdenesCompra_update" ON "OrdenesCompra"
+  FOR UPDATE TO authenticated
+  USING (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")))
+  WITH CHECK (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
+
+CREATE POLICY "OrdenesCompra_delete" ON "OrdenesCompra"
+  FOR DELETE TO authenticated
+  USING (get_user_role() IN ('admin','editor','contabilidad')
+    AND (user_has_company("Empresa_Origen") OR user_has_company("Empresa_Destino")));
 
 
 -- ══════════════════════════════════════════════════════════════
@@ -161,13 +202,13 @@ BEGIN
       'CREATE POLICY %I ON %I FOR SELECT TO authenticated USING (true)',
       t || '_select', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor''))',
+      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (get_user_role() IN (''admin'',''editor'',''contabilidad''))',
       t || '_insert', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (get_user_role() IN (''admin'',''editor'')) WITH CHECK (get_user_role() IN (''admin'',''editor''))',
+      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (get_user_role() IN (''admin'',''editor'',''contabilidad'')) WITH CHECK (get_user_role() IN (''admin'',''editor'',''contabilidad''))',
       t || '_update', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I FOR DELETE TO authenticated USING (get_user_role() IN (''admin'',''editor''))',
+      'CREATE POLICY %I ON %I FOR DELETE TO authenticated USING (get_user_role() IN (''admin'',''editor'',''contabilidad''))',
       t || '_delete', t);
   END LOOP;
 END $$;

@@ -82,7 +82,7 @@ function updateStats() {
   var admins = 0, editors = 0, readers = 0;
   usrList.forEach(function(u) {
     if (u.rol === 'admin') admins++;
-    else if (u.rol === 'editor') editors++;
+    else if (u.rol === 'editor' || u.rol === 'contabilidad') editors++;
     else readers++;
   });
   document.getElementById('s-total').textContent = total;
@@ -104,6 +104,7 @@ function renderUsuariosTable() {
   var ROL_BADGES = {
     admin: '<span style="background:#e74c3c;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Admin</span>',
     editor: '<span style="background:#27ae60;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Editor</span>',
+    contabilidad: '<span style="background:#8e44ad;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Contabilidad</span>',
     lector: '<span style="background:#f39c12;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Lector</span>'
   };
 

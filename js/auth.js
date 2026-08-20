@@ -159,7 +159,7 @@ var AUTH = (function() {
 
   function canEdit() {
     if (!_profile) return false;
-    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'comercial';
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'comercial';
   }
 
   // El rol 'comercial' solo puede crear/ver/editar sus propios pedidos
@@ -178,7 +178,7 @@ var AUTH = (function() {
 
   function canUploadAdjuntos() {
     if (!_profile) return false;
-    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'comercial' || _profile.rol === 'despachador';
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'comercial' || _profile.rol === 'despachador';
   }
 
   function canManageUsers() {
