@@ -22,7 +22,8 @@ var AUTH = (function() {
     { key: 'dashboard',    label: '📊 Dashboard' },
     { key: 'muestras_aprobar',       label: '✅ Aprobar solicitudes de muestras' },
     { key: 'ordenes_aprobar',        label: '✅ Aprobar órdenes de compra' },
-    { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' }
+    { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' },
+    { key: 'notificaciones',          label: '🔔 Notificaciones' }
   ];
 
   function init() {
