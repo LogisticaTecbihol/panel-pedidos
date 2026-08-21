@@ -599,11 +599,29 @@ async function viewMuestra(id) {
       '<div style="font-size:0.85rem;color:#2d3748;background:#f7fafc;padding:10px 14px;border-radius:6px">' + escHtml(r.Observaciones) + '</div></div>';
   }
 
+  html += '<div class="adjuntos-section" id="mu-adjuntos-section">' +
+    '<div class="adjuntos-header">' +
+      '<h4>📎 Archivos adjuntos <span class="adjuntos-count" id="mu-adjuntos-count"></span></h4>' +
+      (AUTH.canEdit() ? '<button class="btn-adjuntar" onclick="document.getElementById(\'mu-adjunto-input\').click()">📤 Adjuntar archivo</button>' : '') +
+    '</div>' +
+    '<div class="adjuntos-list" id="mu-adjuntos-list"><div class="adjuntos-empty">Sin archivos adjuntos</div></div>' +
+    (AUTH.canEdit() ? '<div class="adjunto-dropzone" id="mu-adjunto-dropzone" onclick="document.getElementById(\'mu-adjunto-input\').click()">' +
+      'Arrastra un archivo aquí o haz clic para seleccionar · PDF, JPG, PNG (máx. 5 MB)' +
+      '<input type="file" id="mu-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleMuAdjuntoUpload(this)">' +
+    '</div>' : '') +
+    '<div class="adjunto-upload-progress" id="mu-adjunto-progress">' +
+      '<div class="prog-bar"><div class="prog-fill" id="mu-adjunto-prog-fill" style="width:0%"></div></div>' +
+      '<div class="prog-text" id="mu-adjunto-prog-text">Subiendo...</div>' +
+    '</div>' +
+  '</div>';
+
   muViewNewLines = [];
   document.getElementById('view-mu-body').innerHTML = html;
   var _muViewRem = document.getElementById('mu-view-remision');
   if (_muViewRem) { _muViewRem.readOnly = true; _muViewRem.style.background = '#f0f4f8'; }
   document.getElementById('view-mu-overlay').classList.add('show');
+  loadMuAdjuntos(emp, consec);
+  initMuDropzone();
   loadProductosCache();
 
   if (typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
@@ -1534,6 +1552,195 @@ async function confirmRejectMu() {
     btn.disabled = false;
     btn.textContent = '❌ Rechazar';
   }
+}
+
+// ── Adjuntos Muestras (Supabase Storage) ──
+var MU_ADJUNTOS_BUCKET = 'muestras-adjuntos';
+
+function muAdjSanitize(s) {
+  return (s || '').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+}
+
+function muAdjuntoFolder(empresa, consecutivo) {
+  var emp = (EMPRESAS_SIGLA[empresa] || empresa || 'SIN').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return emp + '/' + muAdjSanitize(consecutivo);
+}
+
+function muAdjuntoPath(empresa, consecutivo, filename) {
+  return muAdjuntoFolder(empresa, consecutivo) + '/' + filename;
+}
+
+function muFormatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+async function loadMuAdjuntos(empresa, consecutivo) {
+  var listEl = document.getElementById('mu-adjuntos-list');
+  var countEl = document.getElementById('mu-adjuntos-count');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="adjuntos-loading">Cargando adjuntos...</div>';
+
+  var folder = muAdjuntoFolder(empresa, consecutivo);
+  var res2 = await _sb.storage.from(MU_ADJUNTOS_BUCKET).list(folder, { limit: 50 });
+
+  var files = (res2.data || []).filter(function(f) { return f.name && f.id; });
+
+  if (!files.length) {
+    listEl.innerHTML = '<div class="adjuntos-empty">Sin archivos adjuntos</div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  if (countEl) countEl.textContent = '(' + files.length + ')';
+  listEl.innerHTML = files.map(function(f) {
+    var ext = (f.name.split('.').pop() || '').toLowerCase();
+    var icon = ext === 'pdf' ? '📄' : '🖼️';
+    var size = f.metadata && f.metadata.size ? muFormatFileSize(f.metadata.size) : '';
+    var path = folder + '/' + f.name;
+    var nameEsc = f.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    var pathEsc = path.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return '<div class="adjunto-item">' +
+      '<div class="adjunto-icon">' + icon + '</div>' +
+      '<div class="adjunto-info">' +
+        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
+      '</div>' +
+      '<div class="adjunto-actions">' +
+        '<button class="btn-adj-ver" onclick="previewMuAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
+        '<button class="btn-adj-ver" onclick="downloadMuAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
+        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteMuAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function handleMuAdjuntoUpload(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  var maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    showToast('El archivo excede 5 MB. Selecciona un archivo más pequeño.', '#e74c3c');
+    return;
+  }
+
+  var allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (allowed.indexOf(file.type) < 0) {
+    showToast('Tipo de archivo no permitido. Usa PDF, JPG, PNG o WEBP.', '#e74c3c');
+    return;
+  }
+
+  if (!muViewingId) return;
+  var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+  if (!head) return;
+
+  var timestamp = Date.now();
+  var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var finalName = timestamp + '_' + safeName;
+  var path = muAdjuntoPath(head.Empresa, head.Consecutivo || head.id, finalName);
+
+  var progWrap = document.getElementById('mu-adjunto-progress');
+  var progFill = document.getElementById('mu-adjunto-prog-fill');
+  var progText = document.getElementById('mu-adjunto-prog-text');
+  if (progWrap) progWrap.style.display = 'block';
+  if (progFill) progFill.style.width = '30%';
+  if (progText) progText.textContent = 'Subiendo ' + file.name + '...';
+
+  var res = await _sb.storage.from(MU_ADJUNTOS_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    upsert: false
+  });
+
+  if (progFill) progFill.style.width = '100%';
+
+  if (res.error) {
+    if (progWrap) progWrap.style.display = 'none';
+    showToast('Error al subir: ' + res.error.message, '#e74c3c');
+    return;
+  }
+
+  if (progText) progText.textContent = 'Listo';
+  setTimeout(function() { if (progWrap) progWrap.style.display = 'none'; if (progFill) progFill.style.width = '0%'; }, 1200);
+
+  showToast('Archivo adjuntado correctamente', '#27ae60');
+  await loadMuAdjuntos(head.Empresa, head.Consecutivo || head.id);
+}
+
+async function previewMuAdjunto(path, ext) {
+  var res = _sb.storage.from(MU_ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(MU_ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+
+  var contentEl = document.getElementById('mu-adjunto-preview-content');
+  if (ext === 'pdf') {
+    contentEl.innerHTML = '<iframe src="' + url + '"></iframe>';
+  } else {
+    contentEl.innerHTML = '<img src="' + url + '" alt="Preview">';
+  }
+  document.getElementById('mu-adjunto-preview-overlay').classList.add('show');
+}
+
+function closeMuAdjuntoPreview() {
+  document.getElementById('mu-adjunto-preview-overlay').classList.remove('show');
+  document.getElementById('mu-adjunto-preview-content').innerHTML = '';
+}
+
+async function downloadMuAdjunto(path, filename) {
+  var res = _sb.storage.from(MU_ADJUNTOS_BUCKET).getPublicUrl(path);
+  var url = res.data && res.data.publicUrl;
+  if (!url) {
+    var signed = await _sb.storage.from(MU_ADJUNTOS_BUCKET).createSignedUrl(path, 3600);
+    url = signed.data && signed.data.signedUrl;
+  }
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'archivo';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function deleteMuAdjunto(path) {
+  if (!confirm('¿Eliminar este archivo adjunto?')) return;
+  var res = await _sb.storage.from(MU_ADJUNTOS_BUCKET).remove([path]);
+  if (res.error) {
+    showToast('Error al eliminar: ' + res.error.message, '#e74c3c');
+    return;
+  }
+  showToast('Archivo eliminado', '#e67e22');
+  if (muViewingId) {
+    var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+    if (head) {
+      await loadMuAdjuntos(head.Empresa, head.Consecutivo || head.id);
+    }
+  }
+}
+
+function initMuDropzone() {
+  var dz = document.getElementById('mu-adjunto-dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    var input = document.getElementById('mu-adjunto-input');
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    handleMuAdjuntoUpload(input);
+  });
 }
 
 // ── Auto-load ──
