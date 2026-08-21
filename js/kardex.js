@@ -3617,10 +3617,10 @@ function _showInvfDetail() {
   var btnCerrar = document.getElementById('invf-btn-cerrar');
   var btnAjustes = document.getElementById('invf-btn-ajustes');
   var btnAddLine = document.getElementById('invf-btn-add-line');
-  if (btnSave) btnSave.style.display = isCerrado ? 'none' : '';
-  if (btnCerrar) btnCerrar.style.display = isCerrado ? 'none' : '';
-  if (btnAjustes) btnAjustes.style.display = isCerrado ? '' : 'none';
-  if (btnAddLine) btnAddLine.style.display = isCerrado ? 'none' : '';
+  if (btnSave) btnSave.style.display = isCerrado ? 'none' : 'inline-block';
+  if (btnCerrar) btnCerrar.style.display = isCerrado ? 'none' : 'inline-block';
+  if (btnAjustes) btnAjustes.style.display = isCerrado ? 'inline-block' : 'none';
+  if (btnAddLine) btnAddLine.style.display = isCerrado ? 'none' : 'inline-block';
 
   renderInvfDetail();
 }
