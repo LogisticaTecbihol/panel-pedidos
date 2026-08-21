@@ -727,6 +727,7 @@ function enviarRemisionReenvase(btn) {
   ];
 
   var tienePlanta = !!(g.Planta && /planta/i.test(g.Planta));
+  var remDestNum = (g.Remision_Destino || '').trim();
   var data = {
     empresa: empresa,
     consecutivo: '',
@@ -752,7 +753,40 @@ function enviarRemisionReenvase(btn) {
     triggerBtn: btn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
-      return r ? r.doc : null;
+      if (!r || !r.doc) return null;
+      if (remDestNum) {
+        var empresaDest = g.Empresa_Destino || empresa;
+        var leftEnt = [
+          ['Empresa', EMPRESAS_SIGLA[empresaDest] || empresaDest || ''],
+          ['Bodega', g.Bodega || ''],
+          ['Planta', g.Planta || '']
+        ];
+        var rightEnt = [
+          ['Emp. Origen', EMPRESAS_SIGLA[g.Empresa] || g.Empresa || ''],
+          ['Rem. Entrada', g.Remision_Destino || ''],
+          ['Rem. Salida', g.Remision || '']
+        ];
+        generarRemisionPDF({
+          _doc: r.doc,
+          empresa: empresaDest,
+          consecutivo: '',
+          doc_title: tienePlanta ? 'REMISION DE ENTRADA A PRODUCCION' : 'REMISION DE ENTRADA',
+          doc_number: remDestNum,
+          ref_label: null,
+          date_label: 'Fecha entrada',
+          fecha_entrega: g.Fecha || '',
+          remision: remDestNum,
+          left_fields: leftEnt,
+          right_fields: rightEnt,
+          entregas: entregas,
+          qty_header: 'Cantidad',
+          file_prefix: 'Remision_Salida',
+          last_col_header: 'Observaciones',
+          return_doc: true,
+          copies: ['COPIA - CONTABILIDAD']
+        });
+      }
+      return r.doc;
     }
   });
 }
@@ -795,7 +829,9 @@ function exportarRemisionReenvase() {
   ];
 
   var tienePlanta = !!(g.Planta && /planta/i.test(g.Planta));
-  generarRemisionPDF({
+  var remDestNum = (g.Remision_Destino || '').trim();
+
+  var result = generarRemisionPDF({
     empresa: empresa,
     consecutivo: '',
     doc_title: tienePlanta ? 'REMISION DE SALIDA A PRODUCCION' : 'REMISION DE SALIDA',
@@ -809,8 +845,42 @@ function exportarRemisionReenvase() {
     entregas: entregas,
     qty_header: 'Cantidad',
     file_prefix: 'Remision_Salida',
-    last_col_header: 'Observaciones'
+    last_col_header: 'Observaciones',
+    return_doc: true
   });
+
+  if (remDestNum && result && result.doc) {
+    var empresaDest = g.Empresa_Destino || empresa;
+    var leftEnt = [
+      ['Empresa', EMPRESAS_SIGLA[empresaDest] || empresaDest || ''],
+      ['Bodega', g.Bodega || ''],
+      ['Planta', g.Planta || '']
+    ];
+    var rightEnt = [
+      ['Emp. Origen', EMPRESAS_SIGLA[g.Empresa] || g.Empresa || ''],
+      ['Rem. Entrada', g.Remision_Destino || ''],
+      ['Rem. Salida', g.Remision || '']
+    ];
+    generarRemisionPDF({
+      _doc: result.doc,
+      empresa: empresaDest,
+      consecutivo: '',
+      doc_title: tienePlanta ? 'REMISION DE ENTRADA A PRODUCCION' : 'REMISION DE ENTRADA',
+      doc_number: remDestNum,
+      ref_label: null,
+      date_label: 'Fecha entrada',
+      fecha_entrega: g.Fecha || '',
+      remision: remDestNum,
+      left_fields: leftEnt,
+      right_fields: rightEnt,
+      entregas: entregas,
+      qty_header: 'Cantidad',
+      file_prefix: 'Remision_Salida',
+      last_col_header: 'Observaciones'
+    });
+  } else {
+    result.doc.save(result.filename);
+  }
 }
 
 // ── View modal (legacy removed — now using detail modal) ──
