@@ -211,6 +211,18 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, precios: _addRow(res.data) };
     }
+    if (action === 'getClientesAll') {
+      var allData = [], from = 0, pageSize = 1000;
+      while (true) {
+        var res = await _sb.from('ClientesUnicos').select(cols).order('Cliente').range(from, from + pageSize - 1);
+        if (res.error) return { ok: false, error: res.error.message, clientes: [] };
+        allData = allData.concat(res.data);
+        if (res.data.length < pageSize) break;
+        from += pageSize;
+      }
+      return { ok: true, clientes: _addRow(allData) };
+    }
+
     if (action === 'getInventarioFisico') {
       var res = await _sb.from('InventarioFisico').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
@@ -1264,6 +1276,48 @@ async function apiPost(body) {
       return { ok: true, added: rows.length };
     }
 
+    if (action === 'agregarClienteUnico') {
+      var row = {
+        Cliente: body.Cliente || '', Identificacion: body.Identificacion || '',
+        Tipo_Identificacion: body.Tipo_Identificacion || '',
+        Telefono: body.Telefono || '', Direccion: body.Direccion || '',
+        Direccion_Envio: body.Direccion_Envio || '',
+        Municipio: body.Municipio || '', Departamento: body.Departamento || '',
+        Nombre_Empresa: body.Nombre_Empresa || '',
+        Correo_Electronico: body.Correo_Electronico || '',
+        Cupo_Credito: body.Cupo_Credito || '',
+        Plazo_Pago: body.Plazo_Pago || '',
+        Lista_Precio: body.Lista_Precio || ''
+      };
+      var res = await _sb.from('ClientesUnicos').insert([row]).select('id');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, added: 1, id: (res.data && res.data[0]) ? res.data[0].id : null };
+    }
+
+    if (action === 'editarClienteUnico') {
+      var upd = {
+        Cliente: body.Cliente || '', Identificacion: body.Identificacion || '',
+        Tipo_Identificacion: body.Tipo_Identificacion || '',
+        Telefono: body.Telefono || '', Direccion: body.Direccion || '',
+        Direccion_Envio: body.Direccion_Envio || '',
+        Municipio: body.Municipio || '', Departamento: body.Departamento || '',
+        Nombre_Empresa: body.Nombre_Empresa || '',
+        Correo_Electronico: body.Correo_Electronico || '',
+        Cupo_Credito: body.Cupo_Credito || '',
+        Plazo_Pago: body.Plazo_Pago || '',
+        Lista_Precio: body.Lista_Precio || ''
+      };
+      var res = await _sb.from('ClientesUnicos').update(upd).eq('id', body.row);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, updated: 1 };
+    }
+
+    if (action === 'eliminarClienteUnico') {
+      var res = await _sb.from('ClientesUnicos').delete().eq('id', body.row);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, deleted: 1 };
+    }
+
     if (action === 'deleteClientesPorEmpresa') {
       var empresas = body.empresas || [];
       for (var ei = 0; ei < empresas.length; ei++) {
@@ -1279,10 +1333,11 @@ async function apiPost(body) {
         return {
           Cliente: it.cliente || '', Identificacion: it.nit || '',
           Telefono: it.telefono || '', Direccion: it.direccion || '',
+          Direccion_Envio: it.direccion_envio || '',
           Municipio: it.municipio || '', Departamento: it.departamento || '',
           Nombre_Empresa: it.empresa || '', Tipo_Identificacion: it.tipo_identificacion || '',
           Correo_Electronico: it.correo || '', Cupo_Credito: it.cupo_credito || '',
-          Plazo_Pago: it.plazo_pago || ''
+          Plazo_Pago: it.plazo_pago || '', Lista_Precio: it.lista_precio || ''
         };
       });
       var res = await _sb.from('ClientesUnicos').insert(rows);

@@ -23,6 +23,7 @@ var AUTH = (function() {
     { key: 'muestras_aprobar',       label: '✅ Aprobar solicitudes de muestras' },
     { key: 'ordenes_aprobar',        label: '✅ Aprobar órdenes de compra' },
     { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' },
+    { key: 'clientes',                  label: '👥 Clientes' },
     { key: 'notificaciones',          label: '🔔 Notificaciones' }
   ];
 
