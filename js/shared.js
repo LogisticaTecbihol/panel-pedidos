@@ -66,6 +66,21 @@ function _addRow(arr) {
   return arr.map(function(r) { r.__row = r.id; return r; });
 }
 
+function _isKardexPage() {
+  return location.pathname.indexOf('kardex') >= 0;
+}
+
+function _filterGerenteIaso(data, empresaCols) {
+  if (typeof AUTH === 'undefined' || !AUTH.isGerenteIaso || !AUTH.isGerenteIaso()) return data;
+  if (_isKardexPage()) return data;
+  if (!Array.isArray(empresaCols)) empresaCols = [empresaCols];
+  return data.filter(function(row) {
+    return empresaCols.some(function(col) {
+      return row[col] && AUTH.hasCompany(row[col]);
+    });
+  });
+}
+
 // ── Capa de compatibilidad: apiGet ──
 // opts.columns: string de columnas para select (default '*')
 async function apiGet(action, opts) {
@@ -80,6 +95,7 @@ async function apiGet(action, opts) {
         if (res.data.length < size) break;
         from += size;
       }
+      all = _filterGerenteIaso(all, 'Nombre_Empresa');
       return { ok: true, pedidos: _addRow(all) };
     }
     if (action === 'getConsecutivos') {
@@ -90,27 +106,28 @@ async function apiGet(action, opts) {
     if (action === 'getIngresos') {
       var res = await _sb.from('Ingresos').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, ingresos: _addRow(res.data) };
+      var ingData = _filterGerenteIaso(res.data, ['Empresa_Origen', 'Empresa_Destino']);
+      return { ok: true, ingresos: _addRow(ingData) };
     }
     if (action === 'getDevoluciones') {
       var res = await _sb.from('Devoluciones').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, devoluciones: _addRow(res.data) };
+      return { ok: true, devoluciones: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getCambios') {
       var res = await _sb.from('CambiosMercancia').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, cambios: _addRow(res.data) };
+      return { ok: true, cambios: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getInventario') {
       var res = await _sb.from('Inventario').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, inventario: _addRow(res.data) };
+      return { ok: true, inventario: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getOrdenesCompra') {
       var res = await _sb.from('OrdenesCompra').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, ordenes: _addRow(res.data) };
+      return { ok: true, ordenes: _addRow(_filterGerenteIaso(res.data, ['Empresa_Origen', 'Empresa_Destino'])) };
     }
     if (action === 'getEntregasPedido') {
       var res = await _sb.from('EntregasPedido').select(cols).order('id');
@@ -156,9 +173,10 @@ async function apiGet(action, opts) {
     if (action === 'getProductos') {
       var res = await _sb.from('Productos').select(cols);
       if (res.error) return { ok: true, productos: [] };
+      var prodData = _filterGerenteIaso(res.data, 'Nombre_Empresa');
       return {
         ok: true,
-        productos: res.data.map(function(r) {
+        productos: prodData.map(function(r) {
           return { id: r.id, empresa: r.Nombre_Empresa, producto: r.Producto, presentacion: r.Presentacion };
         })
       };
@@ -166,27 +184,27 @@ async function apiGet(action, opts) {
     if (action === 'getMuestras') {
       var res = await _sb.from('SolicitudMuestras').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, muestras: _addRow(res.data) };
+      return { ok: true, muestras: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getReenvases') {
       var res = await _sb.from('Reenvases').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, reenvases: _addRow(res.data) };
+      return { ok: true, reenvases: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getKardexAjustes') {
       var res = await _sb.from('KardexAjustes').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, ajustes: _addRow(res.data) };
+      return { ok: true, ajustes: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getKardexNC') {
       var res = await _sb.from('KardexNC').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, ajustesNC: _addRow(res.data) };
+      return { ok: true, ajustesNC: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getRemisionesAnuladas') {
       var res = await _sb.from('RemisionesAnuladas').select(cols).order('id');
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, remisionesAnuladas: _addRow(res.data) };
+      return { ok: true, remisionesAnuladas: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getListaPrecios') {
       var res = await _sb.from('ListaPrecios').select(cols).order('Producto');

@@ -367,14 +367,9 @@
     var prodKey = _normProd(producto);
     var perEmp = snapshot.saldos[prodKey] || {};
 
-    var visibles;
-    if (typeof AUTH !== 'undefined' && AUTH.isGerenteIaso && AUTH.isGerenteIaso()) {
-      visibles = EMPRESAS_HOLDING;
-    } else {
-      visibles = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas)
-        ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING)
-        : EMPRESAS_HOLDING;
-    }
+    var visibles = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas)
+      ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING)
+      : EMPRESAS_HOLDING;
     var permitidas = {};
     visibles.forEach(function(e) { permitidas[e.value] = true; });
 
