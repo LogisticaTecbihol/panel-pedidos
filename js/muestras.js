@@ -322,6 +322,7 @@ function applyMuFilters() {
   groupedMu = groupMuestras(filteredMu);
   sortMuData();
   renderMuTable();
+  renderDetalleMu();
   updateMuStats();
 }
 
@@ -1552,6 +1553,174 @@ async function confirmRejectMu() {
     btn.disabled = false;
     btn.textContent = '❌ Rechazar';
   }
+}
+
+// ── Tabs: Solicitudes / Vista detallada ──
+
+function switchMuTab(tab) {
+  var tabs = ['mu-solicitudes', 'mu-detalle'];
+  tabs.forEach(function(t) {
+    var panel = document.getElementById('panel-' + t);
+    var btn = document.getElementById('tab-' + t);
+    if (panel) panel.style.display = t === tab ? 'block' : 'none';
+    if (btn) btn.style.background = t === tab ? '#8e44ad' : '#718096';
+  });
+  if (tab === 'mu-detalle') renderDetalleMu();
+}
+
+// ── Vista detallada (flat product lines) ──
+
+var detMuSort = [];
+
+function toggleDetMuSort(col, e) {
+  var shift = e && e.shiftKey;
+  var idx = -1;
+  for (var i = 0; i < detMuSort.length; i++) { if (detMuSort[i].col === col) { idx = i; break; } }
+  if (shift) { if (idx >= 0) detMuSort.splice(idx, 1); }
+  else if (idx >= 0) { if (detMuSort[idx].dir === 'asc') detMuSort[idx].dir = 'desc'; else detMuSort.splice(idx, 1); }
+  else { detMuSort.push({ col: col, dir: 'asc' }); }
+  renderDetalleMu();
+}
+
+function clearDetMuSort() { detMuSort = []; renderDetalleMu(); }
+
+function renderDetalleMu() {
+  var panel = document.getElementById('panel-mu-detalle');
+  if (!panel || panel.style.display === 'none') return;
+
+  var rows = filteredMu.slice();
+
+  if (detMuSort.length) {
+    rows.sort(function(a, b) {
+      for (var s = 0; s < detMuSort.length; s++) {
+        var col = detMuSort[s].col, dir = detMuSort[s].dir;
+        var va, vb;
+        if (col === 'empresa') { va = (EMPRESAS_SIGLA[a.Empresa] || a.Empresa || '').toLowerCase(); vb = (EMPRESAS_SIGLA[b.Empresa] || b.Empresa || '').toLowerCase(); }
+        else if (col === 'consecutivo') { va = String(a.Consecutivo || ''); vb = String(b.Consecutivo || ''); }
+        else if (col === 'fecha') { va = a.Fecha_Solicitud || ''; vb = b.Fecha_Solicitud || ''; }
+        else if (col === 'responsable') { va = (a.Responsable || '').toLowerCase(); vb = (b.Responsable || '').toLowerCase(); }
+        else if (col === 'municipio') { va = (a.Municipio || '').toLowerCase(); vb = (b.Municipio || '').toLowerCase(); }
+        else if (col === 'cultivo') { va = (a.Tipo_Cultivo || '').toLowerCase(); vb = (b.Tipo_Cultivo || '').toLowerCase(); }
+        else if (col === 'producto') { va = (a.Producto || '').toLowerCase(); vb = (b.Producto || '').toLowerCase(); }
+        else if (col === 'presentacion') { va = (a.Presentacion || '').toLowerCase(); vb = (b.Presentacion || '').toLowerCase(); }
+        else if (col === 'cantidad') { va = Number(a.Cantidad) || 0; vb = Number(b.Cantidad) || 0; }
+        else if (col === 'entregada') { va = Number(a.Cant_Entregada) || 0; vb = Number(b.Cant_Entregada) || 0; }
+        else if (col === 'aprobacion') { va = (a.Estado_Aprobacion || 'Por aprobar').toLowerCase(); vb = (b.Estado_Aprobacion || 'Por aprobar').toLowerCase(); }
+        else if (col === 'estado') { va = (a.Estado || '').toLowerCase(); vb = (b.Estado || '').toLowerCase(); }
+        else if (col === 'solicitante') { va = (a.Solicitante || '').toLowerCase(); vb = (b.Solicitante || '').toLowerCase(); }
+        else if (col === 'remision') { va = (a.Remision || ''); vb = (b.Remision || ''); }
+        else { va = ''; vb = ''; }
+        var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+        if (cmp !== 0) return dir === 'asc' ? cmp : -cmp;
+      }
+      return 0;
+    });
+  }
+
+  document.getElementById('det-mu-count').textContent = '(' + rows.length + ' líneas)';
+
+  var cols = [
+    { id: 'empresa', label: 'Empresa' },
+    { id: 'consecutivo', label: 'Consec.' },
+    { id: 'fecha', label: 'Fecha Solicitud' },
+    { id: 'responsable', label: 'Responsable' },
+    { id: 'solicitante', label: 'Solicitante' },
+    { id: 'municipio', label: 'Municipio' },
+    { id: 'cultivo', label: 'Tipo Cultivo' },
+    { id: 'producto', label: 'Producto' },
+    { id: 'presentacion', label: 'Presentación' },
+    { id: 'cantidad', label: 'Cantidad' },
+    { id: 'entregada', label: 'Entregada' },
+    { id: 'remision', label: 'Remisión' },
+    { id: 'aprobacion', label: 'Aprobación' },
+    { id: 'estado', label: 'Estado' }
+  ];
+
+  document.getElementById('det-mu-head').innerHTML = cols.map(function(c) {
+    var idx = -1;
+    for (var i = 0; i < detMuSort.length; i++) { if (detMuSort[i].col === c.id) { idx = i; break; } }
+    var cls = idx >= 0 ? (detMuSort[idx].dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    var badge = idx >= 0 && detMuSort.length > 1 ? '<span style="font-size:0.6rem;vertical-align:super;color:#8e44ad">' + (idx + 1) + '</span>' : '';
+    return '<th class="sortable ' + cls + '" onclick="toggleDetMuSort(\'' + c.id + '\',event)">' + c.label + badge + '<span class="sort-icon"></span></th>';
+  }).join('');
+
+  var btn = document.getElementById('btn-clear-sort-det-mu');
+  if (btn) btn.style.display = detMuSort.length ? 'inline-block' : 'none';
+
+  var tbody = document.getElementById('det-mu-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="' + cols.length + '"><div class="empty">No hay líneas con los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function(r) {
+    var sigla = EMPRESAS_SIGLA[r.Empresa] || r.Empresa || '—';
+    var siglaCls = 'sigla-' + (EMPRESAS_SIGLA[r.Empresa] || 'DEFAULT');
+    var apr = r.Estado_Aprobacion || 'Por aprobar';
+    var aprBadge = apr === 'Aprobada' ? '<span class="badge b-ent">✅ Aprobada</span>'
+      : apr === 'Rechazada' ? '<span class="badge b-anu">❌ Rechazada</span>'
+      : '<span class="badge b-par">⏳ Por aprobar</span>';
+    var estadoBadge = r.Estado === 'Despachada'
+      ? '<span class="badge b-ent">Despachada</span>'
+      : '<span class="badge b-rec">Pendiente</span>';
+    var cant = Number(r.Cantidad) || 0;
+    var entregada = Number(r.Cant_Entregada) || 0;
+    return '<tr style="cursor:pointer" onclick="viewMuestra(' + r.id + ')">' +
+      '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
+      '<td>' + (r.Consecutivo || '—') + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha_Solicitud) + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Responsable || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Solicitante || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Municipio || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Tipo_Cultivo || '—') + '</td>' +
+      '<td style="font-weight:600">' + (r.Producto || '—') + '</td>' +
+      '<td>' + (r.Presentacion || '—') + '</td>' +
+      '<td class="money" style="font-weight:700">' + cant.toLocaleString('es-CO') + '</td>' +
+      '<td class="money">' + entregada.toLocaleString('es-CO') + '</td>' +
+      '<td style="font-size:0.78rem">' + (r.Remision || '—') + '</td>' +
+      '<td>' + aprBadge + '</td>' +
+      '<td>' + estadoBadge + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── Excel export (detail/flat) ──
+
+function exportDetalleMuExcel() {
+  var rows = filteredMu.slice();
+  if (!rows.length) { showToast('No hay líneas para exportar', '#e74c3c'); return; }
+
+  var data = rows.map(function(r) {
+    return {
+      'Empresa': EMPRESAS_SIGLA[r.Empresa] || r.Empresa || '',
+      'Consecutivo': r.Consecutivo || '',
+      'Fecha Solicitud': r.Fecha_Solicitud || '',
+      'Responsable': r.Responsable || '',
+      'Solicitante': r.Solicitante || '',
+      'Municipio': r.Municipio || '',
+      'Departamento': r.Departamento || '',
+      'Tipo Cultivo': r.Tipo_Cultivo || '',
+      'Producto': r.Producto || '',
+      'Presentación': r.Presentacion || '',
+      'Cantidad': Number(r.Cantidad) || 0,
+      'Entregada': Number(r.Cant_Entregada) || 0,
+      'Remisión': r.Remision || '',
+      'Aprobación': r.Estado_Aprobacion || 'Por aprobar',
+      'Estado': r.Estado || '',
+      'Objetivo': r.Objetivo || '',
+      'Observaciones': r.Observaciones || ''
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    {wch:12},{wch:10},{wch:14},{wch:18},{wch:18},{wch:16},{wch:16},{wch:16},
+    {wch:30},{wch:14},{wch:10},{wch:10},{wch:14},{wch:12},{wch:12},{wch:30},{wch:30}
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalle Muestras');
+  XLSX.writeFile(wb, 'Muestras_Detalle_' + today() + '.xlsx');
+  showToast('Excel detalle exportado: ' + rows.length + ' líneas', '#27ae60');
 }
 
 // ── Adjuntos Muestras (Supabase Storage) ──
