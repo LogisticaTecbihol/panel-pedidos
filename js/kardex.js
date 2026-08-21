@@ -69,7 +69,7 @@ async function loadKardex() {
       apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Empresa_Destino,Empresa_Origen,Fecha,Consecutivo,Producto,Presentacion' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Consecutivo,Solicitante,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases', { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Planta,Observaciones' }).catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getDevoluciones', { columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Fecha_Devolucion,Fecha,Remision,Remision_Ingreso,Consecutivo,Motivo,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getDevoluciones', { columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Consecutivo,Motivo,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
@@ -231,6 +231,30 @@ function buildMovimientos() {
       tipo: 'Entrada',
       modulo: 'Devoluciones',
       remision: d.Remision || d.Remision_Ingreso || '',
+      referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
+      empresa: d.Empresa || '',
+      producto: _normProd(d.Producto),
+      presentacion: d.Presentacion || '',
+      cantidad: cant,
+      _ajusteId: null
+    });
+  });
+
+  // Devoluciones — SALIDA desde Productos Buenos (cuando hay remisión de salida)
+  kxDevoluciones.forEach(function(d) {
+    var estado = (d.Estado || '').toLowerCase();
+    if (estado === 'anulado' || estado === 'pendiente') return;
+    var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
+    if (cant <= 0) return;
+    var remSal = String(d.Remision_Salida || '').trim();
+    if (!remSal) return;
+    var bodegaSal = (d.Bodega_Salida || '').trim();
+    if (bodegaSal !== 'Productos Buenos' && bodegaSal !== 'Producto Terminado') return;
+    kxMovimientos.push({
+      fecha: d.Fecha_Salida || d.Fecha_Devolucion || d.Fecha || '',
+      tipo: 'Salida',
+      modulo: 'Devoluciones',
+      remision: remSal,
       referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
       empresa: d.Empresa || '',
       producto: _normProd(d.Producto),
