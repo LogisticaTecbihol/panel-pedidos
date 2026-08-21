@@ -8,6 +8,7 @@ var kxDevoluciones = [];
 var kxAjustes = [];
 var kxCambios = [];
 var kxCatalogo = [];
+var kxRemAnuladas = [];
 var kxMovimientos = [];
 var kxFiltered = [];
 
@@ -74,7 +75,8 @@ async function loadKardex() {
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
       apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getInventarioFisico').catch(function() { return { ok: true, conteos: [] }; })
+      apiGet('getInventarioFisico').catch(function() { return { ok: true, conteos: [] }; }),
+      apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; })
     ]);
 
     kxPedidos = (results[0].pedidos || []).filter(function(p) {
@@ -90,6 +92,7 @@ async function loadKardex() {
     ncAjustes = results[8].ajustesNC || [];
     kxCambios = results[9].cambios || [];
     invfConteos = results[10].conteos || [];
+    kxRemAnuladas = results[11].remisionesAnuladas || [];
 
     buildMovimientos();
     buildNCMovimientos();
@@ -452,6 +455,18 @@ function buildMovimientos() {
     if (m.modulo === 'Saldo Inicial') return true;
     return !!(m.remision && String(m.remision).trim());
   });
+
+  // Excluir movimientos cuya remisión fue anulada
+  if (kxRemAnuladas.length) {
+    var remAnuladasSet = {};
+    kxRemAnuladas.forEach(function(ra) {
+      var r = String(ra.Remision || '').trim();
+      if (r) remAnuladasSet[r] = true;
+    });
+    kxMovimientos = kxMovimientos.filter(function(m) {
+      return !remAnuladasSet[String(m.remision || '').trim()];
+    });
+  }
 }
 
 // ── Filters ──
@@ -1454,6 +1469,18 @@ function buildNCMovimientos() {
     if (m.motivo === 'Saldo_Inicial') return true;
     return !!(m.remision && String(m.remision).trim());
   });
+
+  // Excluir movimientos cuya remisión fue anulada
+  if (kxRemAnuladas.length) {
+    var remAnuladasSet = {};
+    kxRemAnuladas.forEach(function(ra) {
+      var r = String(ra.Remision || '').trim();
+      if (r) remAnuladasSet[r] = true;
+    });
+    ncMovimientos = ncMovimientos.filter(function(m) {
+      return !remAnuladasSet[String(m.remision || '').trim()];
+    });
+  }
 }
 
 // ── NC Filters ──
