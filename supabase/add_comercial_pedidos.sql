@@ -57,7 +57,7 @@ CREATE POLICY "Pedidos_select" ON "Pedidos" FOR SELECT TO authenticated
   USING (
     user_has_company("Nombre_Empresa")
     AND (
-      get_user_role() IN ('admin','editor','lector')
+      get_user_role() IN ('admin','editor','lector','contabilidad','gerente_iaso','despachador')
       OR (
         get_user_role() = 'comercial'
         AND ("comercial_id" = auth.uid() OR "creado_por" = auth.uid())
@@ -69,7 +69,7 @@ CREATE POLICY "Pedidos_insert" ON "Pedidos" FOR INSERT TO authenticated
   WITH CHECK (
     user_has_company("Nombre_Empresa")
     AND (
-      get_user_role() IN ('admin','editor')
+      get_user_role() IN ('admin','editor','contabilidad','gerente_iaso')
       OR (get_user_role() = 'comercial' AND "comercial_id" = auth.uid())
     )
   );
@@ -78,7 +78,7 @@ CREATE POLICY "Pedidos_update" ON "Pedidos" FOR UPDATE TO authenticated
   USING (
     user_has_company("Nombre_Empresa")
     AND (
-      get_user_role() IN ('admin','editor')
+      get_user_role() IN ('admin','editor','contabilidad','gerente_iaso')
       OR (
         get_user_role() = 'comercial'
         AND ("comercial_id" = auth.uid() OR "creado_por" = auth.uid())
@@ -88,7 +88,7 @@ CREATE POLICY "Pedidos_update" ON "Pedidos" FOR UPDATE TO authenticated
   WITH CHECK (
     user_has_company("Nombre_Empresa")
     AND (
-      get_user_role() IN ('admin','editor')
+      get_user_role() IN ('admin','editor','contabilidad','gerente_iaso')
       OR (
         get_user_role() = 'comercial'
         AND ("comercial_id" = auth.uid() OR "creado_por" = auth.uid())
@@ -99,5 +99,5 @@ CREATE POLICY "Pedidos_update" ON "Pedidos" FOR UPDATE TO authenticated
 CREATE POLICY "Pedidos_delete" ON "Pedidos" FOR DELETE TO authenticated
   USING (
     user_has_company("Nombre_Empresa")
-    AND get_user_role() IN ('admin','editor')
+    AND get_user_role() IN ('admin','editor','contabilidad','gerente_iaso')
   );
