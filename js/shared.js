@@ -211,6 +211,11 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, precios: _addRow(res.data) };
     }
+    if (action === 'getInventarioFisico') {
+      var res = await _sb.from('InventarioFisico').select(cols).order('id');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, conteos: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
+    }
 
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
@@ -989,6 +994,70 @@ async function apiPost(body) {
       var res = await _sb.from('KardexAjustes').delete().eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, deleted: 1 };
+    }
+
+    // ── INVENTARIO FISICO ──
+
+    if (action === 'guardarInventarioFisico') {
+      var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      var lineas = body.lineas || [];
+      var empresa = body.Empresa || '';
+      var fechaConteo = body.Fecha_Conteo || '';
+      var estado = body.Estado || 'Borrador';
+      if (!empresa || !fechaConteo) return { ok: false, error: 'Empresa y fecha son requeridos' };
+      var delRes = await _sb.from('InventarioFisico').delete()
+        .eq('Empresa', empresa).eq('Fecha_Conteo', fechaConteo);
+      if (delRes.error) return { ok: false, error: delRes.error.message };
+      if (!lineas.length) return { ok: true, saved: 0 };
+      var rows = lineas.map(function(l) {
+        var dif = (Number(l.Cantidad_Fisica) || 0) - (Number(l.Cantidad_Sistema) || 0);
+        return {
+          Fecha_Conteo: fechaConteo, Empresa: empresa,
+          Producto: l.Producto || '', Presentacion: l.Presentacion || '',
+          Cantidad_Fisica: Number(l.Cantidad_Fisica) || 0,
+          Cantidad_Sistema: Number(l.Cantidad_Sistema) || 0,
+          Diferencia: dif, Observaciones: l.Observaciones || '',
+          Estado: estado, Fecha_Registro: now,
+          creado_por: _uid(), modificado_por: _uid()
+        };
+      });
+      var res = await _sb.from('InventarioFisico').insert(rows);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, saved: rows.length };
+    }
+
+    if (action === 'eliminarInventarioFisico') {
+      var res = await _sb.from('InventarioFisico').delete()
+        .eq('Empresa', body.Empresa).eq('Fecha_Conteo', body.Fecha_Conteo);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, deleted: 1 };
+    }
+
+    if (action === 'cerrarInventarioFisico') {
+      var res = await _sb.from('InventarioFisico').update({ Estado: 'Cerrado', modificado_por: _uid() })
+        .eq('Empresa', body.Empresa).eq('Fecha_Conteo', body.Fecha_Conteo);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, closed: 1 };
+    }
+
+    if (action === 'generarAjustesDesdeConteo') {
+      var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      var lineas = body.lineas || [];
+      var ajustes = lineas.filter(function(l) { return l.Diferencia && l.Diferencia !== 0; })
+        .map(function(l) {
+          return {
+            Fecha: body.Fecha_Conteo || '', Empresa: body.Empresa || '',
+            Producto: l.Producto || '', Presentacion: l.Presentacion || '',
+            Tipo: l.Diferencia > 0 ? 'Ajuste_Sobrante' : 'Ajuste_Faltante',
+            Cantidad: Math.abs(l.Diferencia),
+            Observaciones: 'Inventario fisico ' + (body.Fecha_Conteo || ''),
+            Fecha_Registro: now, creado_por: _uid()
+          };
+        });
+      if (!ajustes.length) return { ok: true, ajustes: 0 };
+      var res = await _sb.from('KardexAjustes').insert(ajustes);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, ajustes: ajustes.length };
     }
 
     if (action === 'agregarKardexNC') {

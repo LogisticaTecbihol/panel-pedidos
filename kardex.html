@@ -71,6 +71,7 @@
     <button id="tab-kxnc" onclick="switchKardexTab('kxnc')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📋 Kardex NC</button>
     <button id="tab-exnc" onclick="switchKardexTab('exnc')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📊 Existencias NC por Empresa</button>
     <button id="tab-comp" onclick="switchKardexTab('comp')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">⚖️ Comparativo B vs NC</button>
+    <button id="tab-invf" onclick="switchKardexTab('invf')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📋 Inventario Físico</button>
   </div>
 
   <!-- ═══ TAB: KARDEX GENERAL ═══ -->
@@ -404,6 +405,76 @@
   </div>
 
   </div><!-- /panel-comp -->
+
+  <!-- ═══ TAB: INVENTARIO FISICO ═══ -->
+  <div id="panel-invf" style="display:none">
+
+  <!-- Vista lista de conteos -->
+  <div id="invf-list-view">
+  <div class="stats">
+    <div class="sc total"><div class="num" id="invf-s-total">0</div><div class="lbl">Total conteos</div></div>
+    <div class="sc entregado"><div class="num" id="invf-s-ultimo">—</div><div class="lbl">Último conteo</div></div>
+    <div class="sc parcial"><div class="num" id="invf-s-productos">0</div><div class="lbl">Productos contados</div></div>
+  </div>
+  <div class="filters">
+    <div class="fg"><label>Empresa</label><select id="invf-f-empresa"><option value="">— Todas —</option></select></div>
+    <div class="fg"><label>Desde</label><input type="date" id="invf-f-desde" class="ef" style="width:140px"></div>
+    <div class="fg"><label>Hasta</label><input type="date" id="invf-f-hasta" class="ef" style="width:140px"></div>
+    <button onclick="clearInvfFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <h3>Conteos de inventario físico <span id="invf-list-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="exportInvfListExcel()" style="background:#217346">📊 Exportar Excel</button>
+        <button class="btn-dl auth-edit-only" onclick="openNuevoConteoModal()" style="background:#2e86c1">+ Nuevo Conteo</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr id="invf-list-head"></tr></thead>
+        <tbody id="invf-list-body"></tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+
+  <!-- Vista detalle de un conteo -->
+  <div id="invf-detail-view" style="display:none">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <button onclick="volverListaInvf()" style="background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">← Volver a lista</button>
+    <div style="font-size:1rem;font-weight:700;color:#2d3748" id="invf-detail-title"></div>
+    <span class="badge" id="invf-detail-estado-badge" style="font-size:0.78rem"></span>
+  </div>
+  <div class="stats">
+    <div class="sc total"><div class="num" id="invf-d-total">0</div><div class="lbl">Total productos</div></div>
+    <div class="sc parcial"><div class="num" id="invf-d-dif">0</div><div class="lbl">Con diferencia</div></div>
+    <div class="sc entregado"><div class="num" id="invf-d-sobr">0</div><div class="lbl">Sobrantes</div></div>
+    <div class="sc recibido"><div class="num" id="invf-d-falt">0</div><div class="lbl">Faltantes</div></div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <h3>Productos del conteo <span id="invf-detail-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div class="fg" style="margin:0"><label style="font-size:0.72rem">Buscar</label><input type="text" id="invf-d-buscar" placeholder="producto…" style="width:150px;font-size:0.8rem;padding:4px 8px" oninput="renderInvfDetail()"></div>
+        <div class="fg" style="margin:0"><label style="font-size:0.72rem">Mostrar</label><select id="invf-d-mostrar" style="font-size:0.8rem;padding:4px 8px" onchange="renderInvfDetail()"><option value="todos">Todos</option><option value="con_dif">Con diferencia</option><option value="sobrante">Sobrantes</option><option value="faltante">Faltantes</option></select></div>
+        <button class="btn-dl auth-edit-only" onclick="addInvfLine()" style="background:#d35400" id="invf-btn-add-line">+ Agregar línea</button>
+        <button class="btn-dl" onclick="exportInvfDetailExcel()" style="background:#217346">📊 Excel</button>
+        <button class="btn-dl auth-edit-only" id="invf-btn-save" onclick="saveInvfBorrador()" style="background:#2e86c1">💾 Guardar borrador</button>
+        <button class="btn-dl auth-edit-only" id="invf-btn-cerrar" onclick="cerrarConteo()" style="background:#27ae60">🔒 Cerrar conteo</button>
+        <button class="btn-dl auth-edit-only" id="invf-btn-ajustes" onclick="generarAjustesDesdeConteo()" style="background:#8e44ad;display:none">⚙️ Generar ajustes</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr id="invf-detail-head"></tr></thead>
+        <tbody id="invf-detail-body"></tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+
+  </div><!-- /panel-invf -->
 
 </div>
 
@@ -752,16 +823,40 @@
   </div>
 </div>
 
+<!-- Modal Nuevo Conteo Inventario Físico -->
+<div class="overlay" id="invf-new-overlay">
+  <div class="modal-box" style="max-width:440px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#2e86c1,#3498db)">
+      <div>
+        <h2>📋 Nuevo Conteo de Inventario</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Selecciona empresa y fecha para iniciar</div>
+      </div>
+      <button class="mbtn-close" onclick="closeNuevoConteoModal()">×</button>
+    </div>
+    <div class="mbdy" style="padding:28px 24px">
+      <div class="fg"><label>Empresa *</label><select id="invf-new-empresa" class="ef"></select></div>
+      <div class="fg"><label>Fecha del conteo *</label><input type="date" id="invf-new-fecha" class="ef"></div>
+    </div>
+    <div class="mftr">
+      <div></div>
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeNuevoConteoModal()">Cancelar</button>
+        <button class="btn-confirm" onclick="iniciarConteo()" style="background:#2e86c1">📋 Iniciar Conteo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
-<script src="js/shared.js?v=20260821a"></script>
+<script src="js/shared.js?v=20260821b"></script>
 <script src="js/auth.js"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/pdf-remision.js"></script>
-<script src="js/kardex.js?v=20260819a"></script>
+<script src="js/kardex.js?v=20260821a"></script>
 </body>
 </html>

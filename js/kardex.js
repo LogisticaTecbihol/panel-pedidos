@@ -44,6 +44,8 @@ async function loadKardex() {
   populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras, kxAll);
   populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras, kxAll);
   populateEmpresaSelect('kxnc-f-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('invf-f-empresa', '— Todas —', kxExtras, kxAll);
+  populateEmpresaSelect('invf-new-empresa', '— Seleccionar —', kxExtras, kxAll);
   EMPRESAS_EXIST = (AUTH.isGerenteIaso() || AUTH.isAdmin()) ? EMPRESAS_HOLDING : AUTH.getFilteredEmpresas(EMPRESAS_HOLDING);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
@@ -71,7 +73,8 @@ async function loadKardex() {
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; })
+      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getInventarioFisico').catch(function() { return { ok: true, conteos: [] }; })
     ]);
 
     kxPedidos = (results[0].pedidos || []).filter(function(p) {
@@ -86,6 +89,7 @@ async function loadKardex() {
     kxCatalogo = results[7].productos || [];
     ncAjustes = results[8].ajustesNC || [];
     kxCambios = results[9].cambios || [];
+    invfConteos = results[10].conteos || [];
 
     buildMovimientos();
     buildNCMovimientos();
@@ -98,6 +102,7 @@ async function loadKardex() {
     if (activeTab === 'exist') calcularExistencias();
     if (activeTab === 'exnc') calcularExistenciasNC();
     if (activeTab === 'comp') calcularComparativo();
+    if (activeTab === 'invf') calcularInventarioFisico();
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
@@ -1272,7 +1277,8 @@ function switchKardexTab(tab) {
     { id: 'tab-exist', panel: 'panel-exist', color: '#1a5276', key: 'exist' },
     { id: 'tab-kxnc', panel: 'panel-kxnc', color: '#c0392b', key: 'kxnc' },
     { id: 'tab-exnc', panel: 'panel-exnc', color: '#c0392b', key: 'exnc' },
-    { id: 'tab-comp', panel: 'panel-comp', color: '#8e44ad', key: 'comp' }
+    { id: 'tab-comp', panel: 'panel-comp', color: '#8e44ad', key: 'comp' },
+    { id: 'tab-invf', panel: 'panel-invf', color: '#2e86c1', key: 'invf' }
   ];
   tabs.forEach(function(t) {
     var btn = document.getElementById(t.id);
@@ -1290,6 +1296,7 @@ function switchKardexTab(tab) {
   if (tab === 'exist') calcularExistencias();
   if (tab === 'exnc') calcularExistenciasNC();
   if (tab === 'comp') calcularComparativo();
+  if (tab === 'invf') calcularInventarioFisico();
 }
 
 // ══════════════════════════════════════════
@@ -3350,6 +3357,538 @@ function enviarRemisionKardexPDF(idx, source) {
     referencia: m.remision,
     titulo: 'Remisión ' + m.remision + ' — ' + (sigla || m.empresa) + ' (' + built.moduloLabel + ')'
   });
+}
+
+// ══════════════════════════════════════════
+// ── INVENTARIO FISICO ──
+// ══════════════════════════════════════════
+
+var invfConteos = [];
+var invfListData = [];
+var invfDetailLines = [];
+var invfCurrentEmpresa = '';
+var invfCurrentFecha = '';
+var invfCurrentEstado = 'Borrador';
+var invfFiltersAttached = false;
+var invfDirty = false;
+
+function calcularInventarioFisico() {
+  var agrupado = {};
+  invfConteos.forEach(function(c) {
+    var key = c.Empresa + '|' + c.Fecha_Conteo;
+    if (!agrupado[key]) {
+      agrupado[key] = { empresa: c.Empresa, fecha: c.Fecha_Conteo, estado: c.Estado, productos: 0, conDif: 0 };
+    }
+    agrupado[key].productos++;
+    if (Number(c.Diferencia) !== 0) agrupado[key].conDif++;
+  });
+  invfListData = Object.keys(agrupado).map(function(k) { return agrupado[k]; });
+  invfListData.sort(function(a, b) { return a.fecha > b.fecha ? -1 : a.fecha < b.fecha ? 1 : a.empresa.localeCompare(b.empresa); });
+
+  var total = invfListData.length;
+  var ultimo = invfListData.length ? invfListData[0].fecha : '—';
+  var prods = invfConteos.length;
+  document.getElementById('invf-s-total').textContent = total;
+  document.getElementById('invf-s-ultimo').textContent = ultimo;
+  document.getElementById('invf-s-productos').textContent = prods;
+
+  if (!invfFiltersAttached) {
+    document.getElementById('invf-f-empresa').addEventListener('change', renderInvfList);
+    document.getElementById('invf-f-desde').addEventListener('change', renderInvfList);
+    document.getElementById('invf-f-hasta').addEventListener('change', renderInvfList);
+    invfFiltersAttached = true;
+  }
+
+  renderInvfList();
+}
+
+function clearInvfFilters() {
+  document.getElementById('invf-f-empresa').value = '';
+  document.getElementById('invf-f-desde').value = '';
+  document.getElementById('invf-f-hasta').value = '';
+  renderInvfList();
+}
+
+function renderInvfList() {
+  var fEmpresa = document.getElementById('invf-f-empresa').value;
+  var fDesde = document.getElementById('invf-f-desde').value;
+  var fHasta = document.getElementById('invf-f-hasta').value;
+
+  var filtered = invfListData.filter(function(r) {
+    if (fEmpresa && r.empresa !== fEmpresa) return false;
+    if (fDesde && r.fecha < fDesde) return false;
+    if (fHasta && r.fecha > fHasta) return false;
+    return true;
+  });
+
+  document.getElementById('invf-list-ct').textContent = '(' + filtered.length + ')';
+
+  var cols = ['#', 'Empresa', 'Fecha Conteo', '# Productos', 'Con diferencia', 'Estado', 'Acciones'];
+  document.getElementById('invf-list-head').innerHTML = cols.map(function(c) {
+    return '<th>' + c + '</th>';
+  }).join('');
+
+  var html = '';
+  filtered.forEach(function(r, i) {
+    var sigla = getSiglaKx(r.empresa) || r.empresa;
+    var badgeColor = r.estado === 'Cerrado' ? '#27ae60' : '#e67e22';
+    html += '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td>' + sigla + '</td>' +
+      '<td>' + r.fecha + '</td>' +
+      '<td style="text-align:center">' + r.productos + '</td>' +
+      '<td style="text-align:center">' + r.conDif + '</td>' +
+      '<td><span class="badge" style="background:' + badgeColor + ';color:#fff;font-size:0.72rem;padding:2px 8px;border-radius:4px">' + r.estado + '</span></td>' +
+      '<td>' +
+        '<button onclick="openConteo(\'' + r.empresa.replace(/'/g, "\\'") + '\',\'' + r.fecha + '\')" style="background:none;border:1px solid #3498db;color:#3498db;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.75rem;margin-right:4px">👁 Ver</button>' +
+        (r.estado !== 'Cerrado' ? '<button class="auth-edit-only" onclick="deleteConteo(\'' + r.empresa.replace(/'/g, "\\'") + '\',\'' + r.fecha + '\')" style="background:none;border:1px solid #e74c3c;color:#e74c3c;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.75rem">🗑</button>' : '') +
+      '</td></tr>';
+  });
+  document.getElementById('invf-list-body').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:32px">No hay conteos registrados</td></tr>';
+}
+
+function openNuevoConteoModal() {
+  document.getElementById('invf-new-fecha').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('invf-new-overlay').style.display = 'flex';
+}
+
+function closeNuevoConteoModal() {
+  document.getElementById('invf-new-overlay').style.display = 'none';
+}
+
+function iniciarConteo() {
+  var empresa = document.getElementById('invf-new-empresa').value;
+  var fecha = document.getElementById('invf-new-fecha').value;
+  if (!empresa || !fecha) { showToast('Selecciona empresa y fecha', '#e74c3c'); return; }
+
+  var existente = invfListData.find(function(r) { return r.empresa === empresa && r.fecha === fecha; });
+  if (existente) {
+    showToast('Ya existe un conteo para esa empresa y fecha. Usa "Ver" para editarlo.', '#e67e22');
+    return;
+  }
+
+  closeNuevoConteoModal();
+  invfCurrentEmpresa = empresa;
+  invfCurrentFecha = fecha;
+  invfCurrentEstado = 'Borrador';
+
+  var stock = _computeExistenciasParaEmpresa(empresa);
+  invfDetailLines = [];
+  var productos = Object.keys(stock).sort();
+  productos.forEach(function(prod) {
+    var cantSist = stock[prod].cantidad;
+    var pres = stock[prod].presentacion || '';
+    invfDetailLines.push({
+      producto: prod,
+      presentacion: pres,
+      cantSistema: cantSist,
+      cantFisica: cantSist,
+      diferencia: 0,
+      observaciones: '',
+      isNew: false
+    });
+  });
+
+  invfDirty = true;
+  _showInvfDetail();
+}
+
+function _computeExistenciasParaEmpresa(empresa) {
+  var saldos = {};
+  var fechaCorte = null;
+
+  kxMovimientos.forEach(function(m) {
+    if (m.modulo === 'Saldo Inicial' && m.fecha) {
+      if (!fechaCorte || m.fecha < fechaCorte) fechaCorte = m.fecha;
+    }
+  });
+
+  kxMovimientos.forEach(function(m) {
+    if (!m.producto || !m.empresa) return;
+    if (fechaCorte && m.fecha < fechaCorte) return;
+    var bucket = _empresaExistKey(m.empresa, m.producto);
+    if (bucket !== empresa) return;
+    var key = m.producto;
+    if (!saldos[key]) saldos[key] = { cantidad: 0, presentacion: '' };
+    if (m.tipo === 'Entrada') {
+      saldos[key].cantidad += m.cantidad;
+    } else {
+      saldos[key].cantidad -= m.cantidad;
+    }
+  });
+
+  var catMap = {};
+  kxCatalogo.forEach(function(p) {
+    var norm = _normProd(p.Producto);
+    if (!catMap[norm]) catMap[norm] = p.Presentacion || '';
+  });
+  Object.keys(saldos).forEach(function(k) {
+    var norm = _normProd(k);
+    if (catMap[norm]) saldos[k].presentacion = catMap[norm];
+  });
+
+  return saldos;
+}
+
+function openConteo(empresa, fecha) {
+  invfCurrentEmpresa = empresa;
+  invfCurrentFecha = fecha;
+
+  var lineas = invfConteos.filter(function(c) {
+    return c.Empresa === empresa && c.Fecha_Conteo === fecha;
+  });
+
+  invfCurrentEstado = lineas.length ? lineas[0].Estado : 'Borrador';
+
+  invfDetailLines = lineas.map(function(c) {
+    return {
+      producto: c.Producto,
+      presentacion: c.Presentacion || '',
+      cantSistema: Number(c.Cantidad_Sistema) || 0,
+      cantFisica: Number(c.Cantidad_Fisica) || 0,
+      diferencia: Number(c.Diferencia) || 0,
+      observaciones: c.Observaciones || '',
+      isNew: false
+    };
+  });
+  invfDetailLines.sort(function(a, b) { return a.producto.localeCompare(b.producto); });
+
+  invfDirty = false;
+  _showInvfDetail();
+}
+
+function _showInvfDetail() {
+  document.getElementById('invf-list-view').style.display = 'none';
+  document.getElementById('invf-detail-view').style.display = 'block';
+
+  var sigla = getSiglaKx(invfCurrentEmpresa) || invfCurrentEmpresa;
+  document.getElementById('invf-detail-title').textContent = sigla + ' — ' + invfCurrentFecha;
+
+  var badge = document.getElementById('invf-detail-estado-badge');
+  badge.textContent = invfCurrentEstado;
+  badge.style.background = invfCurrentEstado === 'Cerrado' ? '#27ae60' : '#e67e22';
+  badge.style.color = '#fff';
+
+  var isCerrado = invfCurrentEstado === 'Cerrado';
+  var btnSave = document.getElementById('invf-btn-save');
+  var btnCerrar = document.getElementById('invf-btn-cerrar');
+  var btnAjustes = document.getElementById('invf-btn-ajustes');
+  var btnAddLine = document.getElementById('invf-btn-add-line');
+  if (btnSave) btnSave.style.display = isCerrado ? 'none' : '';
+  if (btnCerrar) btnCerrar.style.display = isCerrado ? 'none' : '';
+  if (btnAjustes) btnAjustes.style.display = isCerrado ? '' : 'none';
+  if (btnAddLine) btnAddLine.style.display = isCerrado ? 'none' : '';
+
+  renderInvfDetail();
+}
+
+function renderInvfDetail() {
+  var buscar = (document.getElementById('invf-d-buscar').value || '').toLowerCase().trim();
+  var mostrar = document.getElementById('invf-d-mostrar').value;
+
+  var filtered = invfDetailLines.filter(function(l, idx) {
+    l._idx = idx;
+    if (buscar && l.producto.toLowerCase().indexOf(buscar) < 0) return false;
+    if (mostrar === 'con_dif' && l.diferencia === 0) return false;
+    if (mostrar === 'sobrante' && l.diferencia <= 0) return false;
+    if (mostrar === 'faltante' && l.diferencia >= 0) return false;
+    return true;
+  });
+
+  document.getElementById('invf-detail-ct').textContent = '(' + filtered.length + ' de ' + invfDetailLines.length + ')';
+
+  var isCerrado = invfCurrentEstado === 'Cerrado';
+  var cols = ['#', 'Producto', 'Presentación', 'Cant. Sistema', 'Cant. Física', 'Diferencia', 'Observaciones'];
+  if (!isCerrado) cols.push('');
+  document.getElementById('invf-detail-head').innerHTML = cols.map(function(c) {
+    return '<th>' + c + '</th>';
+  }).join('');
+
+  var html = '';
+  filtered.forEach(function(l, i) {
+    var difColor = l.diferencia > 0 ? '#27ae60' : l.diferencia < 0 ? '#e74c3c' : '#718096';
+    var difText = l.diferencia > 0 ? '+' + l.diferencia : String(l.diferencia);
+    html += '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td>' + l.producto + '</td>' +
+      '<td>' + (l.presentacion || '') + '</td>' +
+      '<td style="text-align:right">' + l.cantSistema + '</td>' +
+      '<td style="text-align:right">' +
+        (isCerrado
+          ? l.cantFisica
+          : '<input type="number" value="' + l.cantFisica + '" onchange="onInvfCantChange(' + l._idx + ', this.value)" style="width:80px;text-align:right;padding:3px 6px;border:1px solid #cbd5e0;border-radius:4px;font-size:0.82rem">') +
+      '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + difColor + '">' + difText + '</td>' +
+      '<td>' +
+        (isCerrado
+          ? (l.observaciones || '')
+          : '<input type="text" value="' + (l.observaciones || '').replace(/"/g, '&quot;') + '" onchange="onInvfObsChange(' + l._idx + ', this.value)" style="width:120px;padding:3px 6px;border:1px solid #cbd5e0;border-radius:4px;font-size:0.82rem" placeholder="obs…">') +
+      '</td>' +
+      (!isCerrado ? '<td>' + (l.isNew ? '<button onclick="removeInvfLine(' + l._idx + ')" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:0.9rem" title="Eliminar línea">✕</button>' : '') + '</td>' : '') +
+    '</tr>';
+  });
+  document.getElementById('invf-detail-body').innerHTML = html || '<tr><td colspan="' + cols.length + '" style="text-align:center;color:#a0aec0;padding:32px">Sin productos</td></tr>';
+
+  updateInvfDetailStats();
+}
+
+function onInvfCantChange(idx, val) {
+  var n = parseFloat(val) || 0;
+  invfDetailLines[idx].cantFisica = n;
+  invfDetailLines[idx].diferencia = n - invfDetailLines[idx].cantSistema;
+  invfDirty = true;
+  renderInvfDetail();
+}
+
+function onInvfObsChange(idx, val) {
+  invfDetailLines[idx].observaciones = val;
+  invfDirty = true;
+}
+
+function updateInvfDetailStats() {
+  var total = invfDetailLines.length;
+  var conDif = 0, sobr = 0, falt = 0;
+  invfDetailLines.forEach(function(l) {
+    if (l.diferencia !== 0) conDif++;
+    if (l.diferencia > 0) sobr++;
+    if (l.diferencia < 0) falt++;
+  });
+  document.getElementById('invf-d-total').textContent = total;
+  document.getElementById('invf-d-dif').textContent = conDif;
+  document.getElementById('invf-d-sobr').textContent = sobr;
+  document.getElementById('invf-d-falt').textContent = falt;
+}
+
+function addInvfLine() {
+  invfDetailLines.push({
+    producto: '',
+    presentacion: '',
+    cantSistema: 0,
+    cantFisica: 0,
+    diferencia: 0,
+    observaciones: '',
+    isNew: true
+  });
+  invfDirty = true;
+  renderInvfDetail();
+
+  setTimeout(function() {
+    var tbody = document.getElementById('invf-detail-body');
+    var lastRow = tbody.lastElementChild;
+    if (lastRow) {
+      lastRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var prodTd = lastRow.querySelector('td:nth-child(2)');
+      if (prodTd) _makeInvfProductAutocomplete(prodTd, invfDetailLines.length - 1);
+    }
+  }, 50);
+}
+
+function _makeInvfProductAutocomplete(td, idx) {
+  td.innerHTML = '<input type="text" class="invf-prod-input" placeholder="Buscar producto…" style="width:200px;padding:3px 6px;border:1px solid #3498db;border-radius:4px;font-size:0.82rem" oninput="_filterInvfProd(this,' + idx + ')">' +
+    '<div class="invf-prod-suggestions" style="position:absolute;background:#fff;border:1px solid #cbd5e0;border-radius:4px;max-height:180px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 12px rgba(0,0,0,.15);font-size:0.8rem;width:320px"></div>';
+  td.style.position = 'relative';
+  td.querySelector('.invf-prod-input').focus();
+}
+
+function _filterInvfProd(input, idx) {
+  var q = (input.value || '').toLowerCase().trim();
+  var sugBox = input.parentElement.querySelector('.invf-prod-suggestions');
+  if (q.length < 2) { sugBox.style.display = 'none'; return; }
+
+  var matches = [];
+  var seen = {};
+  kxCatalogo.forEach(function(p) {
+    var name = p.Producto || '';
+    var pres = p.Presentacion || '';
+    var key = _normProd(name);
+    if (seen[key]) return;
+    if (name.toLowerCase().indexOf(q) >= 0 || pres.toLowerCase().indexOf(q) >= 0) {
+      seen[key] = true;
+      matches.push({ producto: name, presentacion: pres });
+    }
+  });
+  matches = matches.slice(0, 15);
+
+  if (!matches.length) { sugBox.style.display = 'none'; return; }
+
+  sugBox.innerHTML = matches.map(function(m, i) {
+    return '<div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0" onmousedown="_selectInvfProd(' + idx + ',' + i + ',this)" data-prod="' + m.producto.replace(/"/g, '&quot;') + '" data-pres="' + m.presentacion.replace(/"/g, '&quot;') + '">' +
+      '<div style="font-weight:600">' + m.producto + '</div>' +
+      (m.presentacion ? '<div style="color:#718096;font-size:0.75rem">' + m.presentacion + '</div>' : '') +
+    '</div>';
+  }).join('');
+  sugBox.style.display = 'block';
+}
+
+function _selectInvfProd(idx, matchIdx, el) {
+  var prod = el.getAttribute('data-prod');
+  var pres = el.getAttribute('data-pres');
+  invfDetailLines[idx].producto = prod;
+  invfDetailLines[idx].presentacion = pres;
+  invfDirty = true;
+  renderInvfDetail();
+}
+
+function removeInvfLine(idx) {
+  invfDetailLines.splice(idx, 1);
+  invfDirty = true;
+  renderInvfDetail();
+}
+
+async function saveInvfBorrador() {
+  var lineas = invfDetailLines.filter(function(l) { return l.producto; });
+  if (!lineas.length) { showToast('No hay líneas para guardar', '#e74c3c'); return; }
+
+  showToast('Guardando borrador…', '#3498db');
+  try {
+    var payload = {
+      action: 'guardarInventarioFisico',
+      Empresa: invfCurrentEmpresa,
+      Fecha_Conteo: invfCurrentFecha,
+      Estado: 'Borrador',
+      lineas: lineas.map(function(l) {
+        return {
+          Producto: l.producto,
+          Presentacion: l.presentacion,
+          Cantidad_Fisica: l.cantFisica,
+          Cantidad_Sistema: l.cantSistema,
+          Diferencia: l.diferencia,
+          Observaciones: l.observaciones
+        };
+      })
+    };
+    var res = await apiPost(payload);
+    if (res.error) throw new Error(res.error);
+    showToast('Borrador guardado', '#27ae60');
+    invfDirty = false;
+    await loadKardex();
+  } catch (e) {
+    showToast('Error al guardar: ' + e.message, '#e74c3c');
+  }
+}
+
+async function cerrarConteo() {
+  var conDif = invfDetailLines.filter(function(l) { return l.diferencia !== 0; }).length;
+  var msg = '¿Cerrar este conteo? No podrás editar después.';
+  if (conDif) msg += '\n\nHay ' + conDif + ' productos con diferencia.';
+  if (!confirm(msg)) return;
+
+  showToast('Cerrando conteo…', '#3498db');
+  try {
+    var lineas = invfDetailLines.filter(function(l) { return l.producto; });
+    var payload = {
+      action: 'guardarInventarioFisico',
+      Empresa: invfCurrentEmpresa,
+      Fecha_Conteo: invfCurrentFecha,
+      Estado: 'Cerrado',
+      lineas: lineas.map(function(l) {
+        return {
+          Producto: l.producto,
+          Presentacion: l.presentacion,
+          Cantidad_Fisica: l.cantFisica,
+          Cantidad_Sistema: l.cantSistema,
+          Diferencia: l.diferencia,
+          Observaciones: l.observaciones
+        };
+      })
+    };
+    var res = await apiPost(payload);
+    if (res.error) throw new Error(res.error);
+
+    var res2 = await apiPost({ action: 'cerrarInventarioFisico', Empresa: invfCurrentEmpresa, Fecha_Conteo: invfCurrentFecha });
+    if (res2.error) throw new Error(res2.error);
+
+    showToast('Conteo cerrado', '#27ae60');
+    invfDirty = false;
+    await loadKardex();
+    openConteo(invfCurrentEmpresa, invfCurrentFecha);
+  } catch (e) {
+    showToast('Error al cerrar: ' + e.message, '#e74c3c');
+  }
+}
+
+async function deleteConteo(empresa, fecha) {
+  var sigla = getSiglaKx(empresa) || empresa;
+  if (!confirm('¿Eliminar el conteo de ' + sigla + ' del ' + fecha + '? Esta acción no se puede deshacer.')) return;
+
+  showToast('Eliminando conteo…', '#3498db');
+  try {
+    var res = await apiPost({ action: 'eliminarInventarioFisico', Empresa: empresa, Fecha_Conteo: fecha });
+    if (res.error) throw new Error(res.error);
+    showToast('Conteo eliminado', '#27ae60');
+    await loadKardex();
+  } catch (e) {
+    showToast('Error al eliminar: ' + e.message, '#e74c3c');
+  }
+}
+
+async function generarAjustesDesdeConteo() {
+  var conDif = invfDetailLines.filter(function(l) { return l.diferencia !== 0; });
+  if (!conDif.length) { showToast('No hay diferencias para generar ajustes', '#e67e22'); return; }
+
+  var sobr = conDif.filter(function(l) { return l.diferencia > 0; }).length;
+  var falt = conDif.filter(function(l) { return l.diferencia < 0; }).length;
+  var msg = 'Se generarán ajustes al Kardex:\n• ' + sobr + ' sobrantes\n• ' + falt + ' faltantes\n\n¿Continuar?';
+  if (!confirm(msg)) return;
+
+  showToast('Generando ajustes…', '#3498db');
+  try {
+    var lineasPayload = conDif.map(function(l) {
+      return { Producto: l.producto, Presentacion: l.presentacion, Diferencia: l.diferencia };
+    });
+    var res = await apiPost({ action: 'generarAjustesDesdeConteo', Empresa: invfCurrentEmpresa, Fecha_Conteo: invfCurrentFecha, lineas: lineasPayload });
+    if (res.error) throw new Error(res.error);
+    showToast('Ajustes generados correctamente. Se crearon ' + (res.ajustes || 0) + ' ajustes.', '#27ae60');
+    await loadKardex();
+  } catch (e) {
+    showToast('Error al generar ajustes: ' + e.message, '#e74c3c');
+  }
+}
+
+function volverListaInvf() {
+  if (invfDirty && !confirm('Hay cambios sin guardar. ¿Salir sin guardar?')) return;
+  document.getElementById('invf-detail-view').style.display = 'none';
+  document.getElementById('invf-list-view').style.display = 'block';
+  invfDirty = false;
+  calcularInventarioFisico();
+}
+
+function exportInvfDetailExcel() {
+  if (!invfDetailLines.length) return;
+  var sigla = getSiglaKx(invfCurrentEmpresa) || invfCurrentEmpresa;
+  var data = invfDetailLines.map(function(l, i) {
+    return {
+      '#': i + 1,
+      'Producto': l.producto,
+      'Presentación': l.presentacion,
+      'Cant. Sistema': l.cantSistema,
+      'Cant. Física': l.cantFisica,
+      'Diferencia': l.diferencia,
+      'Observaciones': l.observaciones
+    };
+  });
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+  XLSX.writeFile(wb, 'Inventario_Fisico_' + sigla + '_' + invfCurrentFecha + '.xlsx');
+}
+
+function exportInvfListExcel() {
+  if (!invfListData.length) return;
+  var data = invfListData.map(function(r, i) {
+    return {
+      '#': i + 1,
+      'Empresa': getSiglaKx(r.empresa) || r.empresa,
+      'Fecha Conteo': r.fecha,
+      '# Productos': r.productos,
+      'Con diferencia': r.conDif,
+      'Estado': r.estado
+    };
+  });
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Conteos');
+  XLSX.writeFile(wb, 'Lista_Conteos_Inventario.xlsx');
 }
 
 // ── Auto-load ──
