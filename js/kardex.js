@@ -3394,8 +3394,7 @@ function calcularInventarioFisico() {
 
   if (!invfFiltersAttached) {
     document.getElementById('invf-f-empresa').addEventListener('change', renderInvfList);
-    document.getElementById('invf-f-desde').addEventListener('change', renderInvfList);
-    document.getElementById('invf-f-hasta').addEventListener('change', renderInvfList);
+    document.getElementById('invf-f-fecha').addEventListener('change', renderInvfList);
     invfFiltersAttached = true;
   }
 
@@ -3404,20 +3403,17 @@ function calcularInventarioFisico() {
 
 function clearInvfFilters() {
   document.getElementById('invf-f-empresa').value = '';
-  document.getElementById('invf-f-desde').value = '';
-  document.getElementById('invf-f-hasta').value = '';
+  document.getElementById('invf-f-fecha').value = '';
   renderInvfList();
 }
 
 function renderInvfList() {
   var fEmpresa = document.getElementById('invf-f-empresa').value;
-  var fDesde = document.getElementById('invf-f-desde').value;
-  var fHasta = document.getElementById('invf-f-hasta').value;
+  var fFecha = document.getElementById('invf-f-fecha').value;
 
   var filtered = invfListData.filter(function(r) {
     if (fEmpresa && r.empresa !== fEmpresa) return false;
-    if (fDesde && r.fecha < fDesde) return false;
-    if (fHasta && r.fecha > fHasta) return false;
+    if (fFecha && r.fecha !== fFecha) return false;
     return true;
   });
 
