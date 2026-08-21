@@ -3497,8 +3497,33 @@ function iniciarConteo() {
     });
   });
 
-  invfDirty = true;
+  invfDirty = false;
   _showInvfDetail();
+  _autoSaveInvfBorrador();
+}
+
+async function _autoSaveInvfBorrador() {
+  var lineas = invfDetailLines.filter(function(l) { return l.producto; });
+  if (!lineas.length) return;
+  try {
+    var payload = {
+      action: 'guardarInventarioFisico',
+      Empresa: invfCurrentEmpresa,
+      Fecha_Conteo: invfCurrentFecha,
+      Bodega: invfCurrentBodega,
+      Estado: 'Borrador',
+      lineas: lineas.map(function(l) {
+        return {
+          Producto: l.producto, Presentacion: l.presentacion,
+          Cantidad_Fisica: l.cantFisica, Cantidad_Sistema: l.cantSistema,
+          Diferencia: l.diferencia, Observaciones: l.observaciones
+        };
+      })
+    };
+    await apiPost(payload);
+    await loadKardex();
+    showToast('Borrador creado', '#27ae60');
+  } catch (e) { }
 }
 
 function _computeExistenciasParaEmpresa(empresa, bodega, fechaHasta) {
