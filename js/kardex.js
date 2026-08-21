@@ -3651,7 +3651,8 @@ function renderInvfDetail() {
   filtered.forEach(function(l, i) {
     var difColor = l.diferencia > 0 ? '#27ae60' : l.diferencia < 0 ? '#e74c3c' : '#718096';
     var difText = l.diferencia > 0 ? '+' + l.diferencia : String(l.diferencia);
-    html += '<tr>' +
+    var rowBg = l.diferencia > 0 ? 'background:#eafaf1' : l.diferencia < 0 ? 'background:#fdedec' : '';
+    html += '<tr style="' + rowBg + '">' +
       '<td>' + (i + 1) + '</td>' +
       '<td>' + l.producto + '</td>' +
       '<td>' + (l.presentacion || '') + '</td>' +
