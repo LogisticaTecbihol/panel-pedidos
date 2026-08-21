@@ -418,6 +418,7 @@
   </div>
   <div class="filters">
     <div class="fg"><label>Empresa</label><select id="invf-f-empresa"><option value="">— Todas —</option></select></div>
+    <div class="fg"><label>Bodega</label><select id="invf-f-bodega" style="font-size:0.82rem;padding:4px 8px"><option value="">— Todas —</option><option value="Productos Buenos">Productos Buenos</option><option value="Producto No Conforme">Producto No Conforme</option></select></div>
     <div class="fg"><label>Fecha de corte</label><input type="date" id="invf-f-fecha" class="ef" style="width:140px"></div>
     <button onclick="clearInvfFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
   </div>
@@ -834,7 +835,8 @@
     </div>
     <div class="mbdy" style="padding:28px 24px">
       <div class="fg"><label>Empresa *</label><select id="invf-new-empresa" class="ef"></select></div>
-      <div class="fg"><label>Fecha del conteo *</label><input type="date" id="invf-new-fecha" class="ef"></div>
+      <div class="fg"><label>Bodega *</label><select id="invf-new-bodega" class="ef"><option value="Productos Buenos">Productos Buenos</option><option value="Producto No Conforme">Producto No Conforme</option></select></div>
+      <div class="fg"><label>Fecha de corte *</label><input type="date" id="invf-new-fecha" class="ef"></div>
     </div>
     <div class="mftr">
       <div></div>

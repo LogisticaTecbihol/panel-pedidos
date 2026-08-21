@@ -1003,16 +1003,17 @@ async function apiPost(body) {
       var lineas = body.lineas || [];
       var empresa = body.Empresa || '';
       var fechaConteo = body.Fecha_Conteo || '';
+      var bodega = body.Bodega || 'Productos Buenos';
       var estado = body.Estado || 'Borrador';
       if (!empresa || !fechaConteo) return { ok: false, error: 'Empresa y fecha son requeridos' };
       var delRes = await _sb.from('InventarioFisico').delete()
-        .eq('Empresa', empresa).eq('Fecha_Conteo', fechaConteo);
+        .eq('Empresa', empresa).eq('Fecha_Conteo', fechaConteo).eq('Bodega', bodega);
       if (delRes.error) return { ok: false, error: delRes.error.message };
       if (!lineas.length) return { ok: true, saved: 0 };
       var rows = lineas.map(function(l) {
         var dif = (Number(l.Cantidad_Fisica) || 0) - (Number(l.Cantidad_Sistema) || 0);
         return {
-          Fecha_Conteo: fechaConteo, Empresa: empresa,
+          Fecha_Conteo: fechaConteo, Empresa: empresa, Bodega: bodega,
           Producto: l.Producto || '', Presentacion: l.Presentacion || '',
           Cantidad_Fisica: Number(l.Cantidad_Fisica) || 0,
           Cantidad_Sistema: Number(l.Cantidad_Sistema) || 0,
@@ -1027,24 +1028,38 @@ async function apiPost(body) {
     }
 
     if (action === 'eliminarInventarioFisico') {
+      var bodega = body.Bodega || 'Productos Buenos';
       var res = await _sb.from('InventarioFisico').delete()
-        .eq('Empresa', body.Empresa).eq('Fecha_Conteo', body.Fecha_Conteo);
+        .eq('Empresa', body.Empresa).eq('Fecha_Conteo', body.Fecha_Conteo).eq('Bodega', bodega);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, deleted: 1 };
     }
 
     if (action === 'cerrarInventarioFisico') {
+      var bodega = body.Bodega || 'Productos Buenos';
       var res = await _sb.from('InventarioFisico').update({ Estado: 'Cerrado', modificado_por: _uid() })
-        .eq('Empresa', body.Empresa).eq('Fecha_Conteo', body.Fecha_Conteo);
+        .eq('Empresa', body.Empresa).eq('Fecha_Conteo', body.Fecha_Conteo).eq('Bodega', bodega);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, closed: 1 };
     }
 
     if (action === 'generarAjustesDesdeConteo') {
       var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      var bodega = body.Bodega || 'Productos Buenos';
+      var esNC = bodega === 'Producto No Conforme';
       var lineas = body.lineas || [];
       var ajustes = lineas.filter(function(l) { return l.Diferencia && l.Diferencia !== 0; })
         .map(function(l) {
+          if (esNC) {
+            return {
+              Fecha: body.Fecha_Conteo || '', Empresa: body.Empresa || '',
+              Producto: l.Producto || '', Presentacion: l.Presentacion || '',
+              Tipo: l.Diferencia > 0 ? 'Ingreso_NC' : 'Salida_NC',
+              Cantidad: Math.abs(l.Diferencia), Motivo: 'Ajuste inventario fisico',
+              Observaciones: 'Inventario fisico ' + (body.Fecha_Conteo || ''),
+              Fecha_Registro: now, creado_por: _uid()
+            };
+          }
           return {
             Fecha: body.Fecha_Conteo || '', Empresa: body.Empresa || '',
             Producto: l.Producto || '', Presentacion: l.Presentacion || '',
@@ -1055,7 +1070,8 @@ async function apiPost(body) {
           };
         });
       if (!ajustes.length) return { ok: true, ajustes: 0 };
-      var res = await _sb.from('KardexAjustes').insert(ajustes);
+      var tabla = esNC ? 'KardexNC' : 'KardexAjustes';
+      var res = await _sb.from(tabla).insert(ajustes);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ajustes: ajustes.length };
     }

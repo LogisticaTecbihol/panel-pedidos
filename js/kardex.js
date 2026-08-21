@@ -3368,6 +3368,7 @@ var invfListData = [];
 var invfDetailLines = [];
 var invfCurrentEmpresa = '';
 var invfCurrentFecha = '';
+var invfCurrentBodega = 'Productos Buenos';
 var invfCurrentEstado = 'Borrador';
 var invfFiltersAttached = false;
 var invfDirty = false;
@@ -3375,9 +3376,10 @@ var invfDirty = false;
 function calcularInventarioFisico() {
   var agrupado = {};
   invfConteos.forEach(function(c) {
-    var key = c.Empresa + '|' + c.Fecha_Conteo;
+    var bodega = c.Bodega || 'Productos Buenos';
+    var key = c.Empresa + '|' + c.Fecha_Conteo + '|' + bodega;
     if (!agrupado[key]) {
-      agrupado[key] = { empresa: c.Empresa, fecha: c.Fecha_Conteo, estado: c.Estado, productos: 0, conDif: 0 };
+      agrupado[key] = { empresa: c.Empresa, fecha: c.Fecha_Conteo, bodega: bodega, estado: c.Estado, productos: 0, conDif: 0 };
     }
     agrupado[key].productos++;
     if (Number(c.Diferencia) !== 0) agrupado[key].conDif++;
@@ -3394,6 +3396,7 @@ function calcularInventarioFisico() {
 
   if (!invfFiltersAttached) {
     document.getElementById('invf-f-empresa').addEventListener('change', renderInvfList);
+    document.getElementById('invf-f-bodega').addEventListener('change', renderInvfList);
     document.getElementById('invf-f-fecha').addEventListener('change', renderInvfList);
     invfFiltersAttached = true;
   }
@@ -3403,23 +3406,26 @@ function calcularInventarioFisico() {
 
 function clearInvfFilters() {
   document.getElementById('invf-f-empresa').value = '';
+  document.getElementById('invf-f-bodega').value = '';
   document.getElementById('invf-f-fecha').value = '';
   renderInvfList();
 }
 
 function renderInvfList() {
   var fEmpresa = document.getElementById('invf-f-empresa').value;
+  var fBodega = document.getElementById('invf-f-bodega').value;
   var fFecha = document.getElementById('invf-f-fecha').value;
 
   var filtered = invfListData.filter(function(r) {
     if (fEmpresa && r.empresa !== fEmpresa) return false;
+    if (fBodega && r.bodega !== fBodega) return false;
     if (fFecha && r.fecha !== fFecha) return false;
     return true;
   });
 
   document.getElementById('invf-list-ct').textContent = '(' + filtered.length + ')';
 
-  var cols = ['#', 'Empresa', 'Fecha Conteo', '# Productos', 'Con diferencia', 'Estado', 'Acciones'];
+  var cols = ['#', 'Empresa', 'Bodega', 'Fecha Corte', '# Productos', 'Con diferencia', 'Estado', 'Acciones'];
   document.getElementById('invf-list-head').innerHTML = cols.map(function(c) {
     return '<th>' + c + '</th>';
   }).join('');
@@ -3428,19 +3434,23 @@ function renderInvfList() {
   filtered.forEach(function(r, i) {
     var sigla = getSiglaKx(r.empresa) || r.empresa;
     var badgeColor = r.estado === 'Cerrado' ? '#27ae60' : '#e67e22';
+    var bodegaLabel = r.bodega === 'Producto No Conforme' ? '<span style="color:#c0392b;font-weight:600">No Conforme</span>' : 'Buenos';
+    var escEmp = r.empresa.replace(/'/g, "\\'");
+    var escBod = r.bodega.replace(/'/g, "\\'");
     html += '<tr>' +
       '<td>' + (i + 1) + '</td>' +
       '<td>' + sigla + '</td>' +
+      '<td>' + bodegaLabel + '</td>' +
       '<td>' + r.fecha + '</td>' +
       '<td style="text-align:center">' + r.productos + '</td>' +
       '<td style="text-align:center">' + r.conDif + '</td>' +
       '<td><span class="badge" style="background:' + badgeColor + ';color:#fff;font-size:0.72rem;padding:2px 8px;border-radius:4px">' + r.estado + '</span></td>' +
       '<td>' +
-        '<button onclick="openConteo(\'' + r.empresa.replace(/'/g, "\\'") + '\',\'' + r.fecha + '\')" style="background:none;border:1px solid #3498db;color:#3498db;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.75rem;margin-right:4px">👁 Ver</button>' +
-        (r.estado !== 'Cerrado' ? '<button class="auth-edit-only" onclick="deleteConteo(\'' + r.empresa.replace(/'/g, "\\'") + '\',\'' + r.fecha + '\')" style="background:none;border:1px solid #e74c3c;color:#e74c3c;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.75rem">🗑</button>' : '') +
+        '<button onclick="openConteo(\'' + escEmp + '\',\'' + r.fecha + '\',\'' + escBod + '\')" style="background:none;border:1px solid #3498db;color:#3498db;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.75rem;margin-right:4px">👁 Ver</button>' +
+        (r.estado !== 'Cerrado' ? '<button class="auth-edit-only" onclick="deleteConteo(\'' + escEmp + '\',\'' + r.fecha + '\',\'' + escBod + '\')" style="background:none;border:1px solid #e74c3c;color:#e74c3c;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.75rem">🗑</button>' : '') +
       '</td></tr>';
   });
-  document.getElementById('invf-list-body').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:32px">No hay conteos registrados</td></tr>';
+  document.getElementById('invf-list-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#a0aec0;padding:32px">No hay conteos registrados</td></tr>';
 }
 
 function openNuevoConteoModal() {
@@ -3454,21 +3464,23 @@ function closeNuevoConteoModal() {
 
 function iniciarConteo() {
   var empresa = document.getElementById('invf-new-empresa').value;
+  var bodega = document.getElementById('invf-new-bodega').value;
   var fecha = document.getElementById('invf-new-fecha').value;
   if (!empresa || !fecha) { showToast('Selecciona empresa y fecha', '#e74c3c'); return; }
 
-  var existente = invfListData.find(function(r) { return r.empresa === empresa && r.fecha === fecha; });
+  var existente = invfListData.find(function(r) { return r.empresa === empresa && r.fecha === fecha && r.bodega === bodega; });
   if (existente) {
-    showToast('Ya existe un conteo para esa empresa y fecha. Usa "Ver" para editarlo.', '#e67e22');
+    showToast('Ya existe un conteo para esa empresa, bodega y fecha. Usa "Ver" para editarlo.', '#e67e22');
     return;
   }
 
   closeNuevoConteoModal();
   invfCurrentEmpresa = empresa;
   invfCurrentFecha = fecha;
+  invfCurrentBodega = bodega;
   invfCurrentEstado = 'Borrador';
 
-  var stock = _computeExistenciasParaEmpresa(empresa);
+  var stock = _computeExistenciasParaEmpresa(empresa, bodega, fecha);
   invfDetailLines = [];
   var productos = Object.keys(stock).sort();
   productos.forEach(function(prod) {
@@ -3489,21 +3501,29 @@ function iniciarConteo() {
   _showInvfDetail();
 }
 
-function _computeExistenciasParaEmpresa(empresa) {
+function _computeExistenciasParaEmpresa(empresa, bodega, fechaHasta) {
+  var esNC = bodega === 'Producto No Conforme';
+  var movs = esNC ? ncMovimientos : kxMovimientos;
   var saldos = {};
-  var fechaCorte = null;
 
-  kxMovimientos.forEach(function(m) {
-    if (m.modulo === 'Saldo Inicial' && m.fecha) {
-      if (!fechaCorte || m.fecha < fechaCorte) fechaCorte = m.fecha;
+  var fechaCorteInicial = null;
+  movs.forEach(function(m) {
+    var esSaldo = esNC ? (m.motivo === 'Saldo_Inicial') : (m.modulo === 'Saldo Inicial');
+    if (esSaldo && m.fecha) {
+      if (!fechaCorteInicial || m.fecha < fechaCorteInicial) fechaCorteInicial = m.fecha;
     }
   });
 
-  kxMovimientos.forEach(function(m) {
+  movs.forEach(function(m) {
     if (!m.producto || !m.empresa) return;
-    if (fechaCorte && m.fecha < fechaCorte) return;
-    var bucket = _empresaExistKey(m.empresa, m.producto);
-    if (bucket !== empresa) return;
+    if (fechaCorteInicial && m.fecha < fechaCorteInicial) return;
+    if (fechaHasta && m.fecha && m.fecha > fechaHasta) return;
+    if (esNC) {
+      if (m.empresa !== empresa) return;
+    } else {
+      var bucket = _empresaExistKey(m.empresa, m.producto);
+      if (bucket !== empresa) return;
+    }
     var key = m.producto;
     if (!saldos[key]) saldos[key] = { cantidad: 0, presentacion: '' };
     if (m.tipo === 'Entrada') {
@@ -3526,12 +3546,13 @@ function _computeExistenciasParaEmpresa(empresa) {
   return saldos;
 }
 
-function openConteo(empresa, fecha) {
+function openConteo(empresa, fecha, bodega) {
   invfCurrentEmpresa = empresa;
   invfCurrentFecha = fecha;
+  invfCurrentBodega = bodega || 'Productos Buenos';
 
   var lineas = invfConteos.filter(function(c) {
-    return c.Empresa === empresa && c.Fecha_Conteo === fecha;
+    return c.Empresa === empresa && c.Fecha_Conteo === fecha && (c.Bodega || 'Productos Buenos') === invfCurrentBodega;
   });
 
   invfCurrentEstado = lineas.length ? lineas[0].Estado : 'Borrador';
@@ -3558,7 +3579,8 @@ function _showInvfDetail() {
   document.getElementById('invf-detail-view').style.display = 'block';
 
   var sigla = getSiglaKx(invfCurrentEmpresa) || invfCurrentEmpresa;
-  document.getElementById('invf-detail-title').textContent = sigla + ' — ' + invfCurrentFecha;
+  var bodegaLabel = invfCurrentBodega === 'Producto No Conforme' ? 'No Conforme' : 'Buenos';
+  document.getElementById('invf-detail-title').textContent = sigla + ' — ' + bodegaLabel + ' — ' + invfCurrentFecha;
 
   var badge = document.getElementById('invf-detail-estado-badge');
   badge.textContent = invfCurrentEstado;
@@ -3741,6 +3763,7 @@ async function saveInvfBorrador() {
       action: 'guardarInventarioFisico',
       Empresa: invfCurrentEmpresa,
       Fecha_Conteo: invfCurrentFecha,
+      Bodega: invfCurrentBodega,
       Estado: 'Borrador',
       lineas: lineas.map(function(l) {
         return {
@@ -3776,6 +3799,7 @@ async function cerrarConteo() {
       action: 'guardarInventarioFisico',
       Empresa: invfCurrentEmpresa,
       Fecha_Conteo: invfCurrentFecha,
+      Bodega: invfCurrentBodega,
       Estado: 'Cerrado',
       lineas: lineas.map(function(l) {
         return {
@@ -3791,25 +3815,25 @@ async function cerrarConteo() {
     var res = await apiPost(payload);
     if (res.error) throw new Error(res.error);
 
-    var res2 = await apiPost({ action: 'cerrarInventarioFisico', Empresa: invfCurrentEmpresa, Fecha_Conteo: invfCurrentFecha });
+    var res2 = await apiPost({ action: 'cerrarInventarioFisico', Empresa: invfCurrentEmpresa, Fecha_Conteo: invfCurrentFecha, Bodega: invfCurrentBodega });
     if (res2.error) throw new Error(res2.error);
 
     showToast('Conteo cerrado', '#27ae60');
     invfDirty = false;
     await loadKardex();
-    openConteo(invfCurrentEmpresa, invfCurrentFecha);
+    openConteo(invfCurrentEmpresa, invfCurrentFecha, invfCurrentBodega);
   } catch (e) {
     showToast('Error al cerrar: ' + e.message, '#e74c3c');
   }
 }
 
-async function deleteConteo(empresa, fecha) {
+async function deleteConteo(empresa, fecha, bodega) {
   var sigla = getSiglaKx(empresa) || empresa;
   if (!confirm('¿Eliminar el conteo de ' + sigla + ' del ' + fecha + '? Esta acción no se puede deshacer.')) return;
 
   showToast('Eliminando conteo…', '#3498db');
   try {
-    var res = await apiPost({ action: 'eliminarInventarioFisico', Empresa: empresa, Fecha_Conteo: fecha });
+    var res = await apiPost({ action: 'eliminarInventarioFisico', Empresa: empresa, Fecha_Conteo: fecha, Bodega: bodega || 'Productos Buenos' });
     if (res.error) throw new Error(res.error);
     showToast('Conteo eliminado', '#27ae60');
     await loadKardex();
@@ -3832,7 +3856,7 @@ async function generarAjustesDesdeConteo() {
     var lineasPayload = conDif.map(function(l) {
       return { Producto: l.producto, Presentacion: l.presentacion, Diferencia: l.diferencia };
     });
-    var res = await apiPost({ action: 'generarAjustesDesdeConteo', Empresa: invfCurrentEmpresa, Fecha_Conteo: invfCurrentFecha, lineas: lineasPayload });
+    var res = await apiPost({ action: 'generarAjustesDesdeConteo', Empresa: invfCurrentEmpresa, Fecha_Conteo: invfCurrentFecha, Bodega: invfCurrentBodega, lineas: lineasPayload });
     if (res.error) throw new Error(res.error);
     showToast('Ajustes generados correctamente. Se crearon ' + (res.ajustes || 0) + ' ajustes.', '#27ae60');
     await loadKardex();
@@ -3875,7 +3899,8 @@ function exportInvfListExcel() {
     return {
       '#': i + 1,
       'Empresa': getSiglaKx(r.empresa) || r.empresa,
-      'Fecha Conteo': r.fecha,
+      'Bodega': r.bodega === 'Producto No Conforme' ? 'No Conforme' : 'Buenos',
+      'Fecha Corte': r.fecha,
       '# Productos': r.productos,
       'Con diferencia': r.conDif,
       'Estado': r.estado
