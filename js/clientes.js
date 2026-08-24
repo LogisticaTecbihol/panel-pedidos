@@ -10,11 +10,15 @@ var PAGE_SIZE = 50;
 var currentPage = 1;
 var currentGroups = [];
 
+function _normalizeId(id) {
+  return (id || '').trim().replace(/[\s\-]+/g, '');
+}
+
 function groupClientes(list) {
   var map = {};
   var order = [];
   list.forEach(function(c) {
-    var idKey = (c.Identificacion || '').trim();
+    var idKey = _normalizeId(c.Identificacion);
     if (!idKey) {
       var soloKey = '__solo_' + c.id;
       map[soloKey] = { records: [c] };
