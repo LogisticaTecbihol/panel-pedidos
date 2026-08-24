@@ -11,7 +11,20 @@ var currentPage = 1;
 var currentGroups = [];
 
 function _normalizeId(id) {
-  return (id || '').trim().replace(/[\s\-]+/g, '');
+  var s = (id || '').trim();
+  s = s.replace(/[\s\-]\d$/, '');
+  return s.replace(/[\s\-]+/g, '');
+}
+
+function _bestId(records) {
+  var withDv = '', without = '';
+  records.forEach(function(r) {
+    var id = (r.Identificacion || '').trim();
+    if (!id) return;
+    if (!without) without = id;
+    if (!withDv && /[\s\-]\d$/.test(id)) withDv = id;
+  });
+  return withDv || without;
 }
 
 function groupClientes(list) {
@@ -229,7 +242,7 @@ function renderTable() {
       '<td style="color:#a0aec0;font-size:0.74rem">' + (globalIdx + 1) + '</td>' +
       '<td>' + empresaHtml + '</td>' +
       '<td style="font-weight:600">' + escHtml(first.Cliente || '') + multiTag + '</td>' +
-      '<td>' + escHtml(first.Identificacion || '') + '</td>' +
+      '<td>' + escHtml(_bestId(g.records)) + '</td>' +
       '<td>' + escHtml(first.Tipo_Identificacion || '') + '</td>' +
       '<td>' + escHtml(tel) + '</td>' +
       '<td>' + muniHtml + '</td>' +
@@ -274,7 +287,7 @@ function openGroupDetail(groupIdx) {
   var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin-bottom:' + (isMulti ? '20' : '0') + 'px">';
   var commonFields = [
     ['Cliente', first.Cliente],
-    ['Identificación', first.Identificacion],
+    ['Identificación', _bestId(g.records)],
     ['Tipo ID', tipoId],
     ['Teléfono', tel],
     ['Correo', correo]
