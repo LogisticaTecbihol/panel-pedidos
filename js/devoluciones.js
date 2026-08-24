@@ -621,8 +621,7 @@ function _devEntregas(lines, useEntregada) {
   return lines.map(function(x) {
     var cant;
     if (useEntregada) {
-      var ce = Number(x.Cant_Entregada) || 0;
-      cant = ce > 0 ? ce : (Number(x.Cantidad) || 0);
+      cant = Number(x.Cant_Entregada) || 0;
     } else {
       cant = Number(x.Cantidad) || 0;
     }
@@ -634,7 +633,7 @@ function _devEntregas(lines, useEntregada) {
       valor_total: Number(x.Valor_Total) || 0,
       bonificado: 'No'
     };
-  }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
+  }).filter(function(p) { return useEntregada ? p.cantidad > 0 : ((p.cantidad || 0) > 0 || p.producto); });
 }
 
 function _dataDevSolicitud(ctx) {
