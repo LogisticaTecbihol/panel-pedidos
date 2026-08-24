@@ -8,6 +8,27 @@ var deleteId = null;
 var importRows = [];
 var PAGE_SIZE = 50;
 var currentPage = 1;
+var currentGroups = [];
+
+function groupClientes(list) {
+  var map = {};
+  var order = [];
+  list.forEach(function(c) {
+    var idKey = (c.Identificacion || '').trim();
+    if (!idKey) {
+      var soloKey = '__solo_' + c.id;
+      map[soloKey] = { records: [c] };
+      order.push(soloKey);
+      return;
+    }
+    if (!map[idKey]) {
+      map[idKey] = { records: [] };
+      order.push(idKey);
+    }
+    map[idKey].records.push(c);
+  });
+  return order.map(function(k) { return map[k]; });
+}
 
 // ── Load ──
 async function loadClientes() {
@@ -104,46 +125,112 @@ function clearFilters() {
 
 // ── Render table ──
 function renderTable() {
-  var filtered = getFiltered();
+  var allGrps = groupClientes(clientesData);
+
+  var emp = document.getElementById('f-emp').value;
+  var depto = document.getElementById('f-depto').value;
+  var muni = document.getElementById('f-muni').value;
+  var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
+
+  var filtered = allGrps.filter(function(g) {
+    if (!emp && !depto && !muni && !txt) return true;
+    return g.records.some(function(c) {
+      if (emp && c.Nombre_Empresa !== emp) return false;
+      if (depto && c.Departamento !== depto) return false;
+      if (muni && c.Municipio !== muni) return false;
+      if (txt) {
+        var haystack = [c.Cliente, c.Identificacion, c.Correo_Electronico, c.Telefono, c.Municipio, c.Departamento]
+          .join(' ').toLowerCase();
+        if (haystack.indexOf(txt) < 0) return false;
+      }
+      return true;
+    });
+  });
+  currentGroups = filtered;
 
   var empSet = {}, deptoSet = {};
   clientesData.forEach(function(c) {
     if (c.Nombre_Empresa) empSet[c.Nombre_Empresa] = true;
     if (c.Departamento) deptoSet[c.Departamento] = true;
   });
-  document.getElementById('s-total').textContent = clientesData.length;
+  document.getElementById('s-total').textContent = allGrps.length;
   document.getElementById('s-empresas').textContent = Object.keys(empSet).length;
   document.getElementById('s-deptos').textContent = Object.keys(deptoSet).length;
 
   var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   if (currentPage > totalPages) currentPage = totalPages;
   var start = (currentPage - 1) * PAGE_SIZE;
-  var pageData = filtered.slice(start, start + PAGE_SIZE);
+  var pageGroups = filtered.slice(start, start + PAGE_SIZE);
 
   document.getElementById('row-ct').textContent = '(' + filtered.length + ' clientes)';
 
   var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
   var canDel = (typeof AUTH !== 'undefined' && AUTH.canDelete) ? AUTH.canDelete() : false;
   var tbody = document.getElementById('t-body');
-  tbody.innerHTML = pageData.map(function(c, i) {
-    var sigla = getSigla(c.Nombre_Empresa);
-    var siglaClass = getSiglaClass(c.Nombre_Empresa);
+
+  tbody.innerHTML = pageGroups.map(function(g, i) {
+    var first = g.records[0];
+    var isMulti = g.records.length > 1;
+    var globalIdx = start + i;
+
+    var empresas = [];
+    var empresasSeen = {};
+    g.records.forEach(function(r) {
+      var e = (r.Nombre_Empresa || '').trim();
+      if (e && !empresasSeen[e]) { empresasSeen[e] = true; empresas.push(e); }
+    });
+    var empresaHtml = empresas.map(function(e) {
+      return '<span class="sigla-tag ' + getSiglaClass(e) + '">' + escHtml(getSigla(e)) + '</span>';
+    }).join(' ');
+
+    var munis = [];
+    var munisSeen = {};
+    g.records.forEach(function(r) {
+      var m = (r.Municipio || '').trim();
+      if (m && !munisSeen[m]) { munisSeen[m] = true; munis.push(m); }
+    });
+    var muniHtml = '';
+    if (munis.length === 1) {
+      muniHtml = escHtml(munis[0]);
+    } else if (munis.length === 2) {
+      muniHtml = munis.map(escHtml).join(', ');
+    } else if (munis.length > 2) {
+      muniHtml = escHtml(munis[0]) + ' <span style="color:#718096;font-size:0.74rem">+' + (munis.length - 1) + ' sedes</span>';
+    }
+
+    var tel = '', correo = '';
+    g.records.forEach(function(r) {
+      if (!tel && r.Telefono && r.Telefono !== '0') tel = r.Telefono;
+      if (!correo && r.Correo_Electronico) correo = r.Correo_Electronico;
+    });
+
+    var multiTag = isMulti
+      ? ' <span style="background:#edf2f7;color:#4a5568;font-size:0.68rem;padding:1px 6px;border-radius:10px;font-weight:600">' + g.records.length + ' reg.</span>'
+      : '';
+
+    var actionHtml = '';
+    if (canEd) {
+      actionHtml = '<td style="text-align:center;white-space:nowrap">' +
+        '<button onclick="openGroupDetail(' + globalIdx + ')" style="background:#2c3e50;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Ver detalle">👁️</button>';
+      if (!isMulti) {
+        actionHtml += '<button onclick="openEditCliente(' + first.id + ')" style="background:#1a5276;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Editar">✏️</button>';
+        if (canDel) {
+          actionHtml += '<button onclick="openDeleteCliente(' + first.id + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600" title="Eliminar">🗑️</button>';
+        }
+      }
+      actionHtml += '</td>';
+    }
+
     return '<tr>' +
-      '<td style="color:#a0aec0;font-size:0.74rem">' + (start + i + 1) + '</td>' +
-      '<td><span class="sigla-tag ' + siglaClass + '">' + escHtml(sigla) + '</span></td>' +
-      '<td style="font-weight:600">' + escHtml(c.Cliente || '') + '</td>' +
-      '<td>' + escHtml(c.Identificacion || '') + '</td>' +
-      '<td>' + escHtml(c.Tipo_Identificacion || '') + '</td>' +
-      '<td>' + escHtml(c.Telefono || '') + '</td>' +
-      '<td>' + escHtml(c.Municipio || '') + '</td>' +
-      '<td style="font-size:0.78rem">' + escHtml(c.Correo_Electronico || '') + '</td>' +
-      (canEd
-        ? '<td style="text-align:center;white-space:nowrap">' +
-          '<button onclick="openDetail(' + c.id + ')" style="background:#2c3e50;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Ver detalle">👁️</button>' +
-          '<button onclick="openEditCliente(' + c.id + ')" style="background:#1a5276;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Editar">✏️</button>' +
-          (canDel ? '<button onclick="openDeleteCliente(' + c.id + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600" title="Eliminar">🗑️</button>' : '') +
-          '</td>'
-        : '') +
+      '<td style="color:#a0aec0;font-size:0.74rem">' + (globalIdx + 1) + '</td>' +
+      '<td>' + empresaHtml + '</td>' +
+      '<td style="font-weight:600">' + escHtml(first.Cliente || '') + multiTag + '</td>' +
+      '<td>' + escHtml(first.Identificacion || '') + '</td>' +
+      '<td>' + escHtml(first.Tipo_Identificacion || '') + '</td>' +
+      '<td>' + escHtml(tel) + '</td>' +
+      '<td>' + muniHtml + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(correo) + '</td>' +
+      actionHtml +
       '</tr>';
   }).join('');
 
@@ -165,35 +252,106 @@ document.getElementById('f-muni').addEventListener('change', function() { curren
 document.getElementById('f-txt').addEventListener('input', function() { currentPage = 1; renderTable(); });
 
 // ── Detail modal ──
-function openDetail(id) {
-  var c = clientesData.find(function(x) { return x.id === id; });
-  if (!c) return;
-  document.getElementById('det-titulo').textContent = '👤 ' + (c.Cliente || 'Cliente');
-  var fields = [
-    ['Empresa', getSigla(c.Nombre_Empresa)],
-    ['Cliente', c.Cliente],
-    ['Tipo ID', c.Tipo_Identificacion],
-    ['Identificación', c.Identificacion],
-    ['Teléfono', c.Telefono],
-    ['Correo', c.Correo_Electronico],
-    ['Dirección', c.Direccion],
-    ['Dirección Envío', c.Direccion_Envio],
-    ['Departamento', c.Departamento],
-    ['Municipio', c.Municipio],
-    ['Cupo Crédito', c.Cupo_Credito],
-    ['Plazo Pago', c.Plazo_Pago],
-    ['Lista Precio', c.Lista_Precio]
+function openGroupDetail(groupIdx) {
+  var g = currentGroups[groupIdx];
+  if (!g) return;
+  var first = g.records[0];
+  var isMulti = g.records.length > 1;
+
+  document.getElementById('det-titulo').textContent = '👤 ' + (first.Cliente || 'Cliente');
+
+  var tel = '', correo = '', tipoId = '';
+  g.records.forEach(function(r) {
+    if (!tel && r.Telefono && r.Telefono !== '0') tel = r.Telefono;
+    if (!correo && r.Correo_Electronico) correo = r.Correo_Electronico;
+    if (!tipoId && r.Tipo_Identificacion) tipoId = r.Tipo_Identificacion;
+  });
+
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin-bottom:' + (isMulti ? '20' : '0') + 'px">';
+  var commonFields = [
+    ['Cliente', first.Cliente],
+    ['Identificación', first.Identificacion],
+    ['Tipo ID', tipoId],
+    ['Teléfono', tel],
+    ['Correo', correo]
   ];
-  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 20px">';
-  fields.forEach(function(f) {
+  commonFields.forEach(function(f) {
     html += '<div>' +
       '<div style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-bottom:2px">' + f[0] + '</div>' +
       '<div style="font-size:0.88rem;color:#2d3748;font-weight:500">' + escHtml(f[1] || '—') + '</div>' +
       '</div>';
   });
   html += '</div>';
+
+  if (isMulti) {
+    var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
+    var canDel = (typeof AUTH !== 'undefined' && AUTH.canDelete) ? AUTH.canDelete() : false;
+
+    html += '<div style="border-top:1px solid #e2e8f0;padding-top:16px">';
+    html += '<div style="font-size:0.84rem;font-weight:700;color:#2d3748;margin-bottom:12px">📍 Empresas y sedes (' + g.records.length + ' registros)</div>';
+
+    g.records.forEach(function(r) {
+      html += '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:10px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+      html += '<span class="sigla-tag ' + getSiglaClass(r.Nombre_Empresa) + '">' + escHtml(getSigla(r.Nombre_Empresa)) + '</span>';
+      var loc = [r.Municipio, r.Departamento].filter(function(x) { return x; }).join(', ');
+      html += '<span style="font-weight:600;font-size:0.85rem;color:#2d3748">' + escHtml(loc || '—') + '</span>';
+      if (canEd) {
+        html += '<div style="margin-left:auto;display:flex;gap:4px">';
+        html += '<button onclick="closeDetail();openEditCliente(' + r.id + ')" style="background:#1a5276;color:white;border:none;padding:3px 9px;border-radius:5px;cursor:pointer;font-size:0.72rem;font-weight:600" title="Editar">✏️</button>';
+        if (canDel) {
+          html += '<button onclick="closeDetail();openDeleteCliente(' + r.id + ')" style="background:#e74c3c;color:white;border:none;padding:3px 9px;border-radius:5px;cursor:pointer;font-size:0.72rem;font-weight:600" title="Eliminar">🗑️</button>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:0.8rem">';
+      var sedeFields = [
+        ['Dirección', r.Direccion],
+        ['Dir. Envío', r.Direccion_Envio],
+        ['Cupo Crédito', r.Cupo_Credito],
+        ['Plazo Pago', r.Plazo_Pago],
+        ['Lista Precio', r.Lista_Precio],
+        ['Teléfono', r.Telefono]
+      ];
+      sedeFields.forEach(function(f) {
+        html += '<div><span style="color:#a0aec0;font-size:0.72rem;font-weight:600">' + f[0] + ':</span> ' + escHtml(f[1] || '—') + '</div>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+  } else {
+    var c = first;
+    var singleFields = [
+      ['Empresa', getSigla(c.Nombre_Empresa)],
+      ['Dirección', c.Direccion],
+      ['Dirección Envío', c.Direccion_Envio],
+      ['Departamento', c.Departamento],
+      ['Municipio', c.Municipio],
+      ['Cupo Crédito', c.Cupo_Credito],
+      ['Plazo Pago', c.Plazo_Pago],
+      ['Lista Precio', c.Lista_Precio]
+    ];
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 20px">';
+    singleFields.forEach(function(f) {
+      html += '<div>' +
+        '<div style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-bottom:2px">' + f[0] + '</div>' +
+        '<div style="font-size:0.88rem;color:#2d3748;font-weight:500">' + escHtml(f[1] || '—') + '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
   document.getElementById('det-body').innerHTML = html;
   document.getElementById('detail-overlay').style.display = 'flex';
+}
+
+function openDetail(id) {
+  var idx = -1;
+  currentGroups.some(function(g, i) {
+    return g.records.some(function(r) { if (r.id === id) { idx = i; return true; } });
+  });
+  if (idx >= 0) openGroupDetail(idx);
 }
 
 function closeDetail() {

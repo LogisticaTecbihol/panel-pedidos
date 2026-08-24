@@ -214,14 +214,14 @@
 
 <!-- MODAL: Detalle cliente -->
 <div class="overlay" id="detail-overlay">
-  <div class="modal-box" style="max-width:700px">
+  <div class="modal-box" style="max-width:800px">
     <div class="mhdr" style="background:linear-gradient(135deg,#2c3e50,#34495e)">
       <div style="flex:1">
         <h2 id="det-titulo">👤 Detalle del Cliente</h2>
       </div>
       <button class="btn-close" onclick="closeDetail()">✕</button>
     </div>
-    <div class="mbody" id="det-body" style="padding:20px 24px"></div>
+    <div class="mbody" id="det-body" style="padding:20px 24px;max-height:65vh;overflow-y:auto"></div>
     <div class="mftr">
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="closeDetail()">Cerrar</button>
