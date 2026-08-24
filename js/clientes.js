@@ -194,7 +194,8 @@ function renderTable() {
     var empresasSeen = {};
     g.records.forEach(function(r) {
       var e = (r.Nombre_Empresa || '').trim();
-      if (e && !empresasSeen[e]) { empresasSeen[e] = true; empresas.push(e); }
+      var sig = getSigla(e);
+      if (e && !empresasSeen[sig]) { empresasSeen[sig] = true; empresas.push(e); }
     });
     var empresaHtml = empresas.map(function(e) {
       return '<span class="sigla-tag ' + getSiglaClass(e) + '">' + escHtml(getSigla(e)) + '</span>';
