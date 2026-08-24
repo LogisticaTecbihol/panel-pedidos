@@ -545,7 +545,7 @@ async function viewMuestra(id) {
     '</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem;background:#f0fdf4;padding:12px 14px;border-radius:8px;border:1px solid #bbf7d0">' +
     editField('N° Remisión', 'mu-view-remision', 'text', remVal, '(Auto al despachar)') +
-    (AUTH.isAdmin() ? '<label style="font-size:0.72rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:3px;margin-top:2px"><input type="checkbox" id="mu-view-remision-auto" checked onchange="var el=document.getElementById(\'mu-view-remision\');if(this.checked){el.readOnly=true;el.style.background=\'#f0f4f8\';el.placeholder=\'(Auto al despachar)\';el.value=\'\';}else{el.readOnly=false;el.style.background=\'\';el.placeholder=\'N° remisión\';}">Auto</label>' : '') +
+    (AUTH.canAutoConsec() ? '<label style="font-size:0.72rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:3px;margin-top:2px"><input type="checkbox" id="mu-view-remision-auto" checked onchange="var el=document.getElementById(\'mu-view-remision\');if(this.checked){el.readOnly=true;el.style.background=\'#f0f4f8\';el.placeholder=\'(Auto al despachar)\';el.value=\'\';}else{el.readOnly=false;el.style.background=\'\';el.placeholder=\'N° remisión\';}">Auto</label>' : '') +
     editField('Fecha Despacho', 'mu-view-fecha-despacho', 'date', fDespachoVal, '') +
     '</div>';
 

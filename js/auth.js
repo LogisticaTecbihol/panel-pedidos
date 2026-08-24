@@ -115,6 +115,9 @@ var AUTH = (function() {
     document.querySelectorAll('.auth-admin-only').forEach(function(e) {
       e.style.display = canManageUsers() ? (e.dataset.display || 'inline-block') : 'none';
     });
+    document.querySelectorAll('.auth-autoconsec').forEach(function(e) {
+      e.style.display = canAutoConsec() ? (e.dataset.display || 'inline-block') : 'none';
+    });
 
     // Ocultar enlaces del navbar y tarjetas del home cuyo módulo no esté permitido
     document.querySelectorAll('[data-modulo]').forEach(function(el) {
@@ -160,13 +163,18 @@ var AUTH = (function() {
 
   function canEdit() {
     if (!_profile) return false;
-    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial';
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial' || _profile.rol === 'remisionador';
   }
 
   // El rol 'comercial' solo puede crear/ver/editar sus propios pedidos
   // (RLS lo restringe en el servidor; en cliente se usa para autofill y bloqueos).
   function isAdmin() {
     return _profile && _profile.rol === 'admin';
+  }
+
+  function canAutoConsec() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'remisionador';
   }
 
   function isComercial() {
@@ -183,7 +191,7 @@ var AUTH = (function() {
 
   function canUploadAdjuntos() {
     if (!_profile) return false;
-    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial' || _profile.rol === 'despachador';
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial' || _profile.rol === 'despachador' || _profile.rol === 'remisionador';
   }
 
   function canManageUsers() {
@@ -278,6 +286,7 @@ var AUTH = (function() {
     canApproveOC: canApproveOC,
     canManageUsers: canManageUsers,
     isAdmin: isAdmin,
+    canAutoConsec: canAutoConsec,
     isComercial: isComercial,
     isGerenteIaso: isGerenteIaso,
     isDespachador: isDespachador,
