@@ -2165,6 +2165,7 @@ async function guardarTodo() {
         facturar_a: hdr.Facturar_A,
         nit_adicional: hdr.NIT_Adicional,
         sucursal: hdr.Sucursal,
+        bodega_facturacion: hdr.Bodega_Facturacion,
         observaciones: obs,
         remision: rem,
         fecha_entrega: fecha,
@@ -3573,6 +3574,7 @@ async function openNuevoPedido() {
   document.getElementById('nv-nit-adicional').value = '';
   document.getElementById('nv-consignacion').value = 'No';
   document.getElementById('nv-bodega-facturacion').value = '';
+  document.getElementById('nv-bodega-facturacion').removeAttribute('data-edited');
   _toggleBodegaField('nv', '');
   document.getElementById('nv-observaciones').value = '';
   document.getElementById('nv-cupo-info').style.display = 'none';
@@ -3587,7 +3589,11 @@ async function openNuevoPedido() {
     populateComercialSelect(nvEmpSel.value);
     actualizarConsecutivoNuevo();
     _toggleBodegaField('nv', nvEmpSel.value);
+    document.getElementById('nv-bodega-facturacion').removeAttribute('data-edited');
     _reapplyPreciosNuevo();
+  };
+  document.getElementById('nv-bodega-facturacion').onchange = function() {
+    this.setAttribute('data-edited', '1');
   };
   var nvPrecioEl = document.getElementById('nv-precio');
   nvPrecioEl.oninput = function() { _reapplyPreciosNuevo(); _toggleNvProductos(); };
@@ -3700,7 +3706,8 @@ async function openNuevoPedido() {
         if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
         if (lastOrder.NIT_Adicional) document.getElementById('nv-nit-adicional').value = lastOrder.NIT_Adicional;
         if (lastOrder.Consignacion) document.getElementById('nv-consignacion').value = lastOrder.Consignacion;
-        if (lastOrder.Bodega_Facturacion) document.getElementById('nv-bodega-facturacion').value = lastOrder.Bodega_Facturacion;
+        var _bfEl = document.getElementById('nv-bodega-facturacion');
+        if (lastOrder.Bodega_Facturacion && !_bfEl.dataset.edited) _bfEl.value = lastOrder.Bodega_Facturacion;
         if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
           document.getElementById('nv-comercial').value = lastOrder.Comercial;
           actualizarConsecutivoNuevo();
@@ -3779,7 +3786,8 @@ async function openNuevoPedido() {
         if (lastOrder.Facturar_A) document.getElementById('nv-facturar-a').value = lastOrder.Facturar_A;
         if (lastOrder.NIT_Adicional) document.getElementById('nv-nit-adicional').value = lastOrder.NIT_Adicional;
         if (lastOrder.Consignacion) document.getElementById('nv-consignacion').value = lastOrder.Consignacion;
-        if (lastOrder.Bodega_Facturacion) document.getElementById('nv-bodega-facturacion').value = lastOrder.Bodega_Facturacion;
+        var _bfEl2 = document.getElementById('nv-bodega-facturacion');
+        if (lastOrder.Bodega_Facturacion && !_bfEl2.dataset.edited) _bfEl2.value = lastOrder.Bodega_Facturacion;
         if (lastOrder.Comercial && !document.getElementById('nv-comercial').value) {
           document.getElementById('nv-comercial').value = lastOrder.Comercial;
           actualizarConsecutivoNuevo();
