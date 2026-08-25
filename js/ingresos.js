@@ -661,10 +661,13 @@ function onOrigenChange() {
   if (empresa) {
     document.getElementById('ing-empresa-origen').value = empresa;
   }
-  var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta' || origen === 'Germisemillas';
-  document.getElementById('ing-empresa-origen-wrap').style.display = esExterno ? 'none' : '';
-  document.getElementById('ing-remision-origen-wrap').style.display = esExterno ? 'none' : '';
-  if (esExterno) {
+  var EXTERNOS_CONOCIDOS = {'Proveedor Carval':1, 'Chia Abago':1, 'Bodega Villeta':1, 'Germisemillas':1};
+  var esExterno = !!EXTERNOS_CONOCIDOS[origen];
+  var esPersonalizado = origen && !esExterno && !ORIGEN_EMPRESA[origen] && !EXTERNOS_CONOCIDOS[origen];
+  var ocultarOrigen = esExterno;
+  document.getElementById('ing-empresa-origen-wrap').style.display = ocultarOrigen ? 'none' : '';
+  document.getElementById('ing-remision-origen-wrap').style.display = ocultarOrigen ? 'none' : '';
+  if (ocultarOrigen) {
     document.getElementById('ing-empresa-origen').value = '';
     document.getElementById('ing-remision-origen').value = '';
   }

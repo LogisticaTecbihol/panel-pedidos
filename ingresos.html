@@ -283,16 +283,16 @@
         </div>
         <div>
           <label class="ef-label">Origen</label>
-          <select class="ef" id="ing-origen" onchange="onOrigenChange()">
-            <option value="">— Seleccionar —</option>
+          <input class="ef" id="ing-origen" list="ing-origen-list" placeholder="Seleccionar o escribir origen" oninput="onOrigenChange()" onchange="onOrigenChange()">
+          <datalist id="ing-origen-list">
             <option value="Planta Mosquera">Planta Mosquera (GREEN)</option>
             <option value="Planta Cachipay">Planta Cachipay (PARCELAR)</option>
-            <option value="Proveedor Carval">Proveedor Carval</option>
-            <option value="Chia Abago">Chia Abago</option>
-            <option value="Bodega Villeta">Bodega Villeta</option>
-            <option value="Germisemillas">Germisemillas</option>
-            <option value="Ecociclus Gestion SAS">Ecociclus Gestion SAS</option>
-          </select>
+            <option value="Proveedor Carval"></option>
+            <option value="Chia Abago"></option>
+            <option value="Bodega Villeta"></option>
+            <option value="Germisemillas"></option>
+            <option value="Ecociclus Gestion SAS"></option>
+          </datalist>
         </div>
         <div id="ing-empresa-origen-wrap">
           <label class="ef-label">Empresa Origen</label>
