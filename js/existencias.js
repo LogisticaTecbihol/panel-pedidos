@@ -364,7 +364,6 @@
     return saldos;
   }
 
-  // Carga las 9 fuentes que necesita el cálculo Kardex.
   async function loadSnapshot() {
     if (typeof _authReady !== 'undefined') {
       try { await _authReady; } catch(e) {}
@@ -387,7 +386,9 @@
       apiGet('getKardexNC',    { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, ajustesNC: [] }; }),
       apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Salida' })
-        .catch(function() { return { ok: true, cambios: [] }; })
+        .catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getRemisionesAnuladas', { columns: 'Remision' })
+        .catch(function() { return { ok: true, remisionesAnuladas: [] }; })
     ]);
 
     var sources = {
@@ -403,8 +404,21 @@
       ajustesNC:    res[7].ajustesNC     || [],
       cambios:      res[8].cambios       || []
     };
+    var remAnuladas = res[9].remisionesAnuladas || [];
 
     var kxMovs = buildKxMovimientos(sources);
+
+    if (remAnuladas.length) {
+      var remAnuladasSet = {};
+      remAnuladas.forEach(function(ra) {
+        var r = String(ra.Remision || '').trim();
+        if (r) remAnuladasSet[r] = true;
+      });
+      kxMovs = kxMovs.filter(function(m) {
+        return !remAnuladasSet[String(m.remision || '').trim()];
+      });
+    }
+
     var saldos = computeSaldosPorEmpresa(kxMovs);
 
     return { sources: sources, kxMovimientos: kxMovs, saldos: saldos };
