@@ -839,6 +839,9 @@ function rebuildConsecs() {
       Telefono: p.Telefono, Direccion_Envio: p.Direccion_Envio,
       Comercial: p.Comercial, Municipio: p.Municipio, Departamento: p.Departamento,
       Plazo_Pago: p.Plazo_Pago, Precio_Facturacion: p.Precio_Facturacion, Total_Orden: p.Total_Orden,
+      Facturar_A: p.Facturar_A, NIT_Adicional: p.NIT_Adicional,
+      Consignacion: p.Consignacion, Bodega_Facturacion: p.Bodega_Facturacion,
+      Observaciones: p.Observaciones,
       _ModTs: null, _ModTipo: null,
     };
     var pts = p.Fecha_Modificacion_Cant;
