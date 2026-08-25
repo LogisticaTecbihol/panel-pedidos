@@ -160,9 +160,60 @@
       });
     });
 
-    // Cambios de Mercancía — SALIDA (solo ENTREGAR desde bodega buena, cerrado)
+    // Devoluciones — SALIDA desde Productos Buenos (cuando hay remisión de salida)
+    (src.devoluciones || []).forEach(function(d) {
+      var estado = (d.Estado || '').toLowerCase();
+      if (estado === 'anulado' || estado === 'pendiente') return;
+      var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
+      if (cant <= 0) return;
+      var remSal = String(d.Remision_Salida || '').trim();
+      if (!remSal) return;
+      var bodegaSal = (d.Bodega_Salida || '').trim();
+      if (bodegaSal !== 'Productos Buenos' && bodegaSal !== 'Producto Terminado') return;
+      movs.push({
+        fecha: d.Fecha_Salida || d.Fecha_Devolucion || d.Fecha || '', tipo: 'Salida',
+        modulo: 'Devoluciones', remision: remSal,
+        empresa: d.Empresa || '', producto: _normProd(d.Producto),
+        presentacion: d.Presentacion || '', cantidad: cant
+      });
+    });
+
+    // Cambios — agrupar para detectar si hay líneas ENTREGAR
+    var _cGrp = {}, _cTE = {};
     (src.cambios || []).forEach(function(c) {
-      if (c.Tipo_Linea !== 'ENTREGAR') return;
+      var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
+      if (!_cGrp[gk]) _cGrp[gk] = [];
+      _cGrp[gk].push(c);
+    });
+    Object.keys(_cGrp).forEach(function(gk) {
+      _cTE[gk] = _cGrp[gk].some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+    });
+
+    // Cambios de Mercancía — ENTRADA (CAMBIAR a bodega buena, cerrado)
+    (src.cambios || []).forEach(function(c) {
+      if (c.Tipo_Linea !== 'CAMBIAR') return;
+      var cant = Number(c.Cantidad) || 0;
+      if (cant <= 0) return;
+      var estado = (c.Estado || '').toLowerCase();
+      if (estado !== 'cerrado' && estado !== 'cerrada') return;
+      var bodegaIng = (c.Bodega_Ingreso || 'Productos Buenos').trim();
+      if (bodegaIng !== 'Productos Buenos' && bodegaIng !== 'Producto Terminado') return;
+      var rem = String(c.Remision_Ingreso || '').trim();
+      if (!rem) return;
+      movs.push({
+        fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '', tipo: 'Entrada',
+        modulo: 'Cambios', remision: rem,
+        empresa: c.Empresa || '', producto: _normProd(c.Producto),
+        presentacion: c.Presentacion || '', cantidad: cant
+      });
+    });
+
+    // Cambios de Mercancía — SALIDA (ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
+    (src.cambios || []).forEach(function(c) {
+      var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
+      var tieneEntregar = _cTE[gk];
+      if (tieneEntregar && c.Tipo_Linea !== 'ENTREGAR') return;
+      if (!tieneEntregar && c.Tipo_Linea !== 'CAMBIAR') return;
       var cant = Number(c.Cantidad) || 0;
       if (cant <= 0) return;
       var estado = (c.Estado || '').toLowerCase();
@@ -491,12 +542,16 @@
       var lines = cambiosGrp[gk];
       var hdr = lines[0];
       if ((hdr.Estado || '').toLowerCase() !== 'cerrado') return;
+      var tieneEntregar = lines.some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
       lines.forEach(function(l) {
         var cant = Number(l.Cantidad) || 0;
         if (cant <= 0) return;
         if (l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Ingreso)) {
           add(hdr.Empresa, l.Producto, cant);
-        } else if (l.Tipo_Linea === 'ENTREGAR' && _esBueno(hdr.Bodega_Salida)) {
+        }
+        if (l.Tipo_Linea === 'ENTREGAR' && _esBueno(hdr.Bodega_Salida)) {
+          add(hdr.Empresa, l.Producto, -cant);
+        } else if (!tieneEntregar && l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Salida)) {
           add(hdr.Empresa, l.Producto, -cant);
         }
       });

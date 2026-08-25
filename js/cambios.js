@@ -1203,10 +1203,10 @@ function exportarCamRemisionPDF(tipo, opts) {
   }
 
   // Ingreso = producto que devuelve el cliente (CAMBIAR)
-  // Salida  = producto nuevo para el cliente (ENTREGAR)
-  var srcLines = esIngreso ? ctx.cambiar : ctx.entregar;
+  // Salida  = producto nuevo para el cliente (ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
+  var srcLines = esIngreso ? ctx.cambiar : (ctx.entregar.length ? ctx.entregar : ctx.cambiar);
   if (!srcLines.length) {
-    showToast('No hay productos de tipo ' + (esIngreso ? 'a cambiar' : 'a entregar') + ' para incluir.', '#e67e22');
+    showToast('No hay productos para incluir en la remisión.', '#e67e22');
     return;
   }
   var entregas = srcLines.map(function(l) {

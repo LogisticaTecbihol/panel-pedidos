@@ -267,9 +267,49 @@ function buildMovimientos() {
     });
   });
 
-  // Cambios de Mercancía — SALIDA (solo líneas ENTREGAR desde bodega productos buenos)
+  // Cambios — agrupar por empresa+consecutivo para detectar si hay líneas ENTREGAR
+  var _camGrp = {};
   kxCambios.forEach(function(c) {
-    if (c.Tipo_Linea !== 'ENTREGAR') return;
+    var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
+    if (!_camGrp[gk]) _camGrp[gk] = [];
+    _camGrp[gk].push(c);
+  });
+  var _camTieneEntregar = {};
+  Object.keys(_camGrp).forEach(function(gk) {
+    _camTieneEntregar[gk] = _camGrp[gk].some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+  });
+
+  // Cambios de Mercancía — ENTRADA (líneas CAMBIAR que ingresan a bodega productos buenos)
+  kxCambios.forEach(function(c) {
+    if (c.Tipo_Linea !== 'CAMBIAR') return;
+    var cant = Number(c.Cantidad) || 0;
+    if (cant <= 0) return;
+    var estado = (c.Estado || '').toLowerCase();
+    if (estado !== 'cerrado' && estado !== 'cerrada') return;
+    var bodegaIng = (c.Bodega_Ingreso || 'Productos Buenos').trim();
+    if (bodegaIng !== 'Productos Buenos' && bodegaIng !== 'Producto Terminado') return;
+    var rem = String(c.Remision_Ingreso || '').trim();
+    if (!rem) return;
+    kxMovimientos.push({
+      fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '',
+      tipo: 'Entrada',
+      modulo: 'Cambios',
+      remision: rem,
+      referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
+      empresa: c.Empresa || '',
+      producto: _normProd(c.Producto),
+      presentacion: c.Presentacion || '',
+      cantidad: cant,
+      _ajusteId: null
+    });
+  });
+
+  // Cambios de Mercancía — SALIDA (líneas ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
+  kxCambios.forEach(function(c) {
+    var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
+    var tieneEntregar = _camTieneEntregar[gk];
+    if (tieneEntregar && c.Tipo_Linea !== 'ENTREGAR') return;
+    if (!tieneEntregar && c.Tipo_Linea !== 'CAMBIAR') return;
     var cant = Number(c.Cantidad) || 0;
     if (cant <= 0) return;
     var estado = (c.Estado || '').toLowerCase();
