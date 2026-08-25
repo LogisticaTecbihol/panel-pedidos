@@ -390,7 +390,7 @@ function addProductToGroup() {
   editIngreso = null;
   document.getElementById('ing-modal-title').textContent = '📥 Agregar Producto';
   document.getElementById('ing-fecha').value = toDateInput(g.Fecha);
-  document.getElementById('ing-origen').value = g.Origen || '';
+  setOrigenValue(g.Origen || '');
   document.getElementById('ing-empresa-origen').value = g.Empresa_Origen || '';
   document.getElementById('ing-empresa-destino').value = g.Empresa_Destino || '';
   document.getElementById('ing-responsable').value = g.Responsable || '';
@@ -655,19 +655,45 @@ var ORIGEN_EMPRESA = {
   'Planta Cachipay': 'PARCELAR DE COLOMBIA SAS',
 };
 
+function setOrigenValue(val) {
+  var sel = document.getElementById('ing-origen');
+  var customEl = document.getElementById('ing-origen-custom');
+  var found = false;
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === val) { found = true; break; }
+  }
+  if (found) {
+    sel.value = val;
+    customEl.style.display = 'none';
+    customEl.value = '';
+  } else {
+    sel.value = '__otro__';
+    customEl.style.display = '';
+    customEl.value = val || '';
+  }
+}
+
+function getOrigenValue() {
+  var sel = document.getElementById('ing-origen').value;
+  if (sel === '__otro__') return (document.getElementById('ing-origen-custom').value || '').trim();
+  return sel;
+}
+
 function onOrigenChange() {
-  var origen = document.getElementById('ing-origen').value;
+  var selVal = document.getElementById('ing-origen').value;
+  var customEl = document.getElementById('ing-origen-custom');
+  customEl.style.display = selVal === '__otro__' ? '' : 'none';
+  if (selVal !== '__otro__') customEl.value = '';
+
+  var origen = getOrigenValue();
   var empresa = ORIGEN_EMPRESA[origen];
   if (empresa) {
     document.getElementById('ing-empresa-origen').value = empresa;
   }
-  var EXTERNOS_CONOCIDOS = {'Proveedor Carval':1, 'Chia Abago':1, 'Bodega Villeta':1, 'Germisemillas':1};
-  var esExterno = !!EXTERNOS_CONOCIDOS[origen];
-  var esPersonalizado = origen && !esExterno && !ORIGEN_EMPRESA[origen] && !EXTERNOS_CONOCIDOS[origen];
-  var ocultarOrigen = esExterno;
-  document.getElementById('ing-empresa-origen-wrap').style.display = ocultarOrigen ? 'none' : '';
-  document.getElementById('ing-remision-origen-wrap').style.display = ocultarOrigen ? 'none' : '';
-  if (ocultarOrigen) {
+  var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta' || origen === 'Germisemillas';
+  document.getElementById('ing-empresa-origen-wrap').style.display = esExterno ? 'none' : '';
+  document.getElementById('ing-remision-origen-wrap').style.display = esExterno ? 'none' : '';
+  if (esExterno) {
     document.getElementById('ing-empresa-origen').value = '';
     document.getElementById('ing-remision-origen').value = '';
   }
@@ -697,7 +723,7 @@ function openNewIngreso() {
   editIngreso = null;
   document.getElementById('ing-modal-title').textContent = '📥 Registrar Ingreso';
   document.getElementById('ing-fecha').value = today();
-  document.getElementById('ing-origen').value = 'Planta Mosquera';
+  setOrigenValue('Planta Mosquera');
   document.getElementById('ing-empresa-origen').value = '';
   document.getElementById('ing-empresa-destino').value = '';
   document.getElementById('ing-responsable').value = '';
@@ -737,7 +763,7 @@ function openEditIng(row) {
   editIngreso = r;
   document.getElementById('ing-modal-title').textContent = '✏️ Editar Ingreso';
   document.getElementById('ing-fecha').value = toDateInput(r.Fecha);
-  document.getElementById('ing-origen').value = r.Origen || '';
+  setOrigenValue(r.Origen || '');
   document.getElementById('ing-empresa-origen').value = r.Empresa_Origen || '';
   document.getElementById('ing-empresa-destino').value = r.Empresa_Destino || '';
   document.getElementById('ing-responsable').value = r.Responsable || '';
@@ -768,7 +794,7 @@ function openEditIng(row) {
 // ── Save ──
 async function saveIngreso() {
   var fecha = document.getElementById('ing-fecha').value;
-  var origen = document.getElementById('ing-origen').value;
+  var origen = getOrigenValue();
   var empresa_origen = document.getElementById('ing-empresa-origen').value;
   var empresa_destino = document.getElementById('ing-empresa-destino').value;
   var responsable = document.getElementById('ing-responsable').value.trim();
