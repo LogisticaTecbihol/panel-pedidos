@@ -1209,7 +1209,10 @@ function renderPagination(totalRows) {
 function renderTable() {
   var rows = applySort(filtered());
   var all = consecs.map(function(c) { return derivedStatus(getLinesFor(c)); });
-  document.getElementById('s-rec').textContent = all.filter(function(e) { return e === 'Recibido'; }).length;
+  document.getElementById('s-rec').textContent = consecs.filter(function(c) {
+    var lines = getLinesFor(c);
+    return derivedStatus(lines) === 'Recibido' && derivedEstado2(lines) === 'Abierto';
+  }).length;
   document.getElementById('s-par').textContent = all.filter(function(e) { return e === 'Parcial'; }).length;
   document.getElementById('s-ent').textContent = all.filter(function(e) { return e === 'Entregado'; }).length;
   document.getElementById('s-tot').textContent = consecs.length;
