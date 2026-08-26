@@ -1416,10 +1416,16 @@ async function previewCamAdjunto(path, ext) {
   if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
 
   var contentEl = document.getElementById('cam-adjunto-preview-content');
+  contentEl.innerHTML = '';
   if (ext === 'pdf') {
-    contentEl.innerHTML = '<iframe src="' + url + '"></iframe>';
+    var f = document.createElement('iframe');
+    f.src = url;
+    contentEl.appendChild(f);
   } else {
-    contentEl.innerHTML = '<img src="' + url + '" alt="Preview">';
+    var im = document.createElement('img');
+    im.src = url;
+    im.alt = 'Preview';
+    contentEl.appendChild(im);
   }
   document.getElementById('cam-adjunto-preview-overlay').classList.add('show');
 }

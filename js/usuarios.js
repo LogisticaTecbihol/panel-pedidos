@@ -363,8 +363,8 @@ async function saveUser() {
       showToast('✅ Usuario actualizado');
       await loadUsuarios();
     } else {
-      if (!password || password.length < 6) {
-        showToast('La contraseña debe tener al menos 6 caracteres', '#e74c3c');
+      if (!password || password.length < 8) {
+        showToast('La contraseña debe tener al menos 8 caracteres', '#e74c3c');
         btn.disabled = false;
         btn.textContent = '✓ Crear usuario';
         return;

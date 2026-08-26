@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://logisticatecbihol.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
@@ -43,7 +43,7 @@ serve(async (req) => {
 
     const { email, password } = await req.json()
     if (!email || !password) throw new Error('Email y contraseña son requeridos')
-    if (password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres')
+    if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres')
 
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
