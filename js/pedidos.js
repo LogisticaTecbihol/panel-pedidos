@@ -2214,6 +2214,9 @@ async function guardarTodo() {
     Nombre_Empresa: c.Nombre_Empresa,
     Consecutivo: c.Consecutivo
   };
+  var _geo = normalizarMunicipio(hdr.Municipio, hdr.Departamento);
+  hdr.Municipio = _geo.municipio;
+  hdr.Departamento = _geo.departamento || normalizarDepartamento(hdr.Departamento);
   hdr.comercial_id = await _resolveComercialId(hdr.Comercial);
 
   var btn = document.getElementById('btn-confirmar');
@@ -2789,6 +2792,9 @@ async function saveEdit() {
     Total_Orden: editWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('ed-estado2').value,
   };
+  var _geoEd = normalizarMunicipio(hdr.Municipio, hdr.Departamento);
+  hdr.Municipio = _geoEd.municipio;
+  hdr.Departamento = _geoEd.departamento || normalizarDepartamento(hdr.Departamento);
   hdr.comercial_id = await _resolveComercialId(hdr.Comercial);
 
   var c = consecs[editIdx];
@@ -3200,6 +3206,9 @@ async function confirmUpload() {
 
   try {
     var comercialIdUp = await _resolveComercialId(uploadData.comercial);
+    var _geoUp = normalizarMunicipio(uploadData.municipio, uploadData.departamento);
+    uploadData.municipio = _geoUp.municipio;
+    uploadData.departamento = _geoUp.departamento || normalizarDepartamento(uploadData.departamento);
     var result = await apiPost({
       action: 'agregarPedido',
       nombre_empresa: uploadData.nombre_empresa,
@@ -4091,6 +4100,7 @@ async function guardarNuevoPedido() {
 
     var nvComercial = document.getElementById('nv-comercial').value.trim();
     var comercialIdNv = await _resolveComercialId(nvComercial);
+    var _geoNv = normalizarMunicipio(document.getElementById('nv-municipio').value.trim(), document.getElementById('nv-departamento').value.trim());
     var result = await apiPost({
       action: 'agregarPedido',
       nombre_empresa: empresa,
@@ -4101,8 +4111,8 @@ async function guardarNuevoPedido() {
       sucursal: document.getElementById('nv-sucursal').value.trim(),
       telefono: document.getElementById('nv-telefono').value.trim(),
       direccion_envio: document.getElementById('nv-direccion').value.trim(),
-      municipio: document.getElementById('nv-municipio').value.trim(),
-      departamento: document.getElementById('nv-departamento').value.trim(),
+      municipio: _geoNv.municipio,
+      departamento: _geoNv.departamento || normalizarDepartamento(document.getElementById('nv-departamento').value.trim()),
       comercial: nvComercial,
       comercial_id: comercialIdNv,
       plazo_pago: document.getElementById('nv-plazo').value.trim(),

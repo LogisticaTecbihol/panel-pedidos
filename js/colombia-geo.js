@@ -52,6 +52,64 @@ function _normSearch(s) {
   return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
+function normalizarMunicipio(texto, deptoTexto) {
+  var q = _normSearch(texto);
+  if (!q) return { municipio: texto, departamento: deptoTexto || '' };
+
+  var cleanQ = q.replace(/\s*d\.?\s*c\.?\s*$/, '').replace(/\s+/g, ' ');
+  var qNoDots = q.replace(/\./g, '');
+
+  var exact = null;
+  var starts = null;
+  var contains = null;
+
+  for (var i = 0; i < _colMuniList.length; i++) {
+    var entry = _colMuniList[i];
+    var norm = _normSearch(entry.municipio);
+    var normNoDots = norm.replace(/\./g, '');
+    if (norm === q || norm === cleanQ || normNoDots === qNoDots) {
+      exact = entry;
+      break;
+    }
+    if (!starts && norm.indexOf(cleanQ) === 0) starts = entry;
+    if (!contains && norm.indexOf(cleanQ) >= 0) contains = entry;
+  }
+
+  if (!exact && cleanQ.length >= 3) {
+    for (var d = 0; d < _colDeptList.length; d++) {
+      var dept = _colDeptList[d];
+      var normD = _normSearch(dept);
+      var munis = COLOMBIA_DEPTOS_MUNIS[dept];
+      if (normD.indexOf(cleanQ) >= 0 || cleanQ.indexOf(normD) >= 0) continue;
+      for (var m = 0; m < munis.length; m++) {
+        var normM = _normSearch(munis[m]);
+        if (normM === cleanQ) { exact = { municipio: munis[m], departamento: dept }; break; }
+      }
+      if (exact) break;
+    }
+  }
+
+  var best = exact || starts || contains;
+  if (best) {
+    var dNorm = _normSearch(deptoTexto);
+    var dBest = _normSearch(best.departamento);
+    var useDept = (!deptoTexto || dNorm === dBest || dNorm.indexOf(dBest) >= 0 || dBest.indexOf(dNorm) >= 0)
+      ? best.departamento : (deptoTexto || best.departamento);
+    return { municipio: best.municipio, departamento: useDept };
+  }
+
+  return { municipio: texto, departamento: deptoTexto || '' };
+}
+
+function normalizarDepartamento(texto) {
+  if (!texto) return '';
+  var q = _normSearch(texto);
+  for (var i = 0; i < _colDeptList.length; i++) {
+    if (_normSearch(_colDeptList[i]) === q) return _colDeptList[i];
+  }
+  return texto;
+}
+
 function setupGeoAutocomplete(deptInput, muniInput) {
   var deptAC = initAutocomplete(deptInput, {
     minChars: 1,
