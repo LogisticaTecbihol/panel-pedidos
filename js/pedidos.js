@@ -1213,7 +1213,10 @@ function renderTable() {
     var lines = getLinesFor(c);
     return derivedStatus(lines) === 'Recibido' && derivedEstado2(lines) === 'Abierto';
   }).length;
-  document.getElementById('s-par').textContent = all.filter(function(e) { return e === 'Parcial'; }).length;
+  document.getElementById('s-par').textContent = consecs.filter(function(c) {
+    var lines = getLinesFor(c);
+    return derivedStatus(lines) === 'Parcial' && derivedEstado2(lines) === 'Abierto';
+  }).length;
   document.getElementById('s-ent').textContent = all.filter(function(e) { return e === 'Entregado'; }).length;
   document.getElementById('s-tot').textContent = consecs.length;
 
