@@ -51,6 +51,25 @@
 .adjunto-upload-progress .prog-bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
 .adjunto-upload-progress .prog-fill{height:100%;background:#1a5276;border-radius:3px;transition:width 0.3s}
 .adjunto-upload-progress .prog-text{font-size:0.72rem;color:#718096;margin-top:4px;text-align:center}
+/* ── Multi-select Municipio filter ── */
+.ms-wrap{position:relative;min-width:200px}
+.ms-toggle{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-height:34px;padding:4px 28px 4px 8px;border:1px solid #cbd5e0;border-radius:6px;background:white;cursor:pointer;font-size:0.82rem;color:#4a5568;position:relative}
+.ms-toggle::after{content:'▾';position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.7rem;color:#718096;pointer-events:none}
+.ms-toggle.open{border-color:#1a5276;border-radius:6px 6px 0 0}
+.ms-placeholder{color:#a0aec0;font-size:0.82rem}
+.ms-chip{display:inline-flex;align-items:center;gap:3px;background:#ebf5fb;color:#1a5276;border:1px solid #aed6f1;border-radius:4px;padding:1px 6px;font-size:0.72rem;font-weight:600;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.ms-chip-x{cursor:pointer;font-weight:700;color:#718096;margin-left:2px;font-size:0.8rem;line-height:1}
+.ms-chip-x:hover{color:#e53e3e}
+.ms-more{font-size:0.7rem;color:#718096;font-weight:600}
+.ms-dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #1a5276;border-top:none;border-radius:0 0 6px 6px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:240px;overflow:hidden;flex-direction:column}
+.ms-dropdown.open{display:flex}
+.ms-search{border:none;border-bottom:1px solid #e2e8f0;padding:7px 10px;font-size:0.82rem;outline:none;width:100%;box-sizing:border-box}
+.ms-options{overflow-y:auto;max-height:200px;flex:1}
+.ms-opt{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;font-size:0.82rem;color:#2d3748;transition:background 0.1s}
+.ms-opt:hover{background:#f7fafc}
+.ms-opt.selected{background:#ebf5fb;font-weight:600}
+.ms-opt input[type=checkbox]{accent-color:#1a5276;width:14px;height:14px;cursor:pointer}
+.ms-no-results{padding:10px;text-align:center;color:#a0aec0;font-size:0.8rem}
 </style>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -146,6 +165,17 @@
       </select>
     </div>
     <div class="fg"><label>Producto</label><input type="text" id="f-prod" placeholder="Buscar producto…" list="dl-f-prod" style="width:180px"><datalist id="dl-f-prod"></datalist></div>
+    <div class="fg"><label>Municipio</label>
+      <div class="ms-wrap" id="f-muni-wrap">
+        <div class="ms-toggle" id="f-muni-toggle" onclick="toggleMuniDropdown(event)">
+          <span class="ms-placeholder" id="f-muni-placeholder">Todos</span>
+        </div>
+        <div class="ms-dropdown" id="f-muni-dropdown">
+          <input type="text" class="ms-search" id="f-muni-search" placeholder="Buscar municipio…" oninput="filterMuniOptions()">
+          <div class="ms-options" id="f-muni-options"></div>
+        </div>
+      </div>
+    </div>
     <div class="fg"><label>Desde</label><input type="date" id="f-fec-desde" title="Fecha de pedido — desde" style="width:150px"></div>
     <div class="fg"><label>Hasta</label><input type="date" id="f-fec-hasta" title="Fecha de pedido — hasta" style="width:150px"></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="cliente, consecutivo…" style="width:175px"></div>
