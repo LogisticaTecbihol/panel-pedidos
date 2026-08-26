@@ -148,7 +148,7 @@
     (src.devoluciones || []).forEach(function(d) {
       var estado = (d.Estado || '').toLowerCase();
       if (estado === 'anulado' || estado === 'pendiente') return;
-      var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
+      var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
       if (cant <= 0) return;
       var bodegaIng = (d.Bodega_Ingreso || '').trim();
       if (bodegaIng === 'Producto No Conforme') return;
@@ -164,7 +164,7 @@
     (src.devoluciones || []).forEach(function(d) {
       var estado = (d.Estado || '').toLowerCase();
       if (estado === 'anulado' || estado === 'pendiente') return;
-      var cant = Number(d.Cant_Entregada || d.Cantidad) || 0;
+      var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
       if (cant <= 0) return;
       var remSal = String(d.Remision_Salida || '').trim();
       if (!remSal) return;
