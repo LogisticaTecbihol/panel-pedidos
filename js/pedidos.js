@@ -1217,7 +1217,12 @@ function renderTable() {
     var lines = getLinesFor(c);
     return derivedStatus(lines) === 'Parcial' && derivedEstado2(lines) === 'Abierto';
   }).length;
-  document.getElementById('s-ent').textContent = all.filter(function(e) { return e === 'Entregado'; }).length;
+  document.getElementById('s-ent').textContent = consecs.filter(function(c) {
+    var lines = getLinesFor(c);
+    var status = derivedStatus(lines);
+    var estado2 = derivedEstado2(lines);
+    return status === 'Entregado' || ((status === 'Recibido' || status === 'Parcial') && estado2 === 'Cerrado');
+  }).length;
   document.getElementById('s-tot').textContent = consecs.length;
 
   var totalRows = rows.length;
