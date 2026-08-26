@@ -492,6 +492,10 @@ async function saveEdit() {
     Lista_Precio: document.getElementById('ed-lista-precio').value
   };
 
+  var _geoCl = normalizarMunicipio(payload.Municipio, payload.Departamento);
+  payload.Municipio = _geoCl.municipio;
+  payload.Departamento = _geoCl.departamento || normalizarDepartamento(payload.Departamento);
+
   try {
     var result;
     if (editingId) {
