@@ -101,11 +101,12 @@ var AUTH = (function() {
   function _renderAuthUI() {
     var el = document.getElementById('auth-info');
     if (!el) return;
-    var name = _profile ? (_profile.nombre || _profile.email) : '';
-    var rolLabel = _profile ? _profile.rol.charAt(0).toUpperCase() + _profile.rol.slice(1) : '';
+    var name = _profile ? escHtml(_profile.nombre || _profile.email) : '';
+    var rolRaw = _profile ? _profile.rol : '';
+    var rolLabel = rolRaw ? rolRaw.charAt(0).toUpperCase() + rolRaw.slice(1) : '';
     el.innerHTML =
       '<span class="auth-user">' + name + '</span>' +
-      '<span class="auth-role-badge auth-role-' + (_profile ? _profile.rol : '') + '">' + rolLabel + '</span>' +
+      '<span class="auth-role-badge auth-role-' + escHtml(rolRaw) + '">' + escHtml(rolLabel) + '</span>' +
       '<button class="btn-logout" onclick="AUTH.logout()">Cerrar sesión</button>';
     el.style.display = 'flex';
 

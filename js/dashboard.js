@@ -98,7 +98,7 @@ function populateDashFilters() {
   emps.sort();
   var sel = document.getElementById('df-emp');
   sel.innerHTML = '<option value="">Todas</option>' + emps.map(function(e) {
-    return '<option value="' + e + '">' + dGetSigla(e) + ' — ' + e + '</option>';
+    return '<option value="' + escHtml(e) + '">' + escHtml(dGetSigla(e)) + ' — ' + escHtml(e) + '</option>';
   }).join('');
 
   if (!dashFiltersAttached) {
@@ -286,7 +286,7 @@ function buildEmpresas(ped) {
     var pct = maxVal > 0 ? Math.max(3, (e.uds / maxVal) * 100) : 3;
     var color = EMP_COLORS[e.sigla] || '#718096';
     html += '<div class="hbar-row">' +
-      '<div class="hbar-label">' + e.sigla + '</div>' +
+      '<div class="hbar-label">' + escHtml(e.sigla) + '</div>' +
       '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + color + '">' + e.ordenes + ' ord</div></div>' +
       '<div class="hbar-value">' + e.uds.toLocaleString('es-CO') + ' uds</div>' +
     '</div>';
@@ -324,7 +324,7 @@ function buildTopProductos(ped) {
   tbody.innerHTML = arr.map(function(r) {
     var avance = r.pedido > 0 ? Math.round(((r.pedido - r.pendiente) / r.pedido) * 100) : 0;
     return '<tr>' +
-      '<td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.producto + '</td>' +
+      '<td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.producto) + '</td>' +
       '<td class="money" style="color:#e74c3c;font-weight:700">' + r.pendiente.toLocaleString('es-CO') + '</td>' +
       '<td class="money">' + r.pedido.toLocaleString('es-CO') + '</td>' +
       '<td style="text-align:center"><div class="prog" style="margin:0 auto"><div class="prog-bar"><div class="prog-fill" style="width:' + avance + '%"></div></div><div class="prog-pct">' + avance + '%</div></div></td>' +
@@ -359,10 +359,10 @@ function buildTopClientes(ped) {
   tbody.innerHTML = arr.map(function(r) {
     var empTags = Object.keys(r.empresas).sort().map(function(s) {
       var color = EMP_COLORS[s] || '#718096';
-      return '<span class="sigla-badge" style="background:' + color + '20;color:' + color + '">' + s + '</span>';
+      return '<span class="sigla-badge" style="background:' + color + '20;color:' + color + '">' + escHtml(s) + '</span>';
     }).join(' ');
     return '<tr>' +
-      '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.cliente + '</td>' +
+      '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
       '<td class="money" style="font-weight:700;color:#2980b9">' + r.uds.toLocaleString('es-CO') + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
       '<td>' + empTags + '</td>' +
@@ -408,7 +408,7 @@ function buildDevoluciones(dev) {
     motivoArr.forEach(function(m) {
       var pct = Math.max(5, (m.count / maxMotivo) * 100);
       html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">' +
-        '<div style="width:120px;font-size:0.78rem;color:#4a5568;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + m.motivo + '">' + m.motivo + '</div>' +
+        '<div style="width:120px;font-size:0.78rem;color:#4a5568;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.motivo) + '">' + escHtml(m.motivo) + '</div>' +
         '<div style="flex:1;height:18px;background:#f0f4f8;border-radius:4px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:#e74c3c;border-radius:4px"></div></div>' +
         '<div style="width:30px;font-size:0.78rem;font-weight:700;color:#2d3748">' + m.count + '</div>' +
       '</div>';
@@ -447,7 +447,7 @@ function buildTopComerciales(ped) {
     var pct = r.pedida > 0 ? Math.round((r.entregada / r.pedida) * 100) : 0;
     var pctColor = pct >= 75 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#e74c3c';
     return '<tr>' +
-      '<td style="font-weight:600">' + r.comercial + '</td>' +
+      '<td style="font-weight:600">' + escHtml(r.comercial) + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
       '<td class="money">' + r.uds.toLocaleString('es-CO') + '</td>' +
       '<td style="text-align:center"><span style="background:' + pctColor + '18;color:' + pctColor + ';padding:2px 10px;border-radius:12px;font-size:0.78rem;font-weight:700">' + pct + '%</span></td>' +
@@ -499,7 +499,7 @@ function buildInventario(inv, ped) {
     var maxBar = Math.max(stock, pend, 1);
     var color = EMP_COLORS[sigla] || '#718096';
     html += '<div class="hbar-row">' +
-      '<div class="hbar-label">' + sigla + '</div>' +
+      '<div class="hbar-label">' + escHtml(sigla) + '</div>' +
       '<div class="hbar-track" style="position:relative">' +
         '<div class="hbar-fill" style="width:' + Math.max(3, (stock / maxBar) * 100) + '%;background:' + color + ';opacity:0.7">' + stock.toLocaleString('es-CO') + '</div>' +
       '</div>' +
@@ -686,8 +686,8 @@ function buildTopDemora(ped) {
     var color = r.dias > 60 ? '#e74c3c' : r.dias > 30 ? '#e67e22' : '#2980b9';
     var empColor = EMP_COLORS[r.empresa] || '#718096';
     return '<tr>' +
-      '<td style="font-weight:600"><span class="sigla-badge" style="background:' + empColor + '20;color:' + empColor + ';font-size:0.68rem">' + r.empresa + '</span> ' + r.consecutivo + '</td>' +
-      '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.cliente + '</td>' +
+      '<td style="font-weight:600"><span class="sigla-badge" style="background:' + empColor + '20;color:' + empColor + ';font-size:0.68rem">' + escHtml(r.empresa) + '</span> ' + escHtml(r.consecutivo) + '</td>' +
+      '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + color + '">' + r.dias + '</td>' +
       '<td style="text-align:center"><div class="prog" style="margin:0 auto"><div class="prog-bar"><div class="prog-fill" style="width:' + avance + '%"></div></div><div class="prog-pct">' + avance + '%</div></div></td>' +
     '</tr>';

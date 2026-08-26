@@ -81,7 +81,7 @@ function populateFilters() {
   var curEmp = selEmp.value;
   selEmp.innerHTML = '<option value="">Todas</option>';
   Object.keys(empresas).sort().forEach(function(e) {
-    selEmp.innerHTML += '<option value="' + e.replace(/"/g, '&quot;') + '">' + getSigla(e) + '</option>';
+    selEmp.innerHTML += '<option value="' + escHtml(e) + '">' + escHtml(getSigla(e)) + '</option>';
   });
   selEmp.value = curEmp;
 
@@ -89,7 +89,7 @@ function populateFilters() {
   var curDepto = selDepto.value;
   selDepto.innerHTML = '<option value="">Todos</option>';
   Object.keys(deptos).sort().forEach(function(d) {
-    selDepto.innerHTML += '<option value="' + d.replace(/"/g, '&quot;') + '">' + escHtml(d) + '</option>';
+    selDepto.innerHTML += '<option value="' + escHtml(d) + '">' + escHtml(d) + '</option>';
   });
   selDepto.value = curDepto;
 
@@ -107,7 +107,7 @@ function _updateMuniFilter() {
   var curMuni = selMuni.value;
   selMuni.innerHTML = '<option value="">Todos</option>';
   Object.keys(munis).sort().forEach(function(m) {
-    selMuni.innerHTML += '<option value="' + m.replace(/"/g, '&quot;') + '">' + escHtml(m) + '</option>';
+    selMuni.innerHTML += '<option value="' + escHtml(m) + '">' + escHtml(m) + '</option>';
   });
   selMuni.value = munis[curMuni] ? curMuni : '';
 }
@@ -382,7 +382,7 @@ function _populateDeptos(selectId) {
   sel.innerHTML = '<option value="">— Seleccionar —</option>';
   if (typeof COLOMBIA_DEPTOS_MUNIS !== 'undefined') {
     Object.keys(COLOMBIA_DEPTOS_MUNIS).sort().forEach(function(d) {
-      sel.innerHTML += '<option value="' + d.replace(/"/g, '&quot;') + '">' + escHtml(d) + '</option>';
+      sel.innerHTML += '<option value="' + escHtml(d) + '">' + escHtml(d) + '</option>';
     });
   }
 }
@@ -393,7 +393,7 @@ function _populateMunis(deptoSelectId, muniSelectId) {
   sel.innerHTML = '<option value="">— Seleccionar —</option>';
   if (depto && typeof COLOMBIA_DEPTOS_MUNIS !== 'undefined' && COLOMBIA_DEPTOS_MUNIS[depto]) {
     COLOMBIA_DEPTOS_MUNIS[depto].forEach(function(m) {
-      sel.innerHTML += '<option value="' + m.replace(/"/g, '&quot;') + '">' + escHtml(m) + '</option>';
+      sel.innerHTML += '<option value="' + escHtml(m) + '">' + escHtml(m) + '</option>';
     });
   }
 }

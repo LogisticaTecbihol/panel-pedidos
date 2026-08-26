@@ -149,10 +149,10 @@ function populateIngFilters() {
   productos.sort(); responsables.sort();
 
   var fp = document.getElementById('f-prod');
-  fp.innerHTML = '<option value="">Todos</option>' + productos.map(function(p) { return '<option value="' + p + '">' + p + '</option>'; }).join('');
+  fp.innerHTML = '<option value="">Todos</option>' + productos.map(function(p) { return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>'; }).join('');
 
   var fr = document.getElementById('f-resp');
-  fr.innerHTML = '<option value="">Todos</option>' + responsables.map(function(r) { return '<option value="' + r + '">' + r + '</option>'; }).join('');
+  fr.innerHTML = '<option value="">Todos</option>' + responsables.map(function(r) { return '<option value="' + escHtml(r) + '">' + escHtml(r) + '</option>'; }).join('');
 
   if (!ingFiltersAttached) {
     ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta','f-txt'].forEach(function(id) {
@@ -572,7 +572,7 @@ function buildProductSearch(lineIdx) {
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center';
-      item.innerHTML = '<span style="font-weight:600">' + (p.producto||'') + '</span><span style="color:#718096;font-size:0.75rem">' + (p.presentacion||'') + '</span>';
+      item.innerHTML = '<span style="font-weight:600">' + escHtml(p.producto||'') + '</span><span style="color:#718096;font-size:0.75rem">' + escHtml(p.presentacion||'') + '</span>';
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         inp.value = p.producto;

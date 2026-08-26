@@ -395,7 +395,7 @@ function buildOCProductSearch(lineIdx) {
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center';
-      item.innerHTML = '<span style="font-weight:600">' + (p.producto||'') + '</span><span style="color:#718096;font-size:0.75rem">' + (p.presentacion||'') + '</span>';
+      item.innerHTML = '<span style="font-weight:600">' + escHtml(p.producto||'') + '</span><span style="color:#718096;font-size:0.75rem">' + escHtml(p.presentacion||'') + '</span>';
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         inp.value = p.producto;

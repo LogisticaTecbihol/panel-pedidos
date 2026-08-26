@@ -112,8 +112,8 @@ function renderUsuariosTable() {
   tbody.innerHTML = usrList.map(function(u, i) {
     var emps = usrEmpresas[u.id] || [];
     var empBadges = emps.map(function(e) {
-      var tip = e.codigo_comercial ? ' title="Código: ' + e.codigo_comercial.replace(/"/g, '&quot;') + '"' : '';
-      return '<span class="sigla-badge sigla-' + e.sigla + '" style="font-size:0.7rem;padding:1px 7px;margin:1px"' + tip + '>' + e.sigla + (e.codigo_comercial ? ' <span style="font-size:0.62rem;opacity:0.8">(' + e.codigo_comercial + ')</span>' : '') + '</span>';
+      var tip = e.codigo_comercial ? ' title="Código: ' + escHtml(e.codigo_comercial) + '"' : '';
+      return '<span class="sigla-badge sigla-' + escHtml(e.sigla) + '" style="font-size:0.7rem;padding:1px 7px;margin:1px"' + tip + '>' + escHtml(e.sigla) + (e.codigo_comercial ? ' <span style="font-size:0.62rem;opacity:0.8">(' + escHtml(e.codigo_comercial) + ')</span>' : '') + '</span>';
     }).join(' ');
     if (!empBadges) empBadges = '<span style="color:#a0aec0;font-size:0.78rem">Sin asignar</span>';
 
@@ -126,8 +126,8 @@ function renderUsuariosTable() {
 
     return '<tr' + (!u.activo ? ' style="opacity:0.5"' : '') + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
-      '<td style="font-weight:600">' + (u.nombre || '—') + '</td>' +
-      '<td style="font-size:0.82rem">' + (u.email || '—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(u.nombre || '—') + '</td>' +
+      '<td style="font-size:0.82rem">' + escHtml(u.email || '—') + '</td>' +
       '<td>' + (ROL_BADGES[u.rol] || u.rol) + '</td>' +
       '<td style="max-width:200px">' + empBadges + '</td>' +
       '<td>' + estadoBadge + '</td>' +
@@ -192,7 +192,7 @@ function renderEmpresaChecks(selectedSiglas, codigosPorEmpresa) {
         '<span class="sigla-badge sigla-' + e.sigla + '" style="font-size:0.72rem;padding:1px 7px">' + e.sigla + '</span> ' +
         '<span style="font-size:0.78rem;color:#4a5568">' + e.value.split(' ')[0] + '</span>' +
       '</label>' +
-      '<input type="text" class="usr-emp-code ef" data-sigla="' + e.sigla + '" placeholder="Cód. comercial" value="' + code.replace(/"/g, '&quot;') + '"' +
+      '<input type="text" class="usr-emp-code ef" data-sigla="' + e.sigla + '" placeholder="Cód. comercial" value="' + escHtml(code) + '"' +
         ' style="width:120px;font-size:0.78rem;padding:4px 8px;margin:0' + (checked ? '' : ';display:none') + '">' +
     '</div>';
   }).join('');

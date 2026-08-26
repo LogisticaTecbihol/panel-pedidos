@@ -266,7 +266,7 @@ function populateMuFilters() {
   var prevResp = selResp.value;
   selResp.innerHTML = '<option value="">Todos</option>';
   Object.keys(responsables).sort().forEach(function(v) {
-    selResp.innerHTML += '<option value="' + v.replace(/"/g, '&quot;') + '">' + v + '</option>';
+    selResp.innerHTML += '<option value="' + escHtml(v) + '">' + escHtml(v) + '</option>';
   });
   selResp.value = prevResp;
 
@@ -274,7 +274,7 @@ function populateMuFilters() {
   var prevMun = selMun.value;
   selMun.innerHTML = '<option value="">Todos</option>';
   Object.keys(municipios).sort().forEach(function(v) {
-    selMun.innerHTML += '<option value="' + v.replace(/"/g, '&quot;') + '">' + v + '</option>';
+    selMun.innerHTML += '<option value="' + escHtml(v) + '">' + escHtml(v) + '</option>';
   });
   selMun.value = prevMun;
 }
@@ -772,7 +772,7 @@ function field(label, val) {
 
 function escHtml(s) {
   if (!s) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function closeViewMu() {
@@ -1097,7 +1097,7 @@ async function openNewMuestra() {
   var respSet = {};
   allMuestras.forEach(function(r) { if (r.Responsable) respSet[r.Responsable] = 1; });
   document.getElementById('dl-mu-responsable').innerHTML = Object.keys(respSet).sort().map(function(v) {
-    return '<option value="' + v.replace(/"/g, '&quot;') + '">';
+    return '<option value="' + escHtml(v) + '">';
   }).join('');
   document.getElementById('mu-departamento').value = '';
   document.getElementById('mu-municipio').value = '';

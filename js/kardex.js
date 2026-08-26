@@ -537,7 +537,7 @@ function populateProductFilter() {
   var fp = document.getElementById('f-prod');
   var current = fp.value;
   fp.innerHTML = '<option value="">— Todos —</option>' + sorted.map(function(p) {
-    return '<option value="' + p.replace(/"/g, '&quot;') + '">' + p + '</option>';
+    return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>';
   }).join('');
   if (current && sorted.indexOf(current) >= 0) fp.value = current;
 }
@@ -667,16 +667,16 @@ function renderKardexTable() {
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#2c3e50';
     var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
     var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'kx\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + i + ',\'kx\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
-    var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.producto || '').replace(/"/g, '&quot;') + '">' + (m.producto || '—') + '</td>' : '';
+    var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.producto || '') + '">' + escHtml(m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.modulo === 'Saldo Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
-      '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#27ae60' : '#e74c3c') + '">' + m.tipo + '</span></td>' +
-      '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + m.modulo + '</span></td>' +
+      '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#27ae60' : '#e74c3c') + '">' + escHtml(m.tipo) + '</span></td>' +
+      '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + escHtml(m.modulo) + '</span></td>' +
       prodCol +
-      '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + (m.remision || '—') + pdfBtns + '</td>' +
-      '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.referencia || '').replace(/"/g, '&quot;') + '">' + (m.referencia || '—') + '</td>' +
+      '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + escHtml(m.remision || '—') + pdfBtns + '</td>' +
+      '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.referencia || '') + '">' + escHtml(m.referencia || '—') + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
       '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldo.toLocaleString('es-CO') + '</td>' +
@@ -757,7 +757,7 @@ function buildKxProductSearch(prefix, lineIdx) {
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center';
-      item.innerHTML = '<span style="font-weight:600">' + (p.producto || '') + '</span><span style="color:#718096;font-size:0.75rem">' + (p.presentacion || '') + '</span>';
+      item.innerHTML = '<span style="font-weight:600">' + escHtml(p.producto || '') + '</span><span style="color:#718096;font-size:0.75rem">' + escHtml(p.presentacion || '') + '</span>';
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         inp.value = p.producto;
@@ -813,8 +813,8 @@ function renderAjLines() {
   tbody.innerHTML = ajLineas.map(function(l, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
-      '<td style="position:relative"><div style="position:relative"><input class="ef aj-prod-search" data-line="' + i + '" type="text" value="' + ((l.Producto || '').replace(/"/g, '&quot;')) + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
-      '<td><input class="ef aj-pres" data-line="' + i + '" type="text" value="' + ((l.Presentacion || '').replace(/"/g, '&quot;')) + '" placeholder="Pres." style="width:100px"></td>' +
+      '<td style="position:relative"><div style="position:relative"><input class="ef aj-prod-search" data-line="' + i + '" type="text" value="' + escHtml(l.Producto || '') + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
+      '<td><input class="ef aj-pres" data-line="' + i + '" type="text" value="' + escHtml(l.Presentacion || '') + '" placeholder="Pres." style="width:100px"></td>' +
       '<td><input class="ef aj-cant" data-line="' + i + '" type="number" min="0" value="' + (l.Cantidad || '') + '" placeholder="0" style="width:80px;text-align:right"></td>' +
       '<td style="text-align:center">' +
         '<button onclick="removeAjLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>' +
@@ -914,8 +914,8 @@ function renderSiLines() {
   tbody.innerHTML = siLineas.map(function(l, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
-      '<td style="position:relative"><div style="position:relative"><input class="ef si-prod-search" data-line="' + i + '" type="text" value="' + ((l.Producto || '').replace(/"/g, '&quot;')) + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
-      '<td><input class="ef si-pres" data-line="' + i + '" type="text" value="' + ((l.Presentacion || '').replace(/"/g, '&quot;')) + '" placeholder="Pres." style="width:100px"></td>' +
+      '<td style="position:relative"><div style="position:relative"><input class="ef si-prod-search" data-line="' + i + '" type="text" value="' + escHtml(l.Producto || '') + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
+      '<td><input class="ef si-pres" data-line="' + i + '" type="text" value="' + escHtml(l.Presentacion || '') + '" placeholder="Pres." style="width:100px"></td>' +
       '<td><input class="ef si-cant" data-line="' + i + '" type="number" min="0" value="' + (l.Cantidad || '') + '" placeholder="0" style="width:80px;text-align:right"></td>' +
       '<td style="text-align:center">' +
         '<button onclick="removeSiLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>' +
@@ -1551,7 +1551,7 @@ function populateNCProductFilter() {
   var fp = document.getElementById('nc-f-prod');
   var current = fp.value;
   fp.innerHTML = '<option value="">— Todos —</option>' + sorted.map(function(p) {
-    return '<option value="' + p.replace(/"/g, '&quot;') + '">' + p + '</option>';
+    return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>';
   }).join('');
   if (current && sorted.indexOf(current) >= 0) fp.value = current;
 }
@@ -1707,13 +1707,13 @@ function renderNCTable() {
       '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#e67e22' : '#27ae60') + '">' + (m.tipo === 'Entrada' ? 'Ingreso' : 'Salida') + '</span></td>' +
       '<td><span style="background:' + motivoColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + motivoLabel + '</span></td>' +
-      '<td style="font-size:0.82rem;font-weight:600">' + (m.producto || '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (m.presentacion || '—') + '</td>' +
-      '<td style="font-size:0.78rem;white-space:nowrap">' + (m.remision || '—') + pdfBtns + '</td>' +
+      '<td style="font-size:0.82rem;font-weight:600">' + escHtml(m.producto || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(m.presentacion || '—') + '</td>' +
+      '<td style="font-size:0.78rem;white-space:nowrap">' + escHtml(m.remision || '—') + pdfBtns + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
       '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldo.toLocaleString('es-CO') + '</td>' +
-      '<td style="font-size:0.78rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.referencia || '').replace(/"/g, '&quot;') + '">' + (m.referencia || '—') + '</td>' +
+      '<td style="font-size:0.78rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.referencia || '') + '">' + escHtml(m.referencia || '—') + '</td>' +
       '<td><div style="display:flex;gap:4px">' + editBtn + deleteBtn + '</div></td>' +
     '</tr>';
   }).join('');
@@ -1890,8 +1890,8 @@ function renderNCLines() {
   tbody.innerHTML = ncLineas.map(function(l, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
-      '<td style="position:relative"><div style="position:relative"><input class="ef nc-prod-search" data-line="' + i + '" type="text" value="' + ((l.Producto || '').replace(/"/g, '&quot;')) + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
-      '<td><input class="ef nc-pres" data-line="' + i + '" type="text" value="' + ((l.Presentacion || '').replace(/"/g, '&quot;')) + '" placeholder="Pres." style="width:100px"></td>' +
+      '<td style="position:relative"><div style="position:relative"><input class="ef nc-prod-search" data-line="' + i + '" type="text" value="' + escHtml(l.Producto || '') + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
+      '<td><input class="ef nc-pres" data-line="' + i + '" type="text" value="' + escHtml(l.Presentacion || '') + '" placeholder="Pres." style="width:100px"></td>' +
       '<td><input class="ef nc-cant" data-line="' + i + '" type="number" min="0" value="' + (l.Cantidad || '') + '" placeholder="0" style="width:80px;text-align:right"></td>' +
       '<td style="text-align:center">' +
         '<button onclick="removeNCLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>' +
@@ -2110,8 +2110,8 @@ function renderNCSiLines() {
   tbody.innerHTML = ncsiLineas.map(function(l, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
-      '<td style="position:relative"><div style="position:relative"><input class="ef ncsi-prod-search" data-line="' + i + '" type="text" value="' + ((l.Producto || '').replace(/"/g, '&quot;')) + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
-      '<td><input class="ef ncsi-pres" data-line="' + i + '" type="text" value="' + ((l.Presentacion || '').replace(/"/g, '&quot;')) + '" placeholder="Pres." style="width:100px"></td>' +
+      '<td style="position:relative"><div style="position:relative"><input class="ef ncsi-prod-search" data-line="' + i + '" type="text" value="' + escHtml(l.Producto || '') + '" placeholder="Buscar producto..." autocomplete="off"></div></td>' +
+      '<td><input class="ef ncsi-pres" data-line="' + i + '" type="text" value="' + escHtml(l.Presentacion || '') + '" placeholder="Pres." style="width:100px"></td>' +
       '<td><input class="ef ncsi-cant" data-line="' + i + '" type="number" min="0" value="' + (l.Cantidad || '') + '" placeholder="0" style="width:80px;text-align:right"></td>' +
       '<td style="text-align:center">' +
         '<button onclick="removeNCSiLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>' +
@@ -2483,7 +2483,7 @@ function renderExistTable(empresasView) {
   function buildProductRow(row, num) {
     var html = '<tr>' +
       '<td style="color:#718096;font-size:0.78rem;position:sticky;left:0;background:white;z-index:1">' + num + '</td>' +
-      '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + row.producto.replace(/"/g, '&quot;') + '">' + row.producto + '</td>';
+      '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(row.producto) + '">' + escHtml(row.producto) + '</td>';
     empresasView.forEach(function(e) {
       var val = _existCellVal(row, e.value);
       var color = val > 0 ? '#27ae60' : val < 0 ? '#e74c3c' : '#cbd5e0';
@@ -2644,7 +2644,7 @@ function populateKxNCProductFilter() {
   var fp = document.getElementById('kxnc-f-prod');
   var current = fp.value;
   fp.innerHTML = '<option value="">— Todos —</option>' + sorted.map(function(p) {
-    return '<option value="' + p.replace(/"/g, '&quot;') + '">' + p + '</option>';
+    return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>';
   }).join('');
   if (current && sorted.indexOf(current) >= 0) fp.value = current;
 }
@@ -2787,16 +2787,16 @@ function renderKardexNCTable() {
       referencia = motivoLbl + (referencia ? ' — ' + referencia : '');
     }
     var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'kxnc\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + i + ',\'kxnc\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
-    var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (m.producto || '').replace(/"/g, '&quot;') + '">' + (m.producto || '—') + '</td>' : '';
+    var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.producto || '') + '">' + escHtml(m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#e67e22' : '#27ae60') + '">' + (m.tipo === 'Entrada' ? 'Ingreso' : 'Salida') + '</span></td>' +
-      '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + modulo + '</span></td>' +
+      '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + escHtml(modulo) + '</span></td>' +
       prodCol +
-      '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + (m.remision || '—') + pdfBtns + '</td>' +
-      '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + referencia.replace(/"/g, '&quot;') + '">' + (referencia || '—') + '</td>' +
+      '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + escHtml(m.remision || '—') + pdfBtns + '</td>' +
+      '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(referencia) + '">' + escHtml(referencia || '—') + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
       '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldoKxnc.toLocaleString('es-CO') + '</td>' +
@@ -2979,7 +2979,7 @@ function renderExistNCTable(empresasView) {
   tbody.innerHTML = existFilteredNC.map(function(row, i) {
     var html = '<tr>' +
       '<td style="color:#718096;font-size:0.78rem;position:sticky;left:0;background:white;z-index:1">' + (i + 1) + '</td>' +
-      '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + row.producto.replace(/"/g, '&quot;') + '">' + row.producto + '</td>';
+      '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(row.producto) + '">' + escHtml(row.producto) + '</td>';
     empresasView.forEach(function(e) {
       var val = row[e.value] || 0;
       var color = val > 0 ? '#e67e22' : val < 0 ? '#e74c3c' : '#cbd5e0';
@@ -3232,7 +3232,7 @@ function renderCompTable(empresasView) {
   tbody.innerHTML = compFiltered.map(function(row, i) {
     var html = '<tr>' +
       '<td style="color:#718096;font-size:0.78rem;position:sticky;left:0;background:white;z-index:1">' + (i + 1) + '</td>' +
-      '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + row.producto.replace(/"/g, '&quot;') + '">' + row.producto + '</td>';
+      '<td style="font-size:0.82rem;font-weight:600;position:sticky;left:30px;background:white;z-index:1;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(row.producto) + '">' + escHtml(row.producto) + '</td>';
     empresasView.forEach(function(e) {
       var b = row.bueno[e.value] || 0;
       var n = row.nc[e.value] || 0;
@@ -3756,8 +3756,8 @@ function renderInvfDetail() {
       '<td style="text-align:right;font-weight:700;color:' + difColor + '">' + difText + '</td>' +
       '<td>' +
         (isCerrado
-          ? (l.observaciones || '')
-          : '<input type="text" value="' + (l.observaciones || '').replace(/"/g, '&quot;') + '" onchange="onInvfObsChange(' + l._idx + ', this.value)" style="width:120px;padding:3px 6px;border:1px solid #cbd5e0;border-radius:4px;font-size:0.82rem" placeholder="obs…">') +
+          ? escHtml(l.observaciones || '')
+          : '<input type="text" value="' + escHtml(l.observaciones || '') + '" onchange="onInvfObsChange(' + l._idx + ', this.value)" style="width:120px;padding:3px 6px;border:1px solid #cbd5e0;border-radius:4px;font-size:0.82rem" placeholder="obs…">') +
       '</td>' +
       (!isCerrado ? '<td>' + (l.isNew ? '<button onclick="removeInvfLine(' + l._idx + ')" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:0.9rem" title="Eliminar línea">✕</button>' : '') + '</td>' : '') +
     '</tr>';
@@ -3847,9 +3847,9 @@ function _filterInvfProd(input, idx) {
   if (!matches.length) { sugBox.style.display = 'none'; return; }
 
   sugBox.innerHTML = matches.map(function(m, i) {
-    return '<div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0" onmousedown="_selectInvfProd(' + idx + ',' + i + ',this)" data-prod="' + m.producto.replace(/"/g, '&quot;') + '" data-pres="' + m.presentacion.replace(/"/g, '&quot;') + '">' +
-      '<div style="font-weight:600">' + m.producto + '</div>' +
-      (m.presentacion ? '<div style="color:#718096;font-size:0.75rem">' + m.presentacion + '</div>' : '') +
+    return '<div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0" onmousedown="_selectInvfProd(' + idx + ',' + i + ',this)" data-prod="' + escHtml(m.producto) + '" data-pres="' + escHtml(m.presentacion) + '">' +
+      '<div style="font-weight:600">' + escHtml(m.producto) + '</div>' +
+      (m.presentacion ? '<div style="color:#718096;font-size:0.75rem">' + escHtml(m.presentacion) + '</div>' : '') +
     '</div>';
   }).join('');
   sugBox.style.display = 'block';

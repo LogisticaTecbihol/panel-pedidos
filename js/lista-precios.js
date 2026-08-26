@@ -43,7 +43,7 @@ function populateFilters() {
   selEmp.innerHTML = '<option value="">Todas</option>';
   Object.keys(empresas).sort().forEach(function(e) {
     var sigla = getSigla(e);
-    selEmp.innerHTML += '<option value="' + e.replace(/"/g, '&quot;') + '">' + sigla + '</option>';
+    selEmp.innerHTML += '<option value="' + escHtml(e) + '">' + escHtml(sigla) + '</option>';
   });
   selEmp.value = curEmp;
 
@@ -51,7 +51,7 @@ function populateFilters() {
   var curProv = selProv.value;
   selProv.innerHTML = '<option value="">Todos</option>';
   Object.keys(proveedores).sort().forEach(function(pr) {
-    selProv.innerHTML += '<option value="' + pr.replace(/"/g, '&quot;') + '">' + escHtml(pr) + '</option>';
+    selProv.innerHTML += '<option value="' + escHtml(pr) + '">' + escHtml(pr) + '</option>';
   });
   selProv.value = curProv;
 
@@ -59,7 +59,7 @@ function populateFilters() {
   var curTipo = selTipo.value;
   selTipo.innerHTML = '<option value="">Todos</option>';
   Object.keys(tipos).sort().forEach(function(t) {
-    selTipo.innerHTML += '<option value="' + t.replace(/"/g, '&quot;') + '">' + escHtml(t) + '</option>';
+    selTipo.innerHTML += '<option value="' + escHtml(t) + '">' + escHtml(t) + '</option>';
   });
   selTipo.value = curTipo;
 }

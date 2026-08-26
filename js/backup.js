@@ -133,7 +133,7 @@ async function startBackup() {
   if (errors.length) {
     resultEl.className = 'backup-result error';
     resultEl.innerHTML = '⚠️ Backup descargado con ' + errors.length + ' error(es):<br>' +
-      errors.map(function(e) { return '• ' + e; }).join('<br>') +
+      errors.map(function(e) { return '• ' + escHtml(e); }).join('<br>') +
       '<br><br>Total: ' + totalRows + ' registros en ' + (total - errors.length) + ' tablas exitosas.';
   } else {
     resultEl.className = 'backup-result success';

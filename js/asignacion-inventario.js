@@ -110,7 +110,7 @@ function createAsignacionEngine(config) {
         var etiqueta = (yaSesion > 0)
           ? x.sigla + marca + ' · ' + dispRest + ' disp. (base ' + dispRaw + ')'
           : x.sigla + marca + ' · ' + dispRest + ' disp.';
-        return '<option value="' + x.empresa.replace(/"/g, '&quot;') + '" data-disp="' + dispRaw + '">' +
+        return '<option value="' + escHtml(x.empresa) + '" data-disp="' + dispRaw + '">' +
           etiqueta + '</option>';
       }).join('');
     }
@@ -267,7 +267,7 @@ function createAsignacionEngine(config) {
         ? '<span style="color:#c0392b;font-weight:700">🛒 solicitud de compra (remisión pendiente)</span>'
         : '<span style="color:#27ae60;font-weight:700">✓ mismo origen — genera remisión</span>';
       return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
-        '<span style="flex:1"><strong>' + a.cantidad + '</strong> ud · ' + sigla + ' · ' + tag + '</span>' +
+        '<span style="flex:1"><strong>' + a.cantidad + '</strong> ud · ' + escHtml(sigla) + ' · ' + tag + '</span>' +
         '<button type="button" onclick="' + _gn + '.removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
         '</div>';
     }).join('');

@@ -1061,11 +1061,11 @@ function populateFilters() {
   var prevCli = fc.value;
   var prevCom = fcom ? fcom.value : '';
   var prevProd = fp ? fp.value : '';
-  fe.innerHTML = '<option value="">Todas</option>' + emps.map(function(e) { return '<option value="' + e + '">' + getSigla(e) + ' — ' + e + '</option>'; }).join('');
-  document.getElementById('dl-f-cli').innerHTML = clis.map(function(c) { return '<option value="' + c + '">'; }).join('');
-  if (fcom) fcom.innerHTML = '<option value="">Todos</option>' + coms.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+  fe.innerHTML = '<option value="">Todas</option>' + emps.map(function(e) { return '<option value="' + escHtml(e) + '">' + escHtml(getSigla(e)) + ' — ' + escHtml(e) + '</option>'; }).join('');
+  document.getElementById('dl-f-cli').innerHTML = clis.map(function(c) { return '<option value="' + escHtml(c) + '">'; }).join('');
+  if (fcom) fcom.innerHTML = '<option value="">Todos</option>' + coms.map(function(c) { return '<option value="' + escHtml(c) + '">' + escHtml(c) + '</option>'; }).join('');
   var dlProd = document.getElementById('dl-f-prod');
-  if (dlProd) dlProd.innerHTML = prodList.map(function(p) { return '<option value="' + p.replace(/"/g, '&quot;') + '">'; }).join('');
+  if (dlProd) dlProd.innerHTML = prodList.map(function(p) { return '<option value="' + escHtml(p) + '">'; }).join('');
   _muniAllOptions = munis;
   _renderMuniOptions();
   if (prevEmp) fe.value = prevEmp;
@@ -3325,7 +3325,7 @@ async function confirmDelete() {
 }
 
 // ── Autocomplete ──
-function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 var clientesCache = null;
 var productosCache = null;
@@ -3608,7 +3608,7 @@ function _populateSucursalDL(clienteName) {
   });
   var dl = document.getElementById('dl-sucursal');
   if (dl) dl.innerHTML = opts.map(function(o) {
-    return '<option value="' + o.replace(/"/g, '&quot;') + '">';
+    return '<option value="' + escHtml(o) + '">';
   }).join('');
 }
 
@@ -3633,7 +3633,7 @@ function populateNuevoDataLists() {
     if (pl) plazos[pl] = true;
   });
   document.getElementById('dl-plazo').innerHTML = Object.keys(plazos).sort().map(function(v) {
-    return '<option value="' + v.replace(/"/g, '&quot;') + '">';
+    return '<option value="' + escHtml(v) + '">';
   }).join('');
 }
 
@@ -3647,7 +3647,7 @@ function populateComercialSelect(empresa) {
     if (c && !seen[c.toLowerCase()]) { seen[c.toLowerCase()] = true; list.push(c); }
   });
   list.sort(function(a, b) { return a.localeCompare(b, 'es'); });
-  dl.innerHTML = list.map(function(c) { return '<option value="' + c.replace(/"/g, '&quot;') + '">'; }).join('');
+  dl.innerHTML = list.map(function(c) { return '<option value="' + escHtml(c) + '">'; }).join('');
 }
 
 function nextConsecutivoPorComercial(comercial) {
@@ -5433,7 +5433,7 @@ async function buildDespachos() {
   selEmp.innerHTML = '<option value="">— Todas —</option>' +
     Object.keys(emps).sort().map(function(e) {
       var sig = getSigla(e) || e;
-      return '<option value="' + e.replace(/"/g, '&quot;') + '">' + sig + '</option>';
+      return '<option value="' + escHtml(e) + '">' + escHtml(sig) + '</option>';
     }).join('');
   selEmp.value = prev || '';
   renderDespachos();
@@ -5507,13 +5507,13 @@ function renderDespachos() {
       var fechaFmt = d.fecha ? formatDateShort(d.fecha) : '';
       var uploaders = adjuntosUploaders[key] || [];
       var uploadersHtml = uploaders.length
-        ? uploaders.map(function(n) { return '<span style="display:inline-block;background:#ebf5fb;color:#1a5276;padding:1px 7px;border-radius:10px;font-size:0.72rem;font-weight:600;margin:1px 2px">' + n + '</span>'; }).join('')
+        ? uploaders.map(function(n) { return '<span style="display:inline-block;background:#ebf5fb;color:#1a5276;padding:1px 7px;border-radius:10px;font-size:0.72rem;font-weight:600;margin:1px 2px">' + escHtml(n) + '</span>'; }).join('')
         : '<span style="color:#cbd5e0;font-size:0.75rem">—</span>';
       var fac = _despFacturaMap[d.remision] || {};
-      var nf = (fac.num_factura || '').replace(/"/g, '&quot;');
+      var nf = escHtml(fac.num_factura || '');
       var ff = fac.fecha_factura || '';
       var facIcon = (nf && ff) ? ' <span style="color:#3730a3;font-weight:700" title="Facturado">✓</span>' : '';
-      var remEsc = d.remision.replace(/"/g, '&quot;');
+      var remEsc = escHtml(d.remision);
       var numFacCell = canEdit
         ? '<input type="text" value="' + nf + '" placeholder="—" data-rem="' + remEsc + '" class="desp-fac-num" onchange="onDespFacturaChange(this)" style="width:100px;font-size:0.78rem;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px">' + facIcon
         : '<span style="font-size:0.78rem">' + (nf || '—') + '</span>' + facIcon;
@@ -5522,9 +5522,9 @@ function renderDespachos() {
         : '<span style="font-size:0.78rem">' + (ff ? formatDateShort(ff) : '—') + '</span>';
       return '<tr>' +
         '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
-        '<td style="font-size:0.82rem;font-weight:600">' + sig + '</td>' +
-        '<td style="font-size:0.82rem">' + d.remision + '</td>' +
-        '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + d.cliente.replace(/"/g, '&quot;') + '">' + d.cliente + '</td>' +
+        '<td style="font-size:0.82rem;font-weight:600">' + escHtml(sig) + '</td>' +
+        '<td style="font-size:0.82rem">' + escHtml(d.remision) + '</td>' +
+        '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(d.cliente) + '">' + escHtml(d.cliente) + '</td>' +
         '<td style="font-size:0.82rem">' + fechaFmt + '</td>' +
         '<td style="text-align:center;font-size:0.9rem">' + badge + '</td>' +
         '<td style="font-size:0.78rem">' + uploadersHtml + '</td>' +

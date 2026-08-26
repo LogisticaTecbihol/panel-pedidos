@@ -114,8 +114,8 @@ function buildClientSearchCam() {
     matches.slice(0,20).forEach(function(c) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8';
-      var nitL = c.nit ? ' <span style="color:#718096;font-size:0.75rem">NIT: '+c.nit+'</span>' : '';
-      item.innerHTML = '<span style="font-weight:600">'+c.cliente+'</span>'+nitL;
+      var nitL = c.nit ? ' <span style="color:#718096;font-size:0.75rem">NIT: '+escHtml(c.nit)+'</span>' : '';
+      item.innerHTML = '<span style="font-weight:600">'+escHtml(c.cliente)+'</span>'+nitL;
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         document.getElementById('cam-cliente').value = c.cliente || '';
@@ -165,7 +165,7 @@ function buildCamProdSearch(cls, idx) {
     matches.slice(0,25).forEach(function(p) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between';
-      item.innerHTML = '<span style="font-weight:600">'+(p.producto||'')+'</span><span style="color:#718096;font-size:0.75rem">'+(p.presentacion||'')+'</span>';
+      item.innerHTML = '<span style="font-weight:600">'+escHtml(p.producto||'')+'</span><span style="color:#718096;font-size:0.75rem">'+escHtml(p.presentacion||'')+'</span>';
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         inp.value = p.producto;
@@ -194,7 +194,7 @@ function populateCamFilters() {
   });
   clientes.sort();
   var fc = document.getElementById('fc-cliente');
-  fc.innerHTML = '<option value="">Todos</option>' + clientes.map(function(c) { return '<option value="'+c+'">'+c+'</option>'; }).join('');
+  fc.innerHTML = '<option value="">Todos</option>' + clientes.map(function(c) { return '<option value="'+escHtml(c)+'">'+escHtml(c)+'</option>'; }).join('');
   if (!camFiltersAttached) {
     ['fc-empresa','fc-cliente','fc-estado','fc-txt'].forEach(function(id) {
       document.getElementById(id).addEventListener('change', renderCamTable);

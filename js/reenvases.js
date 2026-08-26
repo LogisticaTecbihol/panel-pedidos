@@ -247,7 +247,7 @@ function populateReFilters() {
   sel.innerHTML = '<option value="">Todas</option>';
   Object.keys(empresas).sort().forEach(function(v) {
     var sigla = EMPRESAS_SIGLA[v] || v;
-    sel.innerHTML += '<option value="' + v.replace(/"/g, '&quot;') + '">' + sigla + '</option>';
+    sel.innerHTML += '<option value="' + escHtml(v) + '">' + escHtml(sigla) + '</option>';
   });
   sel.value = prev;
 }
@@ -554,7 +554,7 @@ function renderReTableProductos() {
 
 function escHtml(s) {
   if (!s) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ── Detail Modal ──

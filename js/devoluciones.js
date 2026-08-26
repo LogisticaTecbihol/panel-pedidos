@@ -155,9 +155,9 @@ function buildClientSearchDev() {
     matches.slice(0, 20).forEach(function(c) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8';
-      var nitLabel = c.nit ? ' <span style="color:#718096;font-size:0.75rem">NIT: ' + c.nit + '</span>' : '';
-      var muniLabel = c.municipio ? ' <span style="color:#a0aec0;font-size:0.72rem">· ' + c.municipio + '</span>' : '';
-      item.innerHTML = '<span style="font-weight:600">' + c.cliente + '</span>' + nitLabel + muniLabel;
+      var nitLabel = c.nit ? ' <span style="color:#718096;font-size:0.75rem">NIT: ' + escHtml(c.nit) + '</span>' : '';
+      var muniLabel = c.municipio ? ' <span style="color:#a0aec0;font-size:0.72rem">· ' + escHtml(c.municipio) + '</span>' : '';
+      item.innerHTML = '<span style="font-weight:600">' + escHtml(c.cliente) + '</span>' + nitLabel + muniLabel;
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         fillClientFields(c);
@@ -216,13 +216,13 @@ function populateDevFilters() {
   motivos.sort();
 
   var fp = document.getElementById('f-prod');
-  fp.innerHTML = '<option value="">Todos</option>' + productos.map(function(p) { return '<option value="' + p + '">' + p + '</option>'; }).join('');
+  fp.innerHTML = '<option value="">Todos</option>' + productos.map(function(p) { return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>'; }).join('');
 
   var fc = document.getElementById('f-cliente');
-  fc.innerHTML = '<option value="">Todos</option>' + clientes.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+  fc.innerHTML = '<option value="">Todos</option>' + clientes.map(function(c) { return '<option value="' + escHtml(c) + '">' + escHtml(c) + '</option>'; }).join('');
 
   var fm = document.getElementById('f-motivo');
-  fm.innerHTML = '<option value="">Todos</option>' + motivos.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
+  fm.innerHTML = '<option value="">Todos</option>' + motivos.map(function(m) { return '<option value="' + escHtml(m) + '">' + escHtml(m) + '</option>'; }).join('');
 
   if (!devFiltersAttached) {
     ['f-empresa','f-cliente','f-motivo','f-prod','f-txt'].forEach(function(id) {
@@ -833,7 +833,7 @@ function buildProductSearchDev(lineIdx) {
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.84rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center;gap:16px';
-      item.innerHTML = '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (p.producto||'') + '</span><span style="color:#718096;font-size:0.76rem;white-space:nowrap;flex-shrink:0">' + (p.presentacion||'') + '</span>';
+      item.innerHTML = '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(p.producto||'') + '</span><span style="color:#718096;font-size:0.76rem;white-space:nowrap;flex-shrink:0">' + escHtml(p.presentacion||'') + '</span>';
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         inp.value = p.producto;
@@ -1599,7 +1599,7 @@ function buildTramitarProductSearch(lineIdx) {
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.84rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between;align-items:center;gap:16px';
-      item.innerHTML = '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (p.producto||'') + '</span><span style="color:#718096;font-size:0.76rem;white-space:nowrap;flex-shrink:0">' + (p.presentacion||'') + '</span>';
+      item.innerHTML = '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(p.producto||'') + '</span><span style="color:#718096;font-size:0.76rem;white-space:nowrap;flex-shrink:0">' + escHtml(p.presentacion||'') + '</span>';
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         inp.value = p.producto;
@@ -1919,15 +1919,15 @@ function renderProdTable() {
 
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
-      '<td style="font-weight:600;font-size:0.84rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + row.producto.replace(/"/g, '&quot;') + '">' + row.producto + '</td>' +
+      '<td style="font-weight:600;font-size:0.84rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(row.producto) + '">' + escHtml(row.producto) + '</td>' +
       '<td style="text-align:center"><span style="background:#fef5e7;color:#e67e22;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78rem">' + row.devCount + '</span></td>' +
       '<td style="text-align:right;font-weight:700;color:' + (row.devCant > 0 ? '#e67e22' : '#cbd5e0') + '">' + row.devCant.toLocaleString('es-CO') + '</td>' +
       '<td style="text-align:center"><span style="background:#f3e8ff;color:#8e44ad;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78rem">' + row.camCount + '</span></td>' +
       '<td style="text-align:right;font-weight:700;color:' + (row.camCant > 0 ? '#8e44ad' : '#cbd5e0') + '">' + row.camCant.toLocaleString('es-CO') + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(row.devValor) + '</td>' +
-      '<td style="font-size:0.76rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + empresasList.replace(/"/g, '&quot;') + '">' + empresasList + '</td>' +
+      '<td style="font-size:0.76rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(empresasList) + '">' + escHtml(empresasList) + '</td>' +
       '<td style="text-align:center;font-weight:600">' + clienteCount + '</td>' +
-      '<td style="font-size:0.76rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + motivoPrincipal.replace(/"/g, '&quot;') + '">' + motivoPrincipal + '</td>' +
+      '<td style="font-size:0.76rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(motivoPrincipal) + '">' + escHtml(motivoPrincipal) + '</td>' +
       '<td><button class="btn-edit" onclick="openProdDetail(\'' + row.producto.replace(/'/g, "\\'").replace(/"/g, '&quot;') + '\')" title="Ver detalle" style="background:#1a5276;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button></td>' +
     '</tr>';
   }).join('');
@@ -1973,8 +1973,8 @@ function openProdDetail(producto) {
         '<td style="white-space:nowrap">' + fmtDate(d.Fecha) + '</td>' +
         '<td><span class="sigla-badge ' + getSiglaClassDev(d.Empresa) + '">' + getSiglaDev(d.Empresa) + '</span></td>' +
         '<td style="text-align:center;font-weight:600">' + (d.Consecutivo || '—') + '</td>' +
-        '<td style="font-weight:600">' + (d.Cliente || '—') + '</td>' +
-        '<td style="font-size:0.76rem;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (d.Motivo || '').replace(/"/g, '&quot;') + '">' + (d.Motivo || '—') + '</td>' +
+        '<td style="font-weight:600">' + escHtml(d.Cliente || '—') + '</td>' +
+        '<td style="font-size:0.76rem;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(d.Motivo || '') + '">' + escHtml(d.Motivo || '—') + '</td>' +
         '<td style="text-align:right">' + (Number(d.Cantidad) || 0) + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#e67e22">' + (Number(d.Cant_Entregada) || 0) + '</td>' +
         '<td style="text-align:right;font-weight:700">' + fmtMoney(d.Valor_Total) + '</td>' +
@@ -2003,9 +2003,9 @@ function openProdDetail(producto) {
         '<td style="white-space:nowrap">' + fmtDate(c.Fecha_Solicitud || c.Fecha) + '</td>' +
         '<td><span class="sigla-badge ' + getSiglaClassDev(c.Empresa) + '">' + getSiglaDev(c.Empresa) + '</span></td>' +
         '<td style="text-align:center;font-weight:600">' + (c.Consecutivo || '—') + '</td>' +
-        '<td style="font-weight:600">' + (c.Cliente || '—') + '</td>' +
+        '<td style="font-weight:600">' + escHtml(c.Cliente || '—') + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#8e44ad">' + (Number(c.Cantidad) || 0) + '</td>' +
-        '<td style="font-size:0.76rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (c.Razon || '').replace(/"/g, '&quot;') + '">' + (c.Razon || '—') + '</td>' +
+        '<td style="font-size:0.76rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(c.Razon || '') + '">' + escHtml(c.Razon || '—') + '</td>' +
         '<td>' + estadoBadge + '</td>' +
       '</tr>';
     });
