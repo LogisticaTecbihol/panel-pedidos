@@ -19,6 +19,12 @@ var plantaExpanded = {}; // prodKey → true si su detalle está desplegado
 var trasladosData = [];
 var trasladosSort = { col: 'fecha', dir: 'desc' };
 
+// Valorización ventas pendientes
+var listaPreciosRpt = null;
+var valorizacionData = [];
+var valorizacionSort = { col: 'valorTotal', dir: 'desc' };
+var valorizacionExpanded = {};
+
 var CARVAL_PRODUCTS_RAW = [
   'AMETRINA 80WG X KILO',
   'CERTUS 70 WS X 100 GR CV',
@@ -175,7 +181,7 @@ async function loadReportes() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Consecutivo,Fecha_Pedido,Cliente,Comercial,Producto,Presentacion,Cantidad,Cant_Entregada,Cant_Pendiente,Estado_Entrega,Estado_2,Remisiones,Fecha_Ult_Entrega' }),
+      apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Consecutivo,Fecha_Pedido,Cliente,Comercial,Producto,Presentacion,Cantidad,Cant_Entregada,Cant_Pendiente,Estado_Entrega,Estado_2,Remisiones,Fecha_Ult_Entrega,Valor_Unitario,Precio_Facturacion' }),
       apiGet('getIngresos', { columns: 'id,Empresa_Origen,Empresa_Destino,Remision_Origen,Remision_Destino,Origen,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'id,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha,Tipo,Estado,Ref_Pedido,Observaciones' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'id,Remision,Empresa,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Entrega,Fecha_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
@@ -183,7 +189,8 @@ async function loadReportes() {
       apiGet('getDevoluciones', { columns: 'id,Empresa,Consecutivo,Remision_Ingreso,Remision,Remision_Salida,Producto,Presentacion,Cantidad,Fecha_Ingreso,Fecha_Devolucion,Fecha,Fecha_Salida' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha,Observaciones' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
       apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision_Salida,Observaciones,Producto,Tipo_Linea,Cantidad,Fecha_Ingreso,Fecha_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getKardexNC', { columns: 'id,Remision,Empresa,Tipo,Producto,Presentacion,Cantidad,Fecha,Motivo' }).catch(function() { return { ok: true, ajustesNC: [] }; })
+      apiGet('getKardexNC', { columns: 'id,Remision,Empresa,Tipo,Producto,Presentacion,Cantidad,Fecha,Motivo' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
+      apiGet('getListaPrecios').catch(function() { return { ok: true, precios: [] }; })
     ]);
 
     var data = results[0];
@@ -214,6 +221,7 @@ async function loadReportes() {
     remisionesAnuladas = (results[6].remisionesAnuladas || []);
     cambiosMerc = (results[7].cambios || []);
     kardexNC = (results[8].ajustesNC || []);
+    listaPreciosRpt = (results[9].precios || []);
 
     // Snapshot de existencias (mismo cálculo que Kardex/Pedidos)
     // usado por los tabs "Programación de planta" y "Traslados".
@@ -287,9 +295,11 @@ function _rebuildActiveTab() {
   var isPlanta   = document.getElementById('panel-planta')   && document.getElementById('panel-planta').style.display   !== 'none';
   var isTraslad  = document.getElementById('panel-traslados')&& document.getElementById('panel-traslados').style.display !== 'none';
   var isRem      = document.getElementById('panel-remisiones')&&document.getElementById('panel-remisiones').style.display!== 'none';
+  var isVal      = document.getElementById('panel-valorizacion')&&document.getElementById('panel-valorizacion').style.display!== 'none';
   if (isPlanta) buildPlanta();
   if (isTraslad) buildTraslados();
   if (isRem) buildRemisiones();
+  if (isVal) buildValorizacion();
 }
 
 function limpiarProducto(nombre) {
@@ -460,7 +470,7 @@ function exportExcel() {
 
 // ── Tabs ──
 function switchTab(tab) {
-  var tabs = ['pendientes', 'planta', 'traslados', 'remisiones'];
+  var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion'];
   tabs.forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
@@ -470,6 +480,7 @@ function switchTab(tab) {
   if (tab === 'planta') buildPlanta();
   if (tab === 'traslados') buildTraslados();
   if (tab === 'remisiones') buildRemisiones();
+  if (tab === 'valorizacion') buildValorizacion();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -546,7 +557,9 @@ function buildPlanta() {
       entregada: Number(p.Cant_Entregada) || 0,
       pendiente: pend,
       fecha: p.Fecha_Pedido || '',
-      estado2: est2
+      estado2: est2,
+      valorUnitario: Number(p.Valor_Unitario) || 0,
+      precioFact: (p.Precio_Facturacion || '').trim()
     });
   });
 
@@ -872,6 +885,349 @@ function exportPlanta() {
   XLSX.utils.book_append_sheet(wb, ws, 'Planta');
   XLSX.writeFile(wb, 'programacion_planta_' + today() + '.xlsx');
   showToast('Excel exportado: ' + rows.length + ' productos');
+}
+
+// ══════════════════════════════════════════════════════════════
+// VALORIZACIÓN DE VENTAS PENDIENTES
+// ══════════════════════════════════════════════════════════════
+
+function _normStrRpt(s) {
+  return (s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+}
+
+function _lookupPrecioRpt(empresa, tipoPrecio, productoNombre) {
+  if (!listaPreciosRpt || !empresa || !tipoPrecio || !productoNombre) return 0;
+  var empNorm = _normStrRpt(empresa);
+  var tipoNorm = _normStrRpt(tipoPrecio);
+  var prodNorm = _normStrRpt(productoNombre);
+  for (var i = 0; i < listaPreciosRpt.length; i++) {
+    var lp = listaPreciosRpt[i];
+    if (_normStrRpt(lp.Empresa) === empNorm &&
+        _normStrRpt(lp.Tipo_Precio) === tipoNorm &&
+        _normStrRpt(lp.Producto) === prodNorm) {
+      return Number(lp.Precio) || 0;
+    }
+  }
+  return 0;
+}
+
+function _getCategoria(producto) {
+  if (isCarvalProduct(producto)) return 'Proveedor Carval';
+  if (isAbagoProduct(producto)) return 'Proveedor Abago';
+  if (isShardaProduct(producto)) return 'Proveedor Sharda';
+  if (isDisneyProduct(producto)) return 'Proveedor Disney C.';
+  return 'Producción propia';
+}
+
+function _getCategoriaColor(cat) {
+  if (cat === 'Proveedor Carval') return { bg: '#fef9e7', color: '#7d6608' };
+  if (cat === 'Proveedor Abago') return { bg: '#eafaf1', color: '#1e8449' };
+  if (cat === 'Proveedor Sharda') return { bg: '#f4ecf7', color: '#6c3483' };
+  if (cat === 'Proveedor Disney C.') return { bg: '#fbeee6', color: '#a04000' };
+  return { bg: '#eaf2f8', color: '#1a5276' };
+}
+
+function buildValorizacion() {
+  if (!plantaData.length) buildPlanta();
+
+  var fEmp = document.getElementById('rf-emp').value;
+  var fTxt = (document.getElementById('rf-txt').value || '').toLowerCase();
+
+  var deficitProducts = plantaData.filter(function(r) { return r.producir > 0; });
+
+  var acum = {};
+  deficitProducts.forEach(function(prod) {
+    var lineas = prod._lineas || [];
+    lineas.forEach(function(l) {
+      if (fEmp && l.empresa !== fEmp) return;
+
+      var key = l.empresa + '||' + prod.prodKey;
+      if (!acum[key]) {
+        acum[key] = {
+          empresa: l.empresa,
+          producto: prod.producto,
+          prodKey: prod.prodKey,
+          presentaciones: {},
+          categoria: _getCategoria(prod.producto),
+          numPedidos: 0,
+          consecutivos: {},
+          pendiente: 0,
+          valorTotal: 0,
+          producirGlobal: prod.producir,
+          existHolding: prod.existHolding,
+          _lineas: []
+        };
+      }
+
+      var pres = String(l.presentacion || '').trim();
+      if (pres) acum[key].presentaciones[pres] = true;
+
+      var precio = Number(l.valorUnitario) || 0;
+      if (!precio && l.precioFact) {
+        precio = _lookupPrecioRpt(l.empresa, l.precioFact, prod.prodKey);
+      }
+      if (!precio) {
+        precio = _lookupPrecioRpt(l.empresa, 'Dealer', prod.prodKey) ||
+                 _lookupPrecioRpt(l.empresa, 'Público', prod.prodKey) ||
+                 _lookupPrecioRpt(l.empresa, 'Mayorista', prod.prodKey);
+      }
+
+      var valorLinea = l.pendiente * precio;
+
+      acum[key].numPedidos++;
+      if (l.consecutivo) acum[key].consecutivos[l.consecutivo] = true;
+      acum[key].pendiente += l.pendiente;
+      acum[key].valorTotal += valorLinea;
+      acum[key]._lineas.push({
+        consecutivo: l.consecutivo,
+        cliente: l.cliente,
+        comercial: l.comercial,
+        presentacion: pres,
+        cantidad: l.cantidad,
+        entregada: l.entregada,
+        pendiente: l.pendiente,
+        valorUnitario: precio,
+        valorLinea: valorLinea,
+        fecha: l.fecha,
+        estado2: l.estado2
+      });
+    });
+  });
+
+  valorizacionData = Object.values(acum).map(function(r) {
+    r.presentacionesStr = Object.keys(r.presentaciones).sort().join(', ');
+    r.numConsecutivos = Object.keys(r.consecutivos).length;
+    return r;
+  });
+
+  if (fTxt) {
+    valorizacionData = valorizacionData.filter(function(r) {
+      return r.producto.toLowerCase().indexOf(fTxt) >= 0 ||
+             r.presentacionesStr.toLowerCase().indexOf(fTxt) >= 0;
+    });
+  }
+
+  var empresasSet = {};
+  var productosSet = {};
+  var totalUnidades = 0;
+  var totalValor = 0;
+  valorizacionData.forEach(function(r) {
+    empresasSet[r.empresa] = true;
+    productosSet[r.prodKey] = true;
+    totalUnidades += r.pendiente;
+    totalValor += r.valorTotal;
+  });
+
+  document.getElementById('st-val-empresas').textContent = Object.keys(empresasSet).length;
+  document.getElementById('st-val-productos').textContent = Object.keys(productosSet).length;
+  document.getElementById('st-val-unidades').textContent = totalUnidades.toLocaleString('es-CO');
+  document.getElementById('st-val-valor').textContent = fmtMoney(totalValor);
+
+  renderValorizacionTable();
+}
+
+function toggleValorizacionSort(col) {
+  if (valorizacionSort.col === col) {
+    valorizacionSort.dir = valorizacionSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    valorizacionSort.col = col;
+    valorizacionSort.dir = (col === 'producto' || col === 'empresa' || col === 'categoria' || col === 'presentacionesStr') ? 'asc' : 'desc';
+  }
+  renderValorizacionTable();
+}
+
+function sortedValorizacion() {
+  var col = valorizacionSort.col;
+  var dir = valorizacionSort.dir;
+  return [].concat(valorizacionData).sort(function(a, b) {
+    var va, vb;
+    if (col === 'empresa') { va = getSigla(a.empresa); vb = getSigla(b.empresa); }
+    else if (col === 'producto') { va = a.producto; vb = b.producto; }
+    else if (col === 'categoria') { va = a.categoria; vb = b.categoria; }
+    else if (col === 'presentacionesStr') { va = a.presentacionesStr; vb = b.presentacionesStr; }
+    else if (col === 'pendiente') { va = a.pendiente; vb = b.pendiente; }
+    else if (col === 'valorTotal') { va = a.valorTotal; vb = b.valorTotal; }
+    else if (col === 'producirGlobal') { va = a.producirGlobal; vb = b.producirGlobal; }
+    else if (col === 'numPedidos') { va = a.numPedidos; vb = b.numPedidos; }
+    else { va = a.valorTotal; vb = b.valorTotal; }
+    var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function renderValorizacionTable() {
+  var cols = [
+    { id: '_toggle', label: '' },
+    { id: 'empresa', label: 'Empresa' },
+    { id: 'categoria', label: 'Categoría' },
+    { id: 'producto', label: 'Producto' },
+    { id: 'presentacionesStr', label: 'Presentación' },
+    { id: 'numPedidos', label: 'Pedidos' },
+    { id: 'pendiente', label: 'Cant. Pendiente' },
+    { id: 'valorTotal', label: 'Valor Pendiente' },
+    { id: 'producirGlobal', label: 'A Producir (global)' }
+  ];
+
+  document.getElementById('val-head').innerHTML = cols.map(function(c) {
+    if (c.id === '_toggle') return '<th style="width:26px"></th>';
+    var cls = valorizacionSort.col === c.id ? (valorizacionSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    return '<th class="' + cls + '" onclick="toggleValorizacionSort(\'' + c.id + '\')">' + c.label + '</th>';
+  }).join('');
+
+  document.getElementById('val-count').textContent = '(' + valorizacionData.length + ' líneas)';
+
+  var rows = sortedValorizacion();
+  var tbody = document.getElementById('val-body');
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="' + cols.length + '"><div class="empty-msg">No hay productos con déficit de producción/proveedor con los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+
+  var html = '';
+  var currentEmp = null;
+  var empTotals = {};
+  rows.forEach(function(r) {
+    var sigla = getSigla(r.empresa);
+    if (!empTotals[sigla]) empTotals[sigla] = { pendiente: 0, valor: 0 };
+    empTotals[sigla].pendiente += r.pendiente;
+    empTotals[sigla].valor += r.valorTotal;
+  });
+
+  rows.forEach(function(r, idx) {
+    var sigla = getSigla(r.empresa);
+    if (sigla !== currentEmp) {
+      currentEmp = sigla;
+      var et = empTotals[sigla];
+      html += '<tr><td colspan="' + cols.length + '" style="background:#eaf2f8;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#1a5276;border-bottom:2px solid #2980b9">' +
+        '🏢 ' + escHtml(sigla) + ' — ' + escHtml(r.empresa) +
+        ' <span style="font-weight:400;font-size:0.78rem;color:#4a5568;margin-left:16px">' +
+        et.pendiente.toLocaleString('es-CO') + ' uds. pendientes · Valor: ' + fmtMoney(et.valor) +
+        '</span></td></tr>';
+    }
+
+    var catColor = _getCategoriaColor(r.categoria);
+    var abierto = !!valorizacionExpanded[r.empresa + '||' + r.prodKey];
+    var keyEsc = (r.empresa + '||' + r.prodKey).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    var chevron = '<button onclick="toggleValorizacionDetail(\'' + keyEsc + '\')" title="Ver detalle de pedidos" style="background:none;border:none;color:#1a5276;cursor:pointer;font-size:0.85rem;font-weight:700;padding:0 4px">' + (abierto ? '▾' : '▸') + '</button>';
+
+    html += '<tr>' +
+      '<td style="text-align:center">' + chevron + '</td>' +
+      '<td><span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + escHtml(sigla) + '</span></td>' +
+      '<td><span style="background:' + catColor.bg + ';color:' + catColor.color + ';padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">' + escHtml(r.categoria) + '</span></td>' +
+      '<td style="font-weight:700;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.producto || '') + '">' + escHtml(r.producto || '—') + '</td>' +
+      '<td style="font-size:0.78rem;color:#4a5568">' + escHtml(r.presentacionesStr || '—') + '</td>' +
+      '<td class="center">' + r.numPedidos + '</td>' +
+      '<td class="money" style="font-weight:700;color:#e74c3c">' + r.pendiente.toLocaleString('es-CO') + '</td>' +
+      '<td class="money" style="font-weight:800;color:#8e44ad">' + fmtMoney(r.valorTotal) + '</td>' +
+      '<td class="money" style="font-weight:700;color:#c0392b">' + r.producirGlobal.toLocaleString('es-CO') + '</td>' +
+    '</tr>';
+
+    if (abierto) html += renderValorizacionDetail(r, cols.length);
+  });
+
+  tbody.innerHTML = html;
+}
+
+function toggleValorizacionDetail(key) {
+  if (valorizacionExpanded[key]) delete valorizacionExpanded[key];
+  else valorizacionExpanded[key] = true;
+  renderValorizacionTable();
+}
+
+function renderValorizacionDetail(r, colspan) {
+  var lineas = [].concat(r._lineas).sort(function(a, b) {
+    return String(a.consecutivo).localeCompare(String(b.consecutivo), 'es', { numeric: true });
+  });
+
+  var html = '<tr><td colspan="' + colspan + '" style="background:#f7fafc;padding:12px 16px;border-top:1px dashed #cbd5e0">' +
+    '<div style="font-weight:700;font-size:0.78rem;color:#8e44ad;margin-bottom:6px">📋 ' + lineas.length + ' línea(s) de pedido — ' + escHtml(getSigla(r.empresa)) + ' — ' + escHtml(r.producto) + ' · Valor total: ' + fmtMoney(r.valorTotal) + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;background:white;border:1px solid #e2e8f0;border-radius:4px">' +
+    '<thead><tr style="background:#f4ecf7">' +
+      '<th style="text-align:left;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Consecutivo</th>' +
+      '<th style="text-align:left;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Cliente</th>' +
+      '<th style="text-align:left;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Comercial</th>' +
+      '<th style="text-align:left;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Presentación</th>' +
+      '<th style="text-align:right;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Pedida</th>' +
+      '<th style="text-align:right;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Entregada</th>' +
+      '<th style="text-align:right;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Pendiente</th>' +
+      '<th style="text-align:right;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Precio Unit.</th>' +
+      '<th style="text-align:right;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Valor</th>' +
+      '<th style="text-align:left;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Fecha</th>' +
+      '<th style="text-align:left;padding:5px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Estado</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    lineas.map(function(l) {
+      return '<tr>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;font-weight:700;border-bottom:1px solid #f0f4f8">' + escHtml(l.consecutivo || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;border-bottom:1px solid #f0f4f8;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(l.cliente || '') + '">' + escHtml(l.cliente || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;color:#4a5568;border-bottom:1px solid #f0f4f8">' + escHtml(l.comercial || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;color:#4a5568;border-bottom:1px solid #f0f4f8">' + escHtml(l.presentacion || '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;border-bottom:1px solid #f0f4f8">' + l.cantidad.toLocaleString('es-CO') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;color:#27ae60;border-bottom:1px solid #f0f4f8">' + l.entregada.toLocaleString('es-CO') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;font-weight:700;color:#e74c3c;border-bottom:1px solid #f0f4f8">' + l.pendiente.toLocaleString('es-CO') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;color:#4a5568;border-bottom:1px solid #f0f4f8">' + fmtMoney(l.valorUnitario) + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.74rem;text-align:right;font-weight:700;color:#8e44ad;border-bottom:1px solid #f0f4f8">' + fmtMoney(l.valorLinea) + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.72rem;color:#4a5568;border-bottom:1px solid #f0f4f8;white-space:nowrap">' + (l.fecha ? fmtDate(l.fecha) : '—') + '</td>' +
+        '<td style="padding:3px 8px;font-size:0.72rem;color:#4a5568;border-bottom:1px solid #f0f4f8">' + escHtml(l.estado2 || '—') + '</td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table></div></td></tr>';
+
+  return html;
+}
+
+function exportValorizacion() {
+  if (!valorizacionData.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var rows = sortedValorizacion();
+
+  var resumen = rows.map(function(r) {
+    return {
+      'Empresa': getSigla(r.empresa),
+      'Categoría': r.categoria,
+      'Producto': r.producto || '',
+      'Presentación': r.presentacionesStr || '',
+      'N° Pedidos': r.numPedidos,
+      'Cant. Pendiente': r.pendiente,
+      'Valor Pendiente': r.valorTotal,
+      'A Producir (global)': r.producirGlobal,
+      'Exist. Holding': r.existHolding
+    };
+  });
+
+  var detalle = [];
+  rows.forEach(function(r) {
+    (r._lineas || []).forEach(function(l) {
+      detalle.push({
+        'Empresa': getSigla(r.empresa),
+        'Categoría': r.categoria,
+        'Producto': r.producto || '',
+        'Presentación': l.presentacion || '',
+        'Consecutivo': l.consecutivo || '',
+        'Cliente': l.cliente || '',
+        'Comercial': l.comercial || '',
+        'Cant. Pedida': l.cantidad,
+        'Entregada': l.entregada,
+        'Pendiente': l.pendiente,
+        'Precio Unitario': l.valorUnitario,
+        'Valor Pendiente': l.valorLinea,
+        'Fecha Pedido': l.fecha ? fmtDate(l.fecha) : '',
+        'Estado': l.estado2 || ''
+      });
+    });
+  });
+
+  var wb = XLSX.utils.book_new();
+  var ws1 = XLSX.utils.json_to_sheet(resumen);
+  ws1['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 40 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Resumen por empresa');
+
+  var ws2 = XLSX.utils.json_to_sheet(detalle);
+  ws2['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 40 }, { wch: 16 }, { wch: 12 }, { wch: 30 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Detalle por pedido');
+
+  XLSX.writeFile(wb, 'valorizacion_ventas_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + resumen.length + ' productos en ' + detalle.length + ' líneas');
 }
 
 // ══════════════════════════════════════════════════════════════
