@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS usuario_modulos (
              CHECK (modulo IN (
                'pedidos','ingresos','ordenes','devoluciones',
                'inventario','kardex','muestras','reenvases',
-               'reportes','dashboard'
+               'lista_precios','reportes','dashboard',
+               'muestras_aprobar','ordenes_aprobar',
+               'pedidos_editar_cantidad','notificaciones','clientes'
              )),
   PRIMARY KEY (usuario_id, modulo)
 );
@@ -112,7 +114,9 @@ FROM usuarios u
 CROSS JOIN (VALUES
   ('pedidos'),('ingresos'),('ordenes'),('devoluciones'),
   ('inventario'),('kardex'),('muestras'),('reenvases'),
-  ('reportes'),('dashboard')
+  ('lista_precios'),('reportes'),('dashboard'),
+  ('muestras_aprobar'),('ordenes_aprobar'),
+  ('pedidos_editar_cantidad'),('notificaciones'),('clientes')
 ) AS m(modulo)
 WHERE u.rol IN ('editor','lector')
 ON CONFLICT (usuario_id, modulo) DO NOTHING;
