@@ -19,6 +19,11 @@ var ncFiltered = [];
 var kxncFiltered = [];
 var activeTab = 'kardex';
 
+// Lazy-loading flags
+var _ncLoaded = false;
+var _ncProcessed = false;
+var _invfLoaded = false;
+
 function getSiglaKx(n) { return getSigla(n); }
 
 function _normProd(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }
@@ -35,6 +40,7 @@ function _esOrigenPlanta(origen) {
 // ── Load all modules ──
 async function loadKardex() {
   await _authReady;
+  _ncProcessed = false;
   var kxExtras = ['CHIA ABAGO'];
   var kxAll = true;
   populateEmpresaSelect('f-empresa', '— Seleccionar —', kxExtras, kxAll);
@@ -64,7 +70,10 @@ async function loadKardex() {
   }
 
   try {
-    var results = await Promise.all([
+    var needsNC = activeTab === 'nc' || activeTab === 'kxnc' || activeTab === 'exnc' || activeTab === 'comp';
+    var needsInvf = activeTab === 'invf';
+
+    var corePromises = [
       apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Estado_2,Consecutivo,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido' }).catch(function() { return { ok: true, pedidos: [] }; }),
       apiGet('getIngresos', { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Empresa_Destino,Empresa_Origen,Fecha,Consecutivo,Producto,Presentacion' }).catch(function() { return { ok: true, ordenes: [] }; }),
@@ -73,11 +82,18 @@ async function loadKardex() {
       apiGet('getDevoluciones', { columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Consecutivo,Motivo,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
-      apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
       apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getInventarioFisico').catch(function() { return { ok: true, conteos: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; })
-    ]);
+    ];
+
+    if (needsNC || _ncLoaded) {
+      corePromises.push(apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }));
+    }
+    if (needsInvf || _invfLoaded) {
+      corePromises.push(apiGet('getInventarioFisico').catch(function() { return { ok: true, conteos: [] }; }));
+    }
+
+    var results = await Promise.all(corePromises);
 
     kxPedidos = (results[0].pedidos || []).filter(function(p) {
       return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente';
@@ -89,23 +105,37 @@ async function loadKardex() {
     kxDevoluciones = results[5].devoluciones || [];
     kxAjustes = results[6].ajustes || [];
     kxCatalogo = results[7].productos || [];
-    ncAjustes = results[8].ajustesNC || [];
-    kxCambios = results[9].cambios || [];
-    invfConteos = results[10].conteos || [];
-    kxRemAnuladas = results[11].remisionesAnuladas || [];
+    kxCambios = results[8].cambios || [];
+    kxRemAnuladas = results[9].remisionesAnuladas || [];
+
+    var extraIdx = 10;
+    if (needsNC || _ncLoaded) {
+      ncAjustes = results[extraIdx].ajustesNC || [];
+      _ncLoaded = true;
+      extraIdx++;
+    }
+    if (needsInvf || _invfLoaded) {
+      invfConteos = results[extraIdx].conteos || [];
+      _invfLoaded = true;
+    }
 
     buildMovimientos();
-    buildNCMovimientos();
     populateKxFilters();
-    populateNCFilters();
-    populateKxNCFilters();
     calcularKardex();
-    calcularNC();
-    calcularKardexNC();
+
+    if (_ncLoaded) {
+      buildNCMovimientos();
+      populateNCFilters();
+      populateKxNCFilters();
+      calcularNC();
+      calcularKardexNC();
+      _ncProcessed = true;
+    }
+
     if (activeTab === 'exist') calcularExistencias();
-    if (activeTab === 'exnc') calcularExistenciasNC();
-    if (activeTab === 'comp') calcularComparativo();
-    if (activeTab === 'invf') calcularInventarioFisico();
+    if (activeTab === 'exnc' && _ncProcessed) calcularExistenciasNC();
+    if (activeTab === 'comp' && _ncProcessed) calcularComparativo();
+    if (activeTab === 'invf' && _invfLoaded) calcularInventarioFisico();
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
@@ -1372,10 +1402,65 @@ function switchKardexTab(tab) {
       panel.style.display = 'none';
     }
   });
+
+  var needsNC = tab === 'nc' || tab === 'kxnc' || tab === 'exnc' || tab === 'comp';
+  var needsInvf = tab === 'invf';
+
+  if (needsNC && !_ncLoaded) {
+    _loadNCData();
+    return;
+  }
+  if (needsInvf && !_invfLoaded) {
+    _loadInvfData();
+    return;
+  }
+
+  if (needsNC && !_ncProcessed) {
+    buildNCMovimientos();
+    populateNCFilters();
+    populateKxNCFilters();
+    calcularNC();
+    calcularKardexNC();
+    _ncProcessed = true;
+  }
+
   if (tab === 'exist') calcularExistencias();
   if (tab === 'exnc') calcularExistenciasNC();
   if (tab === 'comp') calcularComparativo();
   if (tab === 'invf') calcularInventarioFisico();
+}
+
+async function _loadNCData() {
+  setSyncStatus('syncing', 'Cargando datos No Conforme...');
+  try {
+    var res = await apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' });
+    ncAjustes = (res && res.ajustesNC) || [];
+    _ncLoaded = true;
+    buildNCMovimientos();
+    populateNCFilters();
+    populateKxNCFilters();
+    calcularNC();
+    calcularKardexNC();
+    _ncProcessed = true;
+    setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
+    if (activeTab === 'exnc') calcularExistenciasNC();
+    if (activeTab === 'comp') calcularComparativo();
+  } catch (err) {
+    setSyncStatus('error', 'Error al cargar datos NC: ' + err.message);
+  }
+}
+
+async function _loadInvfData() {
+  setSyncStatus('syncing', 'Cargando datos Inventario Físico...');
+  try {
+    var res = await apiGet('getInventarioFisico');
+    invfConteos = (res && res.conteos) || [];
+    _invfLoaded = true;
+    calcularInventarioFisico();
+    setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
+  } catch (err) {
+    setSyncStatus('error', 'Error al cargar inventario físico: ' + err.message);
+  }
 }
 
 // ══════════════════════════════════════════
