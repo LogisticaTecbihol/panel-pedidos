@@ -928,19 +928,89 @@ function _getCategoriaColor(cat) {
 }
 
 function buildValorizacion() {
-  if (!plantaData.length) buildPlanta();
-
   var fEmp = document.getElementById('rf-emp').value;
+  var fCom = document.getElementById('rf-com').value;
+  var fCli = document.getElementById('rf-cli').value;
   var fTxt = (document.getElementById('rf-txt').value || '').toLowerCase();
+  var fechaCorte = (document.getElementById('val-fecha-corte') || {}).value || '';
 
-  var deficitProducts = plantaData.filter(function(r) { return r.producir > 0; });
+  // 1) Agregar pendientes por producto (misma lógica de planta + filtro fecha)
+  var acumProd = {};
+  pedidos.forEach(function(p) {
+    var pend = Number(p.Cant_Pendiente) || 0;
+    if (pend <= 0) return;
+    var est2 = (p.Estado_2 || 'Abierto').trim();
+    var est2L = est2.toLowerCase();
+    if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera' || est2L === 'entregado por proveedor') return;
+    if (fEmp && p.Nombre_Empresa !== fEmp) return;
+    if (fCom && p.Comercial !== fCom) return;
+    if (fCli && (p.Cliente || '').trim() !== fCli) return;
+    if (fechaCorte && p.Fecha_Pedido && String(p.Fecha_Pedido).slice(0, 10) > fechaCorte) return;
 
+    var prodKey = _normProdRep(p.Producto);
+    if (!prodKey) return;
+    var prodDisplay = limpiarProducto(String(p.Producto || '')).toUpperCase().trim();
+
+    if (!acumProd[prodKey]) {
+      acumProd[prodKey] = { producto: prodDisplay, prodKey: prodKey, pendiente: 0, _lineas: [] };
+    }
+    acumProd[prodKey].pendiente += pend;
+    acumProd[prodKey]._lineas.push({
+      empresa: p.Nombre_Empresa || '',
+      consecutivo: p.Consecutivo || '',
+      cliente: (p.Cliente || '').trim(),
+      comercial: (p.Comercial || '').trim(),
+      presentacion: String(p.Presentacion || '').trim(),
+      cantidad: Number(p.Cantidad) || 0,
+      entregada: Number(p.Cant_Entregada) || 0,
+      pendiente: pend,
+      fecha: p.Fecha_Pedido || '',
+      estado2: est2,
+      valorUnitario: Number(p.Valor_Unitario) || 0,
+      precioFact: (p.Precio_Facturacion || '').trim()
+    });
+  });
+
+  // 2) Existencia y traslados pendientes (misma lógica de planta)
+  var empresasList = _empresasVisibles();
+  var saldos = (existSnapshot && existSnapshot.saldos) || {};
+
+  var trasladosByProd = {};
+  ordenesCompra.forEach(function(oc) {
+    if ((oc.Tipo || 'Compra') !== 'Traslado') return;
+    if (String(oc.Remision || '').trim()) return;
+    if ((oc.Estado || '').toLowerCase() === 'anulada') return;
+    var cant = Number(oc.Cantidad) || 0;
+    if (cant <= 0) return;
+    var key = _normProdRep(oc.Producto);
+    if (!key) return;
+    if (!trasladosByProd[key]) trasladosByProd[key] = 0;
+    trasladosByProd[key] += cant;
+  });
+
+  // 3) Calcular déficit por producto y filtrar producir > 0
+  var deficitProducts = [];
+  Object.keys(acumProd).forEach(function(key) {
+    var a = acumProd[key];
+    var perEmp = saldos[key] || {};
+    var existHolding = 0;
+    empresasList.forEach(function(e) { existHolding += Math.max(0, perEmp[e.value] || 0); });
+    var trasladosPend = trasladosByProd[key] || 0;
+    var producir = Math.max(0, a.pendiente - existHolding - trasladosPend);
+    if (producir > 0) {
+      deficitProducts.push({
+        producto: a.producto, prodKey: a.prodKey,
+        pendiente: a.pendiente, existHolding: existHolding,
+        trasladosPend: trasladosPend, producir: producir,
+        _lineas: a._lineas
+      });
+    }
+  });
+
+  // 4) Agrupar por (empresa, producto) con precios
   var acum = {};
   deficitProducts.forEach(function(prod) {
-    var lineas = prod._lineas || [];
-    lineas.forEach(function(l) {
-      if (fEmp && l.empresa !== fEmp) return;
-
+    prod._lineas.forEach(function(l) {
       var key = l.empresa + '||' + prod.prodKey;
       if (!acum[key]) {
         acum[key] = {
@@ -1180,6 +1250,7 @@ function renderValorizacionDetail(r, colspan) {
 function exportValorizacion() {
   if (!valorizacionData.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
   var rows = sortedValorizacion();
+  var fechaCorte = (document.getElementById('val-fecha-corte') || {}).value || '';
 
   var resumen = rows.map(function(r) {
     return {
@@ -1226,8 +1297,9 @@ function exportValorizacion() {
   ws2['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 40 }, { wch: 16 }, { wch: 12 }, { wch: 30 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, ws2, 'Detalle por pedido');
 
-  XLSX.writeFile(wb, 'valorizacion_ventas_' + today() + '.xlsx');
-  showToast('Excel exportado: ' + resumen.length + ' productos en ' + detalle.length + ' líneas');
+  var suffix = fechaCorte ? '_corte_' + fechaCorte : '';
+  XLSX.writeFile(wb, 'valorizacion_ventas_' + today() + suffix + '.xlsx');
+  showToast('Excel exportado: ' + resumen.length + ' productos en ' + detalle.length + ' líneas' + (fechaCorte ? ' (corte: ' + fmtDate(fechaCorte) + ')' : ''));
 }
 
 // ══════════════════════════════════════════════════════════════

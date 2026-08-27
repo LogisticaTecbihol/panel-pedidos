@@ -239,11 +239,21 @@
     <div class="rpt-card">
       <div class="rpt-card-head">
         <h3>💰 Valorización de ventas pendientes <span id="val-count" style="font-weight:400;color:#718096"></span></h3>
-        <button class="btn-export" onclick="exportValorizacion()">📊 Exportar Excel</button>
+        <div style="display:flex;gap:10px;align-items:end">
+          <div class="fg">
+            <label style="font-size:0.72rem;font-weight:700;color:#4a5568;text-transform:uppercase">Fecha de corte</label>
+            <div style="display:flex;gap:4px;align-items:center">
+              <input type="date" id="val-fecha-corte" style="padding:6px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.84rem;font-family:inherit" onchange="buildValorizacion()">
+              <button onclick="document.getElementById('val-fecha-corte').value='';buildValorizacion()" style="background:none;border:1px solid #cbd5e0;color:#718096;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:0.78rem" title="Quitar filtro de fecha">✕</button>
+            </div>
+          </div>
+          <button class="btn-export" onclick="exportValorizacion()">📊 Exportar Excel</button>
+        </div>
       </div>
       <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
         Productos de la programación de planta con déficit (<strong>A producir &gt; 0</strong>), desglosados por empresa y pedido con su valorización.
         Solo se muestran productos que requieren <span style="color:#e74c3c;font-weight:700">producción</span> o <span style="color:#a93226;font-weight:700">solicitud a proveedor</span>.
+        Use la <strong>fecha de corte</strong> para ver únicamente pedidos ingresados hasta esa fecha.
       </div>
       <div style="overflow-x:auto">
         <table class="rpt-table">
