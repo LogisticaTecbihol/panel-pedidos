@@ -1402,6 +1402,11 @@ function isBackdropClick(e) {
 
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+function debounce(fn, ms) {
+  var t;
+  return function() { clearTimeout(t); t = setTimeout(fn, ms); };
+}
+
 function initAutocomplete(input, opts) {
   var dd = document.createElement('div');
   dd.className = 'ac-dropdown';

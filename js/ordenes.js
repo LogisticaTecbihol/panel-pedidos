@@ -131,13 +131,14 @@ async function loadCatalogo() {
 var ocFiltersAttached = false;
 function populateOCFilters() {
   if (!ocFiltersAttached) {
-    ['f-emp-dest','f-emp-orig','f-estado','f-aprobacion-oc','f-txt'].forEach(function(id) {
+    var ocHandler = function() { ocPage = 1; renderOCTable(); };
+    ['f-emp-dest','f-emp-orig','f-estado','f-aprobacion-oc'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
-      var handler = function() { ocPage = 1; renderOCTable(); };
-      el.addEventListener('change', handler);
-      el.addEventListener('input', handler);
+      el.addEventListener('change', ocHandler);
     });
+    var ocTxt = document.getElementById('f-txt');
+    if (ocTxt) ocTxt.addEventListener('input', debounce(ocHandler, 300));
     ocFiltersAttached = true;
   }
 }

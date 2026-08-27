@@ -1074,12 +1074,13 @@ function populateFilters() {
   if (fp && prevProd) fp.value = prevProd;
   if (!filtersAttached) {
     function onFilterChange() { currentPage = 1; renderTable(); }
-    ['f-emp','f-com','f-cli','f-est','f-est2','f-prod','f-fec-desde','f-fec-hasta','f-txt'].forEach(function(id) {
+    ['f-emp','f-com','f-cli','f-est','f-est2','f-prod','f-fec-desde','f-fec-hasta'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', onFilterChange);
-      el.addEventListener('input', onFilterChange);
     });
+    var fTxt = document.getElementById('f-txt');
+    if (fTxt) fTxt.addEventListener('input', debounce(onFilterChange, 300));
     filtersAttached = true;
   }
 }
@@ -4209,7 +4210,7 @@ function initDespachosTab() {
   }
   var despBuscar = document.getElementById('desp-f-buscar');
   if (despBuscar) {
-    despBuscar.addEventListener('input', function() { renderDespachos(); });
+    despBuscar.addEventListener('input', debounce(function() { renderDespachos(); }, 300));
   }
 }
 

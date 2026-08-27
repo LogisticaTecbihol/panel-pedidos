@@ -2451,7 +2451,7 @@ function calcularExistencias() {
   selEmp.value = stillExists ? prevEmp : '';
 
   if (!existFiltersAttached) {
-    document.getElementById('ex-f-buscar').addEventListener('input', renderExistencias);
+    document.getElementById('ex-f-buscar').addEventListener('input', debounce(renderExistencias, 300));
     document.getElementById('ex-f-mostrar').addEventListener('change', renderExistencias);
     document.getElementById('ex-f-empresa').addEventListener('change', renderExistencias);
     document.getElementById('ex-f-corte').addEventListener('change', calcularExistencias);
@@ -2983,7 +2983,7 @@ function calcularExistenciasNC() {
   selEmpNC.value = stillExistsNC ? prevEmpNC : '';
 
   if (!existNCFiltersAttached) {
-    document.getElementById('exnc-f-buscar').addEventListener('input', renderExistenciasNC);
+    document.getElementById('exnc-f-buscar').addEventListener('input', debounce(renderExistenciasNC, 300));
     document.getElementById('exnc-f-mostrar').addEventListener('change', renderExistenciasNC);
     document.getElementById('exnc-f-empresa').addEventListener('change', renderExistenciasNC);
     document.getElementById('exnc-f-corte').addEventListener('change', calcularExistenciasNC);
@@ -3224,7 +3224,7 @@ function calcularComparativo() {
   selEmp.value = stillExists ? prev : '';
 
   if (!compFiltersAttached) {
-    document.getElementById('comp-f-buscar').addEventListener('input', renderComparativo);
+    document.getElementById('comp-f-buscar').addEventListener('input', debounce(renderComparativo, 300));
     document.getElementById('comp-f-mostrar').addEventListener('change', renderComparativo);
     document.getElementById('comp-f-empresa').addEventListener('change', renderComparativo);
     document.getElementById('comp-f-corte').addEventListener('change', calcularComparativo);
@@ -3574,6 +3574,8 @@ function calcularInventarioFisico() {
     document.getElementById('invf-f-empresa').addEventListener('change', renderInvfList);
     document.getElementById('invf-f-bodega').addEventListener('change', renderInvfList);
     document.getElementById('invf-f-fecha').addEventListener('change', renderInvfList);
+    var invfBuscar = document.getElementById('invf-d-buscar');
+    if (invfBuscar) invfBuscar.addEventListener('input', debounce(renderInvfDetail, 300));
     invfFiltersAttached = true;
   }
 

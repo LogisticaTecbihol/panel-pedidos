@@ -155,12 +155,14 @@ function populateIngFilters() {
   fr.innerHTML = '<option value="">Todos</option>' + responsables.map(function(r) { return '<option value="' + escHtml(r) + '">' + escHtml(r) + '</option>'; }).join('');
 
   if (!ingFiltersAttached) {
-    ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta','f-txt'].forEach(function(id) {
+    var ingHandler = function() { renderIngTable(); renderDetalleIng(); };
+    ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
-      el.addEventListener('change', function() { renderIngTable(); renderDetalleIng(); });
-      el.addEventListener('input', function() { renderIngTable(); renderDetalleIng(); });
+      el.addEventListener('change', ingHandler);
     });
+    var ingTxt = document.getElementById('f-txt');
+    if (ingTxt) ingTxt.addEventListener('input', debounce(ingHandler, 300));
     ingFiltersAttached = true;
   }
 }

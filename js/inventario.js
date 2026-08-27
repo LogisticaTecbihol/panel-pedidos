@@ -156,10 +156,10 @@ function populateInvFilters() {
   fp.innerHTML = '<option value="">Todos</option>' + productos.map(function(p) { return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>'; }).join('');
 
   if (!invFiltersAttached) {
-    ['f-empresa','f-prod','f-stock-alert','f-txt'].forEach(function(id) {
+    ['f-empresa','f-prod','f-stock-alert'].forEach(function(id) {
       document.getElementById(id).addEventListener('change', renderInvTable);
-      document.getElementById(id).addEventListener('input', renderInvTable);
     });
+    document.getElementById('f-txt').addEventListener('input', debounce(renderInvTable, 300));
     invFiltersAttached = true;
   }
 }

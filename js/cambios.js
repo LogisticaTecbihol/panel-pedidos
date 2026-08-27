@@ -196,10 +196,10 @@ function populateCamFilters() {
   var fc = document.getElementById('fc-cliente');
   fc.innerHTML = '<option value="">Todos</option>' + clientes.map(function(c) { return '<option value="'+escHtml(c)+'">'+escHtml(c)+'</option>'; }).join('');
   if (!camFiltersAttached) {
-    ['fc-empresa','fc-cliente','fc-estado','fc-txt'].forEach(function(id) {
+    ['fc-empresa','fc-cliente','fc-estado'].forEach(function(id) {
       document.getElementById(id).addEventListener('change', renderCamTable);
-      document.getElementById(id).addEventListener('input', renderCamTable);
     });
+    document.getElementById('fc-txt').addEventListener('input', debounce(renderCamTable, 300));
     camFiltersAttached = true;
   }
 }

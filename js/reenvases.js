@@ -281,7 +281,7 @@ function clearReenvaseFilters() {
 }
 
 document.getElementById('f-empresa').addEventListener('change', applyReFilters);
-document.getElementById('f-txt').addEventListener('input', applyReFilters);
+document.getElementById('f-txt').addEventListener('input', debounce(applyReFilters, 300));
 
 // ── Stats ──
 

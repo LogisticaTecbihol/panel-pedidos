@@ -339,7 +339,7 @@ document.getElementById('f-responsable').addEventListener('change', applyMuFilte
 document.getElementById('f-municipio').addEventListener('change', applyMuFilters);
 document.getElementById('f-estado').addEventListener('change', applyMuFilters);
 document.getElementById('f-aprobacion').addEventListener('change', applyMuFilters);
-document.getElementById('f-txt').addEventListener('input', applyMuFilters);
+document.getElementById('f-txt').addEventListener('input', debounce(applyMuFilters, 300));
 
 // ── Stats ──
 

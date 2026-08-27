@@ -267,7 +267,7 @@ function goPage(n) { currentPage = n; renderTable(); window.scrollTo(0, 0); }
 document.getElementById('f-emp').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-depto').addEventListener('change', function() { _updateMuniFilter(); currentPage = 1; renderTable(); });
 document.getElementById('f-muni').addEventListener('change', function() { currentPage = 1; renderTable(); });
-document.getElementById('f-txt').addEventListener('input', function() { currentPage = 1; renderTable(); });
+document.getElementById('f-txt').addEventListener('input', debounce(function() { currentPage = 1; renderTable(); }, 300));
 
 // ── Detail modal ──
 function openGroupDetail(groupIdx) {

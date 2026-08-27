@@ -225,10 +225,10 @@ function populateDevFilters() {
   fm.innerHTML = '<option value="">Todos</option>' + motivos.map(function(m) { return '<option value="' + escHtml(m) + '">' + escHtml(m) + '</option>'; }).join('');
 
   if (!devFiltersAttached) {
-    ['f-empresa','f-cliente','f-motivo','f-prod','f-txt'].forEach(function(id) {
+    ['f-empresa','f-cliente','f-motivo','f-prod'].forEach(function(id) {
       document.getElementById(id).addEventListener('change', onDevFilterChange);
-      document.getElementById(id).addEventListener('input', onDevFilterChange);
     });
+    document.getElementById('f-txt').addEventListener('input', debounce(onDevFilterChange, 300));
     devFiltersAttached = true;
   }
 }
@@ -1821,7 +1821,7 @@ function calcularPorProducto() {
 
   if (!prodFiltersAttached) {
     document.getElementById('fp-empresa').addEventListener('change', function() { calcularPorProducto(); });
-    document.getElementById('fp-buscar').addEventListener('input', renderPorProducto);
+    document.getElementById('fp-buscar').addEventListener('input', debounce(renderPorProducto, 300));
     document.getElementById('fp-tipo').addEventListener('change', renderPorProducto);
     prodFiltersAttached = true;
   }

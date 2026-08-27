@@ -272,10 +272,10 @@ function populateRptFilters() {
   fcli.innerHTML = '<option value="">Todos</option>' + clis.map(function(c) { return '<option value="' + escHtml(c) + '">' + escHtml(c) + '</option>'; }).join('');
 
   if (!rptFiltersAttached) {
-    ['rf-emp','rf-com','rf-cli','rf-txt'].forEach(function(id) {
+    ['rf-emp','rf-com','rf-cli'].forEach(function(id) {
       document.getElementById(id).addEventListener('change', _rebuildActiveTab);
-      document.getElementById(id).addEventListener('input', _rebuildActiveTab);
     });
+    document.getElementById('rf-txt').addEventListener('input', debounce(_rebuildActiveTab, 300));
     rptFiltersAttached = true;
   }
 }
