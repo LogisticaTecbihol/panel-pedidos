@@ -4,6 +4,10 @@ var editOrden = null;
 var catalogoProductos = [];
 var ocLineas = [];
 
+// ── Pagination ──
+var ocPage = 1;
+var ocPageSize = 50;
+
 // ── Constants ──
 function getSiglaOC(n) { return getSigla(n); }
 function getSiglaClassOC(n) { return getSiglaClass(n); }
@@ -43,10 +47,11 @@ function toggleSortOC(id, e) {
   if (shift) { if (idx >= 0) sortLevelsOC.splice(idx, 1); }
   else if (idx >= 0) { if (sortLevelsOC[idx].dir === 'asc') sortLevelsOC[idx].dir = 'desc'; else sortLevelsOC.splice(idx, 1); }
   else { sortLevelsOC.push({ id: id, dir: 'asc' }); }
+  ocPage = 1;
   renderOCTable();
 }
 
-function clearSortOC() { sortLevelsOC = []; renderOCTable(); }
+function clearSortOC() { sortLevelsOC = []; ocPage = 1; renderOCTable(); }
 
 function applySortOC(rows) {
   if (!sortLevelsOC.length) return rows;
@@ -129,8 +134,9 @@ function populateOCFilters() {
     ['f-emp-dest','f-emp-orig','f-estado','f-aprobacion-oc','f-txt'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
-      el.addEventListener('change', renderOCTable);
-      el.addEventListener('input', renderOCTable);
+      var handler = function() { ocPage = 1; renderOCTable(); };
+      el.addEventListener('change', handler);
+      el.addEventListener('input', handler);
     });
     ocFiltersAttached = true;
   }
@@ -164,6 +170,7 @@ function clearOCFilters() {
   var fap = document.getElementById('f-aprobacion-oc');
   if (fap) fap.value = '';
   document.getElementById('f-txt').value = '';
+  ocPage = 1;
   renderOCTable();
 }
 
@@ -287,19 +294,27 @@ function renderOCTable() {
   if (paEl) paEl.textContent = porAprobarOC;
   var solEl = document.getElementById('s-solicitudes');
   if (solEl) solEl.textContent = solicitudes;
-  document.getElementById('row-ct-oc').textContent = '(' + rows.length + ' mostrados)';
+  var totalFiltered = rows.length;
+  var totalPages = Math.max(1, Math.ceil(totalFiltered / ocPageSize));
+  if (ocPage > totalPages) ocPage = totalPages;
+  var startIdx = (ocPage - 1) * ocPageSize;
+  var pageRows = rows.slice(startIdx, startIdx + ocPageSize);
+
+  document.getElementById('row-ct-oc').textContent = '(' + totalFiltered + ' registros)';
 
   renderOCHeader();
 
   var tbody = document.getElementById('t-body-oc');
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="15"><div class="empty">No hay órdenes de compra con los filtros seleccionados.</div></td></tr>';
+    _renderOCPagination(0, 0);
     return;
   }
 
   var canApprOC = AUTH.canApproveOC && AUTH.canApproveOC();
 
-  tbody.innerHTML = rows.map(function(r, i) {
+  tbody.innerHTML = pageRows.map(function(r, pi) {
+    var i = startIdx + pi;
     var esSol = _esSolicitudPedidoPendiente(r);
     var trClass = esSol ? ' class="row-sol-pendiente"' : '';
     var solBadge = '';
@@ -353,6 +368,57 @@ function renderOCTable() {
       '</div></td>' +
     '</tr>';
   }).join('');
+
+  _renderOCPagination(totalFiltered, totalPages);
+}
+
+function _renderOCPagination(totalFiltered, totalPages) {
+  var container = document.getElementById('oc-pagination');
+  if (!container) return;
+  if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+  var startItem = (ocPage - 1) * ocPageSize + 1;
+  var endItem = Math.min(ocPage * ocPageSize, totalFiltered);
+
+  var btns = '';
+  btns += '<button onclick="ocGoPage(1)" ' + (ocPage === 1 ? 'disabled' : '') + ' style="padding:4px 10px;border:1px solid #cbd5e0;background:' + (ocPage === 1 ? '#f7fafc' : 'white') + ';border-radius:4px;cursor:pointer;font-size:0.78rem">&laquo;</button>';
+  btns += '<button onclick="ocGoPage(' + (ocPage - 1) + ')" ' + (ocPage === 1 ? 'disabled' : '') + ' style="padding:4px 10px;border:1px solid #cbd5e0;background:' + (ocPage === 1 ? '#f7fafc' : 'white') + ';border-radius:4px;cursor:pointer;font-size:0.78rem">&lsaquo;</button>';
+
+  var startP = Math.max(1, ocPage - 2);
+  var endP = Math.min(totalPages, startP + 4);
+  if (endP - startP < 4) startP = Math.max(1, endP - 4);
+  for (var p = startP; p <= endP; p++) {
+    var isActive = p === ocPage;
+    btns += '<button onclick="ocGoPage(' + p + ')" style="padding:4px 10px;border:1px solid ' + (isActive ? '#1a5276' : '#cbd5e0') + ';background:' + (isActive ? '#1a5276' : 'white') + ';color:' + (isActive ? 'white' : '#4a5568') + ';border-radius:4px;cursor:pointer;font-size:0.78rem;font-weight:' + (isActive ? '700' : '400') + '">' + p + '</button>';
+  }
+
+  btns += '<button onclick="ocGoPage(' + (ocPage + 1) + ')" ' + (ocPage === totalPages ? 'disabled' : '') + ' style="padding:4px 10px;border:1px solid #cbd5e0;background:' + (ocPage === totalPages ? '#f7fafc' : 'white') + ';border-radius:4px;cursor:pointer;font-size:0.78rem">&rsaquo;</button>';
+  btns += '<button onclick="ocGoPage(' + totalPages + ')" ' + (ocPage === totalPages ? 'disabled' : '') + ' style="padding:4px 10px;border:1px solid #cbd5e0;background:' + (ocPage === totalPages ? '#f7fafc' : 'white') + ';border-radius:4px;cursor:pointer;font-size:0.78rem">&raquo;</button>';
+
+  container.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:12px 0;font-size:0.82rem">' +
+      '<span style="color:#718096">Mostrando ' + startItem + '–' + endItem + ' de ' + totalFiltered + '</span>' +
+      '<div style="display:flex;gap:4px;align-items:center">' + btns + '</div>' +
+      '<select onchange="ocChangePageSize(this.value)" style="padding:4px 8px;border:1px solid #cbd5e0;border-radius:4px;font-size:0.78rem;color:#4a5568">' +
+        '<option value="25"' + (ocPageSize===25?' selected':'') + '>25 por pág</option>' +
+        '<option value="50"' + (ocPageSize===50?' selected':'') + '>50 por pág</option>' +
+        '<option value="100"' + (ocPageSize===100?' selected':'') + '>100 por pág</option>' +
+        '<option value="999999"' + (ocPageSize===999999?' selected':'') + '>Todos</option>' +
+      '</select>' +
+    '</div>';
+}
+
+function ocGoPage(p) {
+  ocPage = p;
+  renderOCTable();
+  var table = document.getElementById('t-body-oc');
+  if (table) table.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function ocChangePageSize(val) {
+  ocPageSize = parseInt(val) || 50;
+  ocPage = 1;
+  renderOCTable();
 }
 
 function escapeAttr(s) {
