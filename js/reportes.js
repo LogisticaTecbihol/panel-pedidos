@@ -728,7 +728,7 @@ function renderPlantaTable() {
       ? '<span style="background:#fadbd8;color:#a93226;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🔴 Solicitar a proveedor</span>'
       : '<span style="background:#fadbd8;color:#a93226;padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700">🔴 Producir</span>';
     var abierto = !!plantaExpanded[r.prodKey];
-    var keyEsc = r.prodKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    var keyEsc = r.prodKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
     var chevron = '<button onclick="togglePlantaDetail(\'' + keyEsc + '\')" title="Ver pedidos que suman este pendiente" style="background:none;border:none;color:#1a5276;cursor:pointer;font-size:0.85rem;font-weight:700;padding:0 4px">' + (abierto ? '▾' : '▸') + '</button>';
     var celdas = '<td style="text-align:center">' + chevron + '</td>' +
       '<td style="font-weight:700;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.producto || '') + '">' + escHtml(r.producto || '—') + '</td>' +
@@ -1178,7 +1178,7 @@ function renderValorizacionTable() {
 
     var catColor = _getCategoriaColor(r.categoria);
     var abierto = !!valorizacionExpanded[r.empresa + '||' + r.prodKey];
-    var keyEsc = (r.empresa + '||' + r.prodKey).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    var keyEsc = (r.empresa + '||' + r.prodKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
     var chevron = '<button onclick="toggleValorizacionDetail(\'' + keyEsc + '\')" title="Ver detalle de pedidos" style="background:none;border:none;color:#1a5276;cursor:pointer;font-size:0.85rem;font-weight:700;padding:0 4px">' + (abierto ? '▾' : '▸') + '</button>';
 
     html += '<tr>' +
