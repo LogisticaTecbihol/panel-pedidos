@@ -1099,6 +1099,45 @@ async function saveReenvase() {
   var productosValidos = reLines.filter(function(p) { return p.producto && p.cantidad > 0; });
   if (!productosValidos.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }
 
+  showConfirmReenvase(productosValidos);
+}
+
+function showConfirmReenvase(lines) {
+  var tbody = document.getElementById('confirm-re-lines');
+  var totalUds = 0;
+  tbody.innerHTML = lines.map(function(l, i) {
+    totalUds += l.cantidad;
+    return '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td style="font-weight:600">' + escHtml(l.producto) + '</td>' +
+      '<td>' + escHtml(l.presentacion || '—') + '</td>' +
+      '<td style="text-align:right;font-weight:600">' + l.cantidad + '</td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('confirm-re-total').textContent =
+    'Total: ' + lines.length + ' producto(s) · ' + totalUds + ' unidad(es)';
+  document.getElementById('btn-confirm-re-ok').disabled = false;
+  document.getElementById('btn-confirm-re-ok').textContent = '✓ Confirmar y registrar';
+  document.getElementById('confirm-re-overlay').classList.add('show');
+}
+
+function closeConfirmRe() {
+  document.getElementById('confirm-re-overlay').classList.remove('show');
+}
+
+document.getElementById('confirm-re-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeConfirmRe(); });
+
+async function confirmAndSaveReenvase() {
+  var empresa = document.getElementById('re-empresa').value;
+  var empresaDestino = document.getElementById('re-empresa-destino').value;
+  var planta = document.getElementById('re-planta').value;
+  var fecha = document.getElementById('re-fecha').value;
+  var remision = document.getElementById('re-remision').value.trim();
+
+  syncReLinesFromDOM();
+  var productosValidos = reLines.filter(function(p) { return p.producto && p.cantidad > 0; });
+
+  var btn = document.getElementById('btn-confirm-re-ok');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
 
@@ -1124,6 +1163,7 @@ async function saveReenvase() {
       if (!result.ok) throw new Error(result.error || 'Error al guardar línea ' + (i + 1));
       added++;
     }
+    closeConfirmRe();
     closeReModal();
     var toastReNew = ['✅ Salida registrada: ' + added + ' producto(s)'];
     if (remAutoSalida) toastReNew.push('RS: ' + remAutoSalida);
@@ -1133,7 +1173,7 @@ async function saveReenvase() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Registrar salida';
+    btn.textContent = '✓ Confirmar y registrar';
   }
 }
 
