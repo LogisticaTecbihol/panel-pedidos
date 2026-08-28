@@ -402,6 +402,50 @@
   </div>
 </div>
 
+<!-- CONFIRM INGRESO MODAL -->
+<div class="overlay" id="confirm-ing-overlay">
+  <div class="modal-box" style="max-width:600px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#f39c12,#f1c40f)">
+      <div style="flex:1">
+        <h2>⚠️ Confirmar Ingreso</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Verifica los datos antes de registrar</div>
+      </div>
+      <button class="btn-close" onclick="closeConfirmIng()">✕</button>
+    </div>
+    <div class="mbody" style="padding:20px 24px">
+      <div style="background:#fef9e7;border:1px solid #f9e79f;border-radius:8px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:10px">
+        <span style="font-size:1.4rem;flex-shrink:0">👀</span>
+        <div>
+          <div style="font-weight:700;font-size:0.88rem;color:#7d6608;margin-bottom:4px">Antes de continuar, verifica:</div>
+          <ul style="margin:0;padding-left:18px;font-size:0.82rem;color:#7d6608;line-height:1.6">
+            <li><strong>Nombre</strong> de cada producto</li>
+            <li><strong>Presentación</strong> (unidad, tamaño)</li>
+            <li><strong>Cantidad</strong> ingresada</li>
+          </ul>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="font-size:0.82rem;margin-bottom:0;width:100%">
+          <thead>
+            <tr style="background:#f7fafc">
+              <th style="width:30px">#</th>
+              <th>Producto</th>
+              <th>Presentación</th>
+              <th style="text-align:right">Cantidad</th>
+            </tr>
+          </thead>
+          <tbody id="confirm-ing-lines"></tbody>
+        </table>
+      </div>
+      <div id="confirm-ing-total" style="text-align:right;font-weight:700;font-size:0.88rem;margin-top:10px;color:#2d3748"></div>
+    </div>
+    <div class="mftr" style="justify-content:flex-end;gap:10px">
+      <button class="btn-cancel" onclick="closeConfirmIng()">Volver a revisar</button>
+      <button class="btn-confirm" id="btn-confirm-ing-ok" onclick="confirmAndSaveIngreso()" style="background:#27ae60">✓ Confirmar y registrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADJUNTO PREVIEW OVERLAY -->
 <div class="adjunto-preview-overlay" id="ing-adjunto-preview-overlay" onclick="if(event.target===this)closeIngAdjuntoPreview()">
   <div class="adjunto-preview-box">

@@ -851,6 +851,48 @@ async function saveIngreso() {
   var validLines = ingLineas.filter(function(l) { return l.Producto && l.Cantidad > 0; });
   if (!validLines.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }
 
+  showConfirmIngreso(validLines);
+}
+
+function showConfirmIngreso(lines) {
+  var tbody = document.getElementById('confirm-ing-lines');
+  var totalUds = 0;
+  tbody.innerHTML = lines.map(function(l, i) {
+    totalUds += l.Cantidad;
+    return '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td style="font-weight:600">' + escHtml(l.Producto) + '</td>' +
+      '<td>' + escHtml(l.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right;font-weight:600">' + l.Cantidad + '</td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('confirm-ing-total').textContent =
+    'Total: ' + lines.length + ' producto(s) · ' + totalUds + ' unidad(es)';
+  document.getElementById('btn-confirm-ing-ok').disabled = false;
+  document.getElementById('btn-confirm-ing-ok').textContent = '✓ Confirmar y registrar';
+  document.getElementById('confirm-ing-overlay').classList.add('show');
+}
+
+function closeConfirmIng() {
+  document.getElementById('confirm-ing-overlay').classList.remove('show');
+}
+
+document.getElementById('confirm-ing-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeConfirmIng(); });
+
+async function confirmAndSaveIngreso() {
+  var fecha = document.getElementById('ing-fecha').value;
+  var origen = getOrigenValue();
+  var empresa_origen = document.getElementById('ing-empresa-origen').value;
+  var empresa_destino = document.getElementById('ing-empresa-destino').value;
+  var responsable = document.getElementById('ing-responsable').value.trim();
+  var remision_origen = document.getElementById('ing-remision-origen').value.trim();
+  var remision_destino = document.getElementById('ing-remision-destino').value.trim();
+  var observaciones = document.getElementById('ing-observaciones').value.trim();
+
+  readIngLines();
+  var validLines = ingLineas.filter(function(l) { return l.Producto && l.Cantidad > 0; });
+
+  var btn = document.getElementById('btn-confirm-ing-ok');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
 
@@ -862,6 +904,7 @@ async function saveIngreso() {
       lineas: validLines,
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+    closeConfirmIng();
     closeIngModal();
     var toastPartsNew = ['✅ ' + result.added + ' línea(s) registradas'];
     if (result.remision_destino) toastPartsNew.push('RE: ' + result.remision_destino);
@@ -871,7 +914,7 @@ async function saveIngreso() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Registrar ingreso';
+    btn.textContent = '✓ Confirmar y registrar';
   }
 }
 
