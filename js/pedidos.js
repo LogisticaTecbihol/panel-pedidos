@@ -61,9 +61,8 @@ function _diasDesdePedido(f) {
 
 // True si el pedido debe mostrar el indicador de días (activo, no cerrado y no anulado).
 function _mostrarDias(c) {
-  var lines = getLinesFor(c);
-  var est = derivedStatus(lines);
-  var est2 = derivedEstado2(lines);
+  var est = c._cStatus !== undefined ? c._cStatus : derivedStatus(getLinesFor(c));
+  var est2 = c._cEstado2 !== undefined ? c._cEstado2 : derivedEstado2(getLinesFor(c));
   return (est === 'Recibido' || est === 'Alistado' || est === 'Parcial')
       && est2 !== 'Cerrado' && est2 !== 'Anulado';
 }
@@ -83,10 +82,10 @@ var SORT_COLS = [
   { id:'comercial',   label:'Comercial',    fn: function(c) { return (c.Comercial||'').toLowerCase(); } },
   { id:'municipio',   label:'Municipio',    fn: function(c) { return (c.Municipio||'').toLowerCase(); } },
   { id:'total',       label:'Total Orden',  fn: function(c) { return Number(c.Total_Orden)||0; } },
-  { id:'productos',   label:'Productos',    fn: function(c) { return getLinesFor(c).length; } },
-  { id:'avance',      label:'Avance',       fn: function(c) { return derivedPct(getLinesFor(c)); } },
-  { id:'estado',      label:'Estado',       fn: function(c) { return derivedStatus(getLinesFor(c)); } },
-  { id:'estado2',     label:'Estado 2',     fn: function(c) { return derivedEstado2(getLinesFor(c)); } },
+  { id:'productos',   label:'Productos',    fn: function(c) { return c._cLines || 0; } },
+  { id:'avance',      label:'Avance',       fn: function(c) { return c._cPct || 0; } },
+  { id:'estado',      label:'Estado',       fn: function(c) { return c._cStatus || 'Recibido'; } },
+  { id:'estado2',     label:'Estado 2',     fn: function(c) { return c._cEstado2 || 'Abierto'; } },
 ];
 
 function toggleSort(id, e) {
@@ -573,6 +572,7 @@ function _mergePreciosEmbedded() {
 // ── State ──
 var consecs = [];
 var pedidos = [];
+var _linesIndex = {};
 var activeIdx = null;
 var editIdx = null;
 var editKey = null;
@@ -810,13 +810,13 @@ async function loadFromAPI() {
     rebuildConsecs();
     populateFilters();
     renderTable();
-    loadAdjuntosIndex();
     initDespachosTab();
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
     setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
     document.getElementById('hdr-status').textContent = '☁️ Supabase · ' + pedidos.length + ' líneas';
+    setTimeout(function() { loadAdjuntosIndex(); }, 0);
   } catch (err) {
     if (mainEl.style.display === 'block') {
       setSyncStatus('error', 'Error al actualizar: ' + err.message);
@@ -831,6 +831,7 @@ async function loadFromAPI() {
 
 // ── Parse data ──
 function rebuildConsecs() {
+  rebuildLinesIndex();
   var seen = {};
   pedidos.forEach(function(p) {
     var k = keyOf(p.Nombre_Empresa, p.Consecutivo, p.Cliente);
@@ -858,7 +859,19 @@ function rebuildConsecs() {
   consecs = Object.values(seen).sort(function(a, b) {
     var da = +new Date(a.Fecha_Pedido), db = +new Date(b.Fecha_Pedido);
     return db - da || (b.Consecutivo||0) - (a.Consecutivo||0);
-  }).map(function(c, i) { c['N°'] = i + 1; return c; });
+  }).map(function(c, i) { c['N°'] = i + 1; c._idx = i; return c; });
+  _cacheConsecsDerivados();
+}
+
+function _cacheConsecsDerivados() {
+  consecs.forEach(function(c) {
+    var lines = getLinesFor(c);
+    c._cLines = lines.length;
+    c._cStatus = derivedStatus(lines);
+    c._cEstado2 = derivedEstado2(lines);
+    c._cPct = derivedPct(lines);
+    c._cProds = lines.map(function(l) { return (l.Producto || '').trim(); }).filter(Boolean);
+  });
 }
 
 // ── Helpers ──
@@ -893,9 +906,18 @@ function dismissPedidoModificado(key, serverTs, ev) {
   renderTable();
 }
 
+function rebuildLinesIndex() {
+  _linesIndex = {};
+  pedidos.forEach(function(p) {
+    var k = keyOf(p.Nombre_Empresa, p.Consecutivo, p.Cliente);
+    if (!_linesIndex[k]) _linesIndex[k] = [];
+    _linesIndex[k].push(p);
+  });
+}
+
 function getLinesFor(c) {
   var k = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
-  return pedidos.filter(function(p) { return keyOf(p.Nombre_Empresa, p.Consecutivo, p.Cliente) === k; });
+  return _linesIndex[k] || [];
 }
 
 function derivedStatus(lines) {
@@ -1045,10 +1067,7 @@ function populateFilters() {
     if (com && coms.indexOf(com) < 0) coms.push(com);
     var mun = (c.Municipio || '').trim();
     if (mun && munis.indexOf(mun) < 0) munis.push(mun);
-    getLinesFor(c).forEach(function(l) {
-      var p = (l.Producto || '').trim();
-      if (p) prods[p] = 1;
-    });
+    (c._cProds || []).forEach(function(p) { if (p) prods[p] = 1; });
   });
   emps.sort(); clis.sort(); coms.sort(function(a, b) { return a.localeCompare(b, 'es'); });
   munis.sort(function(a, b) { return a.localeCompare(b, 'es'); });
@@ -1112,17 +1131,14 @@ function filtered() {
       if (fdesde && fp10 < fdesde) return false;
       if (fhasta && fp10 > fhasta) return false;
     }
-    var lines = getLinesFor(c);
     if (fp) {
-      // El pedido pasa si al menos una línea contiene el producto buscado.
-      var any = lines.some(function(l) {
-        return String(l.Producto || '').toLowerCase().indexOf(fp) >= 0;
-      });
+      var prods = c._cProds || [];
+      var any = prods.some(function(p) { return p.toLowerCase().indexOf(fp) >= 0; });
       if (!any) return false;
     }
-    var est = derivedStatus(lines);
+    var est = c._cStatus || 'Recibido';
     if (fs && norm(est) !== norm(fs)) return false;
-    if (fs2) { var e2 = derivedEstado2(lines); if (e2 !== fs2) return false; }
+    if (fs2) { var e2 = c._cEstado2 || 'Abierto'; if (e2 !== fs2) return false; }
     if (ft) {
       var hay = [c.Cliente, String(c.Consecutivo), getSigla(c.Nombre_Empresa), c.Comercial].join(' ').toLowerCase();
       if (hay.indexOf(ft) < 0) return false;
@@ -1209,21 +1225,16 @@ function renderPagination(totalRows) {
 // ── Render table ──
 function renderTable() {
   var rows = applySort(filtered());
-  var all = consecs.map(function(c) { return derivedStatus(getLinesFor(c)); });
-  document.getElementById('s-rec').textContent = consecs.filter(function(c) {
-    var lines = getLinesFor(c);
-    return derivedStatus(lines) === 'Recibido' && derivedEstado2(lines) === 'Abierto';
-  }).length;
-  document.getElementById('s-par').textContent = consecs.filter(function(c) {
-    var lines = getLinesFor(c);
-    return derivedStatus(lines) === 'Parcial' && derivedEstado2(lines) === 'Abierto';
-  }).length;
-  document.getElementById('s-ent').textContent = consecs.filter(function(c) {
-    var lines = getLinesFor(c);
-    var status = derivedStatus(lines);
-    var estado2 = derivedEstado2(lines);
-    return status === 'Entregado' || ((status === 'Recibido' || status === 'Parcial') && estado2 === 'Cerrado');
-  }).length;
+  var sRec = 0, sPar = 0, sEnt = 0;
+  consecs.forEach(function(c) {
+    var st = c._cStatus || 'Recibido', e2 = c._cEstado2 || 'Abierto';
+    if (st === 'Recibido' && e2 === 'Abierto') sRec++;
+    else if (st === 'Parcial' && e2 === 'Abierto') sPar++;
+    if (st === 'Entregado' || ((st === 'Recibido' || st === 'Parcial') && e2 === 'Cerrado')) sEnt++;
+  });
+  document.getElementById('s-rec').textContent = sRec;
+  document.getElementById('s-par').textContent = sPar;
+  document.getElementById('s-ent').textContent = sEnt;
   document.getElementById('s-tot').textContent = consecs.length;
 
   var totalRows = rows.length;
@@ -1244,14 +1255,14 @@ function renderTable() {
   var pageRows = rows.slice(startIdx, startIdx + pageSize);
 
   tbody.innerHTML = pageRows.map(function(c) {
-    var lines = getLinesFor(c);
-    var est = derivedStatus(lines);
-    var est2 = derivedEstado2(lines);
-    var pct = derivedPct(lines);
+    var est = c._cStatus || 'Recibido';
+    var est2 = c._cEstado2 || 'Abierto';
+    var pct = c._cPct || 0;
+    var lineCount = c._cLines || 0;
     var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : est === 'Alistado' ? 'b-alistado' : est === 'Facturado' ? 'b-fac' : 'b-ent';
     var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
     var done = est === 'Entregado' || est === 'Alistado';
-    var idx = consecs.indexOf(c);
+    var idx = c._idx;
     var rowKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
     var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
     var trClass = modPend ? ' class="row-modificada"' : '';
@@ -1296,14 +1307,14 @@ function renderTable() {
       '<td style="font-size:0.78rem;white-space:nowrap">' + (c.Municipio||'—') + '</td>' +
       '<td class="money">' + fmtMoney(c.Total_Orden) + '</td>' +
       '<td style="text-align:center">' +
-        (lines.length ? '<span style="background:#e8f4fb;color:#1a5276;padding:2px 9px;border-radius:12px;font-size:0.75rem;font-weight:700">' + lines.length + '</span>' : '<span class="tag-sin">—</span>') +
+        (lineCount ? '<span style="background:#e8f4fb;color:#1a5276;padding:2px 9px;border-radius:12px;font-size:0.75rem;font-weight:700">' + lineCount + '</span>' : '<span class="tag-sin">—</span>') +
       '</td>' +
       '<td><div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:' + pct + '%"></div></div><div class="prog-pct">' + pct + '%</div></div></td>' +
       '<td><span class="badge ' + badge + '">' + est + '</span></td>' +
       '<td><span class="badge ' + badge2 + '">' + est2 + '</span></td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-ver ' + (done?'done':'') + '" onclick="openDetail(' + idx + ')">' +
-          (lines.length === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
+          (lineCount === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
         '</button>' +
         (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' : '') +
         (AUTH.canDelete() ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
@@ -4404,10 +4415,6 @@ function exportOrdenesExcel() {
   if (!rows.length) { showToast('No hay órdenes para exportar', '#e74c3c'); return; }
 
   var data = rows.map(function(c) {
-    var lines = getLinesFor(c);
-    var est = derivedStatus(lines);
-    var est2 = derivedEstado2(lines);
-    var pct = derivedPct(lines);
     return {
       'Empresa': getSigla(c.Nombre_Empresa),
       'Consecutivo': c.Consecutivo || '',
@@ -4417,11 +4424,11 @@ function exportOrdenesExcel() {
       'Comercial': c.Comercial || '',
       'Municipio': c.Municipio || '',
       'Departamento': c.Departamento || '',
-      'Productos': lines.length,
+      'Productos': c._cLines || 0,
       'Total Orden': Number(c.Total_Orden) || 0,
-      'Avance %': pct,
-      'Estado': est,
-      'Estado 2': est2
+      'Avance %': c._cPct || 0,
+      'Estado': c._cStatus || 'Recibido',
+      'Estado 2': c._cEstado2 || 'Abierto'
     };
   });
 
