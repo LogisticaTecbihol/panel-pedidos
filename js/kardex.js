@@ -9,6 +9,7 @@ var kxAjustes = [];
 var kxCambios = [];
 var kxCatalogo = [];
 var kxRemAnuladas = [];
+var _remAnuladasSet = {};
 var kxMovimientos = [];
 var kxFiltered = [];
 
@@ -19,6 +20,11 @@ var ncFiltered = [];
 var kxncFiltered = [];
 var activeTab = 'kardex';
 
+var kxCurrentPage = 1;
+var ncCurrentPage = 1;
+var kxncCurrentPage = 1;
+var kxPageSize = 50;
+
 // Lazy-loading flags
 var _ncLoaded = false;
 var _ncProcessed = false;
@@ -27,6 +33,8 @@ var _invfLoaded = false;
 function getSiglaKx(n) { return getSigla(n); }
 
 function _normProd(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }
+
+var _fmtNum = new Intl.NumberFormat('es-CO');
 
 function _empresaTienePlanta(empresa) {
   var s = getSiglaKx(empresa);
@@ -109,6 +117,17 @@ async function loadKardex() {
     ncAjustes = results[10].ajustesNC || [];
     _ncLoaded = true;
     var extraIdx = 11;
+
+    [kxPedidos, kxIngresos, kxOrdenes, kxMuestras, kxReenvases, kxDevoluciones, kxAjustes, kxCatalogo, kxCambios, ncAjustes].forEach(function(arr) {
+      arr.forEach(function(r) { if (r.Producto) r.Producto = _normProd(r.Producto); });
+    });
+
+    _remAnuladasSet = {};
+    kxRemAnuladas.forEach(function(ra) {
+      var r = String(ra.Remision || '').trim();
+      if (r) _remAnuladasSet[r] = true;
+    });
+
     if (needsInvf || _invfLoaded) {
       invfConteos = results[extraIdx].conteos || [];
       _invfLoaded = true;
@@ -159,7 +178,7 @@ function buildMovimientos() {
     if (est2 === 'Anulado') return;
     var ref = 'Orden ' + (p.Consecutivo || '') + ' — ' + (p.Cliente || '');
     var empresa = p.Nombre_Empresa || '';
-    var producto = _normProd(p.Producto);
+    var producto = p.Producto;
     var presentacion = p.Presentacion || '';
     var remStr = (p.Remisiones || '').trim();
     if (!remStr) return;
@@ -220,7 +239,7 @@ function buildMovimientos() {
         remision: ing.Remision_Destino || '',
         referencia: 'Desde ' + getSiglaKx(ing.Empresa_Origen) + (ing.Origen ? ' — ' + ing.Origen : ''),
         empresa: ing.Empresa_Destino,
-        producto: _normProd(ing.Producto),
+        producto: ing.Producto,
         presentacion: ing.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -236,7 +255,7 @@ function buildMovimientos() {
         remision: ing.Remision_Origen || '',
         referencia: 'Hacia ' + getSiglaKx(ing.Empresa_Destino) + (ing.Origen ? ' — ' + ing.Origen : ''),
         empresa: ing.Empresa_Origen,
-        producto: _normProd(ing.Producto),
+        producto: ing.Producto,
         presentacion: ing.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -244,115 +263,108 @@ function buildMovimientos() {
     }
   });
 
-  // Devoluciones — solo ENTRADA a Productos Buenos (Bodega NC se excluye del Kardex General)
+  // Devoluciones — ENTRADA a Productos Buenos + SALIDA (si hay remisión de salida)
   kxDevoluciones.forEach(function(d) {
     var estado = (d.Estado || '').toLowerCase();
     if (estado === 'anulado' || estado === 'pendiente') return;
     var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
     if (cant <= 0) return;
+    var ref = 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : '');
+    var empresa = d.Empresa || '';
     var bodegaIng = (d.Bodega_Ingreso || '').trim();
-    if (bodegaIng === 'Producto No Conforme') return;
-    kxMovimientos.push({
-      fecha: d.Fecha_Devolucion || d.Fecha || '',
-      tipo: 'Entrada',
-      modulo: 'Devoluciones',
-      remision: d.Remision || d.Remision_Ingreso || '',
-      referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
-      empresa: d.Empresa || '',
-      producto: _normProd(d.Producto),
-      presentacion: d.Presentacion || '',
-      cantidad: cant,
-      _ajusteId: null
-    });
-  });
-
-  // Devoluciones — SALIDA desde Productos Buenos (cuando hay remisión de salida)
-  kxDevoluciones.forEach(function(d) {
-    var estado = (d.Estado || '').toLowerCase();
-    if (estado === 'anulado' || estado === 'pendiente') return;
-    var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
-    if (cant <= 0) return;
+    if (bodegaIng !== 'Producto No Conforme') {
+      kxMovimientos.push({
+        fecha: d.Fecha_Devolucion || d.Fecha || '',
+        tipo: 'Entrada',
+        modulo: 'Devoluciones',
+        remision: d.Remision || d.Remision_Ingreso || '',
+        referencia: ref,
+        empresa: empresa,
+        producto: d.Producto,
+        presentacion: d.Presentacion || '',
+        cantidad: cant,
+        _ajusteId: null
+      });
+    }
     var remSal = String(d.Remision_Salida || '').trim();
-    if (!remSal) return;
-    var bodegaSal = (d.Bodega_Salida || '').trim();
-    if (bodegaSal !== 'Productos Buenos' && bodegaSal !== 'Producto Terminado') return;
-    kxMovimientos.push({
-      fecha: d.Fecha_Salida || d.Fecha_Devolucion || d.Fecha || '',
-      tipo: 'Salida',
-      modulo: 'Devoluciones',
-      remision: remSal,
-      referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
-      empresa: d.Empresa || '',
-      producto: _normProd(d.Producto),
-      presentacion: d.Presentacion || '',
-      cantidad: cant,
-      _ajusteId: null
-    });
+    if (remSal) {
+      var bodegaSal = (d.Bodega_Salida || '').trim();
+      if (bodegaSal === 'Productos Buenos' || bodegaSal === 'Producto Terminado') {
+        kxMovimientos.push({
+          fecha: d.Fecha_Salida || d.Fecha_Devolucion || d.Fecha || '',
+          tipo: 'Salida',
+          modulo: 'Devoluciones',
+          remision: remSal,
+          referencia: ref,
+          empresa: empresa,
+          producto: d.Producto,
+          presentacion: d.Presentacion || '',
+          cantidad: cant,
+          _ajusteId: null
+        });
+      }
+    }
   });
 
-  // Cambios — agrupar por empresa+consecutivo para detectar si hay líneas ENTREGAR
-  var _camGrp = {};
-  kxCambios.forEach(function(c) {
-    var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
-    if (!_camGrp[gk]) _camGrp[gk] = [];
-    _camGrp[gk].push(c);
-  });
+  // Cambios — detectar cuáles grupos tienen líneas ENTREGAR
   var _camTieneEntregar = {};
-  Object.keys(_camGrp).forEach(function(gk) {
-    _camTieneEntregar[gk] = _camGrp[gk].some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+  kxCambios.forEach(function(c) {
+    if (c.Tipo_Linea === 'ENTREGAR') _camTieneEntregar[(c.Empresa || '') + '||' + (c.Consecutivo || c.id)] = true;
   });
 
-  // Cambios de Mercancía — ENTRADA (líneas CAMBIAR que ingresan a bodega productos buenos)
+  // Cambios de Mercancía — ENTRADA + SALIDA en un solo pase
   kxCambios.forEach(function(c) {
-    if (c.Tipo_Linea !== 'CAMBIAR') return;
     var cant = Number(c.Cantidad) || 0;
     if (cant <= 0) return;
     var estado = (c.Estado || '').toLowerCase();
     if (estado !== 'cerrado' && estado !== 'cerrada') return;
-    var bodegaIng = (c.Bodega_Ingreso || 'Productos Buenos').trim();
-    if (bodegaIng !== 'Productos Buenos' && bodegaIng !== 'Producto Terminado') return;
-    var rem = String(c.Remision_Ingreso || '').trim();
-    if (!rem) return;
-    kxMovimientos.push({
-      fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '',
-      tipo: 'Entrada',
-      modulo: 'Cambios',
-      remision: rem,
-      referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
-      empresa: c.Empresa || '',
-      producto: _normProd(c.Producto),
-      presentacion: c.Presentacion || '',
-      cantidad: cant,
-      _ajusteId: null
-    });
-  });
-
-  // Cambios de Mercancía — SALIDA (líneas ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
-  kxCambios.forEach(function(c) {
-    var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
+    var ref = 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '');
+    var empresa = c.Empresa || '';
+    var gk = empresa + '||' + (c.Consecutivo || c.id);
     var tieneEntregar = _camTieneEntregar[gk];
-    if (tieneEntregar && c.Tipo_Linea !== 'ENTREGAR') return;
-    if (!tieneEntregar && c.Tipo_Linea !== 'CAMBIAR') return;
-    var cant = Number(c.Cantidad) || 0;
-    if (cant <= 0) return;
-    var estado = (c.Estado || '').toLowerCase();
-    if (estado !== 'cerrado' && estado !== 'cerrada') return;
-    var bodegaSal = (c.Bodega_Salida || 'Productos Buenos').trim();
-    if (bodegaSal !== 'Productos Buenos' && bodegaSal !== 'Producto Terminado') return;
-    var rem = String(c.Remision_Salida || '').trim();
-    if (!rem) return;
-    kxMovimientos.push({
-      fecha: c.Fecha_Salida || c.Fecha_Solicitud || '',
-      tipo: 'Salida',
-      modulo: 'Cambios',
-      remision: rem,
-      referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
-      empresa: c.Empresa || '',
-      producto: _normProd(c.Producto),
-      presentacion: c.Presentacion || '',
-      cantidad: cant,
-      _ajusteId: null
-    });
+
+    if (c.Tipo_Linea === 'CAMBIAR') {
+      var bodegaIng = (c.Bodega_Ingreso || 'Productos Buenos').trim();
+      if (bodegaIng === 'Productos Buenos' || bodegaIng === 'Producto Terminado') {
+        var remIng = String(c.Remision_Ingreso || '').trim();
+        if (remIng) {
+          kxMovimientos.push({
+            fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '',
+            tipo: 'Entrada',
+            modulo: 'Cambios',
+            remision: remIng,
+            referencia: ref,
+            empresa: empresa,
+            producto: c.Producto,
+            presentacion: c.Presentacion || '',
+            cantidad: cant,
+            _ajusteId: null
+          });
+        }
+      }
+      if (tieneEntregar) return;
+    }
+
+    if ((tieneEntregar && c.Tipo_Linea === 'ENTREGAR') || (!tieneEntregar && c.Tipo_Linea === 'CAMBIAR')) {
+      var bodegaSal = (c.Bodega_Salida || 'Productos Buenos').trim();
+      if (bodegaSal === 'Productos Buenos' || bodegaSal === 'Producto Terminado') {
+        var remSal = String(c.Remision_Salida || '').trim();
+        if (remSal) {
+          kxMovimientos.push({
+            fecha: c.Fecha_Salida || c.Fecha_Solicitud || '',
+            tipo: 'Salida',
+            modulo: 'Cambios',
+            remision: remSal,
+            referencia: ref,
+            empresa: empresa,
+            producto: c.Producto,
+            presentacion: c.Presentacion || '',
+            cantidad: cant,
+            _ajusteId: null
+          });
+        }
+      }
+    }
   });
 
   // Órdenes de Compra — ENTRADA destino + SALIDA origen
@@ -369,7 +381,7 @@ function buildMovimientos() {
         remision: rem,
         referencia: 'OC ' + (oc.Consecutivo || '') + ' — Desde ' + getSiglaKx(oc.Empresa_Origen),
         empresa: oc.Empresa_Destino,
-        producto: _normProd(oc.Producto),
+        producto: oc.Producto,
         presentacion: oc.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -383,7 +395,7 @@ function buildMovimientos() {
         remision: rem,
         referencia: 'OC ' + (oc.Consecutivo || '') + ' — Hacia ' + getSiglaKx(oc.Empresa_Destino),
         empresa: oc.Empresa_Origen,
-        producto: _normProd(oc.Producto),
+        producto: oc.Producto,
         presentacion: oc.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -405,7 +417,7 @@ function buildMovimientos() {
       remision: rem,
       referencia: 'Sol. ' + (m.Consecutivo || '') + (m.Solicitante ? ' — ' + m.Solicitante : ''),
       empresa: m.Empresa || '',
-      producto: _normProd(m.Producto),
+      producto: m.Producto,
       presentacion: m.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -431,7 +443,7 @@ function buildMovimientos() {
       remision: rem,
       referencia: refText,
       empresa: re.Empresa || '',
-      producto: _normProd(re.Producto),
+      producto: re.Producto,
       presentacion: re.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -444,7 +456,7 @@ function buildMovimientos() {
         remision: String(re.Remision_Destino || '').trim() || rem,
         referencia: 'Traslado ← ' + (SIGLAS[re.Empresa] || re.Empresa || ''),
         empresa: re.Empresa_Destino,
-        producto: _normProd(re.Producto),
+        producto: re.Producto,
         presentacion: re.Presentacion || '',
         cantidad: cant,
         _ajusteId: null
@@ -473,7 +485,7 @@ function buildMovimientos() {
       remision: a.Remision || '',
       referencia: 'Traslado a NC' + (motivoLbl ? ' — ' + motivoLbl : '') + (a.Observaciones ? ' — ' + a.Observaciones : ''),
       empresa: a.Empresa || '',
-      producto: _normProd(a.Producto),
+      producto: a.Producto,
       presentacion: a.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -506,7 +518,7 @@ function buildMovimientos() {
       remision: '',
       referencia: a.Observaciones || '',
       empresa: a.Empresa || '',
-      producto: _normProd(a.Producto),
+      producto: a.Producto,
       presentacion: a.Presentacion || '',
       cantidad: cant,
       _ajusteId: a.__row || a.id || null
@@ -521,13 +533,8 @@ function buildMovimientos() {
 
   // Excluir movimientos cuya remisión fue anulada
   if (kxRemAnuladas.length) {
-    var remAnuladasSet = {};
-    kxRemAnuladas.forEach(function(ra) {
-      var r = String(ra.Remision || '').trim();
-      if (r) remAnuladasSet[r] = true;
-    });
     kxMovimientos = kxMovimientos.filter(function(m) {
-      return !remAnuladasSet[String(m.remision || '').trim()];
+      return !_remAnuladasSet[String(m.remision || '').trim()];
     });
   }
 }
@@ -576,6 +583,7 @@ function clearKardexFilters() {
 
 // ── Calculate & render Kardex ──
 function calcularKardex() {
+  kxCurrentPage = 1;
   var fEmp = document.getElementById('f-empresa').value;
   var fProd = document.getElementById('f-prod').value;
   var fDesde = document.getElementById('f-desde').value;
@@ -644,13 +652,46 @@ function calcularKardex() {
   var saldoTotal = 0;
   Object.keys(saldosPorProducto).forEach(function(k) { saldoTotal += saldosPorProducto[k]; });
 
-  document.getElementById('s-saldo-ini').textContent = saldoIni.toLocaleString('es-CO');
-  document.getElementById('s-entradas').textContent = totalEntradas.toLocaleString('es-CO');
-  document.getElementById('s-salidas').textContent = totalSalidas.toLocaleString('es-CO');
-  document.getElementById('s-saldo-act').textContent = saldoTotal.toLocaleString('es-CO');
+  document.getElementById('s-saldo-ini').textContent = _fmtNum.format(saldoIni);
+  document.getElementById('s-entradas').textContent = _fmtNum.format(totalEntradas);
+  document.getElementById('s-salidas').textContent = _fmtNum.format(totalSalidas);
+  document.getElementById('s-saldo-act').textContent = _fmtNum.format(saldoTotal);
 
   renderKardexTable();
 }
+
+function _renderKxPagination(totalRows, currentPage, elId, goFn) {
+  var el = document.getElementById(elId);
+  if (!el) return;
+  var totalPages = Math.ceil(totalRows / kxPageSize);
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  var start = (currentPage - 1) * kxPageSize + 1;
+  var end = Math.min(currentPage * kxPageSize, totalRows);
+  var html = '<span class="pg-info">' + start + '–' + end + ' de ' + totalRows + '</span>';
+  html += '<button ' + (currentPage <= 1 ? 'disabled' : 'onclick="' + goFn + '(1)"') + ' title="Primera">«</button>';
+  html += '<button ' + (currentPage <= 1 ? 'disabled' : 'onclick="' + goFn + '(' + (currentPage - 1) + ')"') + ' title="Anterior">‹</button>';
+  var range = [];
+  if (totalPages <= 7) {
+    for (var i = 1; i <= totalPages; i++) range.push(i);
+  } else {
+    range.push(1);
+    if (currentPage > 3) range.push('...');
+    for (var i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) range.push(i);
+    if (currentPage < totalPages - 2) range.push('...');
+    range.push(totalPages);
+  }
+  range.forEach(function(p) {
+    if (p === '...') { html += '<span class="pg-ellipsis">…</span>'; return; }
+    html += '<button class="' + (p === currentPage ? 'pg-active' : '') + '" onclick="' + goFn + '(' + p + ')">' + p + '</button>';
+  });
+  html += '<button ' + (currentPage >= totalPages ? 'disabled' : 'onclick="' + goFn + '(' + (currentPage + 1) + ')"') + ' title="Siguiente">›</button>';
+  html += '<button ' + (currentPage >= totalPages ? 'disabled' : 'onclick="' + goFn + '(' + totalPages + ')"') + ' title="Última">»</button>';
+  el.innerHTML = html;
+}
+
+function kxGoToPage(p) { kxCurrentPage = p; renderKardexTable(); }
+function ncGoToPage(p) { ncCurrentPage = p; renderNCTable(); }
+function kxncGoToPage(p) { kxncCurrentPage = p; renderKardexNCTable(); }
 
 function renderKardexTable() {
   var fProd = document.getElementById('f-prod').value;
@@ -668,8 +709,14 @@ function renderKardexTable() {
   var tbody = document.getElementById('t-body-kx');
   if (!kxFiltered.length) {
     tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay movimientos con los filtros seleccionados.</div></td></tr>';
+    _renderKxPagination(0, 1, 'kx-pagination', 'kxGoToPage');
     return;
   }
+
+  var totalPages = Math.ceil(kxFiltered.length / kxPageSize) || 1;
+  if (kxCurrentPage > totalPages) kxCurrentPage = totalPages;
+  var startIdx = (kxCurrentPage - 1) * kxPageSize;
+  var pageRows = kxFiltered.slice(startIdx, startIdx + kxPageSize);
 
   var MOD_COLORS = {
     'Pedidos': '#2980b9',
@@ -683,17 +730,18 @@ function renderKardexTable() {
     'Bodega NC': '#e67e22'
   };
 
-  tbody.innerHTML = kxFiltered.map(function(m, i) {
+  tbody.innerHTML = pageRows.map(function(m, i) {
+    var gi = startIdx + i;
     var modColor = MOD_COLORS[m.modulo] || '#718096';
-    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#27ae60;font-weight:700">+' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
-    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#e74c3c;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
+    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#27ae60;font-weight:700">+' + _fmtNum.format(m.cantidad) + '</span>' : '';
+    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#e74c3c;font-weight:700">−' + _fmtNum.format(m.cantidad) + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#2c3e50';
     var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
-    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'kx\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + i + ',\'kx\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
+    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + gi + ',\'kx\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + gi + ',\'kx\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
     var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.producto || '') + '">' + escHtml(m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.modulo === 'Saldo Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
-      '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (gi + 1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#27ae60' : '#e74c3c') + '">' + escHtml(m.tipo) + '</span></td>' +
       '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + escHtml(m.modulo) + '</span></td>' +
@@ -702,10 +750,12 @@ function renderKardexTable() {
       '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.referencia || '') + '">' + escHtml(m.referencia || '—') + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
-      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldo.toLocaleString('es-CO') + '</td>' +
+      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + _fmtNum.format(m._saldo) + '</td>' +
       '<td>' + deleteBtn + '</td>' +
     '</tr>';
   }).join('');
+
+  _renderKxPagination(kxFiltered.length, kxCurrentPage, 'kx-pagination', 'kxGoToPage');
 }
 
 // ── Export Excel ──
@@ -1019,7 +1069,7 @@ function openDeleteKx(row, modulo, cantidad) {
   deleteKxRow = row;
   document.getElementById('del-kx-msg').textContent = '¿Eliminar este ajuste del Kardex?';
   document.getElementById('del-kx-detail').innerHTML =
-    'Tipo: <strong>' + modulo + '</strong> · Cantidad: ' + Number(cantidad).toLocaleString('es-CO') + '<br><br>' +
+    'Tipo: <strong>' + modulo + '</strong> · Cantidad: ' + _fmtNum.format(Number(cantidad)) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará este registro de la base de datos.</span>';
   document.getElementById('btn-del-kx-confirm').disabled = false;
   document.getElementById('btn-del-kx-confirm').textContent = '🗑️ Sí, eliminar';
@@ -1290,7 +1340,7 @@ function openCargaMasivaModal(dataset) {
   cargaMasivaActiva = datos;
   var total = datos.reduce(function(s, r) { return s + r[2]; }, 0);
   document.getElementById('cm-count').textContent = datos.length;
-  document.getElementById('cm-total').textContent = total.toLocaleString('es-CO');
+  document.getElementById('cm-total').textContent = _fmtNum.format(total);
   document.getElementById('cm-fecha').value = '2026-07-01';
   document.getElementById('cm-empresa').value = empresaDefault;
   document.getElementById('btn-cm-confirm').disabled = false;
@@ -1301,7 +1351,7 @@ function openCargaMasivaModal(dataset) {
   tbody.innerHTML = datos.map(function(r, i) {
     return '<tr><td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
       '<td style="font-size:0.82rem;font-weight:600">' + r[0] + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:#27ae60">' + r[2].toLocaleString('es-CO') + '</td></tr>';
+      '<td style="text-align:right;font-weight:700;color:#27ae60">' + _fmtNum.format(r[2]) + '</td></tr>';
   }).join('');
 
   document.getElementById('carga-masiva-overlay').classList.add('show');
@@ -1476,7 +1526,7 @@ function buildNCMovimientos() {
       remision: re.Remision || '',
       referencia: (re.Planta ? re.Planta : '') + (re.Observaciones ? ' — ' + re.Observaciones : ''),
       empresa: re.Empresa || '',
-      producto: _normProd(re.Producto),
+      producto: re.Producto,
       presentacion: re.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -1503,7 +1553,7 @@ function buildNCMovimientos() {
         remision: remIng,
         referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '') + (c.Razon_Cambio ? ' — ' + c.Razon_Cambio : ''),
         empresa: c.Empresa || '',
-        producto: _normProd(c.Producto),
+        producto: c.Producto,
         presentacion: '',
         cantidad: cant,
         _ajusteId: null
@@ -1520,7 +1570,7 @@ function buildNCMovimientos() {
         remision: remSal,
         referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
         empresa: c.Empresa || '',
-        producto: _normProd(c.Producto),
+        producto: c.Producto,
         presentacion: '',
         cantidad: cant,
         _ajusteId: null
@@ -1543,7 +1593,7 @@ function buildNCMovimientos() {
       remision: d.Remision || d.Remision_Ingreso || '',
       referencia: 'Dev. ' + (d.Consecutivo || '') + (d.Motivo ? ' — ' + d.Motivo : ''),
       empresa: d.Empresa || '',
-      producto: _normProd(d.Producto),
+      producto: d.Producto,
       presentacion: d.Presentacion || '',
       cantidad: cant,
       _ajusteId: null
@@ -1575,7 +1625,7 @@ function buildNCMovimientos() {
       remision: a.Remision || '',
       referencia: a.Observaciones || '',
       empresa: a.Empresa || '',
-      producto: _normProd(a.Producto),
+      producto: a.Producto,
       presentacion: a.Presentacion || '',
       cantidad: cant,
       _ajusteId: a.__row || a.id || null
@@ -1590,13 +1640,8 @@ function buildNCMovimientos() {
 
   // Excluir movimientos cuya remisión fue anulada
   if (kxRemAnuladas.length) {
-    var remAnuladasSet = {};
-    kxRemAnuladas.forEach(function(ra) {
-      var r = String(ra.Remision || '').trim();
-      if (r) remAnuladasSet[r] = true;
-    });
     ncMovimientos = ncMovimientos.filter(function(m) {
-      return !remAnuladasSet[String(m.remision || '').trim()];
+      return !_remAnuladasSet[String(m.remision || '').trim()];
     });
   }
 }
@@ -1645,6 +1690,7 @@ function clearNCFilters() {
 
 // ── NC Calculate & Render ──
 function calcularNC() {
+  ncCurrentPage = 1;
   var fEmp = document.getElementById('nc-f-empresa').value;
   var fProd = document.getElementById('nc-f-prod').value;
   var fDesde = document.getElementById('nc-f-desde').value;
@@ -1710,10 +1756,10 @@ function calcularNC() {
   var saldoTotal = 0;
   Object.keys(saldosPorProducto).forEach(function(k) { saldoTotal += saldosPorProducto[k]; });
 
-  document.getElementById('nc-s-saldo-ini').textContent = saldoIni.toLocaleString('es-CO');
-  document.getElementById('nc-s-total').textContent = totalEntradas.toLocaleString('es-CO');
-  document.getElementById('nc-s-salidas').textContent = totalSalidas.toLocaleString('es-CO');
-  document.getElementById('nc-s-saldo').textContent = saldoTotal.toLocaleString('es-CO');
+  document.getElementById('nc-s-saldo-ini').textContent = _fmtNum.format(saldoIni);
+  document.getElementById('nc-s-total').textContent = _fmtNum.format(totalEntradas);
+  document.getElementById('nc-s-salidas').textContent = _fmtNum.format(totalSalidas);
+  document.getElementById('nc-s-saldo').textContent = _fmtNum.format(saldoTotal);
 
   renderNCTable();
 }
@@ -1767,21 +1813,28 @@ function renderNCTable() {
   var tbody = document.getElementById('t-body-nc');
   if (!ncFiltered.length) {
     tbody.innerHTML = '<tr><td colspan="12"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay movimientos en la bodega NC con los filtros seleccionados.</div></td></tr>';
+    _renderKxPagination(0, 1, 'nc-pagination', 'ncGoToPage');
     return;
   }
 
-  tbody.innerHTML = ncFiltered.map(function(m, i) {
+  var totalPages = Math.ceil(ncFiltered.length / kxPageSize) || 1;
+  if (ncCurrentPage > totalPages) ncCurrentPage = totalPages;
+  var startIdx = (ncCurrentPage - 1) * kxPageSize;
+  var pageRows = ncFiltered.slice(startIdx, startIdx + kxPageSize);
+
+  tbody.innerHTML = pageRows.map(function(m, i) {
+    var gi = startIdx + i;
     var motivoLabel = NC_MOTIVO_LABELS[m.motivo] || m.motivo || '—';
     var motivoColor = NC_MOTIVO_COLORS[m.motivo] || '#718096';
-    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#e67e22;font-weight:700">+' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
-    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#27ae60;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
+    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#e67e22;font-weight:700">+' + _fmtNum.format(m.cantidad) + '</span>' : '';
+    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#27ae60;font-weight:700">−' + _fmtNum.format(m.cantidad) + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#c0392b';
     var editBtn = m._ajusteId && AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditNC(' + m._ajusteId + ')" title="Editar registro" style="font-size:0.72rem;padding:3px 8px">✏️</button>' : '';
     var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteNC(' + m._ajusteId + ',\'' + (m.tipo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar registro" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
-    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'nc\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + i + ',\'nc\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
+    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + gi + ',\'nc\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + gi + ',\'nc\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
 
     return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
-      '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (gi + 1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#e67e22' : '#27ae60') + '">' + (m.tipo === 'Entrada' ? 'Ingreso' : 'Salida') + '</span></td>' +
       '<td><span style="background:' + motivoColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + motivoLabel + '</span></td>' +
@@ -1790,11 +1843,13 @@ function renderNCTable() {
       '<td style="font-size:0.78rem;white-space:nowrap">' + escHtml(m.remision || '—') + pdfBtns + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
-      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldo.toLocaleString('es-CO') + '</td>' +
+      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + _fmtNum.format(m._saldo) + '</td>' +
       '<td style="font-size:0.78rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.referencia || '') + '">' + escHtml(m.referencia || '—') + '</td>' +
       '<td><div style="display:flex;gap:4px">' + editBtn + deleteBtn + '</div></td>' +
     '</tr>';
   }).join('');
+
+  _renderKxPagination(ncFiltered.length, ncCurrentPage, 'nc-pagination', 'ncGoToPage');
 }
 
 // ── NC Export Excel ──
@@ -2128,7 +2183,7 @@ function openDeleteNC(row, tipo, cantidad) {
   deleteNCRow = row;
   document.getElementById('del-nc-msg').textContent = '¿Eliminar este registro de la bodega NC?';
   document.getElementById('del-nc-detail').innerHTML =
-    'Tipo: <strong>' + tipo + '</strong> · Cantidad: ' + Number(cantidad).toLocaleString('es-CO') + '<br><br>' +
+    'Tipo: <strong>' + tipo + '</strong> · Cantidad: ' + _fmtNum.format(Number(cantidad)) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará este registro de la base de datos.</span>';
   document.getElementById('btn-del-nc-confirm').disabled = false;
   document.getElementById('btn-del-nc-confirm').textContent = '🗑️ Sí, eliminar';
@@ -2313,7 +2368,7 @@ var CARVAL_PRODUCTS = (function() {
 })();
 
 function _esCarval(producto) {
-  return !!CARVAL_PRODUCTS[_normProd(producto).toUpperCase()];
+  return !!CARVAL_PRODUCTS[(producto || '').toUpperCase()];
 }
 
 // ── Productos de PARCELAR cuyo proveedor es GERMISEMILLAS ──
@@ -2503,9 +2558,9 @@ function renderExistencias() {
     totalUnidades += row._totalView;
   });
 
-  document.getElementById('ex-s-productos').textContent = existFiltered.length.toLocaleString('es-CO');
+  document.getElementById('ex-s-productos').textContent = _fmtNum.format(existFiltered.length);
   document.getElementById('ex-s-empresas').textContent = Object.keys(empresasConStock).length;
-  document.getElementById('ex-s-total').textContent = totalUnidades.toLocaleString('es-CO');
+  document.getElementById('ex-s-total').textContent = _fmtNum.format(totalUnidades);
   document.getElementById('row-ct-ex').textContent = '(' + existFiltered.length + ' productos)';
 
   renderExistTable(empresasView);
@@ -2566,12 +2621,12 @@ function renderExistTable(empresasView) {
       var val = _existCellVal(row, e.value);
       var color = val > 0 ? '#27ae60' : val < 0 ? '#e74c3c' : '#cbd5e0';
       var weight = val !== 0 ? '700' : '400';
-      html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + val.toLocaleString('es-CO') + '</td>';
+      html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + _fmtNum.format(val) + '</td>';
     });
     if (showTotal) {
       var totalView = row._totalView != null ? row._totalView : row._total;
       var totalColor = totalView > 0 ? '#2c3e50' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
-      html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#f7fafc;font-size:0.88rem">' + totalView.toLocaleString('es-CO') + '</td>';
+      html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#f7fafc;font-size:0.88rem">' + _fmtNum.format(totalView) + '</td>';
     }
     html += '</tr>';
     return html;
@@ -2615,9 +2670,9 @@ function renderExistTable(empresasView) {
   empresasView.forEach(function(e) {
     var val = totales[e.value];
     var color = val > 0 ? '#27ae60' : val < 0 ? '#e74c3c' : '#718096';
-    footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + val.toLocaleString('es-CO') + '</td>';
+    footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + _fmtNum.format(val) + '</td>';
   });
-  if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem">' + granTotal.toLocaleString('es-CO') + '</td>';
+  if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem">' + _fmtNum.format(granTotal) + '</td>';
   document.getElementById('t-foot-ex').innerHTML = footHtml;
 }
 
@@ -2752,6 +2807,7 @@ function _kxncModulo(m) {
 }
 
 function calcularKardexNC() {
+  kxncCurrentPage = 1;
   var fEmp = document.getElementById('kxnc-f-empresa').value;
   var fProd = document.getElementById('kxnc-f-prod').value;
   var fDesde = document.getElementById('kxnc-f-desde').value;
@@ -2817,10 +2873,10 @@ function calcularKardexNC() {
   var saldoTotal = 0;
   Object.keys(saldosPorProducto).forEach(function(k) { saldoTotal += saldosPorProducto[k]; });
 
-  document.getElementById('kxnc-s-saldo-ini').textContent = saldoIni.toLocaleString('es-CO');
-  document.getElementById('kxnc-s-entradas').textContent = totalEntradas.toLocaleString('es-CO');
-  document.getElementById('kxnc-s-salidas').textContent = totalSalidas.toLocaleString('es-CO');
-  document.getElementById('kxnc-s-saldo-act').textContent = saldoTotal.toLocaleString('es-CO');
+  document.getElementById('kxnc-s-saldo-ini').textContent = _fmtNum.format(saldoIni);
+  document.getElementById('kxnc-s-entradas').textContent = _fmtNum.format(totalEntradas);
+  document.getElementById('kxnc-s-salidas').textContent = _fmtNum.format(totalSalidas);
+  document.getElementById('kxnc-s-saldo-act').textContent = _fmtNum.format(saldoTotal);
 
   renderKardexNCTable();
 }
@@ -2841,8 +2897,14 @@ function renderKardexNCTable() {
   var tbody = document.getElementById('t-body-kxnc');
   if (!kxncFiltered.length) {
     tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay movimientos NC con los filtros seleccionados.</div></td></tr>';
+    _renderKxPagination(0, 1, 'kxnc-pagination', 'kxncGoToPage');
     return;
   }
+
+  var totalPages = Math.ceil(kxncFiltered.length / kxPageSize) || 1;
+  if (kxncCurrentPage > totalPages) kxncCurrentPage = totalPages;
+  var startIdx = (kxncCurrentPage - 1) * kxPageSize;
+  var pageRows = kxncFiltered.slice(startIdx, startIdx + kxPageSize);
 
   var MOD_COLORS = {
     'Saldo Inicial NC': '#1a5276',
@@ -2853,22 +2915,23 @@ function renderKardexNCTable() {
     'Cambio NC': '#2980b9'
   };
 
-  tbody.innerHTML = kxncFiltered.map(function(m, i) {
+  tbody.innerHTML = pageRows.map(function(m, i) {
+    var gi = startIdx + i;
     var modulo = _kxncModulo(m);
     var modColor = MOD_COLORS[modulo] || '#718096';
-    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#e67e22;font-weight:700">+' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
-    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#27ae60;font-weight:700">−' + m.cantidad.toLocaleString('es-CO') + '</span>' : '';
+    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#e67e22;font-weight:700">+' + _fmtNum.format(m.cantidad) + '</span>' : '';
+    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#27ae60;font-weight:700">−' + _fmtNum.format(m.cantidad) + '</span>' : '';
     var saldoColor = m._saldoKxnc < 0 ? '#e74c3c' : '#c0392b';
     var referencia = m.referencia || '';
     var motivoLbl = NC_MOTIVO_LABELS[m.motivo] || m.motivo || '';
     if (motivoLbl && m.motivo !== 'Saldo_Inicial' && m.motivo !== 'Produccion_NC' && m.motivo !== 'Devolucion_NC') {
       referencia = motivoLbl + (referencia ? ' — ' + referencia : '');
     }
-    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + i + ',\'kxnc\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + i + ',\'kxnc\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
+    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + gi + ',\'kxnc\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + gi + ',\'kxnc\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
     var prodCol = showProd ? '<td style="font-size:0.78rem;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.producto || '') + '">' + escHtml(m.producto || '—') + '</td>' : '';
 
     return '<tr' + (m.motivo === 'Saldo_Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
-      '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (gi + 1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#e67e22' : '#27ae60') + '">' + (m.tipo === 'Entrada' ? 'Ingreso' : 'Salida') + '</span></td>' +
       '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + escHtml(modulo) + '</span></td>' +
@@ -2877,9 +2940,11 @@ function renderKardexNCTable() {
       '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(referencia) + '">' + escHtml(referencia || '—') + '</td>' +
       '<td style="text-align:right">' + entradaStr + '</td>' +
       '<td style="text-align:right">' + salidaStr + '</td>' +
-      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + m._saldoKxnc.toLocaleString('es-CO') + '</td>' +
+      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + _fmtNum.format(m._saldoKxnc) + '</td>' +
     '</tr>';
   }).join('');
+
+  _renderKxPagination(kxncFiltered.length, kxncCurrentPage, 'kxnc-pagination', 'kxncGoToPage');
 }
 
 function exportKardexNCExcel() {
@@ -3024,9 +3089,9 @@ function renderExistenciasNC() {
     totalUnidades += row._totalView;
   });
 
-  document.getElementById('exnc-s-productos').textContent = existFilteredNC.length.toLocaleString('es-CO');
+  document.getElementById('exnc-s-productos').textContent = _fmtNum.format(existFilteredNC.length);
   document.getElementById('exnc-s-empresas').textContent = Object.keys(empresasConStock).length;
-  document.getElementById('exnc-s-total').textContent = totalUnidades.toLocaleString('es-CO');
+  document.getElementById('exnc-s-total').textContent = _fmtNum.format(totalUnidades);
   document.getElementById('row-ct-exnc').textContent = '(' + existFilteredNC.length + ' productos)';
 
   renderExistNCTable(empresasView);
@@ -3062,12 +3127,12 @@ function renderExistNCTable(empresasView) {
       var val = row[e.value] || 0;
       var color = val > 0 ? '#e67e22' : val < 0 ? '#e74c3c' : '#cbd5e0';
       var weight = val !== 0 ? '700' : '400';
-      html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + val.toLocaleString('es-CO') + '</td>';
+      html += '<td style="text-align:right;font-weight:' + weight + ';color:' + color + ';font-size:0.84rem">' + _fmtNum.format(val) + '</td>';
     });
     if (showTotal) {
       var totalView = row._totalView != null ? row._totalView : row._total;
       var totalColor = totalView > 0 ? '#c0392b' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
-      html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#fdf2f2;font-size:0.88rem">' + totalView.toLocaleString('es-CO') + '</td>';
+      html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#fdf2f2;font-size:0.88rem">' + _fmtNum.format(totalView) + '</td>';
     }
     html += '</tr>';
     return html;
@@ -3086,9 +3151,9 @@ function renderExistNCTable(empresasView) {
   empresasView.forEach(function(e) {
     var val = totales[e.value];
     var color = val > 0 ? '#e67e22' : val < 0 ? '#e74c3c' : '#718096';
-    footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + val.toLocaleString('es-CO') + '</td>';
+    footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + _fmtNum.format(val) + '</td>';
   });
-  if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#c0392b;background:#fdedec;font-size:0.95rem">' + granTotal.toLocaleString('es-CO') + '</td>';
+  if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#c0392b;background:#fdedec;font-size:0.95rem">' + _fmtNum.format(granTotal) + '</td>';
   document.getElementById('t-foot-exnc').innerHTML = footHtml;
 }
 
@@ -3265,10 +3330,10 @@ function renderComparativo() {
     sumN += row._totalNCView;
   });
 
-  document.getElementById('comp-s-productos').textContent = compFiltered.length.toLocaleString('es-CO');
-  document.getElementById('comp-s-bueno').textContent = sumB.toLocaleString('es-CO');
-  document.getElementById('comp-s-nc').textContent = sumN.toLocaleString('es-CO');
-  document.getElementById('comp-s-diff').textContent = (sumB - sumN).toLocaleString('es-CO');
+  document.getElementById('comp-s-productos').textContent = _fmtNum.format(compFiltered.length);
+  document.getElementById('comp-s-bueno').textContent = _fmtNum.format(sumB);
+  document.getElementById('comp-s-nc').textContent = _fmtNum.format(sumN);
+  document.getElementById('comp-s-diff').textContent = _fmtNum.format(sumB - sumN);
   document.getElementById('row-ct-comp').textContent = '(' + compFiltered.length + ' productos)';
 
   renderCompTable(empresasView);
@@ -3316,15 +3381,15 @@ function renderCompTable(empresasView) {
       var n = row.nc[e.value] || 0;
       var bColor = b > 0 ? '#27ae60' : b < 0 ? '#e74c3c' : '#cbd5e0';
       var nColor = n > 0 ? '#c0392b' : n < 0 ? '#e74c3c' : '#cbd5e0';
-      html += '<td style="text-align:right;font-weight:' + (b !== 0 ? '700' : '400') + ';color:' + bColor + ';font-size:0.84rem;border-left:2px solid #edf2f7">' + b.toLocaleString('es-CO') + '</td>';
-      html += '<td style="text-align:right;font-weight:' + (n !== 0 ? '700' : '400') + ';color:' + nColor + ';font-size:0.84rem">' + n.toLocaleString('es-CO') + '</td>';
+      html += '<td style="text-align:right;font-weight:' + (b !== 0 ? '700' : '400') + ';color:' + bColor + ';font-size:0.84rem;border-left:2px solid #edf2f7">' + _fmtNum.format(b) + '</td>';
+      html += '<td style="text-align:right;font-weight:' + (n !== 0 ? '700' : '400') + ';color:' + nColor + ';font-size:0.84rem">' + _fmtNum.format(n) + '</td>';
     });
     var tB = row._totalBuenoView;
     var tN = row._totalNCView;
     var tBColor = tB > 0 ? '#0e6655' : tB < 0 ? '#e74c3c' : '#cbd5e0';
     var tNColor = tN > 0 ? '#c0392b' : tN < 0 ? '#e74c3c' : '#cbd5e0';
-    html += '<td style="text-align:right;font-weight:800;color:' + tBColor + ';background:#e8f5e9;font-size:0.88rem;border-left:2px solid #cbd5e0">' + tB.toLocaleString('es-CO') + '</td>';
-    html += '<td style="text-align:right;font-weight:800;color:' + tNColor + ';background:#fdedec;font-size:0.88rem">' + tN.toLocaleString('es-CO') + '</td>';
+    html += '<td style="text-align:right;font-weight:800;color:' + tBColor + ';background:#e8f5e9;font-size:0.88rem;border-left:2px solid #cbd5e0">' + _fmtNum.format(tB) + '</td>';
+    html += '<td style="text-align:right;font-weight:800;color:' + tNColor + ';background:#fdedec;font-size:0.88rem">' + _fmtNum.format(tN) + '</td>';
     html += '</tr>';
     return html;
   }).join('');
@@ -3347,11 +3412,11 @@ function renderCompTable(empresasView) {
   empresasView.forEach(function(e) {
     var vB = totB[e.value];
     var vN = totN[e.value];
-    footHtml += '<td style="text-align:right;font-weight:800;color:' + (vB > 0 ? '#27ae60' : vB < 0 ? '#e74c3c' : '#718096') + ';font-size:0.88rem;border-left:2px solid #cbd5e0">' + vB.toLocaleString('es-CO') + '</td>';
-    footHtml += '<td style="text-align:right;font-weight:800;color:' + (vN > 0 ? '#c0392b' : vN < 0 ? '#e74c3c' : '#718096') + ';font-size:0.88rem">' + vN.toLocaleString('es-CO') + '</td>';
+    footHtml += '<td style="text-align:right;font-weight:800;color:' + (vB > 0 ? '#27ae60' : vB < 0 ? '#e74c3c' : '#718096') + ';font-size:0.88rem;border-left:2px solid #cbd5e0">' + _fmtNum.format(vB) + '</td>';
+    footHtml += '<td style="text-align:right;font-weight:800;color:' + (vN > 0 ? '#c0392b' : vN < 0 ? '#e74c3c' : '#718096') + ';font-size:0.88rem">' + _fmtNum.format(vN) + '</td>';
   });
-  footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem;border-left:2px solid #cbd5e0">' + granB.toLocaleString('es-CO') + '</td>';
-  footHtml += '<td style="text-align:right;font-weight:800;color:#c0392b;background:#fdedec;font-size:0.95rem">' + granN.toLocaleString('es-CO') + '</td>';
+  footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem;border-left:2px solid #cbd5e0">' + _fmtNum.format(granB) + '</td>';
+  footHtml += '<td style="text-align:right;font-weight:800;color:#c0392b;background:#fdedec;font-size:0.95rem">' + _fmtNum.format(granN) + '</td>';
   footHtml += '</tr>';
   document.getElementById('t-foot-comp').innerHTML = footHtml;
 }
@@ -3731,12 +3796,10 @@ function _computeExistenciasParaEmpresa(empresa, bodega, fechaHasta) {
 
   var catMap = {};
   kxCatalogo.forEach(function(p) {
-    var norm = _normProd(p.Producto);
-    if (!catMap[norm]) catMap[norm] = p.Presentacion || '';
+    if (p.Producto && !catMap[p.Producto]) catMap[p.Producto] = p.Presentacion || '';
   });
   Object.keys(saldos).forEach(function(k) {
-    var norm = _normProd(k);
-    if (catMap[norm]) saldos[k].presentacion = catMap[norm];
+    if (catMap[k]) saldos[k].presentacion = catMap[k];
   });
 
   return saldos;
@@ -3915,7 +3978,7 @@ function _filterInvfProd(input, idx) {
   kxCatalogo.forEach(function(p) {
     var name = p.Producto || '';
     var pres = p.Presentacion || '';
-    var key = _normProd(name);
+    var key = name;
     if (seen[key]) return;
     if (name.toLowerCase().indexOf(q) >= 0 || pres.toLowerCase().indexOf(q) >= 0) {
       seen[key] = true;
