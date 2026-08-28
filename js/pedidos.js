@@ -1390,7 +1390,7 @@ async function openDetail(idx) {
   _elPR.readOnly = true; _elPR.style.background = '#f0f4f8'; _elPR.placeholder = '(Auto al guardar)';
   var _chkPR = document.getElementById('m-remision-auto'); if (_chkPR) _chkPR.checked = true;
   document.getElementById('btn-confirmar').disabled = false;
-  document.getElementById('btn-confirmar').textContent = '✓ Guardar cambios';
+  document.getElementById('btn-confirmar').textContent = '✓ Guardar cambios y enviar';
 
   detailWorkingLines = lines.map(function(l) {
     var copy = Object.assign({}, l);

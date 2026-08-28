@@ -1118,7 +1118,7 @@ function showConfirmReenvase(lines) {
   document.getElementById('confirm-re-total').textContent =
     'Total: ' + lines.length + ' producto(s) · ' + totalUds + ' unidad(es)';
   document.getElementById('btn-confirm-re-ok').disabled = false;
-  document.getElementById('btn-confirm-re-ok').textContent = '✓ Confirmar y registrar';
+  document.getElementById('btn-confirm-re-ok').textContent = '✓ Confirmar, registrar y enviar';
   document.getElementById('confirm-re-overlay').classList.add('show');
 }
 

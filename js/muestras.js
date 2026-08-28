@@ -1078,7 +1078,7 @@ async function onEmpresaChange() {
 async function openNewMuestra() {
   muEditId = null;
   document.getElementById('mu-modal-title').textContent = '🧪 Nueva Solicitud de Muestras';
-  document.getElementById('btn-save-mu').textContent = '✓ Registrar solicitud';
+  document.getElementById('btn-save-mu').textContent = '✓ Registrar y enviar';
   document.getElementById('btn-save-mu').disabled = false;
 
   document.getElementById('mu-empresa').value = '';
@@ -1145,7 +1145,7 @@ async function editMuestra(id) {
 
   muEditId = id;
   document.getElementById('mu-modal-title').textContent = '✏️ Editar Solicitud';
-  document.getElementById('btn-save-mu').textContent = '✓ Guardar cambios';
+  document.getElementById('btn-save-mu').textContent = '✓ Registrar y enviar';
   document.getElementById('btn-save-mu').disabled = false;
 
   document.getElementById('mu-empresa').value = r.Empresa || '';
@@ -1337,7 +1337,7 @@ async function saveMuestra() {
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');
       btn.disabled = false;
-      btn.textContent = '✓ Guardar cambios';
+      btn.textContent = '✓ Registrar y enviar';
       _pendingContabMu = null;
     }
     return;

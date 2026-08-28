@@ -783,7 +783,7 @@ async function openGestionarCam(key) {
   _elGCRS.readOnly = true; _elGCRS.style.background = '#f0f4f8'; _elGCRS.placeholder = '(Auto al guardar)';
   var _chkGCRS = document.getElementById('gestionar-cam-remision-salida-auto'); if (_chkGCRS) _chkGCRS.checked = true;
   document.getElementById('btn-gestionar-cam').disabled = false;
-  document.getElementById('btn-gestionar-cam').textContent = '✓ Cerrar cambio';
+  document.getElementById('btn-gestionar-cam').textContent = '✓ Cerrar cambio y enviar';
 
   var entregaLines = lines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
   var section = document.getElementById('gestionar-cam-lineas-section');

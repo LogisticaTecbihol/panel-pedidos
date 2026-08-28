@@ -870,7 +870,7 @@ function showConfirmIngreso(lines) {
   document.getElementById('confirm-ing-total').textContent =
     'Total: ' + lines.length + ' producto(s) · ' + totalUds + ' unidad(es)';
   document.getElementById('btn-confirm-ing-ok').disabled = false;
-  document.getElementById('btn-confirm-ing-ok').textContent = '✓ Confirmar y registrar';
+  document.getElementById('btn-confirm-ing-ok').textContent = '✓ Confirmar, registrar y enviar';
   document.getElementById('confirm-ing-overlay').classList.add('show');
 }
 

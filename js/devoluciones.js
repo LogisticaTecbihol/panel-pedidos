@@ -1487,7 +1487,7 @@ function openTramitarDev(key) {
   renderTramitarTable();
 
   document.getElementById('btn-tramitar-dev').disabled = false;
-  document.getElementById('btn-tramitar-dev').textContent = '✓ Tramitar devolución';
+  document.getElementById('btn-tramitar-dev').textContent = '✓ Tramitar y enviar';
   document.getElementById('tramitar-dev-overlay').classList.add('show');
 }
 
