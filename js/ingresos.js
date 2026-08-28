@@ -404,7 +404,7 @@ function addProductToGroup() {
   var elDest = document.getElementById('ing-remision-destino');
   elDest.readOnly = true; elDest.style.background = '#f0f4f8'; elDest.placeholder = '(Auto al guardar)';
   document.getElementById('btn-save-ing').disabled = false;
-  document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso';
+  document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso y enviar';
   document.getElementById('ing-edit-single').style.display = 'none';
   document.getElementById('ing-multi-lines').style.display = 'block';
 
@@ -738,7 +738,7 @@ function openNewIngreso() {
   var elDest = document.getElementById('ing-remision-destino');
   elDest.readOnly = true; elDest.style.background = '#f0f4f8'; elDest.placeholder = '(Auto al guardar)';
   document.getElementById('btn-save-ing').disabled = false;
-  document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso';
+  document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso y enviar';
   document.getElementById('ing-edit-single').style.display = 'none';
   document.getElementById('ing-multi-lines').style.display = 'block';
 
@@ -782,7 +782,7 @@ function openEditIng(row) {
   if (chkO) chkO.checked = true;
   document.getElementById('ing-observaciones').value = r.Observaciones || '';
   document.getElementById('btn-save-ing').disabled = false;
-  document.getElementById('btn-save-ing').textContent = '✓ Guardar cambios';
+  document.getElementById('btn-save-ing').textContent = '✓ Guardar cambios y enviar';
 
   document.getElementById('ing-multi-lines').style.display = 'none';
   document.getElementById('ing-edit-single').style.display = 'block';
@@ -843,7 +843,7 @@ async function saveIngreso() {
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');
       btn.disabled = false;
-      btn.textContent = '✓ Guardar cambios';
+      btn.textContent = '✓ Guardar cambios y enviar';
     }
     return;
   }

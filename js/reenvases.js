@@ -658,7 +658,7 @@ function addProductToReGroup() {
   reEditId = null;
   document.getElementById('re-bodega').value = g.Bodega || getBodegaFromTab();
   document.getElementById('re-modal-title').textContent = '🏭 Agregar Producto';
-  document.getElementById('btn-save-re').textContent = '✓ Registrar salida';
+  document.getElementById('btn-save-re').textContent = '✓ Registrar salida y enviar';
   document.getElementById('btn-save-re').disabled = false;
 
   document.getElementById('re-empresa').value = g.Empresa || '';
@@ -906,7 +906,7 @@ async function openNewReenvase() {
   reEditId = null;
   document.getElementById('re-bodega').value = getBodegaFromTab();
   document.getElementById('re-modal-title').textContent = '🏭 Nueva Salida a producción';
-  document.getElementById('btn-save-re').textContent = '✓ Registrar salida';
+  document.getElementById('btn-save-re').textContent = '✓ Registrar salida y enviar';
   document.getElementById('btn-save-re').disabled = false;
 
   document.getElementById('re-empresa').value = '';
@@ -942,7 +942,7 @@ async function editReenvase(id) {
   reEditId = id;
   document.getElementById('re-bodega').value = normBodegaRe(r.Bodega);
   document.getElementById('re-modal-title').textContent = '✏️ Editar Salida';
-  document.getElementById('btn-save-re').textContent = '✓ Guardar cambios';
+  document.getElementById('btn-save-re').textContent = '✓ Guardar cambios y enviar';
   document.getElementById('btn-save-re').disabled = false;
 
   document.getElementById('re-empresa').value = r.Empresa || '';
@@ -1090,7 +1090,7 @@ async function saveReenvase() {
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');
       btn.disabled = false;
-      btn.textContent = '✓ Guardar cambios';
+      btn.textContent = '✓ Guardar cambios y enviar';
     }
     return;
   }
