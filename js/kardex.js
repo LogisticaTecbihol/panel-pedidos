@@ -86,9 +86,7 @@ async function loadKardex() {
       apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; })
     ];
 
-    if (needsNC || _ncLoaded) {
-      corePromises.push(apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }));
-    }
+    corePromises.push(apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }));
     if (needsInvf || _invfLoaded) {
       corePromises.push(apiGet('getInventarioFisico').catch(function() { return { ok: true, conteos: [] }; }));
     }
@@ -108,12 +106,9 @@ async function loadKardex() {
     kxCambios = results[8].cambios || [];
     kxRemAnuladas = results[9].remisionesAnuladas || [];
 
-    var extraIdx = 10;
-    if (needsNC || _ncLoaded) {
-      ncAjustes = results[extraIdx].ajustesNC || [];
-      _ncLoaded = true;
-      extraIdx++;
-    }
+    ncAjustes = results[10].ajustesNC || [];
+    _ncLoaded = true;
+    var extraIdx = 11;
     if (needsInvf || _invfLoaded) {
       invfConteos = results[extraIdx].conteos || [];
       _invfLoaded = true;
@@ -123,14 +118,12 @@ async function loadKardex() {
     populateKxFilters();
     calcularKardex();
 
-    if (_ncLoaded) {
-      buildNCMovimientos();
-      populateNCFilters();
-      populateKxNCFilters();
-      calcularNC();
-      calcularKardexNC();
-      _ncProcessed = true;
-    }
+    buildNCMovimientos();
+    populateNCFilters();
+    populateKxNCFilters();
+    calcularNC();
+    calcularKardexNC();
+    _ncProcessed = true;
 
     if (activeTab === 'exist') calcularExistencias();
     if (activeTab === 'exnc' && _ncProcessed) calcularExistenciasNC();
