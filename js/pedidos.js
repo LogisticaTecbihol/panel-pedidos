@@ -2104,6 +2104,20 @@ function removeEntrega(lineIdx, entIdx) {
   syncEntregaTotal(lineIdx);
 }
 
+// ── Wrapper: confirmación contabilidad → guardar ──
+var _pendingContab = null;
+async function guardarYEnviar() {
+  if (activeIdx === null) return;
+  var c = consecs[activeIdx];
+  if (!c) return;
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var r = await NOTIF.confirmarEnvioContabilidad(c.Nombre_Empresa, 'pedidos');
+    if (!r.confirmed) return;
+    _pendingContab = r;
+  }
+  await guardarTodo();
+}
+
 // ── Save all changes (edits + deliveries) ──
 async function guardarTodo() {
   if (activeIdx === null) return;
@@ -2294,7 +2308,7 @@ async function guardarTodo() {
         };
       });
       var totalEntrega = entregasPDF.reduce(function(s, e) { return s + (e.valor_total || 0); }, 0);
-      generarRemisionPDF({
+      var _pdfData = {
         empresa: c.Nombre_Empresa,
         consecutivo: c.Consecutivo,
         fecha_pedido: hdr.Fecha_Pedido,
@@ -2317,8 +2331,23 @@ async function guardarTodo() {
         fecha_entrega: fecha,
         entregas: entregasPDF,
         total: totalEntrega
-      });
+      };
+      generarRemisionPDF(_pdfData);
+      if (_pendingContab && _pendingContab.contabIds && _pendingContab.contabIds.length && typeof NOTIF !== 'undefined') {
+        try {
+          var _cr = generarRemisionPDF(Object.assign({}, _pdfData, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
+          if (_cr && _cr.doc) {
+            await NOTIF.enviarPDFContabilidad(_cr.doc, {
+              modulo: 'pedidos', referencia: rem,
+              titulo: 'Remisión ' + rem + ' — Pedido ' + c.Consecutivo,
+              contabIds: _pendingContab.contabIds, contabNames: _pendingContab.contabNames
+            });
+          }
+        } catch (e) { console.error('Auto-send contabilidad error', e); }
+      }
+      _pendingContab = null;
     }
+    _pendingContab = null;
 
     closeModal();
     var partes = [];
@@ -2335,7 +2364,8 @@ async function guardarTodo() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Guardar cambios';
+    btn.textContent = '✓ Guardar cambios y enviar';
+    _pendingContab = null;
   }
 }
 

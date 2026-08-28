@@ -699,6 +699,72 @@ var NOTIF = (function() {
   function verificarBtn() {
   }
 
+  async function confirmarEnvioContabilidad(empresa, modulo) {
+    if (!empresa || AUTO_CONTAB_MODS.indexOf(modulo) < 0) return { confirmed: true, contabIds: [] };
+    if (!_uid && typeof AUTH !== 'undefined' && AUTH.getUser) {
+      var u = AUTH.getUser(); if (u) _uid = u.id;
+    }
+    var sigla = (typeof getSigla === 'function') ? getSigla(empresa) : empresa;
+    var contabMap = await _loadContabilidadMap();
+    var contabIds = (contabMap[sigla] || []).filter(function(id) { return id !== _uid; });
+    if (!contabIds.length) return { confirmed: true, contabIds: [] };
+
+    var dir = await _loadDirectorio();
+    var contabUsers = dir.filter(function(u) { return contabIds.indexOf(u.id) >= 0 && u.activo; });
+    if (!contabUsers.length) return { confirmed: true, contabIds: [] };
+
+    var names = contabUsers.map(function(u) { return u.nombre || u.email; }).join(', ');
+    var ids = contabUsers.map(function(u) { return u.id; });
+
+    return new Promise(function(resolve) {
+      _injectStyles();
+      var ov = document.createElement('div');
+      ov.className = 'overlay show';
+      ov.style.zIndex = '2000';
+      ov.innerHTML =
+        '<div class="modal-box" style="max-width:440px" onclick="event.stopPropagation()">' +
+          '<div class="mhdr" style="background:linear-gradient(135deg,#7d3c98,#8e44ad)">' +
+            '<div><h2>📨 Confirmar envío</h2></div>' +
+            '<button class="btn-close" id="_contab-x">✕</button>' +
+          '</div>' +
+          '<div class="mbody" style="text-align:center;padding:24px">' +
+            '<div style="font-size:2rem;margin-bottom:12px">📋</div>' +
+            '<div style="font-size:0.92rem;color:#2d3748;margin-bottom:8px">Al guardar se enviará automáticamente la remisión PDF a:</div>' +
+            '<div style="font-size:1.1rem;font-weight:700;color:#7d3c98;margin-bottom:4px">' + escHtml(names) + '</div>' +
+            '<div style="font-size:0.78rem;color:#718096">(Contabilidad · ' + escHtml(sigla) + ')</div>' +
+          '</div>' +
+          '<div class="mftr" style="justify-content:center;gap:12px">' +
+            '<button class="btn-cancel" id="_contab-no">Cancelar</button>' +
+            '<button class="btn-confirm" id="_contab-yes" style="background:#7d3c98">✓ Guardar y Enviar</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+      function close() { if (ov.parentElement) ov.parentElement.removeChild(ov); }
+      ov.querySelector('#_contab-x').addEventListener('click', function() { close(); resolve({ confirmed: false }); });
+      ov.querySelector('#_contab-no').addEventListener('click', function() { close(); resolve({ confirmed: false }); });
+      ov.querySelector('#_contab-yes').addEventListener('click', function() { close(); resolve({ confirmed: true, contabIds: ids, contabNames: names }); });
+      ov.addEventListener('click', function(e) { if (e.target === ov) { close(); resolve({ confirmed: false }); } });
+    });
+  }
+
+  async function enviarPDFContabilidad(doc, meta) {
+    if (!meta || !meta.contabIds || !meta.contabIds.length) return;
+    var ids = meta.contabIds.filter(function(id) { return id !== _uid; });
+    if (!ids.length) return;
+    try {
+      var result = await compartirPDF(doc, {
+        modulo: meta.modulo,
+        referencia: meta.referencia || null,
+        titulo: meta.titulo,
+        mensaje: null,
+        destinatarios: ids
+      });
+      if (result.ok) {
+        showToast('📨 Remisión enviada a contabilidad (' + (meta.contabNames || '') + ')', '#8e44ad');
+      }
+    } catch (e) { console.error('enviarPDFContabilidad error', e); }
+  }
+
   return {
     mountBell: mountBell,
     loadUnread: loadUnread,
@@ -711,7 +777,9 @@ var NOTIF = (function() {
     playSound: _playNotifSound,
     loadEnviadas: _loadEnviadas,
     fueEnviada: fueEnviada,
-    verificarBtn: verificarBtn
+    verificarBtn: verificarBtn,
+    confirmarEnvioContabilidad: confirmarEnvioContabilidad,
+    enviarPDFContabilidad: enviarPDFContabilidad
   };
 })();
 

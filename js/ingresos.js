@@ -880,6 +880,17 @@ function closeConfirmIng() {
 
 document.getElementById('confirm-ing-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeConfirmIng(); });
 
+var _pendingContabIng = null;
+async function confirmarYRegistrarIngreso() {
+  var empresa = document.getElementById('ing-empresa-origen').value || document.getElementById('ing-empresa-destino').value || '';
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'ingresos');
+    if (!r.confirmed) return;
+    _pendingContabIng = r;
+  }
+  await confirmAndSaveIngreso();
+}
+
 async function confirmAndSaveIngreso() {
   var fecha = document.getElementById('ing-fecha').value;
   var origen = getOrigenValue();
@@ -905,6 +916,33 @@ async function confirmAndSaveIngreso() {
       lineas: validLines,
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+    var _remIng = result.remision_destino || result.remision_origen || '';
+    if (_pendingContabIng && _pendingContabIng.contabIds && _pendingContabIng.contabIds.length && _remIng && typeof NOTIF !== 'undefined') {
+      try {
+        var _empresa = empresa_origen || empresa_destino || '';
+        var _entregas = validLines.map(function(l) {
+          return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l.Cantidad)||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+        }).filter(function(p) { return p.cantidad > 0; });
+        var _pdfData = {
+          empresa: _empresa, consecutivo: '', doc_title: 'REMISION DE INGRESO', doc_number: _remIng,
+          ref_label: null, date_label: 'Fecha ingreso', fecha_entrega: fecha, remision: _remIng,
+          left_fields: [['Origen', origen], ['Emp. Origen', empresa_origen], ['Responsable', responsable]],
+          right_fields: [['Emp. Destino', empresa_destino], ['Rem. Origen', result.remision_origen||remision_origen], ['Rem. Destino', result.remision_destino||remision_destino]],
+          entregas: _entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Ingreso',
+          return_doc: true, copies: ['COPIA - CONTABILIDAD']
+        };
+        var _cr = generarRemisionPDF(_pdfData);
+        if (_cr && _cr.doc) {
+          var _sigla = (typeof getSigla === 'function' ? getSigla(_empresa) : '') || '';
+          await NOTIF.enviarPDFContabilidad(_cr.doc, {
+            modulo: 'ingresos', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + _remIng,
+            titulo: 'Remisión ingreso #' + _remIng + ' — ' + (origen || ''),
+            contabIds: _pendingContabIng.contabIds, contabNames: _pendingContabIng.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
+    }
+    _pendingContabIng = null;
     closeConfirmIng();
     closeIngModal();
     var toastPartsNew = ['✅ ' + result.added + ' línea(s) registradas'];
@@ -915,7 +953,8 @@ async function confirmAndSaveIngreso() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Confirmar y registrar';
+    btn.textContent = '✓ Confirmar, registrar y enviar';
+    _pendingContabIng = null;
   }
 }
 

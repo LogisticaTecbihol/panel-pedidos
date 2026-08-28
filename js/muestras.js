@@ -1256,6 +1256,17 @@ function syncMuLinesFromDOM() {
 
 // ── Save ──
 
+var _pendingContabMu = null;
+async function registrarYEnviarMuestra() {
+  var empresa = document.getElementById('mu-empresa').value || '';
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'muestras');
+    if (!r.confirmed) return;
+    _pendingContabMu = r;
+  }
+  await saveMuestra();
+}
+
 async function saveMuestra() {
   var btn = document.getElementById('btn-save-mu');
 
@@ -1304,6 +1315,20 @@ async function saveMuestra() {
         _generar_remision: generarRemMu
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
+      if (_pendingContabMu && _pendingContabMu.contabIds && _pendingContabMu.contabIds.length && result.remision && typeof NOTIF !== 'undefined') {
+        try {
+          var _empMu = document.getElementById('mu-empresa').value || '';
+          var _entMu = [{ producto: producto, presentacion: presentacion, cantidad: cantEntregada || cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' }];
+          var _cr = generarRemisionPDF({ empresa: _empMu, consecutivo: document.getElementById('mu-consecutivo').value.trim(), ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: document.getElementById('mu-responsable').value.trim(), municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), entregas: _entMu, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+          if (_cr && _cr.doc) {
+            await NOTIF.enviarPDFContabilidad(_cr.doc, {
+              modulo: 'muestras', referencia: (document.getElementById('mu-consecutivo').value.trim()||'') + ' · Rem ' + result.remision,
+              titulo: 'Remisión muestras #' + result.remision, contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
+            });
+          }
+        } catch (e) { console.error('Auto-send contabilidad error', e); }
+      }
+      _pendingContabMu = null;
       closeMuModal();
       var toastMu = ['✅ Solicitud actualizada'];
       if (result.remision) toastMu.push('RS: ' + result.remision);
@@ -1313,6 +1338,7 @@ async function saveMuestra() {
       showToast('❌ Error: ' + err.message, '#e74c3c');
       btn.disabled = false;
       btn.textContent = '✓ Guardar cambios';
+      _pendingContabMu = null;
     }
     return;
   }
@@ -1364,6 +1390,21 @@ async function saveMuestra() {
     });
 
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+    if (_pendingContabMu && _pendingContabMu.contabIds && _pendingContabMu.contabIds.length && result.remision && typeof NOTIF !== 'undefined') {
+      try {
+        var _entMuN = productosValidos.map(function(p) {
+          return { producto: p.producto, presentacion: p.presentacion, cantidad: p.cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+        });
+        var _crN = generarRemisionPDF({ empresa: empresa, consecutivo: consecutivo, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: responsable, municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), entregas: _entMuN, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+        if (_crN && _crN.doc) {
+          await NOTIF.enviarPDFContabilidad(_crN.doc, {
+            modulo: 'muestras', referencia: (consecutivo||'') + ' · Rem ' + result.remision,
+            titulo: 'Remisión muestras #' + result.remision, contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
+    }
+    _pendingContabMu = null;
     closeMuModal();
     var toastMuNew = ['✅ Solicitud creada: ' + (result.added || 0) + ' línea(s)'];
     if (result.remision) toastMuNew.push('RS: ' + result.remision);
@@ -1377,7 +1418,8 @@ async function saveMuestra() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Registrar solicitud';
+    btn.textContent = '✓ Registrar y enviar';
+    _pendingContabMu = null;
   }
 }
 

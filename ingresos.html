@@ -258,7 +258,7 @@
       <div style="font-size:0.8rem;color:#718096" id="igd-footer-info"></div>
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="exportarRemisionIngreso()" style="background:#2c3e50;color:white;border-color:#2c3e50" title="Descargar PDF de remisión">📄 Exportar PDF</button>
-        <button class="btn-cancel auth-edit-only" onclick="enviarRemisionIngreso(this)" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar remisión con copia contabilidad a otro usuario del panel">📨 Enviar Remisión</button>
+        <button class="btn-cancel auth-edit-only" onclick="enviarRemisionIngreso(this)" style="background:#7d3c98;color:white;border-color:#7d3c98;display:none" title="Enviar remisión con copia contabilidad a otro usuario del panel">📨 Enviar Remisión</button>
         <button class="btn-cancel" onclick="closeIngDetail()">Cerrar</button>
       </div>
     </div>
@@ -441,7 +441,7 @@
     </div>
     <div class="mftr" style="justify-content:flex-end;gap:10px">
       <button class="btn-cancel" onclick="closeConfirmIng()">Volver a revisar</button>
-      <button class="btn-confirm" id="btn-confirm-ing-ok" onclick="confirmAndSaveIngreso()" style="background:#27ae60">✓ Confirmar y registrar</button>
+      <button class="btn-confirm" id="btn-confirm-ing-ok" onclick="confirmarYRegistrarIngreso()" style="background:#27ae60">✓ Confirmar, registrar y enviar</button>
     </div>
   </div>
 </div>

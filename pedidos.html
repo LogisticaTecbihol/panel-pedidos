@@ -462,12 +462,12 @@
           </div>
           <div id="rem-picker" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;min-width:260px;max-height:280px;overflow-y:auto;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:200"></div>
         </div>
-        <div style="position:relative;display:inline-block">
+        <div style="position:relative;display:none">
           <button class="btn-cancel" id="btn-export-rem-share" onclick="exportarRemisionDesdeModal(event, {share:true, triggerBtn:this})" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar remisión a otro usuario del panel">📨 Enviar Remisión ▾</button>
           <div id="rem-picker-share" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;min-width:260px;max-height:280px;overflow-y:auto;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:200"></div>
         </div>
         <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
-        <button class="btn-confirm" id="btn-confirmar" onclick="guardarTodo()">✓ Guardar cambios</button>
+        <button class="btn-confirm" id="btn-confirmar" onclick="guardarYEnviar()">✓ Guardar cambios y enviar</button>
       </div>
     </div>
   </div>

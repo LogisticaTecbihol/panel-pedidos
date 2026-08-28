@@ -1128,6 +1128,17 @@ function closeConfirmRe() {
 
 document.getElementById('confirm-re-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeConfirmRe(); });
 
+var _pendingContabRe = null;
+async function confirmarYRegistrarReenvase() {
+  var empresa = document.getElementById('re-empresa').value || '';
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'reenvases');
+    if (!r.confirmed) return;
+    _pendingContabRe = r;
+  }
+  await confirmAndSaveReenvase();
+}
+
 async function confirmAndSaveReenvase() {
   var empresa = document.getElementById('re-empresa').value;
   var empresaDestino = document.getElementById('re-empresa-destino').value;
@@ -1164,6 +1175,25 @@ async function confirmAndSaveReenvase() {
       if (!result.ok) throw new Error(result.error || 'Error al guardar línea ' + (i + 1));
       added++;
     }
+    if (_pendingContabRe && _pendingContabRe.contabIds && _pendingContabRe.contabIds.length && remAutoSalida && typeof NOTIF !== 'undefined') {
+      try {
+        var _entregas = productosValidos.map(function(p) {
+          return { producto: p.producto, presentacion: p.presentacion, cantidad: p.cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No', observaciones: p.observaciones||'' };
+        });
+        var tienePlanta = !!(planta && /planta/i.test(planta));
+        var _left = [['Empresa', (typeof EMPRESAS_SIGLA!=='undefined' && EMPRESAS_SIGLA[empresa]) || empresa || ''], ['Bodega', document.getElementById('re-bodega').value || ''], ['Planta', planta || '']];
+        var _right = [['Emp. Destino', empresaDestino ? ((typeof EMPRESAS_SIGLA!=='undefined' && EMPRESAS_SIGLA[empresaDestino]) || empresaDestino) : ''], ['Rem. Salida', remAutoSalida || ''], ['Rem. Entrada', remAutoEntrada || '']];
+        var _cr = generarRemisionPDF({ empresa: empresa, consecutivo: '', doc_title: tienePlanta ? 'REMISION DE SALIDA A PRODUCCION' : 'REMISION DE SALIDA', doc_number: remAutoSalida, ref_label: null, date_label: 'Fecha salida', fecha_entrega: fecha, remision: remAutoSalida, left_fields: _left, right_fields: _right, entregas: _entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Salida', last_col_header: 'Observaciones', return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+        if (_cr && _cr.doc) {
+          var _sigla = (typeof EMPRESAS_SIGLA!=='undefined' && EMPRESAS_SIGLA[empresa]) || '';
+          await NOTIF.enviarPDFContabilidad(_cr.doc, {
+            modulo: 'reenvases', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + remAutoSalida,
+            titulo: 'Remisión salida #' + remAutoSalida, contabIds: _pendingContabRe.contabIds, contabNames: _pendingContabRe.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
+    }
+    _pendingContabRe = null;
     closeConfirmRe();
     closeReModal();
     var toastReNew = ['✅ Salida registrada: ' + added + ' producto(s)'];
@@ -1174,7 +1204,8 @@ async function confirmAndSaveReenvase() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Confirmar y registrar';
+    btn.textContent = '✓ Confirmar, registrar y enviar';
+    _pendingContabRe = null;
   }
 }
 

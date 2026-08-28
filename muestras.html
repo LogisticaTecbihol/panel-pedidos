@@ -330,7 +330,7 @@
       <div style="font-size:0.8rem;color:#718096">Los datos se guardan directamente en la nube</div>
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="closeMuModal()">Cancelar</button>
-        <button class="btn-confirm" id="btn-save-mu" onclick="saveMuestra()" style="background:#8e44ad">✓ Registrar solicitud</button>
+        <button class="btn-confirm" id="btn-save-mu" onclick="registrarYEnviarMuestra()" style="background:#8e44ad">✓ Registrar y enviar</button>
       </div>
     </div>
   </div>
@@ -373,7 +373,7 @@
       <button class="btn-cancel" onclick="exportarMuestraSolicitudPDF()" style="background:#8e44ad;color:white;border-color:#8e44ad">📄 Exportar Solicitud PDF</button>
       <button class="btn-cancel" onclick="exportarMuestraSolicitudPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f" title="Enviar la solicitud a otro usuario del panel">📨 Enviar Solicitud</button>
       <button class="btn-cancel" onclick="exportarMuestraRemisionPDF()" style="background:#27ae60;color:white;border-color:#27ae60">📄 Exportar Remisión PDF</button>
-      <button class="btn-cancel" onclick="exportarMuestraRemisionPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f" title="Enviar remisión a otro usuario del panel">📨 Enviar Remisión</button>
+      <button class="btn-cancel" onclick="exportarMuestraRemisionPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f;display:none" title="Enviar remisión a otro usuario del panel">📨 Enviar Remisión</button>
       <button class="btn-cancel" onclick="closeViewMu()">Cerrar</button>
     </div>
   </div>

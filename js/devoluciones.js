@@ -568,8 +568,8 @@ function viewDevDetail(key) {
   var hasOut = !!r.Remision_Salida;
   if (btnIn) btnIn.style.display = hasIn ? 'inline-block' : 'none';
   if (btnOut) btnOut.style.display = hasOut ? 'inline-block' : 'none';
-  if (sendIn) sendIn.style.display = hasIn ? 'inline-block' : 'none';
-  if (sendOut) sendOut.style.display = hasOut ? 'inline-block' : 'none';
+  if (sendIn) sendIn.style.display = 'none';
+  if (sendOut) sendOut.style.display = 'none';
 
   if (typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
     var _cDev = r.Consecutivo || '';
@@ -1650,6 +1650,18 @@ function closeTramitarDev() {
 
 document.getElementById('tramitar-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeTramitarDev(); });
 
+var _pendingContabDev = null;
+async function tramitarYEnviarDev() {
+  var devLines = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
+  var empresaDev = devLines.length ? (devLines[0].Empresa || '') : '';
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var r = await NOTIF.confirmarEnvioContabilidad(empresaDev, 'devoluciones');
+    if (!r.confirmed) return;
+    _pendingContabDev = r;
+  }
+  await saveTramitarDev();
+}
+
 async function saveTramitarDev() {
   var ingresoEnabled = document.getElementById('tramitar-ingreso-enabled').checked;
   var salidaEnabled = document.getElementById('tramitar-salida-enabled').checked;
@@ -1698,6 +1710,45 @@ async function saveTramitarDev() {
     }
     var result = await apiPost(payload);
     if (!result.ok) throw new Error(result.error || 'Error al tramitar');
+    var _finalRemIng = result.remision_ingreso || remIngreso;
+    var _finalRemSal = result.remision_salida || remSalida;
+    if (_pendingContabDev && _pendingContabDev.contabIds && _pendingContabDev.contabIds.length && (_finalRemIng || _finalRemSal) && typeof NOTIF !== 'undefined') {
+      try {
+        var head = devLines.length ? devLines[0] : {};
+        var _allLines = tramitarDevLines.concat(validNewLines.map(function(l) {
+          return { Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada };
+        }));
+        var _entregas = _allLines.map(function(l) {
+          return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l.Cant_Entregada||l.Cantidad)||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+        }).filter(function(p) { return p.cantidad > 0; });
+        var _left = [['Cliente', head.Cliente||''], ['NIT', head.NIT||''], ['Vendedor', head.Vendedor||''], ['Telefono', head.Telefono||'']];
+        var _right = [['Direccion', head.Direccion||''], ['Municipio', head.Municipio||''], ['Departamento', head.Departamento||''], ['Bodega', '']];
+        var jsPDFDoc = null;
+        if (ingresoEnabled && _finalRemIng) {
+          _right[3] = ['Bodega', bodegaIngreso||''];
+          var rI = generarRemisionPDF({ empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIng, left_fields: _left, right_fields: _right, entregas: _entregas, qty_header:'Cant. Devuelta', file_prefix:'Remision_Ingreso_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] });
+          if (rI) jsPDFDoc = rI.doc;
+        }
+        if (salidaEnabled && _finalRemSal) {
+          _right[3] = ['Bodega', bodegaSalida||''];
+          var opts = { empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSal, left_fields: _left, right_fields: _right, entregas: _entregas, qty_header:'Cant. Devuelta', file_prefix:'Remision_Salida_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] };
+          if (jsPDFDoc) opts._doc = jsPDFDoc;
+          var rS = generarRemisionPDF(opts);
+          if (rS) jsPDFDoc = rS.doc;
+        }
+        if (jsPDFDoc) {
+          var refP = [(head.Consecutivo||'')];
+          if (_finalRemIng) refP.push('RE ' + _finalRemIng);
+          if (_finalRemSal) refP.push('RS ' + _finalRemSal);
+          await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
+            modulo: 'devoluciones', referencia: refP.join(' · '),
+            titulo: 'Remisión devolución — ' + (head.Cliente||''),
+            contabIds: _pendingContabDev.contabIds, contabNames: _pendingContabDev.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
+    }
+    _pendingContabDev = null;
     closeTramitarDev();
     var toastDev = ['✅ Devolución tramitada'];
     if (result.nuevas_added) toastDev.push(result.nuevas_added + ' línea(s) agregada(s)');
@@ -1708,7 +1759,8 @@ async function saveTramitarDev() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Tramitar devolución';
+    btn.textContent = '✓ Tramitar y enviar';
+    _pendingContabDev = null;
   }
 }
 

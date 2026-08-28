@@ -432,8 +432,8 @@ function viewCamDetail(key) {
   var sendOut = document.getElementById('btn-cam-send-salida');
   if (btnIn) btnIn.style.display = r.Remision_Ingreso ? 'inline-block' : 'none';
   if (btnOut) btnOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
-  if (sendIn) sendIn.style.display = r.Remision_Ingreso ? 'inline-block' : 'none';
-  if (sendOut) sendOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
+  if (sendIn) sendIn.style.display = 'none';
+  if (sendOut) sendOut.style.display = 'none';
 
   if (typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
     var _cCam = r.Consecutivo || '';
@@ -849,6 +849,16 @@ function closeGestionarCam() {
 }
 document.getElementById('gestionar-cam-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeGestionarCam(); });
 
+var _pendingContabCam = null;
+async function gestionarYEnviarCam() {
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var r = await NOTIF.confirmarEnvioContabilidad(gestionarCamEmpresa, 'cambios');
+    if (!r.confirmed) return;
+    _pendingContabCam = r;
+  }
+  await saveGestionarCam();
+}
+
 async function saveGestionarCam() {
   var remIngreso = document.getElementById('gestionar-cam-remision-ingreso').value.trim();
   var bodegaIngreso = document.getElementById('gestionar-cam-bodega-ingreso').value;
@@ -911,6 +921,42 @@ async function saveGestionarCam() {
       });
     }
 
+    var _finalRemIngC = result.remision_ingreso || remIngreso;
+    var _finalRemSalC = result.remision_salida || remSalida;
+    if (_pendingContabCam && _pendingContabCam.contabIds && _pendingContabCam.contabIds.length && (_finalRemIngC || _finalRemSalC) && typeof NOTIF !== 'undefined') {
+      try {
+        var camLines = cambios.filter(function(r) { return gestionarCamIds.indexOf(r.__row || r.id) >= 0; });
+        var head = camLines.length ? camLines[0] : {};
+        var cambiarLines = camLines.filter(function(l) { return l.Tipo === 'Cambiar'; });
+        var entregarLines = camLines.filter(function(l) { return l.Tipo === 'Entregar'; });
+        var jsPDFDoc = null;
+        if (_finalRemIngC) {
+          var srcIng = cambiarLines.length ? cambiarLines : camLines;
+          var _eIng = srcIng.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0; });
+          var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',head.Estado||'Pendiente']], entregas:_eIng, qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
+          if (rI) jsPDFDoc = rI.doc;
+        }
+        if (_finalRemSalC) {
+          var srcSal = entregarLines.length ? entregarLines : cambiarLines;
+          var _eSal = srcSal.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0; });
+          var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',head.Estado||'Pendiente']], entregas:_eSal, qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
+          if (jsPDFDoc) optsS._doc = jsPDFDoc;
+          var rS = generarRemisionPDF(optsS);
+          if (rS) jsPDFDoc = rS.doc;
+        }
+        if (jsPDFDoc) {
+          var refP = [(head.Consecutivo||'')];
+          if (_finalRemIngC) refP.push('RE ' + _finalRemIngC);
+          if (_finalRemSalC) refP.push('RS ' + _finalRemSalC);
+          await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
+            modulo: 'cambios', referencia: refP.join(' · '),
+            titulo: 'Remisión cambio — ' + (head.Cliente||''),
+            contabIds: _pendingContabCam.contabIds, contabNames: _pendingContabCam.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
+    }
+    _pendingContabCam = null;
     closeGestionarCam();
     var toastParts = ['✅ Cambio cerrado'];
     if (result.remision_ingreso) toastParts.push('RE: ' + result.remision_ingreso);
@@ -922,7 +968,8 @@ async function saveGestionarCam() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Cerrar cambio';
+    btn.textContent = '✓ Cerrar cambio y enviar';
+    _pendingContabCam = null;
   }
 }
 
