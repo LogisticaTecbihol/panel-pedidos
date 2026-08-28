@@ -756,6 +756,7 @@ function exportarDevRemisionPDF(tipo, opts) {
       modulo: 'devoluciones',
       referencia: (head.Consecutivo || '') + ' · Rem ' + remision,
       titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' devolución #' + remision,
+      empresa: head.Empresa || '',
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));

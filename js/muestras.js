@@ -953,6 +953,7 @@ function exportarMuestraRemisionPDF(opts) {
       modulo: 'muestras',
       referencia: (ctx.consec || '') + ' · Rem ' + remision,
       titulo: 'Remisión muestras #' + remision + ' — ' + (head.Solicitante || 'sin solicitante'),
+      empresa: head.Empresa || '',
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));

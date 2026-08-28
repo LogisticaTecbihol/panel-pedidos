@@ -133,6 +133,7 @@ function enviarRemisionPDF(data, meta) {
     modulo: meta.modulo,
     referencia: meta.referencia,
     titulo: meta.titulo,
+    empresa: data.empresa || meta.empresa || null,
     triggerBtn: meta.triggerBtn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));

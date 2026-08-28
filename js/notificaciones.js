@@ -25,6 +25,26 @@ var NOTIF = (function() {
   var _stylesInjected = false;
   var _directorioPromise = null;
   var _enviadasCache = null;
+  var _contabilidadMapPromise = null;
+  var AUTO_CONTAB_MODS = ['pedidos', 'ingresos', 'devoluciones', 'cambios', 'muestras', 'reenvases'];
+
+  function _loadContabilidadMap() {
+    if (_contabilidadMapPromise) return _contabilidadMapPromise;
+    _contabilidadMapPromise = _sb.rpc('list_contabilidad_por_empresa').then(function(res) {
+      if (res.error) {
+        console.error('NOTIF list_contabilidad_por_empresa', res.error);
+        _contabilidadMapPromise = null;
+        return {};
+      }
+      var map = {};
+      (res.data || []).forEach(function(r) {
+        if (!map[r.empresa_sigla]) map[r.empresa_sigla] = [];
+        if (map[r.empresa_sigla].indexOf(r.usuario_id) < 0) map[r.empresa_sigla].push(r.usuario_id);
+      });
+      return map;
+    });
+    return _contabilidadMapPromise;
+  }
 
   // Directorio de usuarios (id, nombre, email, rol, activo) resuelto vía
   // RPC SECURITY DEFINER — la RLS estricta de `usuarios` sólo deja a un
@@ -538,6 +558,18 @@ var NOTIF = (function() {
       var mensaje = (msg.value || '').trim() || null;
       var totalSent = 0;
       var errores = [];
+
+      if (meta.empresa && AUTO_CONTAB_MODS.indexOf(meta.modulo) >= 0) {
+        try {
+          var sigla = (typeof getSigla === 'function') ? getSigla(meta.empresa) : meta.empresa;
+          var contabMap = await _loadContabilidadMap();
+          var contabIds = contabMap[sigla] || [];
+          contabIds.forEach(function(cid) {
+            if (cid !== _uid && dests.indexOf(cid) < 0) dests.push(cid);
+          });
+        } catch (e) { console.error('Auto-contabilidad lookup failed', e); }
+      }
+
       var jobs = [{ buildDoc: meta.buildDoc, m: { modulo: meta.modulo, referencia: meta.referencia || null, titulo: meta.titulo } }];
       if (meta.extras && meta.extras.length) {
         meta.extras.forEach(function(ex) {

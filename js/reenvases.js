@@ -750,6 +750,7 @@ function enviarRemisionReenvase(btn) {
     modulo: 'reenvases',
     referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + remNum,
     titulo: 'Remisión salida #' + remNum + ' — ' + (EMPRESAS_SIGLA[g.Empresa] || g.Empresa || ''),
+    empresa: empresa,
     triggerBtn: btn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));

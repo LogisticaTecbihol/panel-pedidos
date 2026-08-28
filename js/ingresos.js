@@ -474,6 +474,7 @@ function enviarRemisionIngreso(btn) {
     modulo: 'ingresos',
     referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + remNum,
     titulo: 'Remisión ingreso #' + remNum + ' — ' + (g.Origen || ''),
+    empresa: empresa,
     triggerBtn: btn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));

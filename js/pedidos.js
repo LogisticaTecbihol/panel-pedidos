@@ -4709,6 +4709,7 @@ function _exportarRemisionEspecifica(rem, opts) {
       modulo: 'pedidos',
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
       titulo: 'Remisión #' + rem.remision + ' — ' + (data.cliente || 'sin cliente'),
+      empresa: c.Nombre_Empresa || '',
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
@@ -4841,6 +4842,7 @@ function exportarPedidoDesdeModal(opts) {
       modulo: 'pedidos',
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || ''),
       titulo: 'Pedido #' + (c.Consecutivo || '') + ' — ' + (data.cliente || 'sin cliente'),
+      empresa: c.Nombre_Empresa || '',
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarPedidoPDF(Object.assign({}, data, { return_doc: true }));
