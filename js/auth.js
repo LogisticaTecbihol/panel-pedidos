@@ -34,11 +34,66 @@ var AUTH = (function() {
     return _ready;
   }
 
+  // Corre `promise` contra un límite de tiempo. Si se agota, rechaza con Error('auth-timeout').
+  // Evita que un servicio de Supabase caído deje la app colgada en "Conectando con la nube...".
+  function _withTimeout(promise, ms) {
+    return new Promise(function(resolve, reject) {
+      var done = false;
+      var t = setTimeout(function() {
+        if (!done) { done = true; reject(new Error('auth-timeout')); }
+      }, ms);
+      promise.then(
+        function(v) { if (!done) { done = true; clearTimeout(t); resolve(v); } },
+        function(e) { if (!done) { done = true; clearTimeout(t); reject(e); } }
+      );
+    });
+  }
+
+  // Muestra una pantalla de "sin conexión / reintentar" en vez del spinner infinito.
+  function _showAuthError(msg) {
+    var lz = document.getElementById('load-zone');
+    var main = document.getElementById('main');
+    if (lz) {
+      var sp = document.getElementById('load-spinner');
+      if (sp) sp.style.display = 'none';
+      var h = lz.querySelector('h2'); if (h) h.textContent = 'Sin conexión con la nube';
+      var p = lz.querySelector('p'); if (p) p.textContent = msg;
+      var le = document.getElementById('load-error');
+      if (le) le.textContent = 'El servicio puede estar temporalmente caído. Revisa tu conexión o inténtalo de nuevo en unos minutos.';
+      var rb = document.getElementById('btn-retry');
+      if (rb) { rb.style.display = ''; rb.textContent = '🔄 Reintentar'; rb.onclick = function() { location.reload(); }; }
+      lz.style.display = '';
+      if (main) main.style.display = 'none';
+      return;
+    }
+    if (document.getElementById('auth-error-overlay')) return;
+    var ov = document.createElement('div');
+    ov.id = 'auth-error-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#f7fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:inherit';
+    ov.innerHTML =
+      '<div style="font-size:2.4rem;margin-bottom:10px">☁️⚠️</div>' +
+      '<h2 style="color:#2d3748;margin:0 0 8px;font-size:1.15rem">Sin conexión con la nube</h2>' +
+      '<p style="color:#718096;max-width:420px;margin:0 0 18px;font-size:0.9rem">' + msg +
+      ' El servicio puede estar temporalmente caído; inténtalo de nuevo en unos minutos.</p>' +
+      '<button style="background:#1a5276;color:#fff;border:none;padding:10px 22px;border-radius:8px;cursor:pointer;font-size:0.9rem;font-weight:700">🔄 Reintentar</button>';
+    ov.querySelector('button').onclick = function() { location.reload(); };
+    document.body.appendChild(ov);
+    if (main) main.style.display = 'none';
+  }
+
   async function _init() {
     var isLoginPage = location.pathname.endsWith('login.html');
+    var authErrored = false;
 
     try {
-      var { data } = await _sb.auth.getSession();
+      var sess;
+      try {
+        sess = await _withTimeout(_sb.auth.getSession(), 8000);
+      } catch (e) {
+        if (!isLoginPage) { authErrored = true; _showAuthError('No se pudo conectar con el servicio de autenticación.'); }
+        return;
+      }
+      var data = sess.data;
 
       if (!data.session) {
         if (!isLoginPage) {
@@ -50,23 +105,29 @@ var AUTH = (function() {
 
       _user = data.session.user;
 
-      var authResults = await Promise.all([
-        _sb.from('usuarios')
-          .select('*')
-          .eq('id', _user.id)
-          .eq('activo', true)
-          .single(),
-        _sb.from('usuario_empresas')
-          .select('empresa_sigla, codigo_comercial, empresas(nombre_completo)')
-          .eq('usuario_id', _user.id),
-        _sb.from('usuario_modulos')
-          .select('modulo')
-          .eq('usuario_id', _user.id)
-      ]);
+      var authResults;
+      try {
+        authResults = await _withTimeout(Promise.all([
+          _sb.from('usuarios')
+            .select('*')
+            .eq('id', _user.id)
+            .eq('activo', true)
+            .single(),
+          _sb.from('usuario_empresas')
+            .select('empresa_sigla, codigo_comercial, empresas(nombre_completo)')
+            .eq('usuario_id', _user.id),
+          _sb.from('usuario_modulos')
+            .select('modulo')
+            .eq('usuario_id', _user.id)
+        ]), 12000);
+      } catch (e) {
+        if (!isLoginPage) { authErrored = true; _showAuthError('No se pudieron cargar tus datos de usuario.'); }
+        return;
+      }
 
       var res = authResults[0];
       if (res.error || !res.data) {
-        await _sb.auth.signOut();
+        try { await _withTimeout(_sb.auth.signOut(), 5000); } catch (e) {}
         if (!isLoginPage) {
           location.replace('login.html');
           return new Promise(function() {});
@@ -95,7 +156,9 @@ var AUTH = (function() {
       _renderAuthUI();
       _setupAuthListener();
     } finally {
-      if (typeof _authResolve === 'function') _authResolve();
+      // No liberar _authReady si hubo error de conexión: la pantalla de reintento
+      // queda visible y los módulos no intentan cargar sobre una sesión inválida.
+      if (!authErrored && typeof _authResolve === 'function') _authResolve();
     }
   }
 
