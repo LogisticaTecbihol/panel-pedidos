@@ -4288,7 +4288,9 @@ function initDespachosTab() {
 }
 
 // ── Vista Detallada (read-only) ──
-var detSort = [{ col: 'empresa', dir: 'asc' }];
+// Orden por defecto igual que las pestañas Activos e Histórico: primero los
+// pedidos más recientes (fecha desc y, a igualdad de fecha, consecutivo desc).
+var detSort = [{ col: 'fecha', dir: 'desc' }, { col: 'consecutivo', dir: 'desc' }];
 
 function toggleDetSort(col, e) {
   var shift = e && e.shiftKey;
