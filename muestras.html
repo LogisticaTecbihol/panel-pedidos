@@ -50,6 +50,8 @@
 .adjunto-preview-box .btn-close-preview:hover{background:rgba(0,0,0,0.7)}
 .adjunto-preview-box img{max-width:85vw;max-height:85vh;display:block}
 .adjunto-preview-box iframe{width:85vw;height:85vh;border:none}
+/* ── Sub-pestañas Pendientes / Tramitadas ── */
+#panel-mu-solicitudes.solo-lectura .mu-accion-escritura{display:none!important}
 </style>
 </head>
 <body>
@@ -146,17 +148,18 @@
   </div>
 
   <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-    <button class="btn-export" id="tab-mu-solicitudes" onclick="switchMuTab('mu-solicitudes')" style="background:#8e44ad;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700">🧪 Solicitudes</button>
+    <button class="btn-export" id="tab-mu-pendientes" onclick="switchMuTab('mu-pendientes')" style="background:#8e44ad;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700" title="Solicitudes por aprobar o aprobadas sin despachar">⏳ Pendientes</button>
+    <button class="btn-export" id="tab-mu-tramitadas" onclick="switchMuTab('mu-tramitadas')" style="background:#718096;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700" title="Solicitudes despachadas o rechazadas — solo consulta">✅ Tramitadas</button>
     <button class="btn-export" id="tab-mu-detalle" onclick="switchMuTab('mu-detalle')" style="background:#718096;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:700">📑 Vista detallada</button>
   </div>
 
   <div id="panel-mu-solicitudes">
   <div class="card">
     <div class="card-head">
-      <h3>Solicitudes de muestras <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <h3><span id="mu-list-title">Solicitudes pendientes</span> <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort-mu" onclick="clearSortMu()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
-        <button class="btn-dl auth-edit-only" onclick="openNewMuestra()" style="background:#8e44ad">🧪 Nueva Solicitud</button>
+        <button class="btn-dl auth-edit-only mu-accion-escritura" onclick="openNewMuestra()" style="background:#8e44ad">🧪 Nueva Solicitud</button>
         <button class="btn-dl" onclick="loadMuestras()">🔄 Actualizar datos</button>
       </div>
     </div>
@@ -418,6 +421,6 @@
 <script src="js/pdf-remision.js?v=20260818g"></script>
 <script src="js/existencias.js"></script>
 <script src="js/asignacion-inventario.js"></script>
-<script src="js/muestras.js?v=20260828b"></script>
+<script src="js/muestras.js?v=20260829a"></script>
 </body>
 </html>

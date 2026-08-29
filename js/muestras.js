@@ -192,6 +192,14 @@ var MU_COLS = [
 
 var groupedMu = [];
 
+// Sub-pestaña activa: 'pendientes' o 'tramitadas' (esta última solo lectura)
+var muScope = 'pendientes';
+
+// Una solicitud está "tramitada" cuando ya fue despachada o rechazada (no requiere más acción)
+function esMuestraTramitada(r) {
+  return r.Estado === 'Despachada' || (r.Estado_Aprobacion || 'Por aprobar') === 'Rechazada';
+}
+
 // ── Load data ──
 
 async function loadMuestras() {
@@ -320,6 +328,9 @@ function applyMuFilters() {
   });
 
   groupedMu = groupMuestras(filteredMu);
+  // Ámbito de la sub-pestaña: Pendientes vs Tramitadas (despachadas o rechazadas)
+  if (muScope === 'tramitadas') groupedMu = groupedMu.filter(esMuestraTramitada);
+  else groupedMu = groupedMu.filter(function(r) { return !esMuestraTramitada(r); });
   sortMuData();
   renderMuTable();
   renderDetalleMu();
@@ -415,9 +426,13 @@ function renderMuTable() {
   var btnSort = document.getElementById('btn-clear-sort-mu');
   btnSort.style.display = muSortCols.length ? 'inline-block' : 'none';
 
+  var muListTitle = document.getElementById('mu-list-title');
+  if (muListTitle) muListTitle.textContent = muScope === 'tramitadas' ? 'Solicitudes tramitadas (consulta)' : 'Solicitudes pendientes';
+
   var tbody = document.getElementById('t-body-mu');
   if (!groupedMu.length) {
-    tbody.innerHTML = '<tr><td colspan="' + MU_COLS.length + '" class="empty">No hay solicitudes de muestras registradas</td></tr>';
+    var muEmptyMsg = muScope === 'tramitadas' ? 'No hay solicitudes tramitadas.' : 'No hay solicitudes pendientes.';
+    tbody.innerHTML = '<tr><td colspan="' + MU_COLS.length + '" class="empty">' + muEmptyMsg + '</td></tr>';
     document.getElementById('row-ct').textContent = '';
     return;
   }
@@ -442,9 +457,10 @@ function renderMuTable() {
     var sigla = EMPRESAS_SIGLA[r.Empresa] || r.Empresa || '—';
     var siglaCls = 'sigla-' + (EMPRESAS_SIGLA[r.Empresa] || 'DEFAULT');
 
+    var soloLectura = muScope === 'tramitadas';
     var canApr = AUTH.canApprove && AUTH.canApprove();
     var aprBtns = '';
-    if (canApr && apr === 'Por aprobar') {
+    if (canApr && apr === 'Por aprobar' && !soloLectura) {
       var argsAR = "'" + escHtml((r.Empresa || '').replace(/'/g, "\\'")) + "','" + escHtml(String(r.Consecutivo || '').replace(/'/g, "\\'")) + "'";
       aprBtns =
         '<button class="btn-edit" style="background:#27ae60;color:white;border-color:#27ae60" title="Aprobar" onclick="approveMuestra(' + argsAR + ')">✅</button> ' +
@@ -465,8 +481,8 @@ function renderMuTable() {
       '<td>' + estadoBadge + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
         aprBtns +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
-        (AUTH.canDelete() ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
+        (AUTH.canEdit() && !soloLectura ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
+        (AUTH.canDelete() && !soloLectura ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 }
@@ -1600,14 +1616,26 @@ async function confirmRejectMu() {
 
 // ── Tabs: Solicitudes / Vista detallada ──
 
+// 'mu-pendientes' y 'mu-tramitadas' comparten panel-mu-solicitudes (cambian el ámbito);
+// 'mu-tramitadas' es solo lectura. 'mu-detalle' es su propio panel.
 function switchMuTab(tab) {
-  var tabs = ['mu-solicitudes', 'mu-detalle'];
-  tabs.forEach(function(t) {
-    var panel = document.getElementById('panel-' + t);
+  var esLista = (tab === 'mu-pendientes' || tab === 'mu-tramitadas');
+  if (esLista) muScope = tab === 'mu-tramitadas' ? 'tramitadas' : 'pendientes';
+
+  ['mu-pendientes', 'mu-tramitadas', 'mu-detalle'].forEach(function(t) {
     var btn = document.getElementById('tab-' + t);
-    if (panel) panel.style.display = t === tab ? 'block' : 'none';
     if (btn) btn.style.background = t === tab ? '#8e44ad' : '#718096';
   });
+
+  var panelSol = document.getElementById('panel-mu-solicitudes');
+  if (panelSol) {
+    panelSol.style.display = esLista ? 'block' : 'none';
+    panelSol.classList.toggle('solo-lectura', muScope === 'tramitadas');
+  }
+  var panelDet = document.getElementById('panel-mu-detalle');
+  if (panelDet) panelDet.style.display = tab === 'mu-detalle' ? 'block' : 'none';
+
+  if (esLista) applyMuFilters();
   if (tab === 'mu-detalle') renderDetalleMu();
 }
 
