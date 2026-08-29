@@ -166,9 +166,9 @@ async function saveEdit() {
   try {
     var res;
     if (editingId) {
-      res = await _sb.from('maestro_productos').update({ Producto: nombre }).eq('id', editingId);
+      res = await _sb.from('maestro_productos').update({ Producto: nombre }).eq('id', editingId).select('id, Producto').single();
     } else {
-      res = await _sb.from('maestro_productos').insert({ Producto: nombre });
+      res = await _sb.from('maestro_productos').insert({ Producto: nombre }).select('id, Producto').single();
     }
     if (res.error) {
       if (res.error.code === '23505') throw new Error('Ya existe un producto con ese nombre');
@@ -177,9 +177,16 @@ async function saveEdit() {
       }
       throw new Error(res.error.message);
     }
+    // Actualiza la lista en memoria — sin recargar toda la página
+    if (editingId) {
+      var idx = productosData.findIndex(function(p) { return p.id === editingId; });
+      if (idx >= 0) productosData[idx] = res.data;
+    } else if (res.data) {
+      productosData.push(res.data);
+    }
     closeEdit();
+    renderTable();
     showToast(editingId ? '✅ Producto actualizado' : '✅ Producto agregado');
-    await loadProductos();
   } catch (err) {
     showToast('❌ ' + err.message, '#e74c3c');
   } finally {
@@ -208,16 +215,18 @@ async function confirmDelete() {
   btn.disabled = true;
   btn.textContent = '⏳ Eliminando...';
   try {
-    var res = await _sb.from('maestro_productos').delete().eq('id', deleteId);
+    var res = await _sb.from('maestro_productos').delete().eq('id', deleteId).select('id');
     if (res.error) {
       if (res.error.code === '42501' || /row-level security/i.test(res.error.message)) {
         throw new Error('No tienes permiso para eliminar productos');
       }
       throw new Error(res.error.message);
     }
+    if (!res.data || !res.data.length) throw new Error('No tienes permiso para eliminar productos');
+    productosData = productosData.filter(function(p) { return p.id !== deleteId; });
     closeDelete();
+    renderTable();
     showToast('✅ Producto eliminado');
-    await loadProductos();
   } catch (err) {
     showToast('❌ ' + err.message, '#e74c3c');
   } finally {
