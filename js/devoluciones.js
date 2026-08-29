@@ -10,7 +10,9 @@ var tramitarDevKey = null;
 var selectedDevKeys = {};
 var devCurrentPage = 1;
 var devPageSize = 25;
-var devDetSort = [];
+// Orden por defecto igual que las sub-pestañas Pendientes/Tramitadas:
+// fecha desc (solicitudes más recientes primero).
+var devDetSort = [{ col: 'fecha', dir: 'desc' }];
 var devViewingKey = null;
 // Sub-pestaña activa de la lista: 'pendientes' o 'tramitadas' (esta última solo lectura)
 var devScope = 'pendientes';

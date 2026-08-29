@@ -1641,7 +1641,9 @@ function switchMuTab(tab) {
 
 // ── Vista detallada (flat product lines) ──
 
-var detMuSort = [];
+// Orden por defecto igual que las sub-pestañas Pendientes/Tramitadas:
+// fecha de solicitud desc (solicitudes más recientes primero).
+var detMuSort = [{ col: 'fecha', dir: 'desc' }];
 
 function toggleDetMuSort(col, e) {
   var shift = e && e.shiftKey;
