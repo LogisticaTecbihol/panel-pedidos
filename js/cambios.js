@@ -12,6 +12,8 @@ var catalogoProductosCam = [];
 var catalogoClientesCam = [];
 var camViewingKey = null;
 var ocsLegalizadasPorCambio = {};
+// Sub-pestaña activa: 'pendientes' (estado Pendiente) o 'tramitadas' (Completado + Cerrado, solo lectura)
+var camScope = 'pendientes';
 
 // ── Constants ──
 var EMPRESAS_CAM = [
@@ -256,6 +258,14 @@ function renderCamTable() {
   var filtered = filteredCam();
   var grouped = groupCambios(filtered);
   grouped.sort(function(a, b) { return (b.Fecha_Solicitud || '').localeCompare(a.Fecha_Solicitud || ''); });
+
+  // Ámbito de la sub-pestaña: Pendientes (estado Pendiente) vs Tramitadas (Completado + Cerrado)
+  if (camScope === 'tramitadas') grouped = grouped.filter(function(g) { return (g._estado || 'Pendiente') !== 'Pendiente'; });
+  else grouped = grouped.filter(function(g) { return (g._estado || 'Pendiente') === 'Pendiente'; });
+
+  var camListTitle = document.getElementById('cam-list-title');
+  if (camListTitle) camListTitle.textContent = camScope === 'tramitadas' ? 'Cambios tramitados (consulta)' : 'Cambios pendientes';
+
   var allGrouped = groupCambios(cambios);
 
   document.getElementById('sc-total').textContent = allGrouped.length;
@@ -277,7 +287,8 @@ function renderCamTable() {
 
   var tbody = document.getElementById('t-body-cam');
   if (!grouped.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="empty">No hay cambios registrados.</div></td></tr>';
+    var emptyMsg = camScope === 'tramitadas' ? 'No hay cambios tramitados.' : 'No hay cambios pendientes.';
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty">' + emptyMsg + '</div></td></tr>';
     return;
   }
 
@@ -290,7 +301,7 @@ function renderCamTable() {
       : esPend
         ? '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>'
         : '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Completado</span>';
-    var gestionarBtn = AUTH.canEdit() ? '<button onclick="openGestionarCam(\''+keyEsc+'\')" title="Gestionar cambio" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Gestionar</button>' : '';
+    var gestionarBtn = (AUTH.canEdit() && camScope !== 'tramitadas') ? '<button onclick="openGestionarCam(\''+keyEsc+'\')" title="Gestionar cambio" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Gestionar</button>' : '';
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">'+(i+1)+'</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">'+fmtDate(r.Fecha_Solicitud)+'</td>' +
@@ -305,11 +316,23 @@ function renderCamTable() {
       '<td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
         '<button onclick="viewCamDetail(\''+keyEsc+'\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
         gestionarBtn +
-        (AUTH.canEdit() ? '<button onclick="openEditCamGroup(\''+keyEsc+'\')" title="Editar" style="background:#8e44ad;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">✏️</button>' : '') +
-        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteCamGroup(\''+keyEsc+'\')" title="Eliminar">🗑️</button>' : '') +
+        (AUTH.canEdit() && camScope !== 'tramitadas' ? '<button onclick="openEditCamGroup(\''+keyEsc+'\')" title="Editar" style="background:#8e44ad;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">✏️</button>' : '') +
+        (AUTH.canDelete() && camScope !== 'tramitadas' ? '<button class="btn-del" onclick="openDeleteCamGroup(\''+keyEsc+'\')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
+}
+
+// ── Sub-tab switching (Pendientes / Tramitadas) ──
+function switchCamSubTab(tab) {
+  camScope = (tab === 'tramitadas') ? 'tramitadas' : 'pendientes';
+  var bp = document.getElementById('cam-subtab-pendientes');
+  var bt = document.getElementById('cam-subtab-tramitadas');
+  if (bp) bp.style.background = camScope === 'pendientes' ? '#8e44ad' : '#718096';
+  if (bt) bt.style.background = camScope === 'tramitadas' ? '#8e44ad' : '#718096';
+  var panel = document.getElementById('panel-cam-lista');
+  if (panel) panel.classList.toggle('solo-lectura', camScope === 'tramitadas');
+  renderCamTable();
 }
 
 // ── Detail view ──

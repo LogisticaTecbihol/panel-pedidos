@@ -12,6 +12,8 @@ var devCurrentPage = 1;
 var devPageSize = 25;
 var devDetSort = [];
 var devViewingKey = null;
+// Sub-pestaña activa de la lista: 'pendientes' o 'tramitadas' (esta última solo lectura)
+var devScope = 'pendientes';
 
 // ── Constants ──
 function getSiglaDev(n) { return getSigla(n); }
@@ -323,7 +325,7 @@ function updateBulkBarDev() {
   var count = getSelectedDevCount();
   var bar = document.getElementById('bulk-bar-dev');
   if (!bar) return;
-  if (count > 0) {
+  if (count > 0 && devScope === 'pendientes') {
     bar.style.display = 'flex';
     document.getElementById('bulk-count-dev').textContent = count;
   } else {
@@ -346,7 +348,7 @@ function clearSelectionDev() {
 
 function renderDevHeader() {
   var cols = [
-    { label:'<input type="checkbox" id="dev-select-all" onclick="toggleSelectAllDev(this)" title="Seleccionar todos los pendientes">', id:null },
+    { label: devScope === 'tramitadas' ? '' : '<input type="checkbox" id="dev-select-all" onclick="toggleSelectAllDev(this)" title="Seleccionar todos los pendientes">', id:null },
     { label:'#', id:null },
     { label:'Fecha', id:'fecha' },
     { label:'Empresa', id:'empresa' },
@@ -378,6 +380,13 @@ function renderDevTable() {
   var filtered = filteredDev();
   var grouped = groupDevoluciones(applySortDev(filtered));
 
+  // Ámbito de la sub-pestaña: Pendientes vs Tramitadas
+  if (devScope === 'tramitadas') grouped = grouped.filter(function(g) { return (g._estado || 'Pendiente') === 'Tramitada'; });
+  else grouped = grouped.filter(function(g) { return (g._estado || 'Pendiente') !== 'Tramitada'; });
+
+  var listTitle = document.getElementById('dev-list-title');
+  if (listTitle) listTitle.textContent = devScope === 'tramitadas' ? 'Devoluciones tramitadas (consulta)' : 'Devoluciones pendientes';
+
   var allGrouped = groupDevoluciones(devoluciones);
   var totalRegs = allGrouped.length;
   var totalValor = devoluciones.reduce(function(s, r) { return s + (Number(r.Valor_Total)||0); }, 0);
@@ -404,7 +413,8 @@ function renderDevTable() {
 
   var tbody = document.getElementById('t-body-dev');
   if (!grouped.length) {
-    tbody.innerHTML = '<tr><td colspan="14"><div class="empty">No hay devoluciones con los filtros seleccionados.</div></td></tr>';
+    var devEmptyMsg = devScope === 'tramitadas' ? 'No hay devoluciones tramitadas.' : 'No hay devoluciones pendientes.';
+    tbody.innerHTML = '<tr><td colspan="14"><div class="empty">' + devEmptyMsg + '</div></td></tr>';
     renderDevPagination(0);
     updateBulkBarDev();
     return;
@@ -421,7 +431,7 @@ function renderDevTable() {
     var estadoBadge = esTramitada
       ? '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Tramitada</span>'
       : '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>';
-    var tramitarBtn = !AUTH.canEdit() ? '' : esTramitada
+    var tramitarBtn = (!AUTH.canEdit() || devScope === 'tramitadas') ? '' : esTramitada
       ? '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Ver/editar trámite" style="background:#6c757d;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Editar</button>'
       : '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Tramitar devolución" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Tramitar</button>';
     var checkboxTd = !AUTH.canEdit()
@@ -446,7 +456,7 @@ function renderDevTable() {
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-edit" onclick="viewDevDetail(\'' + keyEsc + '\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
         tramitarBtn +
-        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar devolución">🗑️</button>' : '') +
+        (AUTH.canDelete() && devScope !== 'tramitadas' ? '<button class="btn-del" onclick="openDeleteDevGroup(\'' + keyEsc + '\')" title="Eliminar devolución">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -2388,23 +2398,33 @@ function renderDevPagination(totalRows) {
 }
 
 // ── Sub-tab switching ──
+// 'pendientes' y 'tramitadas' comparten panel-dev-ordenes (cambian el ámbito);
+// 'tramitadas' es solo lectura. 'detalle' es su propio panel.
 function switchDevSubTab(tab) {
   var ordenes = document.getElementById('panel-dev-ordenes');
   var detalle = document.getElementById('panel-dev-detalle');
-  var tabOrd = document.getElementById('dev-subtab-ordenes');
+  var tabPen = document.getElementById('dev-subtab-pendientes');
+  var tabTra = document.getElementById('dev-subtab-tramitadas');
   var tabDet = document.getElementById('dev-subtab-detalle');
-  if (tab === 'ordenes') {
-    ordenes.style.display = 'block';
-    detalle.style.display = 'none';
-    tabOrd.style.background = '#e67e22';
-    tabDet.style.background = '#718096';
-  } else {
-    ordenes.style.display = 'none';
-    detalle.style.display = 'block';
-    tabOrd.style.background = '#718096';
-    tabDet.style.background = '#e67e22';
-    renderDevDetalle();
+  var esLista = (tab === 'pendientes' || tab === 'tramitadas');
+
+  if (esLista && devScope !== tab) { devScope = tab; devCurrentPage = 1; }
+  selectedDevKeys = {};
+  var bulkBar = document.getElementById('bulk-bar-dev');
+  if (bulkBar) bulkBar.style.display = 'none';
+
+  if (ordenes) {
+    ordenes.style.display = esLista ? 'block' : 'none';
+    ordenes.classList.toggle('solo-lectura', devScope === 'tramitadas');
   }
+  if (detalle) detalle.style.display = tab === 'detalle' ? 'block' : 'none';
+
+  if (tabPen) tabPen.style.background = tab === 'pendientes' ? '#e67e22' : '#718096';
+  if (tabTra) tabTra.style.background = tab === 'tramitadas' ? '#e67e22' : '#718096';
+  if (tabDet) tabDet.style.background = tab === 'detalle' ? '#e67e22' : '#718096';
+
+  if (esLista) renderDevTable();
+  if (tab === 'detalle') renderDevDetalle();
 }
 
 // ── Vista Detallada (flat per-line) ──

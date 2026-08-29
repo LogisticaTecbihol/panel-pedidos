@@ -46,6 +46,9 @@
 .adjunto-upload-progress .prog-bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
 .adjunto-upload-progress .prog-fill{height:100%;background:#1a5276;border-radius:3px;transition:width 0.3s}
 .adjunto-upload-progress .prog-text{font-size:0.72rem;color:#718096;margin-top:4px;text-align:center}
+/* ── Sub-pestañas Pendientes / Tramitadas ── */
+#panel-dev-ordenes.solo-lectura .dev-accion-escritura,
+#panel-cam-lista.solo-lectura .cam-accion-escritura{display:none!important}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
@@ -152,19 +155,20 @@
 
   <!-- Sub-tabs like pedidos -->
   <div style="display:flex;gap:8px;margin-bottom:16px">
-    <button class="btn-dl" id="dev-subtab-ordenes" onclick="switchDevSubTab('ordenes')" style="background:#e67e22">🔄 Devoluciones</button>
+    <button class="btn-dl" id="dev-subtab-pendientes" onclick="switchDevSubTab('pendientes')" style="background:#e67e22" title="Devoluciones con estado Pendiente">⏳ Pendientes</button>
+    <button class="btn-dl" id="dev-subtab-tramitadas" onclick="switchDevSubTab('tramitadas')" style="background:#718096" title="Devoluciones ya tramitadas — solo consulta">✅ Tramitadas</button>
     <button class="btn-dl" id="dev-subtab-detalle" onclick="switchDevSubTab('detalle')" style="background:#718096">📑 Vista detallada</button>
   </div>
 
   <div id="panel-dev-ordenes">
   <div class="card">
     <div class="card-head">
-      <h3>Devoluciones registradas <span id="row-ct-dev" style="font-weight:400;color:#718096"></span></h3>
+      <h3><span id="dev-list-title">Devoluciones pendientes</span> <span id="row-ct-dev" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort-dev" onclick="clearSortDev()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
-        <button class="btn-dl auth-edit-only" onclick="document.getElementById('dev-file-upload').click()" style="background:#2c3e50">📂 Importar Excel</button>
+        <button class="btn-dl auth-edit-only dev-accion-escritura" onclick="document.getElementById('dev-file-upload').click()" style="background:#2c3e50">📂 Importar Excel</button>
         <input type="file" id="dev-file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleDevExcelUpload(this)">
-        <button class="btn-dl auth-edit-only" onclick="openNewDev()" style="background:#e67e22">🔄 Nueva Devolución</button>
+        <button class="btn-dl auth-edit-only dev-accion-escritura" onclick="openNewDev()" style="background:#e67e22">🔄 Nueva Devolución</button>
         <button class="btn-dl" onclick="loadDevoluciones()">🔄 Actualizar datos</button>
       </div>
     </div>
@@ -235,11 +239,18 @@
     <button onclick="clearCamFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
   </div>
 
+  <!-- Sub-tabs Cambios -->
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="btn-dl" id="cam-subtab-pendientes" onclick="switchCamSubTab('pendientes')" style="background:#8e44ad" title="Cambios con estado Pendiente">⏳ Pendientes</button>
+    <button class="btn-dl" id="cam-subtab-tramitadas" onclick="switchCamSubTab('tramitadas')" style="background:#718096" title="Cambios Completados o Cerrados — solo consulta">✅ Tramitadas</button>
+  </div>
+
+  <div id="panel-cam-lista">
   <div class="card">
     <div class="card-head">
-      <h3>Cambios de mercancía registrados <span id="row-ct-cam" style="font-weight:400;color:#718096"></span></h3>
+      <h3><span id="cam-list-title">Cambios pendientes</span> <span id="row-ct-cam" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn-dl auth-edit-only" onclick="openNewCambio()" style="background:#8e44ad">🔁 Nuevo Cambio</button>
+        <button class="btn-dl auth-edit-only cam-accion-escritura" onclick="openNewCambio()" style="background:#8e44ad">🔁 Nuevo Cambio</button>
         <button class="btn-dl" onclick="loadCambios()">🔄 Actualizar</button>
       </div>
     </div>
@@ -251,6 +262,7 @@
         <tbody id="t-body-cam"></tbody>
       </table>
     </div>
+  </div>
   </div>
   </div><!-- /tab-cambios -->
 
@@ -1028,7 +1040,7 @@
 <script src="js/pdf-remision.js?v=20260818g"></script>
 <script src="js/existencias.js"></script>
 <script src="js/asignacion-inventario.js"></script>
-<script src="js/devoluciones.js?v=20260828b"></script>
-<script src="js/cambios.js?v=20260828b"></script>
+<script src="js/devoluciones.js?v=20260829a"></script>
+<script src="js/cambios.js?v=20260829a"></script>
 </body>
 </html>
