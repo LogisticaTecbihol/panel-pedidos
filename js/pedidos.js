@@ -1104,6 +1104,15 @@ function populateFilters() {
   }
 }
 
+// Ámbito de la vista de órdenes: 'activos' (Recibido/Parcial + Estado 2 Abierto) o 'historico' (el resto, solo consulta)
+var pedidoScope = 'activos';
+
+function esPedidoActivo(c) {
+  var st = c._cStatus || 'Recibido';
+  var e2 = c._cEstado2 || 'Abierto';
+  return e2 === 'Abierto' && (st === 'Recibido' || st === 'Parcial');
+}
+
 function filtered() {
   var fe = document.getElementById('f-emp').value;
   var fcomEl = document.getElementById('f-com');
@@ -1136,6 +1145,9 @@ function filtered() {
       var any = prods.some(function(p) { return p.toLowerCase().indexOf(fp) >= 0; });
       if (!any) return false;
     }
+    var esActivo = esPedidoActivo(c);
+    if (pedidoScope === 'activos' && !esActivo) return false;
+    if (pedidoScope === 'historico' && esActivo) return false;
     var est = c._cStatus || 'Recibido';
     if (fs && norm(est) !== norm(fs)) return false;
     if (fs2) { var e2 = c._cEstado2 || 'Abierto'; if (e2 !== fs2) return false; }
@@ -1241,6 +1253,8 @@ function renderTable() {
   var totalPages = Math.ceil(totalRows / pageSize) || 1;
   if (currentPage > totalPages) currentPage = totalPages;
   document.getElementById('row-ct').textContent = '(' + totalRows + ' mostradas)';
+  var ordTitle = document.getElementById('ord-title');
+  if (ordTitle) ordTitle.textContent = pedidoScope === 'historico' ? 'Histórico de pedidos (consulta)' : 'Órdenes activas';
 
   renderHeader();
 
@@ -1316,8 +1330,8 @@ function renderTable() {
         '<button class="btn-ver ' + (done?'done':'') + '" onclick="openDetail(' + idx + ')">' +
           (lineCount === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
         '</button>' +
-        (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' : '') +
-        (AUTH.canDelete() ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
+        (AUTH.canEdit() && pedidoScope === 'activos' ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' : '') +
+        (AUTH.canDelete() && pedidoScope === 'activos' ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -4220,14 +4234,31 @@ async function guardarNuevoPedido() {
 }
 
 // ── Tab switching ──
+// 'activos' e 'historico' comparten el panel de órdenes (cambian el ámbito de filtrado);
+// 'detalle' y 'despachos' son paneles propios.
 function switchPedidoTab(tab) {
-  var tabs = ['ordenes', 'detalle', 'despachos'];
-  tabs.forEach(function(t) {
-    var panel = document.getElementById('panel-' + t);
+  var scopeTab = (tab === 'activos' || tab === 'historico');
+  if (scopeTab) {
+    if (pedidoScope !== tab) currentPage = 1;
+    pedidoScope = tab;
+  }
+
+  ['activos', 'historico', 'detalle', 'despachos'].forEach(function(t) {
     var btn = document.getElementById('tab-' + t);
-    if (panel) panel.style.display = t === tab ? 'block' : 'none';
     if (btn) btn.style.background = t === tab ? '#1a5276' : '#718096';
   });
+
+  var panelOrd = document.getElementById('panel-ordenes');
+  if (panelOrd) {
+    panelOrd.style.display = scopeTab ? 'block' : 'none';
+    panelOrd.classList.toggle('solo-lectura', pedidoScope === 'historico');
+  }
+  var panelDet = document.getElementById('panel-detalle');
+  if (panelDet) panelDet.style.display = tab === 'detalle' ? 'block' : 'none';
+  var panelDesp = document.getElementById('panel-despachos');
+  if (panelDesp) panelDesp.style.display = tab === 'despachos' ? 'block' : 'none';
+
+  if (scopeTab) renderTable();
   if (tab === 'detalle') renderDetalle();
   if (tab === 'despachos') buildDespachos();
 }
@@ -4237,7 +4268,8 @@ function initDespachosTab() {
   if (!btn) return;
   btn.style.display = 'inline-block';
   if (AUTH.isDespachador()) {
-    document.getElementById('tab-ordenes').style.display = 'none';
+    document.getElementById('tab-activos').style.display = 'none';
+    document.getElementById('tab-historico').style.display = 'none';
     document.getElementById('tab-detalle').style.display = 'none';
     var stats = document.querySelector('.stats');
     if (stats) stats.style.display = 'none';

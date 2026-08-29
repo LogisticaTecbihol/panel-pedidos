@@ -71,6 +71,8 @@
 .ms-opt.selected{background:#ebf5fb;font-weight:600}
 .ms-opt input[type=checkbox]{accent-color:#1a5276;width:14px;height:14px;cursor:pointer}
 .ms-no-results{padding:10px;text-align:center;color:#a0aec0;font-size:0.8rem}
+/* ── Pestañas Activos / Histórico ── */
+#panel-ordenes.solo-lectura .accion-escritura{display:none!important}
 </style>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -185,7 +187,8 @@
 
   <!-- Tabs -->
   <div style="display:flex;gap:8px;margin-bottom:16px">
-    <button class="btn-export" id="tab-ordenes" onclick="switchPedidoTab('ordenes')" style="background:#1a5276">📋 Órdenes</button>
+    <button class="btn-export" id="tab-activos" onclick="switchPedidoTab('activos')" style="background:#1a5276" title="Pedidos con estado Recibido o Parcial y Estado 2 Abierto">📋 Activos</button>
+    <button class="btn-export" id="tab-historico" onclick="switchPedidoTab('historico')" style="background:#718096" title="El resto de pedidos — solo consulta">📁 Histórico</button>
     <button class="btn-export" id="tab-detalle" onclick="switchPedidoTab('detalle')" style="background:#718096">📑 Vista detallada</button>
     <button class="btn-export" id="tab-despachos" onclick="switchPedidoTab('despachos')" style="background:#718096;display:none">🚚 Despachos</button>
   </div>
@@ -193,13 +196,13 @@
   <div id="panel-ordenes">
   <div class="card">
     <div class="card-head">
-      <h3>Órdenes registradas <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <h3><span id="ord-title">Órdenes registradas</span> <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort" onclick="clearSort()" title="Quitar todos los ordenamientos">✕ Limpiar orden</button>
-        <button class="btn-dl auth-edit-only" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
-        <button class="btn-dl auth-admin-only" onclick="document.getElementById('file-upload').click()" style="background:#27ae60;display:none">📥 Cargar Pedido</button>
+        <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
+        <button class="btn-dl auth-admin-only accion-escritura" onclick="document.getElementById('file-upload').click()" style="background:#27ae60;display:none">📥 Cargar Pedido</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
-        <button class="btn-dl auth-admin-only" onclick="document.getElementById('client-import-file').click()" style="background:#8e44ad;display:none">📋 Importar Clientes</button>
+        <button class="btn-dl auth-admin-only accion-escritura" onclick="document.getElementById('client-import-file').click()" style="background:#8e44ad;display:none">📋 Importar Clientes</button>
         <input type="file" id="client-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleClientImport(this)">
         <button class="btn-dl" onclick="exportOrdenesExcel()" style="background:#217346">📊 Exportar Excel</button>
         <button class="btn-dl" onclick="loadFromAPI()">🔄 Actualizar datos</button>
@@ -840,6 +843,6 @@
 <script src="js/colombia-geo.js?v=20260826a"></script>
 <script src="js/existencias.js?v=20260812c"></script>
 <script src="js/pdf-remision.js?v=20260818g"></script>
-<script src="js/pedidos.js?v=20260828b"></script>
+<script src="js/pedidos.js?v=20260829a"></script>
 </body>
 </html>
