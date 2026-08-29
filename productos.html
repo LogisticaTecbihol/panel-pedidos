@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Catálogo maestro de productos — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<title>Productos – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css">
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body data-modulo="productos">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos" class="active">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando catálogo de productos</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadProductos()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total productos</div></div>
+    <div class="sc recibido"><div class="num" id="s-mostrados">0</div><div class="lbl">Mostrados</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg"><label>Buscar por nombre</label><input type="text" id="f-txt" placeholder="Nombre del producto…" style="width:280px"></div>
+    <button onclick="clearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>📦 Catálogo de productos <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl auth-edit-only" onclick="openNuevoProducto()" style="background:#1a5276">➕ Agregar Producto</button>
+        <button class="btn-dl" onclick="exportExcel()" style="background:#217346">📊 Exportar Excel</button>
+        <button class="btn-dl" onclick="loadProductos()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr id="t-head"></tr>
+        </thead>
+        <tbody id="t-body"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<!-- MODAL: Agregar / Editar producto -->
+<div class="overlay" id="edit-overlay">
+  <div class="modal-box" style="max-width:520px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="ed-titulo">➕ Agregar Producto</h2>
+      </div>
+      <button class="btn-close" onclick="closeEdit()">✕</button>
+    </div>
+    <div class="mbody">
+      <label class="ef-label">Nombre del producto *</label>
+      <input class="ef" id="ed-producto" type="text" placeholder="Ej: FERTILIZANTE FOLIAR 1L" autocomplete="off">
+      <div id="ed-warn" style="display:none;margin-top:8px;font-size:0.8rem;color:#b7791f;background:#fef9e7;border:1px solid #f9e79f;border-radius:6px;padding:8px 10px"></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeEdit()">Cancelar</button>
+        <button class="btn-confirm" id="btn-save" onclick="saveEdit()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="overlay" id="delete-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1">
+        <h2>🗑️ Eliminar Producto</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Se quita del catálogo maestro y del autocompletado</div>
+      </div>
+      <button class="btn-close" onclick="closeDelete()">✕</button>
+    </div>
+    <div class="mbody" style="text-align:center;padding:28px 24px">
+      <div style="font-size:2.5rem;margin-bottom:12px">⚠️</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#2d3748;margin-bottom:8px">¿Eliminar este producto del maestro?</div>
+      <div style="font-size:0.82rem;color:#718096" id="del-detail"></div>
+    </div>
+    <div class="mftr" style="justify-content:center;gap:12px">
+      <button class="btn-cancel" onclick="closeDelete()">Cancelar</button>
+      <button class="btn-confirm" id="btn-del-confirm" onclick="confirmDelete()" style="background:#e74c3c">🗑️ Sí, eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20260827b"></script>
+<script src="js/auth.js?v=20260829a"></script>
+<script src="js/notificaciones.js?v=20260828b"></script>
+<script src="js/productos.js?v=20260829a"></script>
+</body>
+</html>

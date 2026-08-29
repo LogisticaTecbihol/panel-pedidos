@@ -18,6 +18,7 @@ var AUTH = (function() {
     { key: 'muestras',     label: '🧪 Muestras' },
     { key: 'reenvases',    label: '🏭 Salidas a producción' },
     { key: 'lista_precios', label: '💲 Lista de Precios' },
+    { key: 'productos',    label: '📦 Productos' },
     { key: 'reportes',     label: '📈 Reportes' },
     { key: 'dashboard',    label: '📊 Dashboard' },
     { key: 'muestras_aprobar',       label: '✅ Aprobar solicitudes de muestras' },
