@@ -1886,33 +1886,30 @@ function renderRemTable() {
   }).join('');
 }
 
-function exportRemCSV() {
+function exportRemExcel() {
   var rows = sortedRemData();
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var lines = ['Empresa,Emp_Origen,Emp_Destino,Remision,Modulo,Referencia,Productos,Cantidad,Fecha'];
-  rows.forEach(function(r) {
-    lines.push([
-      '"' + r.empresa + '"',
-      '"' + (r.empresaOrigen ? getSigla(r.empresaOrigen) : '') + '"',
-      '"' + (r.empresaDestino ? getSigla(r.empresaDestino) : '') + '"',
-      '"' + r.remision + '"',
-      '"' + r.modulo + '"',
-      '"' + r.referenciasStr.replace(/"/g,'""') + '"',
-      r.numDetalles,
-      r.cantidad,
-      '"' + (r.fecha || '') + '"'
-    ].join(','));
+  var data = rows.map(function(r) {
+    return {
+      'Empresa': r.empresa || '',
+      'Emp. Origen': r.empresaOrigen ? getSigla(r.empresaOrigen) : '',
+      'Emp. Destino': r.empresaDestino ? getSigla(r.empresaDestino) : '',
+      'N° Remisión': r.remision || '',
+      'Módulo': r.modulo || '',
+      'Referencia': r.referenciasStr || '',
+      'Productos': r.numDetalles || 0,
+      'Cantidad': Number(r.cantidad) || 0,
+      'Fecha': r.fecha ? fmtDate(r.fecha) : ''
+    };
   });
 
-  var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'remisiones_' + today() + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('CSV exportado: ' + rows.length + ' remisiones');
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 14 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Remisiones');
+  XLSX.writeFile(wb, 'remisiones_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' remisiones');
 }
 
 // ── Remisiones Anuladas (manual) ──
