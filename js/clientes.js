@@ -27,6 +27,41 @@ function _bestId(records) {
   return withDv || without;
 }
 
+// ── Estado del cliente ──
+// Valores válidos: 'Activo' (por defecto), 'Inactivo', 'Bloqueado por cartera'.
+var _EST_RANK = { 'Bloqueado por cartera': 0, 'Inactivo': 1, 'Activo': 2 };
+
+function _estadoNorm(e) {
+  e = (e || 'Activo').trim();
+  return _EST_RANK[e] !== undefined ? e : 'Activo';
+}
+
+// Estado unificado de un grupo (mismo NIT). Si difieren, devuelve el más
+// restrictivo y marca mixto:true.
+function _grupoEstado(g) {
+  var set = {};
+  g.records.forEach(function(r) { set[_estadoNorm(r.Estado)] = true; });
+  var keys = Object.keys(set);
+  if (keys.length <= 1) return { estado: keys[0] || 'Activo', mixto: false };
+  keys.sort(function(a, b) { return _EST_RANK[a] - _EST_RANK[b]; });
+  return { estado: keys[0], mixto: true };
+}
+
+function _estadoBadge(estado, mixto) {
+  estado = _estadoNorm(estado);
+  var cls = estado === 'Bloqueado por cartera' ? 'est-bloqueado'
+          : estado === 'Inactivo' ? 'est-inactivo' : 'est-activo';
+  var label = estado === 'Bloqueado por cartera' ? 'Bloq. cartera' : estado;
+  var title = mixto ? ' title="Registros con estados distintos — se muestra el más restrictivo"' : '';
+  return '<span class="est-badge ' + cls + (mixto ? ' est-mix' : '') + '"' + title + '>' + label + '</span>';
+}
+
+// Registros que comparten NIT con el cliente dado (el "cliente unificado").
+function _nitSiblings(idNorm) {
+  if (!idNorm) return [];
+  return clientesData.filter(function(x) { return _normalizeId(x.Identificacion) === idNorm; });
+}
+
 function groupClientes(list) {
   var map = {};
   var order = [];
@@ -116,11 +151,13 @@ function getFiltered() {
   var emp = document.getElementById('f-emp').value;
   var depto = document.getElementById('f-depto').value;
   var muni = document.getElementById('f-muni').value;
+  var est = document.getElementById('f-estado').value;
   var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
   return clientesData.filter(function(c) {
     if (emp && c.Nombre_Empresa !== emp) return false;
     if (depto && c.Departamento !== depto) return false;
     if (muni && c.Municipio !== muni) return false;
+    if (est && _estadoNorm(c.Estado) !== est) return false;
     if (txt) {
       var haystack = [c.Cliente, c.Identificacion, c.Correo_Electronico, c.Telefono, c.Municipio, c.Departamento]
         .join(' ').toLowerCase();
@@ -134,6 +171,7 @@ function clearFilters() {
   document.getElementById('f-emp').value = '';
   document.getElementById('f-depto').value = '';
   document.getElementById('f-muni').value = '';
+  document.getElementById('f-estado').value = '';
   document.getElementById('f-txt').value = '';
   _updateMuniFilter();
   currentPage = 1;
@@ -147,14 +185,16 @@ function renderTable() {
   var emp = document.getElementById('f-emp').value;
   var depto = document.getElementById('f-depto').value;
   var muni = document.getElementById('f-muni').value;
+  var est = document.getElementById('f-estado').value;
   var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
 
   var filtered = allGrps.filter(function(g) {
-    if (!emp && !depto && !muni && !txt) return true;
+    if (!emp && !depto && !muni && !est && !txt) return true;
     return g.records.some(function(c) {
       if (emp && c.Nombre_Empresa !== emp) return false;
       if (depto && c.Departamento !== depto) return false;
       if (muni && c.Municipio !== muni) return false;
+      if (est && _estadoNorm(c.Estado) !== est) return false;
       if (txt) {
         var haystack = [c.Cliente, c.Identificacion, c.Correo_Electronico, c.Telefono, c.Municipio, c.Departamento]
           .join(' ').toLowerCase();
@@ -226,6 +266,8 @@ function renderTable() {
       ? ' <span style="background:#edf2f7;color:#4a5568;font-size:0.68rem;padding:1px 6px;border-radius:10px;font-weight:600">' + g.records.length + ' reg.</span>'
       : '';
 
+    var ge = _grupoEstado(g);
+
     var actionHtml = '';
     if (canEd) {
       actionHtml = '<td style="text-align:center;white-space:nowrap">' +
@@ -248,6 +290,7 @@ function renderTable() {
       '<td>' + escHtml(tel) + '</td>' +
       '<td>' + muniHtml + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(correo) + '</td>' +
+      '<td>' + _estadoBadge(ge.estado, ge.mixto) + '</td>' +
       actionHtml +
       '</tr>';
   }).join('');
@@ -267,6 +310,7 @@ function goPage(n) { currentPage = n; renderTable(); window.scrollTo(0, 0); }
 document.getElementById('f-emp').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-depto').addEventListener('change', function() { _updateMuniFilter(); currentPage = 1; renderTable(); });
 document.getElementById('f-muni').addEventListener('change', function() { currentPage = 1; renderTable(); });
+document.getElementById('f-estado').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-txt').addEventListener('input', debounce(function() { currentPage = 1; renderTable(); }, 300));
 
 // ── Detail modal ──
@@ -300,6 +344,11 @@ function openGroupDetail(groupIdx) {
       '</div>';
   });
   html += '</div>';
+
+  var _geDet = _grupoEstado(g);
+  html += '<div style="margin-bottom:' + (isMulti ? '16' : '4') + 'px">' +
+    '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">Estado</span>' +
+    _estadoBadge(_geDet.estado, _geDet.mixto) + '</div>';
 
   if (isMulti) {
     var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
@@ -426,6 +475,8 @@ function _clearForm() {
   document.getElementById('ed-cupo').value = '';
   document.getElementById('ed-plazo').value = '';
   document.getElementById('ed-lista-precio').value = '';
+  document.getElementById('ed-estado').value = 'Activo';
+  document.getElementById('ed-estado-hint').textContent = '';
 }
 
 function openNuevoCliente() {
@@ -458,6 +509,11 @@ function openEditCliente(id) {
   document.getElementById('ed-cupo').value = c.Cupo_Credito || '';
   document.getElementById('ed-plazo').value = c.Plazo_Pago || '';
   document.getElementById('ed-lista-precio').value = c.Lista_Precio || '';
+  document.getElementById('ed-estado').value = _estadoNorm(c.Estado);
+  var _sibs = _nitSiblings(_normalizeId(c.Identificacion));
+  document.getElementById('ed-estado-hint').textContent = _sibs.length > 1
+    ? 'El estado se aplica a los ' + _sibs.length + ' registros de este NIT.'
+    : '';
   document.getElementById('edit-overlay').style.display = 'flex';
 }
 
@@ -489,7 +545,8 @@ async function saveEdit() {
     Municipio: document.getElementById('ed-municipio').value,
     Cupo_Credito: document.getElementById('ed-cupo').value.trim(),
     Plazo_Pago: document.getElementById('ed-plazo').value.trim(),
-    Lista_Precio: document.getElementById('ed-lista-precio').value
+    Lista_Precio: document.getElementById('ed-lista-precio').value,
+    Estado: _estadoNorm(document.getElementById('ed-estado').value)
   };
 
   var _geoCl = normalizarMunicipio(payload.Municipio, payload.Departamento);
@@ -507,6 +564,19 @@ async function saveEdit() {
       result = await apiPost(payload);
     }
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+
+    // Estado unificado por NIT: aplica el mismo estado a los demás
+    // registros del mismo NIT (varias empresas/sedes del cliente).
+    var _nk = _normalizeId(payload.Identificacion);
+    if (_nk) {
+      var _sibIds = clientesData
+        .filter(function(x) { return x.id !== editingId && _normalizeId(x.Identificacion) === _nk; })
+        .map(function(x) { return x.id; });
+      if (_sibIds.length) {
+        await apiPost({ action: 'setEstadoClientes', ids: _sibIds, estado: payload.Estado });
+      }
+    }
+
     closeEdit();
     showToast('✅ Cliente guardado correctamente');
     await loadClientes();
@@ -697,7 +767,7 @@ function exportExcel() {
   var filtered = getFiltered();
   if (!filtered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var rows = [['Empresa', 'Cliente', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Lista Precio']];
+  var rows = [['Empresa', 'Cliente', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Lista Precio', 'Estado']];
   filtered.forEach(function(c) {
     rows.push([
       getSigla(c.Nombre_Empresa),
@@ -712,7 +782,8 @@ function exportExcel() {
       c.Municipio || '',
       c.Cupo_Credito || '',
       c.Plazo_Pago || '',
-      c.Lista_Precio || ''
+      c.Lista_Precio || '',
+      _estadoNorm(c.Estado)
     ]);
   });
 

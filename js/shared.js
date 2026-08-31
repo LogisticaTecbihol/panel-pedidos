@@ -164,7 +164,8 @@ async function apiGet(action, opts) {
             municipio: r.Municipio || '', departamento: r.Departamento || '',
             empresa: r.Nombre_Empresa || '', tipo_identificacion: r.Tipo_Identificacion || '',
             correo: r.Correo_Electronico || '', cupo_credito: r.Cupo_Credito || '',
-            plazo_pago: r.Plazo_Pago || '', lista_precio: r.Lista_Precio || ''
+            plazo_pago: r.Plazo_Pago || '', lista_precio: r.Lista_Precio || '',
+            estado: r.Estado || 'Activo'
           };
         }),
         source: 'ClientesUnicos'
@@ -302,6 +303,18 @@ async function apiPost(body) {
     }
 
     if (action === 'agregarPedido') {
+      // Bloqueo por estado del cliente: no se registran pedidos para
+      // clientes 'Inactivo' o 'Bloqueado por cartera' (maestro ClientesUnicos).
+      try {
+        var _estCli = await _sb.rpc('cliente_estado_pedido', {
+          p_cliente: body.cliente || '', p_nit: body.nit || ''
+        });
+        var _estVal = (_estCli && !_estCli.error && _estCli.data) ? String(_estCli.data) : 'Activo';
+        if (_estVal === 'Inactivo' || _estVal === 'Bloqueado por cartera') {
+          return { ok: false, error: 'El cliente "' + (body.cliente || '') + '" está en estado "' + _estVal + '". No se pueden registrar pedidos; contacta a Cartera / Administración.' };
+        }
+      } catch (e) { /* si la validación falla, no bloqueamos la operación */ }
+
       var now = new Date().toISOString().slice(0, 16).replace('T', ' ');
       var productos = body.productos || [{}];
       var resCl = await _sb.rpc('get_or_create_cliente', {
@@ -1287,7 +1300,8 @@ async function apiPost(body) {
         Correo_Electronico: body.Correo_Electronico || '',
         Cupo_Credito: body.Cupo_Credito || '',
         Plazo_Pago: body.Plazo_Pago || '',
-        Lista_Precio: body.Lista_Precio || ''
+        Lista_Precio: body.Lista_Precio || '',
+        Estado: body.Estado || 'Activo'
       };
       var res = await _sb.from('ClientesUnicos').insert([row]).select('id');
       if (res.error) return { ok: false, error: res.error.message };
@@ -1307,9 +1321,22 @@ async function apiPost(body) {
         Plazo_Pago: body.Plazo_Pago || '',
         Lista_Precio: body.Lista_Precio || ''
       };
+      if (typeof body.Estado === 'string' && body.Estado) upd.Estado = body.Estado;
       var res = await _sb.from('ClientesUnicos').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
+    }
+
+    if (action === 'setEstadoClientes') {
+      var _idsEst = (body.ids || []).filter(function(x) { return x !== null && x !== undefined && x !== ''; });
+      var _estNew = String(body.estado || '').trim();
+      if (['Activo', 'Inactivo', 'Bloqueado por cartera'].indexOf(_estNew) < 0) {
+        return { ok: false, error: 'Estado no válido: ' + _estNew };
+      }
+      if (!_idsEst.length) return { ok: true, updated: 0 };
+      var res = await _sb.from('ClientesUnicos').update({ Estado: _estNew }).in('id', _idsEst);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, updated: _idsEst.length };
     }
 
     if (action === 'eliminarClienteUnico') {

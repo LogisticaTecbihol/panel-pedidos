@@ -16,6 +16,11 @@
 @media (max-width: 700px) {
   .detail-grid, .detail-grid.triple { grid-template-columns: 1fr; }
 }
+.est-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.73rem; font-weight: 700; white-space: nowrap; }
+.est-activo { background: #c6f6d5; color: #276749; }
+.est-inactivo { background: #edf2f7; color: #4a5568; }
+.est-bloqueado { background: #fff3e0; color: #e65100; }
+.est-mix { outline: 1px dashed #e65100; outline-offset: 1px; }
 </style>
 </head>
 <body data-modulo="clientes">
@@ -83,6 +88,7 @@
     <div class="fg"><label>Empresa</label><select id="f-emp"><option value="">Todas</option></select></div>
     <div class="fg"><label>Departamento</label><select id="f-depto"><option value="">Todos</option></select></div>
     <div class="fg"><label>Municipio</label><select id="f-muni"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Estado</label><select id="f-estado"><option value="">Todos</option><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Bloqueado por cartera">Bloqueado por cartera</option></select></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="Cliente, NIT, correo…" style="width:220px"></div>
     <button onclick="clearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
   </div>
@@ -110,6 +116,7 @@
             <th>Teléfono</th>
             <th>Municipio</th>
             <th>Correo</th>
+            <th>Estado</th>
             <th style="width:140px" class="auth-edit-only">Acción</th>
           </tr>
         </thead>
@@ -196,13 +203,24 @@
           <input class="ef" id="ed-plazo" type="text" placeholder="Ej: 30 días">
         </div>
       </div>
-      <div style="margin-bottom:12px">
-        <label class="ef-label">Lista de Precio</label>
-        <select class="ef" id="ed-lista-precio">
-          <option value="">— Seleccionar —</option>
-          <option value="Dealer">Dealer</option>
-          <option value="Mayorista">Mayorista</option>
-        </select>
+      <div class="detail-grid">
+        <div>
+          <label class="ef-label">Lista de Precio</label>
+          <select class="ef" id="ed-lista-precio">
+            <option value="">— Seleccionar —</option>
+            <option value="Dealer">Dealer</option>
+            <option value="Mayorista">Mayorista</option>
+          </select>
+        </div>
+        <div>
+          <label class="ef-label">Estado del Cliente</label>
+          <select class="ef" id="ed-estado">
+            <option value="Activo">Activo</option>
+            <option value="Inactivo">Inactivo</option>
+            <option value="Bloqueado por cartera">Bloqueado por cartera</option>
+          </select>
+          <div id="ed-estado-hint" style="font-size:0.72rem;color:#718096;margin-top:3px"></div>
+        </div>
       </div>
     </div>
     <div class="mftr">
@@ -306,10 +324,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260827b"></script>
+<script src="js/shared.js?v=20260831b"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/colombia-geo.js"></script>
-<script src="js/clientes.js?v=20260827b"></script>
+<script src="js/clientes.js?v=20260831b"></script>
 </body>
 </html>

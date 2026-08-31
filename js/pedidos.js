@@ -3604,6 +3604,15 @@ function setupProductoAutocomplete() {
   });
 }
 
+// Aviso temprano cuando el cliente seleccionado no está 'Activo'.
+// El bloqueo efectivo lo aplica el backend (apiPost 'agregarPedido').
+function _avisarEstadoCliente(c) {
+  var est = ((c && c.estado) || 'Activo').trim();
+  if (est === 'Inactivo' || est === 'Bloqueado por cartera') {
+    showToast('⚠️ Cliente en estado "' + est + '": no se podrá registrar el pedido. Consulta con Cartera.', '#e74c3c');
+  }
+}
+
 // ── New Order Manual Entry ──
 function getLastOrderForClient(clienteName) {
   if (!clienteName || !pedidos.length) return null;
@@ -3863,6 +3872,7 @@ async function openNuevoPedido() {
       return ((c.cliente||'') + ' ' + (c.nit||'') + ' ' + (c.municipio||'') + ' ' + (c.telefono||'')).toLowerCase().indexOf(val) >= 0;
     },
     onSelect: function(c) {
+      _avisarEstadoCliente(c);
       document.getElementById('nv-cliente').value = c.cliente || '';
       document.getElementById('nv-facturar-a').value = c.cliente || '';
       if (c.nit) document.getElementById('nv-nit').value = c.nit;
@@ -3946,6 +3956,7 @@ async function openNuevoPedido() {
       return nitClean.indexOf(valClean) >= 0;
     },
     onSelect: function(c) {
+      _avisarEstadoCliente(c);
       document.getElementById('nv-nit').value = c.nit || '';
       document.getElementById('nv-cliente').value = c.cliente || '';
       var fa = document.getElementById('nv-facturar-a');
