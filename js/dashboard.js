@@ -2,10 +2,11 @@
 var dPedidos = [];
 var dDevoluciones = [];
 var dIngresos = [];
-var dInventario = [];
 var dOrdenes = [];
 var dMuestras = [];
 var dReenvases = [];
+var dExist = null;   // snapshot de Existencias (mismo cálculo que Kardex / Inventario / Reportes)
+var dOrders = [];    // órdenes derivadas: 1 por (empresa, consecutivo, cliente) — igual que Pedidos
 
 var SIGLAS = {
   'PARCELAR DE COLOMBIA SAS': 'PARCELAR',
@@ -17,6 +18,104 @@ var SIGLAS = {
 };
 var EMP_COLORS = { PARCELAR: '#2980b9', GREEN: '#27ae60', RESO: '#e67e22', IASO: '#8e44ad', IAS: '#c0392b' };
 function dGetSigla(n) { return SIGLAS[(n || '').trim()] || n || '—'; }
+
+// ══════════════════════════════════════════════════════════════
+// Coherencia con el módulo Pedidos
+// ──────────────────────────────────────────────────────────────
+// Una "orden" se identifica por empresa + consecutivo + CLIENTE
+// (idéntico a pedidos.js:keyOf). El estado de entrega y el Estado_2
+// se derivan de TODAS las líneas con la misma precedencia que
+// pedidos.js (derivedStatus / derivedEstado2). Una línea cuenta
+// como "pendiente" con el mismo criterio que reportes.js.
+// ══════════════════════════════════════════════════════════════
+
+function dKeyOf(emp, con, cli) { return (emp || '') + '||' + String(con || '').trim() + '||' + (cli || ''); }
+function dNorm(s) { return String(s || '').toLowerCase().trim(); }
+
+// mismo criterio que pedidos.js:derivedStatus
+function dDerivedStatus(lines) {
+  if (!lines.length) return 'Recibido';
+  var n = lines.length, fac = 0, ent = 0, ali = 0, par = 0;
+  lines.forEach(function(l) {
+    var s = dNorm(l.Estado_Entrega);
+    if (s === 'facturado') fac++;
+    else if (s === 'entregado') ent++;
+    else if (s === 'alistado') ali++;
+    else if (s === 'parcial') par++;
+  });
+  if (fac === n) return 'Facturado';
+  if (fac + ent === n) return 'Entregado';
+  if (fac + ent + ali === n) return 'Alistado';
+  if (fac > 0 || ent > 0 || ali > 0 || par > 0) return 'Parcial';
+  return 'Recibido';
+}
+
+// mismo criterio que pedidos.js:derivedEstado2
+function dDerivedEstado2(lines) {
+  if (!lines.length) return 'Abierto';
+  var vals = lines.map(function(l) { return (l.Estado_2 || 'Abierto').trim(); });
+  if (vals.indexOf('Anulado') >= 0) return 'Anulado';
+  if (vals.indexOf('Bloqueado por cartera') >= 0) return 'Bloqueado por cartera';
+  if (vals.indexOf('Entregado por proveedor') >= 0) return 'Entregado por proveedor';
+  if (vals.every(function(v) { return v === 'Cerrado'; })) return 'Cerrado';
+  if (vals.every(function(v) { return v === 'Cerrado' || v === 'Alistado'; })) return 'Alistado';
+  return 'Abierto';
+}
+
+// mismo criterio que reportes.js:buildReport para "producto pendiente"
+var D_ESTADOS_NO_PENDIENTE = { 'Anulado': 1, 'Alistado': 1, 'Cerrado': 1, 'Bloqueado por cartera': 1, 'Entregado por proveedor': 1 };
+function dLineaPendiente(p) {
+  if (D_ESTADOS_NO_PENDIENTE[(p.Estado_2 || 'Abierto').trim()]) return false;
+  return (Number(p.Cant_Pendiente) || 0) > 0;
+}
+
+// Empresas del holding visibles al usuario (mismo criterio que reportes.js).
+function dHoldingEmpresas() {
+  if (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas && typeof EMPRESAS_HOLDING !== 'undefined') {
+    return AUTH.getFilteredEmpresas(EMPRESAS_HOLDING);
+  }
+  return (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : [];
+}
+
+// Agrega las líneas de pedido en órdenes derivadas.
+function dBuildOrders(ped) {
+  var map = {};
+  ped.forEach(function(p) {
+    var key = dKeyOf(p.Nombre_Empresa, p.Consecutivo, p.Cliente);
+    if (!map[key]) {
+      map[key] = {
+        key: key,
+        empresa: p.Nombre_Empresa || '',
+        sigla: dGetSigla(p.Nombre_Empresa),
+        consecutivo: p.Consecutivo || '—',
+        cliente: (p.Cliente || '—').trim(),
+        comercial: (p.Comercial || '').trim(),
+        fechaPedido: p.Fecha_Pedido || '',
+        fechaUltEntrega: p.Fecha_Ult_Entrega || '',
+        lines: []
+      };
+    }
+    var o = map[key];
+    o.lines.push(p);
+    if (p.Fecha_Ult_Entrega && (!o.fechaUltEntrega || p.Fecha_Ult_Entrega > o.fechaUltEntrega)) {
+      o.fechaUltEntrega = p.Fecha_Ult_Entrega;
+    }
+    if (p.Comercial && !o.comercial) o.comercial = (p.Comercial || '').trim();
+  });
+
+  return Object.keys(map).map(function(k) {
+    var o = map[k];
+    o.status = dDerivedStatus(o.lines);
+    o.estado2 = dDerivedEstado2(o.lines);
+    o.cantPedida = o.lines.reduce(function(s, l) { return s + (Number(l.Cantidad) || 0); }, 0);
+    o.cantEntregada = o.lines.reduce(function(s, l) { return s + (Number(l.Cant_Entregada) || 0); }, 0);
+    // pendiente sólo de las líneas que realmente cuentan como pendientes
+    o.pendUds = o.lines.reduce(function(s, l) { return s + (dLineaPendiente(l) ? (Number(l.Cant_Pendiente) || 0) : 0); }, 0);
+    o.esPendiente = o.pendUds > 0;
+    o.pct = o.cantPedida > 0 ? Math.round(o.cantEntregada / o.cantPedida * 100) : 0;
+    return o;
+  });
+}
 
 // ── Load ──
 async function loadDashboard() {
@@ -41,7 +140,6 @@ async function loadDashboard() {
       apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Producto,Comercial' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad' }).catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getInventario', { columns: 'Empresa,Cantidad' }).catch(function() { return { ok: true, inventario: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Estado' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'Empresa,Estado' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases', { columns: 'Empresa,Cantidad' }).catch(function() { return { ok: true, reenvases: [] }; })
@@ -64,10 +162,19 @@ async function loadDashboard() {
 
     dDevoluciones = results[1].devoluciones || [];
     dIngresos = results[2].ingresos || [];
-    dInventario = results[3].inventario || [];
-    dOrdenes = results[4].ordenes || [];
-    dMuestras = results[5].muestras || [];
-    dReenvases = results[6].reenvases || [];
+    dOrdenes = results[3].ordenes || [];
+    dMuestras = results[4].muestras || [];
+    dReenvases = results[5].reenvases || [];
+
+    // Snapshot de existencias — mismo cálculo que Kardex / Inventario / Reportes.
+    try {
+      if (typeof Existencias !== 'undefined' && Existencias.loadSnapshot) {
+        dExist = await Existencias.loadSnapshot();
+      }
+    } catch (e) {
+      dExist = null;
+      console.warn('No se pudo cargar snapshot de existencias:', e);
+    }
 
     populateDashFilters();
     buildDashboard();
@@ -118,74 +225,97 @@ function buildDashboard() {
 
   var ped = fEmp ? dPedidos.filter(function(p) { return p.Nombre_Empresa === fEmp; }) : dPedidos;
   var dev = fEmp ? dDevoluciones.filter(function(d) { return d.Empresa === fEmp; }) : dDevoluciones;
-  var inv = fEmp ? dInventario.filter(function(i) { return i.Empresa === fEmp; }) : dInventario;
   var oc = fEmp ? dOrdenes.filter(function(o) { return o.Empresa_Destino === fEmp || o.Empresa_Origen === fEmp; }) : dOrdenes;
   var mue = fEmp ? dMuestras.filter(function(m) { return m.Empresa === fEmp; }) : dMuestras;
   var ree = fEmp ? dReenvases.filter(function(r) { return r.Empresa === fEmp; }) : dReenvases;
   var ing = fEmp ? dIngresos.filter(function(i) { return i.Empresa_Origen === fEmp || i.Empresa_Destino === fEmp; }) : dIngresos;
 
+  dOrders = dBuildOrders(ped);
+
   document.getElementById('dash-ts').textContent = 'Actualizado: ' + new Date().toLocaleString('es-CO');
 
-  buildKPIs(ped, dev, inv, oc);
-  buildTiempos(ped);
-  buildTopDemora(ped);
-  buildEntregas(ped);
-  buildEmpresas(ped);
+  buildKPIs(dOrders, ped, dev, oc, fEmp);
+  buildTiempos(dOrders);
+  buildTopDemora(dOrders);
+  buildEntregas(dOrders);
+  buildEmpresas(dOrders);
   buildTopProductos(ped);
-  buildTopClientes(ped);
+  buildTopClientes(dOrders);
   buildDevoluciones(dev);
-  buildTopComerciales(ped);
-  buildInventario(inv, ped);
-  buildResumenModulos(ped, dev, ing, inv, oc, mue, ree);
+  buildTopComerciales(dOrders);
+  buildInventario(ped, fEmp);
+  buildResumenModulos(dOrders, dev, ing, oc, mue, ree, fEmp);
+}
+
+// ── Existencias (snapshot Kardex) ──
+// Suma de saldos por (producto) sobre las empresas del holding visibles,
+// opcionalmente filtrado a una empresa. Devuelve { productos, uds, porEmp }.
+function dStockTotals(fEmp) {
+  var saldos = (dExist && dExist.saldos) || {};
+  var empresas = dHoldingEmpresas();
+  var porEmp = {};
+  empresas.forEach(function(e) { if (!fEmp || e.value === fEmp) porEmp[e.sigla] = 0; });
+
+  var productos = 0, uds = 0;
+  Object.keys(saldos).forEach(function(prodKey) {
+    var perEmp = saldos[prodKey] || {};
+    var totProd = 0;
+    empresas.forEach(function(e) {
+      if (fEmp && e.value !== fEmp) return;
+      var v = perEmp[e.value] || 0;
+      totProd += v;
+      if (v !== 0) porEmp[e.sigla] += v;
+    });
+    if (totProd > 0) { productos++; uds += totProd; }
+  });
+
+  return { productos: productos, uds: uds, porEmp: porEmp, disponible: dExist != null };
 }
 
 // ── 1. KPI Cards ──
-function buildKPIs(ped, dev, inv, oc) {
-  var ordSet = {};
-  var abiertos = 0;
-  var udsEntregadas = 0;
-  var udsPedidas = 0;
+function buildKPIs(orders, ped, dev, oc, fEmp) {
   var today = new Date();
-  today.setHours(0,0,0,0);
-  var deliveryDays = [];
-  var delayDays = [];
-  var ordDel = {};
-  var ordPend = {};
+  today.setHours(0, 0, 0, 0);
 
+  var totalOrdenes = orders.length;
+  var abiertas = orders.filter(function(o) { return o.estado2 === 'Abierto'; }).length;
+  var lineas = ped.length;
+
+  // Tasa de entrega: uds entregadas / pedidas sobre líneas no anuladas.
+  var udsEntregadas = 0, udsPedidas = 0;
   ped.forEach(function(p) {
-    var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
-    if (!ordSet[key]) {
-      ordSet[key] = true;
-      if ((p.Estado_2 || 'Abierto') === 'Abierto') abiertos++;
-    }
+    if ((p.Estado_2 || 'Abierto').trim() === 'Anulado') return;
     udsEntregadas += Number(p.Cant_Entregada) || 0;
     udsPedidas += Number(p.Cantidad) || 0;
+  });
+  var tasaEntrega = udsPedidas > 0 ? Math.round((udsEntregadas / udsPedidas) * 100) : 0;
 
-    if (p.Fecha_Ult_Entrega && p.Fecha_Pedido && (Number(p.Cant_Entregada) || 0) > 0 && !ordDel[key]) {
-      var dE = new Date(p.Fecha_Ult_Entrega);
-      var dP = new Date(p.Fecha_Pedido);
-      if (!isNaN(dE) && !isNaN(dP)) { var dd = Math.round((dE - dP) / 86400000); if (dd >= 0) { ordDel[key] = dd; deliveryDays.push(dd); } }
+  // Tiempos por orden.
+  var deliveryDays = [], delayDays = [];
+  orders.forEach(function(o) {
+    if (o.fechaUltEntrega && o.fechaPedido && o.cantEntregada > 0) {
+      var dd = Math.round((new Date(o.fechaUltEntrega) - new Date(o.fechaPedido)) / 86400000);
+      if (!isNaN(dd) && dd >= 0) deliveryDays.push(dd);
     }
-    var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 === 'Abierto' && (Number(p.Cant_Pendiente) || 0) > 0 && p.Fecha_Pedido && !ordPend[key]) {
-      var dP2 = new Date(p.Fecha_Pedido);
-      if (!isNaN(dP2)) { var dd2 = Math.round((today - dP2) / 86400000); if (dd2 >= 0) { ordPend[key] = dd2; delayDays.push(dd2); } }
+    if (o.estado2 === 'Abierto' && o.esPendiente && o.fechaPedido) {
+      var dd2 = Math.round((today - new Date(o.fechaPedido)) / 86400000);
+      if (!isNaN(dd2) && dd2 >= 0) delayDays.push(dd2);
     }
   });
 
-  var totalOrdenes = Object.keys(ordSet).length;
-  var tasaEntrega = udsPedidas > 0 ? Math.round((udsEntregadas / udsPedidas) * 100) : 0;
   var devPendientes = dev.filter(function(d) { return (d.Estado || '') === 'Pendiente'; }).length;
-  var avgDelivery = deliveryDays.length > 0 ? Math.round(deliveryDays.reduce(function(s,v){return s+v;},0) / deliveryDays.length) : 0;
-  var avgDelay = delayDays.length > 0 ? Math.round(delayDays.reduce(function(s,v){return s+v;},0) / delayDays.length) : 0;
+  var avgDelivery = deliveryDays.length ? Math.round(deliveryDays.reduce(function(s, v) { return s + v; }, 0) / deliveryDays.length) : 0;
+  var avgDelay = delayDays.length ? Math.round(delayDays.reduce(function(s, v) { return s + v; }, 0) / delayDays.length) : 0;
+
+  var stk = dStockTotals(fEmp);
 
   var html = '';
-  html += kpiCard('', totalOrdenes.toLocaleString('es-CO'), 'Total ordenes', abiertos + ' abiertas · ' + ped.length.toLocaleString('es-CO') + ' lineas');
+  html += kpiCard('', totalOrdenes.toLocaleString('es-CO'), 'Total ordenes', abiertas + ' abiertas · ' + lineas.toLocaleString('es-CO') + ' lineas');
   html += kpiCard('teal', tasaEntrega + '%', 'Tasa de entrega', udsEntregadas.toLocaleString('es-CO') + ' / ' + udsPedidas.toLocaleString('es-CO') + ' uds');
   html += kpiCard('green', avgDelivery + ' dias', 'Tiempo prom. entrega', deliveryDays.length + ' ordenes entregadas');
   html += kpiCard('orange', avgDelay + ' dias', 'Demora prom. pendientes', delayDays.length + ' ordenes esperando');
   html += kpiCard('red', devPendientes.toString(), 'Devoluciones pendientes', dev.length + ' total devoluciones');
-  html += kpiCard('purple', inv.length.toLocaleString('es-CO'), 'Registros inventario', inv.reduce(function(s, i) { return s + (Number(i.Cantidad) || 0); }, 0).toLocaleString('es-CO') + ' uds en stock');
+  html += kpiCard('purple', stk.disponible ? stk.productos.toLocaleString('es-CO') : '—', 'Productos en stock', stk.disponible ? stk.uds.toLocaleString('es-CO') + ' uds disponibles' : 'sin snapshot');
   html += kpiCard('', oc.filter(function(o) { return (o.Estado || '') === 'Abierta'; }).length.toString(), 'OC abiertas', oc.length + ' ordenes de compra total');
 
   document.getElementById('kpi-main').innerHTML = html;
@@ -200,39 +330,35 @@ function kpiCard(cls, val, lbl, sub) {
 }
 
 // ── 2. Estado de Entregas ──
-function buildEntregas(ped) {
-  var ordMap = {};
-  ped.forEach(function(p) {
-    var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
-    if (!ordMap[key]) {
-      ordMap[key] = { estado: 'Recibido', est2: (p.Estado_2 || 'Abierto').trim() };
+function buildEntregas(orders) {
+  var b = { recibidos: 0, parciales: 0, entregados: 0, alistados: 0, cerrados: 0, anulados: 0, bloqueados: 0, entProv: 0 };
+
+  orders.forEach(function(o) {
+    switch (o.estado2) {
+      case 'Anulado': b.anulados++; return;
+      case 'Bloqueado por cartera': b.bloqueados++; return;
+      case 'Entregado por proveedor': b.entProv++; return;
+      case 'Cerrado': b.cerrados++; return;
+      case 'Alistado': b.alistados++; return;
     }
-    var est = (p.Estado_Entrega || 'Recibido').trim();
-    if (est === 'Entregado' || ordMap[key].estado === 'Entregado') ordMap[key].estado = 'Entregado';
-    else if (est === 'Alistado' || ordMap[key].estado === 'Alistado') ordMap[key].estado = 'Alistado';
-    else if (est === 'Parcial' || (Number(p.Cant_Entregada) || 0) > 0) ordMap[key].estado = 'Parcial';
+    // Abierto → por estado de entrega derivado
+    if (o.status === 'Entregado' || o.status === 'Facturado') b.entregados++;
+    else if (o.status === 'Alistado') b.alistados++;
+    else if (o.status === 'Parcial') b.parciales++;
+    else b.recibidos++;
   });
 
-  var recibidos = 0, parciales = 0, entregados = 0, alistados = 0, anulados = 0, cerrados = 0;
-  Object.values(ordMap).forEach(function(o) {
-    if (o.est2 === 'Anulado') { anulados++; return; }
-    if (o.est2 === 'Alistado') { alistados++; return; }
-    if (o.est2 === 'Cerrado') { cerrados++; return; }
-    if (o.est2 === 'Bloqueado por cartera') { anulados++; return; }
-    if (o.estado === 'Entregado') entregados++;
-    else if (o.estado === 'Parcial') parciales++;
-    else recibidos++;
-  });
-
-  var total = recibidos + parciales + entregados + alistados + anulados + cerrados;
+  var total = orders.length;
 
   var segData = [
-    { label: 'Recibidos', val: recibidos, color: '#e67e22' },
-    { label: 'Parciales', val: parciales, color: '#2980b9' },
-    { label: 'Entregados', val: entregados, color: '#27ae60' },
-    { label: 'Alistados', val: alistados, color: '#7b1fa2' },
-    { label: 'Cerrados', val: cerrados, color: '#1565c0' },
-    { label: 'Anulados', val: anulados, color: '#e74c3c' },
+    { label: 'Recibidos', val: b.recibidos, color: '#e67e22' },
+    { label: 'Parciales', val: b.parciales, color: '#2980b9' },
+    { label: 'Entregados', val: b.entregados, color: '#27ae60' },
+    { label: 'Alistados', val: b.alistados, color: '#7b1fa2' },
+    { label: 'Cerrados', val: b.cerrados, color: '#1565c0' },
+    { label: 'Ent. proveedor', val: b.entProv, color: '#00695c' },
+    { label: 'Bloqueados', val: b.bloqueados, color: '#e65100' },
+    { label: 'Anulados', val: b.anulados, color: '#e74c3c' },
   ];
 
   document.getElementById('ent-sub').textContent = total + ' ordenes total';
@@ -264,14 +390,12 @@ function renderSegBar(data, total) {
 }
 
 // ── 3. Pedidos por Empresa ──
-function buildEmpresas(ped) {
+function buildEmpresas(orders) {
   var empMap = {};
-  ped.forEach(function(p) {
-    var sigla = dGetSigla(p.Nombre_Empresa);
-    if (!empMap[sigla]) empMap[sigla] = { ordenes: 0, uds: 0, _keys: {} };
-    empMap[sigla].uds += Number(p.Cantidad) || 0;
-    var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
-    if (!empMap[sigla]._keys[key]) { empMap[sigla]._keys[key] = true; empMap[sigla].ordenes++; }
+  orders.forEach(function(o) {
+    if (!empMap[o.sigla]) empMap[o.sigla] = { ordenes: 0, uds: 0 };
+    empMap[o.sigla].ordenes++;
+    empMap[o.sigla].uds += o.cantPedida;
   });
 
   var empArr = Object.keys(empMap).map(function(s) { return { sigla: s, ordenes: empMap[s].ordenes, uds: empMap[s].uds }; });
@@ -300,14 +424,11 @@ function buildEmpresas(ped) {
 function buildTopProductos(ped) {
   var map = {};
   ped.forEach(function(p) {
-    var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 === 'Anulado' || est2 === 'Alistado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera') return;
-    var pend = Number(p.Cant_Pendiente) || 0;
-    if (pend <= 0) return;
+    if (!dLineaPendiente(p)) return;
     var prod = (p.Producto || '').toUpperCase().trim();
     if (!prod) return;
     if (!map[prod]) map[prod] = { producto: prod, pendiente: 0, pedido: 0 };
-    map[prod].pendiente += pend;
+    map[prod].pendiente += Number(p.Cant_Pendiente) || 0;
     map[prod].pedido += Number(p.Cantidad) || 0;
   });
 
@@ -333,17 +454,15 @@ function buildTopProductos(ped) {
 }
 
 // ── 5. Top Clientes por Volumen ──
-function buildTopClientes(ped) {
+function buildTopClientes(orders) {
   var map = {};
-  ped.forEach(function(p) {
-    var cli = (p.Cliente || '').trim();
-    if (!cli) return;
-    if (!map[cli]) map[cli] = { cliente: cli, uds: 0, ordenes: 0, empresas: {}, _keys: {} };
-    map[cli].uds += Number(p.Cantidad) || 0;
-    var sigla = dGetSigla(p.Nombre_Empresa);
-    map[cli].empresas[sigla] = true;
-    var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
-    if (!map[cli]._keys[key]) { map[cli]._keys[key] = true; map[cli].ordenes++; }
+  orders.forEach(function(o) {
+    var cli = o.cliente;
+    if (!cli || cli === '—') return;
+    if (!map[cli]) map[cli] = { cliente: cli, uds: 0, ordenes: 0, empresas: {} };
+    map[cli].uds += o.cantPedida;
+    map[cli].ordenes++;
+    map[cli].empresas[o.sigla] = true;
   });
 
   var arr = Object.values(map);
@@ -420,17 +539,16 @@ function buildDevoluciones(dev) {
 }
 
 // ── 7. Top Comerciales ──
-function buildTopComerciales(ped) {
+function buildTopComerciales(orders) {
   var map = {};
-  ped.forEach(function(p) {
-    var com = (p.Comercial || '').trim();
+  orders.forEach(function(o) {
+    var com = o.comercial;
     if (!com) return;
-    if (!map[com]) map[com] = { comercial: com, ordenes: 0, uds: 0, entregada: 0, pedida: 0, _keys: {} };
-    map[com].uds += Number(p.Cantidad) || 0;
-    map[com].entregada += Number(p.Cant_Entregada) || 0;
-    map[com].pedida += Number(p.Cantidad) || 0;
-    var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
-    if (!map[com]._keys[key]) { map[com]._keys[key] = true; map[com].ordenes++; }
+    if (!map[com]) map[com] = { comercial: com, ordenes: 0, uds: 0, entregada: 0, pedida: 0 };
+    map[com].ordenes++;
+    map[com].uds += o.cantPedida;
+    map[com].entregada += o.cantEntregada;
+    map[com].pedida += o.cantPedida;
   });
 
   var arr = Object.values(map);
@@ -455,36 +573,28 @@ function buildTopComerciales(ped) {
   }).join('');
 }
 
-// ── 8. Inventario ──
-function buildInventario(inv, ped) {
-  var empMap = {};
-  inv.forEach(function(i) {
-    var sigla = dGetSigla(i.Empresa);
-    if (!empMap[sigla]) empMap[sigla] = { stock: 0, productos: 0 };
-    empMap[sigla].stock += Number(i.Cantidad) || 0;
-    empMap[sigla].productos++;
-  });
-
-  var pendByEmp = {};
-  ped.forEach(function(p) {
-    if ((p.Estado_2 || 'Abierto').trim() !== 'Abierto') return;
-    var sigla = dGetSigla(p.Nombre_Empresa);
-    if (!pendByEmp[sigla]) pendByEmp[sigla] = 0;
-    pendByEmp[sigla] += Number(p.Cant_Pendiente) || 0;
-  });
-
-  var empArr = Object.keys(empMap);
-  empArr.sort();
-
+// ── 8. Inventario (snapshot Kardex + comprometido de pedidos) ──
+function buildInventario(ped, fEmp) {
   var el = document.getElementById('chart-inventario');
 
-  if (!empArr.length) {
-    el.innerHTML = '<div style="color:#a0aec0;text-align:center;padding:20px">Sin registros de inventario</div>';
+  if (!dExist) {
+    el.innerHTML = '<div style="color:#a0aec0;text-align:center;padding:20px">No se pudo cargar el snapshot de existencias</div>';
     return;
   }
 
-  var totalStock = inv.reduce(function(s, i) { return s + (Number(i.Cantidad) || 0); }, 0);
-  var totalPend = Object.values(pendByEmp).reduce(function(s, v) { return s + v; }, 0);
+  var stk = dStockTotals(fEmp);
+
+  // Comprometido: pendiente de pedidos por empresa (mismo criterio que reportes.js).
+  var pendByEmp = {};
+  ped.forEach(function(p) {
+    if (!dLineaPendiente(p)) return;
+    var sigla = dGetSigla(p.Nombre_Empresa);
+    pendByEmp[sigla] = (pendByEmp[sigla] || 0) + (Number(p.Cant_Pendiente) || 0);
+  });
+
+  var empresas = dHoldingEmpresas().filter(function(e) { return !fEmp || e.value === fEmp; });
+  var totalStock = stk.uds;
+  var totalPend = Object.keys(pendByEmp).reduce(function(s, k) { return s + pendByEmp[k]; }, 0);
 
   var html = '<div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">';
   html += '<div style="flex:1;min-width:120px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Stock total</div><div style="font-size:1.4rem;font-weight:800;color:#2980b9">' + totalStock.toLocaleString('es-CO') + '</div></div>';
@@ -493,37 +603,35 @@ function buildInventario(inv, ped) {
   html += '</div>';
 
   html += '<div class="hbar-chart">';
-  empArr.forEach(function(sigla) {
-    var stock = empMap[sigla].stock;
-    var pend = pendByEmp[sigla] || 0;
+  empresas.forEach(function(e) {
+    var stock = stk.porEmp[e.sigla] || 0;
+    var pend = pendByEmp[e.sigla] || 0;
+    if (stock === 0 && pend === 0) return;
     var maxBar = Math.max(stock, pend, 1);
-    var color = EMP_COLORS[sigla] || '#718096';
+    var color = EMP_COLORS[e.sigla] || '#718096';
     html += '<div class="hbar-row">' +
-      '<div class="hbar-label">' + escHtml(sigla) + '</div>' +
+      '<div class="hbar-label">' + escHtml(e.sigla) + '</div>' +
       '<div class="hbar-track" style="position:relative">' +
-        '<div class="hbar-fill" style="width:' + Math.max(3, (stock / maxBar) * 100) + '%;background:' + color + ';opacity:0.7">' + stock.toLocaleString('es-CO') + '</div>' +
+        '<div class="hbar-fill" style="width:' + Math.max(3, (Math.max(stock, 0) / maxBar) * 100) + '%;background:' + color + ';opacity:0.7">' + stock.toLocaleString('es-CO') + '</div>' +
       '</div>' +
       '<div class="hbar-value" style="color:' + ((stock - pend) >= 0 ? '#27ae60' : '#e74c3c') + '">' + (stock - pend).toLocaleString('es-CO') + '</div>' +
     '</div>';
   });
   html += '</div>';
-  html += '<div style="font-size:0.72rem;color:#a0aec0;margin-top:8px;text-align:right">Barra = stock | Valor = disponible (stock - comprometido)</div>';
+  html += '<div style="font-size:0.72rem;color:#a0aec0;margin-top:8px;text-align:right">Barra = stock (snapshot Kardex) | Valor = disponible (stock - comprometido)</div>';
 
   el.innerHTML = html;
 }
 
 // ── 9. Resumen Modulos ──
-function buildResumenModulos(ped, dev, ing, inv, oc, mue, ree) {
-  var ordSet = {};
-  ped.forEach(function(p) {
-    ordSet[(p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '')] = true;
-  });
+function buildResumenModulos(orders, dev, ing, oc, mue, ree, fEmp) {
+  var stk = dStockTotals(fEmp);
 
   var modules = [
-    { icon: '📋', name: 'Pedidos', count: Object.keys(ordSet).length, detail: ped.length + ' lineas' },
+    { icon: '📋', name: 'Pedidos', count: orders.length, detail: orders.reduce(function(s, o) { return s + o.lines.length; }, 0) + ' lineas' },
     { icon: '🔄', name: 'Devoluciones', count: dev.length, detail: dev.filter(function(d) { return d.Estado === 'Pendiente'; }).length + ' pendientes' },
     { icon: '📥', name: 'Ingresos', count: ing.length, detail: ing.reduce(function(s, i) { return s + (Number(i.Cantidad) || 0); }, 0).toLocaleString('es-CO') + ' uds' },
-    { icon: '📦', name: 'Inventario', count: inv.length, detail: inv.reduce(function(s, i) { return s + (Number(i.Cantidad) || 0); }, 0).toLocaleString('es-CO') + ' uds' },
+    { icon: '📦', name: 'Inventario', count: stk.disponible ? stk.productos : '—', detail: stk.disponible ? stk.uds.toLocaleString('es-CO') + ' uds en stock' : 'sin snapshot' },
     { icon: '🛒', name: 'Ordenes Compra', count: oc.length, detail: oc.filter(function(o) { return o.Estado === 'Abierta'; }).length + ' abiertas' },
     { icon: '🧪', name: 'Muestras', count: mue.length, detail: mue.filter(function(m) { return (m.Estado || '') === 'Pendiente'; }).length + ' pendientes' },
     { icon: '🏭', name: 'Salidas prod.', count: ree.length, detail: ree.reduce(function(s, r) { return s + (Number(r.Cantidad) || 0); }, 0).toLocaleString('es-CO') + ' uds' },
@@ -542,36 +650,29 @@ function buildResumenModulos(ped, dev, ing, inv, oc, mue, ree) {
 }
 
 // ── Tiempos de entrega ──
-function buildTiempos(ped) {
+function buildTiempos(orders) {
   var today = new Date();
-  today.setHours(0,0,0,0);
-  var ordDelivered = {};
-  var ordPending = {};
+  today.setHours(0, 0, 0, 0);
 
-  ped.forEach(function(p) {
-    var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
-    var est2 = (p.Estado_2 || 'Abierto').trim();
+  var deliveryVals = [];
+  var pendingVals = [];
 
-    if (p.Fecha_Ult_Entrega && p.Fecha_Pedido && (Number(p.Cant_Entregada) || 0) > 0 && !ordDelivered[key]) {
-      var dE = new Date(p.Fecha_Ult_Entrega);
-      var dP = new Date(p.Fecha_Pedido);
+  orders.forEach(function(o) {
+    if (o.fechaUltEntrega && o.fechaPedido && o.cantEntregada > 0) {
+      var dE = new Date(o.fechaUltEntrega), dP = new Date(o.fechaPedido);
       if (!isNaN(dE) && !isNaN(dP)) {
         var days = Math.round((dE - dP) / 86400000);
-        if (days >= 0) ordDelivered[key] = days;
+        if (days >= 0) deliveryVals.push(days);
       }
     }
-
-    if (est2 === 'Abierto' && (Number(p.Cant_Pendiente) || 0) > 0 && p.Fecha_Pedido && !ordPending[key]) {
-      var dP2 = new Date(p.Fecha_Pedido);
+    if (o.estado2 === 'Abierto' && o.esPendiente && o.fechaPedido) {
+      var dP2 = new Date(o.fechaPedido);
       if (!isNaN(dP2)) {
         var dd = Math.round((today - dP2) / 86400000);
-        if (dd >= 0) ordPending[key] = dd;
+        if (dd >= 0) pendingVals.push(dd);
       }
     }
   });
-
-  var deliveryVals = Object.values(ordDelivered);
-  var pendingVals = Object.values(ordPending);
 
   var el = document.getElementById('chart-tiempos');
   document.getElementById('tiempos-sub').textContent = deliveryVals.length + ' entregadas / ' + pendingVals.length + ' pendientes';
@@ -581,10 +682,10 @@ function buildTiempos(ped) {
     return;
   }
 
-  var avgDel = deliveryVals.length ? Math.round(deliveryVals.reduce(function(s,v){return s+v;},0) / deliveryVals.length) : 0;
+  var avgDel = deliveryVals.length ? Math.round(deliveryVals.reduce(function(s, v) { return s + v; }, 0) / deliveryVals.length) : 0;
   var minDel = deliveryVals.length ? Math.min.apply(null, deliveryVals) : 0;
   var maxDel = deliveryVals.length ? Math.max.apply(null, deliveryVals) : 0;
-  var avgPend = pendingVals.length ? Math.round(pendingVals.reduce(function(s,v){return s+v;},0) / pendingVals.length) : 0;
+  var avgPend = pendingVals.length ? Math.round(pendingVals.reduce(function(s, v) { return s + v; }, 0) / pendingVals.length) : 0;
   var minPend = pendingVals.length ? Math.min.apply(null, pendingVals) : 0;
   var maxPend = pendingVals.length ? Math.max.apply(null, pendingVals) : 0;
 
@@ -644,34 +745,23 @@ function buildTiempos(ped) {
 }
 
 // ── Top Pedidos con Mayor Demora ──
-function buildTopDemora(ped) {
+function buildTopDemora(orders) {
   var today = new Date();
-  today.setHours(0,0,0,0);
-  var ordMap = {};
+  today.setHours(0, 0, 0, 0);
 
-  ped.forEach(function(p) {
-    var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 !== 'Abierto') return;
-    if ((Number(p.Cant_Pendiente) || 0) <= 0) return;
-    if (!p.Fecha_Pedido) return;
-
-    var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '');
-    if (!ordMap[key]) {
-      var dP = new Date(p.Fecha_Pedido);
-      if (isNaN(dP)) return;
-      ordMap[key] = {
-        consecutivo: p.Consecutivo || '—',
-        cliente: (p.Cliente || '—').trim(),
-        empresa: dGetSigla(p.Nombre_Empresa),
-        dias: Math.round((today - dP) / 86400000),
-        pendiente: 0, pedido: 0
-      };
-    }
-    ordMap[key].pendiente += Number(p.Cant_Pendiente) || 0;
-    ordMap[key].pedido += Number(p.Cantidad) || 0;
+  var arr = orders.filter(function(o) {
+    return o.estado2 === 'Abierto' && o.esPendiente && o.fechaPedido && !isNaN(new Date(o.fechaPedido));
+  }).map(function(o) {
+    return {
+      consecutivo: o.consecutivo,
+      cliente: o.cliente,
+      empresa: o.sigla,
+      dias: Math.round((today - new Date(o.fechaPedido)) / 86400000),
+      pendiente: o.pendUds,
+      pedido: o.cantPedida
+    };
   });
 
-  var arr = Object.values(ordMap);
   arr.sort(function(a, b) { return b.dias - a.dias; });
   arr = arr.slice(0, 10);
 
