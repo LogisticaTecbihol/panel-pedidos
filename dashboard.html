@@ -99,7 +99,10 @@
   }
   .dash-filters .fg { display: flex; flex-direction: column; gap: 3px; }
   .dash-filters label { font-size: 0.74rem; font-weight: 700; color: #4a5568; text-transform: uppercase; }
-  .dash-filters select { padding: 6px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.84rem; font-family: inherit; }
+  .dash-filters select,
+  .dash-filters input[type=date] { padding: 6px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.84rem; font-family: inherit; outline: none; transition: border-color 0.2s; background: white; }
+  .dash-filters select:focus,
+  .dash-filters input[type=date]:focus { border-color: #1a5276; }
 
   .dash-ts { font-size: 0.76rem; color: #718096; text-align: right; margin-top: -14px; margin-bottom: 14px; }
 </style>
@@ -162,6 +165,8 @@
   <!-- Filters -->
   <div class="dash-filters">
     <div class="fg"><label>Empresa</label><select id="df-emp"><option value="">Todas</option></select></div>
+    <div class="fg"><label>Desde</label><input type="date" id="df-desde" title="Fecha del pedido — desde" style="width:150px"></div>
+    <div class="fg"><label>Hasta</label><input type="date" id="df-hasta" title="Fecha del pedido — hasta" style="width:150px"></div>
     <button onclick="clearDashFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar</button>
   </div>
 
@@ -259,6 +264,6 @@
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260811a"></script>
-<script src="js/dashboard.js?v=20260831b"></script>
+<script src="js/dashboard.js?v=20260831c"></script>
 </body>
 </html>

@@ -19,6 +19,9 @@ var SIGLAS = {
 var EMP_COLORS = { PARCELAR: '#2980b9', GREEN: '#27ae60', RESO: '#e67e22', IASO: '#8e44ad', IAS: '#c0392b' };
 function dGetSigla(n) { return SIGLAS[(n || '').trim()] || n || '—'; }
 
+// Rango de fechas por defecto al abrir el dashboard (fecha del pedido — desde).
+var DASH_DEFAULT_DESDE = '2026-07-01';
+
 // ══════════════════════════════════════════════════════════════
 // Coherencia con el módulo Pedidos
 // ──────────────────────────────────────────────────────────────
@@ -138,11 +141,11 @@ async function loadDashboard() {
   try {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Producto,Comercial' }),
-      apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo' }).catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad' }).catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Estado' }).catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras', { columns: 'Empresa,Estado' }).catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases', { columns: 'Empresa,Cantidad' }).catch(function() { return { ok: true, reenvases: [] }; })
+      apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Estado,Fecha' }).catch(function() { return { ok: true, ordenes: [] }; }),
+      apiGet('getMuestras', { columns: 'Empresa,Estado,Fecha_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getReenvases', { columns: 'Empresa,Cantidad,Fecha' }).catch(function() { return { ok: true, reenvases: [] }; })
     ]);
 
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');
@@ -209,30 +212,67 @@ function populateDashFilters() {
   }).join('');
 
   if (!dashFiltersAttached) {
+    var dDesde = document.getElementById('df-desde');
+    var dHasta = document.getElementById('df-hasta');
+    if (!dDesde.value) dDesde.value = DASH_DEFAULT_DESDE;
     sel.addEventListener('change', buildDashboard);
+    dDesde.addEventListener('change', buildDashboard);
+    dHasta.addEventListener('change', buildDashboard);
     dashFiltersAttached = true;
   }
 }
 
 function clearDashFilters() {
   document.getElementById('df-emp').value = '';
+  document.getElementById('df-desde').value = DASH_DEFAULT_DESDE;
+  document.getElementById('df-hasta').value = '';
   buildDashboard();
 }
 
 // ── Build Dashboard ──
 function buildDashboard() {
   var fEmp = document.getElementById('df-emp').value;
+  var fDesde = document.getElementById('df-desde').value;   // 'YYYY-MM-DD' | ''
+  var fHasta = document.getElementById('df-hasta').value;   // 'YYYY-MM-DD' | ''
 
-  var ped = fEmp ? dPedidos.filter(function(p) { return p.Nombre_Empresa === fEmp; }) : dPedidos;
-  var dev = fEmp ? dDevoluciones.filter(function(d) { return d.Empresa === fEmp; }) : dDevoluciones;
-  var oc = fEmp ? dOrdenes.filter(function(o) { return o.Empresa_Destino === fEmp || o.Empresa_Origen === fEmp; }) : dOrdenes;
-  var mue = fEmp ? dMuestras.filter(function(m) { return m.Empresa === fEmp; }) : dMuestras;
-  var ree = fEmp ? dReenvases.filter(function(r) { return r.Empresa === fEmp; }) : dReenvases;
-  var ing = fEmp ? dIngresos.filter(function(i) { return i.Empresa_Origen === fEmp || i.Empresa_Destino === fEmp; }) : dIngresos;
+  // Rango por fecha del pedido — mismo criterio que pedidos.js: compara por
+  // prefijo YYYY-MM-DD (la fecha puede venir con hora o como Date serializada).
+  // Cada módulo se filtra por su propia fecha: Devoluciones/Ingresos/OC/Salidas
+  // por 'Fecha', Muestras por 'Fecha_Solicitud'. El snapshot de existencias
+  // (stock) es siempre "a hoy" y no se ve afectado por el rango.
+  function dInRango(fecha) {
+    if (!fDesde && !fHasta) return true;
+    var f10 = String(fecha || '').slice(0, 10);
+    if (fDesde && f10 < fDesde) return false;
+    if (fHasta && f10 > fHasta) return false;
+    return true;
+  }
+
+  var ped = dPedidos.filter(function(p) {
+    return (!fEmp || p.Nombre_Empresa === fEmp) && dInRango(p.Fecha_Pedido);
+  });
+  var dev = dDevoluciones.filter(function(d) {
+    return (!fEmp || d.Empresa === fEmp) && dInRango(d.Fecha);
+  });
+  var oc = dOrdenes.filter(function(o) {
+    return (!fEmp || o.Empresa_Destino === fEmp || o.Empresa_Origen === fEmp) && dInRango(o.Fecha);
+  });
+  var mue = dMuestras.filter(function(m) {
+    return (!fEmp || m.Empresa === fEmp) && dInRango(m.Fecha_Solicitud);
+  });
+  var ree = dReenvases.filter(function(r) {
+    return (!fEmp || r.Empresa === fEmp) && dInRango(r.Fecha);
+  });
+  var ing = dIngresos.filter(function(i) {
+    return (!fEmp || i.Empresa_Origen === fEmp || i.Empresa_Destino === fEmp) && dInRango(i.Fecha);
+  });
 
   dOrders = dBuildOrders(ped);
 
-  document.getElementById('dash-ts').textContent = 'Actualizado: ' + new Date().toLocaleString('es-CO');
+  var rangoTxt = (fDesde || fHasta)
+    ? '  ·  Rango: ' + (fDesde ? fmtDate(fDesde) : 'inicio') + ' → ' + (fHasta ? fmtDate(fHasta) : 'hoy')
+    : '';
+  document.getElementById('dash-ts').textContent = 'Actualizado: ' + new Date().toLocaleString('es-CO') + rangoTxt;
 
   buildKPIs(dOrders, ped, dev, oc, fEmp);
   buildTiempos(dOrders);
@@ -618,7 +658,7 @@ function buildInventario(ped, fEmp) {
     '</div>';
   });
   html += '</div>';
-  html += '<div style="font-size:0.72rem;color:#a0aec0;margin-top:8px;text-align:right">Barra = stock (snapshot Kardex) | Valor = disponible (stock - comprometido)</div>';
+  html += '<div style="font-size:0.72rem;color:#a0aec0;margin-top:8px;text-align:right">Barra = stock (snapshot Kardex, siempre a hoy) | Valor = disponible (stock - comprometido)</div>';
 
   el.innerHTML = html;
 }
