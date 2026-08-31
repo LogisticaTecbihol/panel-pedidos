@@ -5694,6 +5694,44 @@ function renderDespachos() {
   }
 }
 
+// ── Export despachos a Excel ──
+function exportDespachosExcel() {
+  var rows = despachosFiltered || [];
+  if (!rows.length) { showToast('No hay despachos para exportar', '#e74c3c'); return; }
+
+  function fechaCell(s) {
+    if (!s) return '';
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    return s;
+  }
+
+  var data = rows.map(function(d) {
+    var key = adjuntoKey(d.empresa, d.consecutivo, d.cliente);
+    var fac = _despFacturaMap[d.remision] || {};
+    return {
+      'Empresa': getSigla(d.empresa) || d.empresa || '',
+      'Remisión': d.remision || '',
+      'Cliente': d.cliente || '',
+      'Consecutivo': d.consecutivo || '',
+      'Fecha': fechaCell(d.fecha),
+      'Adjuntos': adjuntosIndex[key] ? 'Sí' : 'No',
+      'Adjuntado por': (adjuntosUploaders[key] || []).join(', '),
+      'N° Factura': fac.num_factura || '',
+      'Fecha Factura': fechaCell(fac.fecha_factura)
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    {wch:12},{wch:14},{wch:30},{wch:14},{wch:12},{wch:10},{wch:24},{wch:14},{wch:14}
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Despachos');
+  XLSX.writeFile(wb, 'Despachos_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' remisiones', '#27ae60');
+}
+
 async function onDespFacturaChange(el) {
   var rem = el.dataset.rem;
   if (!rem) return;
