@@ -2346,14 +2346,33 @@ async function guardarTodo() {
         entregas: entregasPDF,
         total: totalEntrega
       };
-      generarRemisionPDF(_pdfData);
+      // Paquete completo de documentos: Pedido + Remisión + remisiones de
+      // traslado de las OCs YA LEGALIZADAS ligadas a este pedido. Se usa
+      // tanto para la descarga local como para el envío automático a
+      // contabilidad. Las líneas del pedido salen de detailWorkingLines
+      // (recién guardadas), no del snapshot previo a la edición.
+      var _pkgSigla = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || 'EMP';
+      var _pedidoPkgData = _dataPedidoDesdeModal(c, detailWorkingLines);
+      _pedidoPkgData.total = hdr.Total_Orden;
+      var _ocGroupsPkg = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+
+      try {
+        var _dlDoc = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, {});
+        if (_dlDoc) _dlDoc.save('Paquete_' + _pkgSigla + '_' + (c.Consecutivo || '') + '_Rem' + rem + '.pdf');
+        else generarRemisionPDF(_pdfData);
+      } catch (e) {
+        console.error('Error armando paquete PDF, se descarga solo la remisión', e);
+        try { generarRemisionPDF(_pdfData); } catch (e2) { console.error(e2); }
+      }
+
       if (_pendingContab && _pendingContab.contabIds && _pendingContab.contabIds.length && typeof NOTIF !== 'undefined') {
         try {
-          var _cr = generarRemisionPDF(Object.assign({}, _pdfData, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
-          if (_cr && _cr.doc) {
-            await NOTIF.enviarPDFContabilidad(_cr.doc, {
+          var _cr = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, { contabilidad: true });
+          if (_cr) {
+            await NOTIF.enviarPDFContabilidad(_cr, {
               modulo: 'pedidos', referencia: rem,
-              titulo: 'Remisión ' + rem + ' — Pedido ' + c.Consecutivo,
+              titulo: 'Paquete Pedido ' + c.Consecutivo + ' — Rem ' + rem +
+                      (_ocGroupsPkg.length ? ' + OC' : ''),
               contabIds: _pendingContab.contabIds, contabNames: _pendingContab.contabNames
             });
           }
@@ -4773,41 +4792,39 @@ function _exportarRemisionEspecifica(rem, opts) {
     entregas: rem.items,
     total: rem.total
   };
+  var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
+  var dataPedidoPkg = _dataPedidoDesdeModal(c);
+  var ocGroupsPkg = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+
   if (opts.share) {
     if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
       showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
     }
-    var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
-    var dataPedido = _dataPedidoDesdeModal(c);
-    var ocGroups = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
     NOTIF.openModalEnviar({
       modulo: 'pedidos',
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
-      titulo: 'Remisión #' + rem.remision + ' — ' + (data.cliente || 'sin cliente'),
+      titulo: 'Paquete Pedido #' + (c.Consecutivo || '') + ' — Rem ' + rem.remision +
+              (ocGroupsPkg.length ? ' + OC' : '') + ' — ' + (data.cliente || 'sin cliente'),
       empresa: c.Nombre_Empresa || '',
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
-        var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
-        if (!r) return null;
-        var doc = r.doc;
-        generarPedidoPDF(Object.assign({}, dataPedido, { return_doc: true, _doc: doc }));
-        var mergedByRem = {};
-        ocGroups.forEach(function(ocLines) {
-          if (!ocLines || !ocLines.length) return;
-          var h = ocLines[0];
-          var kRem = String(h.Remision || '').trim() + '||' + String(h.Remision_Origen || '').trim();
-          if (!mergedByRem[kRem]) mergedByRem[kRem] = [];
-          ocLines.forEach(function(l) { mergedByRem[kRem].push(l); });
-        });
-        Object.keys(mergedByRem).forEach(function(k) {
-          generarRemisionesTrasladoPDF(mergedByRem[k], { return_doc: true, _doc: doc, contabilidad: true });
-        });
-        return doc;
+        return _construirPaquetePedidoPDF(dataPedidoPkg, data, ocGroupsPkg, { contabilidad: true });
       }
     });
     return;
   }
-  generarRemisionPDF(data);
+
+  // Exportación normal: un solo PDF con pedido + remisión + OCs de traslado legalizadas.
+  var pkgDoc = null;
+  try {
+    pkgDoc = _construirPaquetePedidoPDF(dataPedidoPkg, data, ocGroupsPkg, {});
+  } catch (e) {
+    console.error('Error armando paquete PDF, se exporta solo la remisión', e);
+  }
+  if (!pkgDoc) { generarRemisionPDF(data); return; }
+  pkgDoc.save('Paquete_' + (sig || 'EMP') + '_' + (c.Consecutivo || '') + '_Rem' + rem.remision + '.pdf');
+  showToast('Paquete descargado: pedido + remisión' +
+            (ocGroupsPkg.length ? ' + ' + ocGroupsPkg.length + ' OC(s) de traslado' : ''), '#27ae60');
 }
 
 function exportarRemisionDesdeModal(ev, opts) {
@@ -4860,8 +4877,8 @@ function exportarRemisionDesdeModal(ev, opts) {
   }, 0);
 }
 
-function _dataPedidoDesdeModal(c) {
-  var lines = getLinesFor(c);
+function _dataPedidoDesdeModal(c, linesOverride) {
+  var lines = (linesOverride && linesOverride.length) ? linesOverride : getLinesFor(c);
   var obsEl = document.getElementById('m-observaciones');
   var obsText = (obsEl ? obsEl.value.trim() : '') || (lines[0] && lines[0].Observaciones) || c.Observaciones || '';
   var archivo = lines.length ? (lines[0].Archivo_Fuente || '') : '';
@@ -4901,6 +4918,47 @@ function _dataPedidoDesdeModal(c) {
     }),
     archivo: archivo
   };
+}
+
+// ── Paquete completo de documentos del pedido ──
+//
+// Arma un ÚNICO jsPDF con, en este orden:
+//   1) Pedido
+//   2) Remisión seleccionada (si remData != null)
+//   3) Remisiones de traslado de las OCs de traslado YA LEGALIZADAS
+//      ligadas a este pedido (ocGroups = ocsLegalizadasPorPedido[...]).
+//      Las solicitudes de compra abiertas (sin remisión) NO se incluyen.
+//
+// opts.contabilidad => sella remisión y traslados como
+// "COPIA - CONTABILIDAD" (para el envío automático a contabilidad).
+//
+// Devuelve el jsPDF doc, o null si no se pudo generar la base (pedido).
+function _construirPaquetePedidoPDF(pedidoData, remData, ocGroups, opts) {
+  opts = opts || {};
+  var rp = generarPedidoPDF(Object.assign({}, pedidoData, { return_doc: true }));
+  if (!rp || !rp.doc) return null;
+  var doc = rp.doc;
+
+  if (remData) {
+    var remExtra = { return_doc: true, _doc: doc };
+    if (opts.contabilidad) remExtra.copies = ['COPIA - CONTABILIDAD'];
+    generarRemisionPDF(Object.assign({}, remData, remExtra));
+  }
+
+  var mergedByRem = {};
+  (ocGroups || []).forEach(function(ocLines) {
+    if (!ocLines || !ocLines.length) return;
+    var h = ocLines[0];
+    var kRem = String(h.Remision || '').trim() + '||' + String(h.Remision_Origen || '').trim();
+    if (kRem === '||') return; // OC sin ninguna remisión de traslado → no legalizada
+    if (!mergedByRem[kRem]) mergedByRem[kRem] = [];
+    ocLines.forEach(function(l) { mergedByRem[kRem].push(l); });
+  });
+  Object.keys(mergedByRem).forEach(function(k) {
+    generarRemisionesTrasladoPDF(mergedByRem[k], { return_doc: true, _doc: doc, contabilidad: !!opts.contabilidad });
+  });
+
+  return doc;
 }
 
 function exportarPedidoDesdeModal(opts) {

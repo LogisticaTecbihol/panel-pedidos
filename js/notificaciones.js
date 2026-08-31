@@ -729,7 +729,7 @@ var NOTIF = (function() {
           '</div>' +
           '<div class="mbody" style="text-align:center;padding:24px">' +
             '<div style="font-size:2rem;margin-bottom:12px">📋</div>' +
-            '<div style="font-size:0.92rem;color:#2d3748;margin-bottom:8px">Al guardar se enviará automáticamente la remisión PDF a:</div>' +
+            '<div style="font-size:0.92rem;color:#2d3748;margin-bottom:8px">Al guardar se enviará automáticamente el PDF a:</div>' +
             '<div style="font-size:1.1rem;font-weight:700;color:#7d3c98;margin-bottom:4px">' + escHtml(names) + '</div>' +
             '<div style="font-size:0.78rem;color:#718096">(Contabilidad · ' + escHtml(sigla) + ')</div>' +
           '</div>' +
