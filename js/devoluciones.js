@@ -1755,6 +1755,7 @@ async function saveTramitarDev() {
           await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
             modulo: 'devoluciones', referencia: refP.join(' · '),
             titulo: 'Remisión devolución — ' + (head.Cliente||''),
+            docLabel: 'Remisión',
             contabIds: _pendingContabDev.contabIds, contabNames: _pendingContabDev.contabNames
           });
         }

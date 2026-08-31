@@ -974,6 +974,7 @@ async function saveGestionarCam() {
           await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
             modulo: 'cambios', referencia: refP.join(' · '),
             titulo: 'Remisión cambio — ' + (head.Cliente||''),
+            docLabel: 'Remisión',
             contabIds: _pendingContabCam.contabIds, contabNames: _pendingContabCam.contabNames
           });
         }
@@ -1416,7 +1417,7 @@ async function loadCamAdjuntos(empresa, consecutivo, cliente) {
       '<div class="adjunto-actions">' +
         '<button class="btn-adj-ver" onclick="previewCamAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
         '<button class="btn-adj-ver" onclick="downloadCamAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
-        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteCamAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+        (AUTH.canUploadAdjuntos() ? '<button class="btn-adj-del" onclick="deleteCamAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
       '</div>' +
     '</div>';
   }).join('');

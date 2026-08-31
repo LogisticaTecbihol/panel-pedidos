@@ -937,6 +937,7 @@ async function confirmAndSaveIngreso() {
           await NOTIF.enviarPDFContabilidad(_cr.doc, {
             modulo: 'ingresos', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + _remIng,
             titulo: 'Remisión ingreso #' + _remIng + ' — ' + (origen || ''),
+            docLabel: 'Remisión',
             contabIds: _pendingContabIng.contabIds, contabNames: _pendingContabIng.contabNames
           });
         }
@@ -1056,7 +1057,7 @@ async function loadIngAdjuntos() {
       '<div class="adjunto-actions">' +
         '<button class="btn-adj-ver" onclick="previewIngAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
         '<button class="btn-adj-ver" onclick="downloadIngAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
-        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteIngAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+        (AUTH.canUploadAdjuntos() ? '<button class="btn-adj-del" onclick="deleteIngAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
       '</div>' +
     '</div>';
   }).join('');

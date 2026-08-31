@@ -747,10 +747,18 @@ var NOTIF = (function() {
     });
   }
 
+  // Envía el PDF a los usuarios de contabilidad de la empresa y avisa
+  // por toast el resultado (éxito o fallo). Devuelve el resultado de
+  // compartirPDF ({ ok, sent, errors }) o { ok:false, error }.
+  //   meta.docLabel:    etiqueta del documento ('Remisión', 'Paquete', …). Default 'PDF'.
+  //   meta.accionManual: nombre de un botón visible para reenviar a mano si falla.
   async function enviarPDFContabilidad(doc, meta) {
-    if (!meta || !meta.contabIds || !meta.contabIds.length) return;
+    if (!meta || !meta.contabIds || !meta.contabIds.length) return { ok: false, error: 'sin destinatarios' };
     var ids = meta.contabIds.filter(function(id) { return id !== _uid; });
-    if (!ids.length) return;
+    if (!ids.length) return { ok: false, error: 'sin destinatarios' };
+    var etiqueta = meta.docLabel || 'PDF';
+    var quien = meta.contabNames ? ' (' + meta.contabNames + ')' : '';
+    var manual = meta.accionManual ? ' Reenvíalo manualmente con "' + meta.accionManual + '".' : '';
     try {
       var result = await compartirPDF(doc, {
         modulo: meta.modulo,
@@ -759,10 +767,19 @@ var NOTIF = (function() {
         mensaje: null,
         destinatarios: ids
       });
-      if (result.ok) {
-        showToast('📨 Remisión enviada a contabilidad (' + (meta.contabNames || '') + ')', '#8e44ad');
+      if (result && result.ok) {
+        showToast('📨 Contabilidad notificada' + quien + ' · ' + etiqueta, '#8e44ad');
+        return result;
       }
-    } catch (e) { console.error('enviarPDFContabilidad error', e); }
+      var det = (result && result.errors && result.errors[0]) ? ' — ' + result.errors[0] : '';
+      showToast('⚠ Contabilidad NO notificada' + quien + ' · ' + etiqueta + det + '.' + manual, '#e74c3c');
+      return result || { ok: false, error: 'sin enviar' };
+    } catch (e) {
+      console.error('enviarPDFContabilidad error', e);
+      showToast('⚠ Contabilidad NO notificada' + quien + ' · ' + etiqueta + ': ' +
+                (e && e.message ? e.message : e) + '.' + manual, '#e74c3c');
+      return { ok: false, error: (e && e.message) ? e.message : String(e) };
+    }
   }
 
   return {

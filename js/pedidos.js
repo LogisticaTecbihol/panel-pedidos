@@ -2359,24 +2359,30 @@ async function guardarTodo() {
       try {
         var _dlDoc = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, {});
         if (_dlDoc) _dlDoc.save('Paquete_' + _pkgSigla + '_' + (c.Consecutivo || '') + '_Rem' + rem + '.pdf');
-        else generarRemisionPDF(_pdfData);
+        else { generarRemisionPDF(_pdfData); showToast('⚠ No se pudo armar el paquete; se descargó solo la remisión.', '#e67e22'); }
       } catch (e) {
         console.error('Error armando paquete PDF, se descarga solo la remisión', e);
         try { generarRemisionPDF(_pdfData); } catch (e2) { console.error(e2); }
+        showToast('⚠ No se pudo armar el paquete; se descargó solo la remisión.', '#e67e22');
       }
 
       if (_pendingContab && _pendingContab.contabIds && _pendingContab.contabIds.length && typeof NOTIF !== 'undefined') {
         try {
           var _cr = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, { contabilidad: true });
-          if (_cr) {
-            await NOTIF.enviarPDFContabilidad(_cr, {
-              modulo: 'pedidos', referencia: rem,
-              titulo: 'Paquete Pedido ' + c.Consecutivo + ' — Rem ' + rem +
-                      (_ocGroupsPkg.length ? ' + OC' : ''),
-              contabIds: _pendingContab.contabIds, contabNames: _pendingContab.contabNames
-            });
-          }
-        } catch (e) { console.error('Auto-send contabilidad error', e); }
+          if (!_cr) throw new Error('no se pudo armar el paquete PDF');
+          await NOTIF.enviarPDFContabilidad(_cr, {
+            modulo: 'pedidos', referencia: rem,
+            titulo: 'Paquete Pedido ' + c.Consecutivo + ' — Rem ' + rem +
+                    (_ocGroupsPkg.length ? ' + OC' : ''),
+            docLabel: 'Paquete',
+            accionManual: 'Enviar Pedido',
+            contabIds: _pendingContab.contabIds, contabNames: _pendingContab.contabNames
+          });
+        } catch (e) {
+          console.error('Auto-send contabilidad error', e);
+          showToast('⚠ Contabilidad NO notificada (' + (_pendingContab.contabNames || '') + ') · Paquete: ' +
+                    (e && e.message ? e.message : e) + '. Reenvíalo manualmente con "📨 Enviar Pedido".', '#e74c3c');
+        }
       }
       _pendingContab = null;
     }
@@ -5330,7 +5336,7 @@ async function loadAdjuntos(empresa, consecutivo, cliente) {
       '<div class="adjunto-actions">' +
         '<button class="btn-adj-ver" onclick="previewAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
         '<button class="btn-adj-ver" onclick="downloadAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
-        (AUTH.canEdit() ? '<button class="btn-adj-del" onclick="deleteAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+        (AUTH.canUploadAdjuntos() ? '<button class="btn-adj-del" onclick="deleteAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
       '</div>' +
     '</div>';
   }).join('');
@@ -5769,7 +5775,7 @@ async function loadDespachoAdjuntos() {
       '<div class="adjunto-actions">' +
         '<button class="btn-adj-ver" onclick="previewAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
         '<button class="btn-adj-ver" onclick="downloadAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
-        (AUTH.canEdit() ? '<button class="btn-adj-del" onclick="deleteDespachoAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+        (AUTH.canUploadAdjuntos() ? '<button class="btn-adj-del" onclick="deleteDespachoAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
       '</div>' +
     '</div>';
   }).join('');

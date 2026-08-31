@@ -1188,7 +1188,8 @@ async function confirmAndSaveReenvase() {
           var _sigla = (typeof EMPRESAS_SIGLA!=='undefined' && EMPRESAS_SIGLA[empresa]) || '';
           await NOTIF.enviarPDFContabilidad(_cr.doc, {
             modulo: 'reenvases', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + remAutoSalida,
-            titulo: 'Remisión salida #' + remAutoSalida, contabIds: _pendingContabRe.contabIds, contabNames: _pendingContabRe.contabNames
+            titulo: 'Remisión salida #' + remAutoSalida, docLabel: 'Remisión',
+            contabIds: _pendingContabRe.contabIds, contabNames: _pendingContabRe.contabNames
           });
         }
       } catch (e) { console.error('Auto-send contabilidad error', e); }

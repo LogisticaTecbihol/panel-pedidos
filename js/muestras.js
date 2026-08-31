@@ -1339,7 +1339,8 @@ async function saveMuestra() {
           if (_cr && _cr.doc) {
             await NOTIF.enviarPDFContabilidad(_cr.doc, {
               modulo: 'muestras', referencia: (document.getElementById('mu-consecutivo').value.trim()||'') + ' · Rem ' + result.remision,
-              titulo: 'Remisión muestras #' + result.remision, contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
+              titulo: 'Remisión muestras #' + result.remision, docLabel: 'Remisión',
+              contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
             });
           }
         } catch (e) { console.error('Auto-send contabilidad error', e); }
@@ -1415,7 +1416,8 @@ async function saveMuestra() {
         if (_crN && _crN.doc) {
           await NOTIF.enviarPDFContabilidad(_crN.doc, {
             modulo: 'muestras', referencia: (consecutivo||'') + ' · Rem ' + result.remision,
-            titulo: 'Remisión muestras #' + result.remision, contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
+            titulo: 'Remisión muestras #' + result.remision, docLabel: 'Remisión',
+            contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
           });
         }
       } catch (e) { console.error('Auto-send contabilidad error', e); }
@@ -1852,7 +1854,7 @@ async function loadMuAdjuntos(empresa, consecutivo) {
       '<div class="adjunto-actions">' +
         '<button class="btn-adj-ver" onclick="previewMuAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + ext + '\')">👁 Ver</button>' +
         '<button class="btn-adj-ver" onclick="downloadMuAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\',\'' + nameEsc.replace(/'/g, "\\'") + '\')">⬇ Descargar</button>' +
-        (AUTH.canDelete() ? '<button class="btn-adj-del" onclick="deleteMuAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
+        (AUTH.canUploadAdjuntos() ? '<button class="btn-adj-del" onclick="deleteMuAdjunto(\'' + pathEsc.replace(/'/g, "\\'") + '\')">🗑️</button>' : '') +
       '</div>' +
     '</div>';
   }).join('');
