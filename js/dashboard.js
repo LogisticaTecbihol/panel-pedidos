@@ -22,6 +22,13 @@ function dGetSigla(n) { return SIGLAS[(n || '').trim()] || n || '—'; }
 // Rango de fechas por defecto al abrir el dashboard (fecha del pedido — desde).
 var DASH_DEFAULT_DESDE = '2026-07-01';
 
+// Valor en millones de COP, compacto para tablas: $0,5 M · $45 M · $1.046 M
+function dMoneyM(v) {
+  var n = (Number(v) || 0) / 1e6;
+  var dec = (n !== 0 && Math.abs(n) < 10) ? 1 : 0;
+  return '$' + n.toLocaleString('es-CO', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + ' M';
+}
+
 // ══════════════════════════════════════════════════════════════
 // Coherencia con el módulo Pedidos
 // ──────────────────────────────────────────────────────────────
@@ -116,6 +123,19 @@ function dBuildOrders(ped) {
     o.pendUds = o.lines.reduce(function(s, l) { return s + (dLineaPendiente(l) ? (Number(l.Cant_Pendiente) || 0) : 0); }, 0);
     o.esPendiente = o.pendUds > 0;
     o.pct = o.cantPedida > 0 ? Math.round(o.cantEntregada / o.cantPedida * 100) : 0;
+
+    // Valor ($COP). Se excluyen líneas anuladas. Valor pedido = Valor_Total
+    // (= Valor_Unitario × Cantidad); entregado = Valor_Unitario × Cant_Entregada.
+    o.valorPedido = 0; o.valorEntregado = 0; o.lineasSinPrecio = 0;
+    o.lines.forEach(function(l) {
+      if ((l.Estado_2 || 'Abierto').trim() === 'Anulado') return;
+      var vu = Number(l.Valor_Unitario) || 0;
+      var cant = Number(l.Cantidad) || 0;
+      o.valorPedido += Number(l.Valor_Total) || (vu * cant);
+      o.valorEntregado += vu * (Number(l.Cant_Entregada) || 0);
+      if (vu === 0 && cant > 0) o.lineasSinPrecio++;
+    });
+    o.valorPendiente = Math.max(0, o.valorPedido - o.valorEntregado);
     return o;
   });
 }
@@ -140,7 +160,7 @@ async function loadDashboard() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Producto,Comercial' }),
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Producto,Comercial,Valor_Unitario,Valor_Total' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Estado,Fecha' }).catch(function() { return { ok: true, ordenes: [] }; }),
@@ -578,37 +598,57 @@ function buildDevoluciones(dev) {
   document.getElementById('chart-devoluciones').innerHTML = html;
 }
 
-// ── 7. Top Comerciales ──
+// ── 7. Top Comerciales (pedidos y valor por comercial) ──
 function buildTopComerciales(orders) {
   var map = {};
+  var sinComercial = 0, sinPrecio = 0;
+  var totPed = 0, totPen = 0;
+
   orders.forEach(function(o) {
+    sinPrecio += o.lineasSinPrecio;
     var com = o.comercial;
-    if (!com) return;
-    if (!map[com]) map[com] = { comercial: com, ordenes: 0, uds: 0, entregada: 0, pedida: 0 };
-    map[com].ordenes++;
-    map[com].uds += o.cantPedida;
-    map[com].entregada += o.cantEntregada;
-    map[com].pedida += o.cantPedida;
+    if (!com) { sinComercial++; return; }
+    if (!map[com]) map[com] = { comercial: com, ordenes: 0, vPed: 0, vEnt: 0, vPen: 0 };
+    var m = map[com];
+    m.ordenes++;
+    m.vPed += o.valorPedido;
+    m.vEnt += o.valorEntregado;
+    m.vPen += o.valorPendiente;
+    totPed += o.valorPedido;
+    totPen += o.valorPendiente;
   });
 
   var arr = Object.values(map);
-  arr.sort(function(a, b) { return b.ordenes - a.ordenes; });
+  arr.sort(function(a, b) { return b.vPed - a.vPed; });
   arr = arr.slice(0, 10);
+
+  var subEl = document.getElementById('com-sub');
+  if (subEl) subEl.textContent = 'Pedido ' + dMoneyM(totPed) + ' · pendiente ' + dMoneyM(totPen);
+
+  var notaEl = document.getElementById('com-nota');
+  if (notaEl) {
+    var notas = [];
+    if (sinPrecio > 0) notas.push('⚠️ ' + sinPrecio.toLocaleString('es-CO') + ' línea(s) sin precio no suman al valor');
+    if (sinComercial > 0) notas.push(sinComercial.toLocaleString('es-CO') + ' orden(es) sin comercial asignado');
+    notaEl.textContent = notas.join(' · ');
+    notaEl.style.display = notas.length ? 'block' : 'none';
+  }
 
   var tbody = document.getElementById('tb-comerciales');
   if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
     return;
   }
 
   tbody.innerHTML = arr.map(function(r) {
-    var pct = r.pedida > 0 ? Math.round((r.entregada / r.pedida) * 100) : 0;
-    var pctColor = pct >= 75 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#e74c3c';
+    var pct = r.vPed > 0 ? Math.round((r.vEnt / r.vPed) * 100) : 0;
+    var penColor = pct >= 75 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#e74c3c';
     return '<tr>' +
-      '<td style="font-weight:600">' + escHtml(r.comercial) + '</td>' +
+      '<td style="font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.comercial) + '">' + escHtml(r.comercial) + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
-      '<td class="money">' + r.uds.toLocaleString('es-CO') + '</td>' +
-      '<td style="text-align:center"><span style="background:' + pctColor + '18;color:' + pctColor + ';padding:2px 10px;border-radius:12px;font-size:0.78rem;font-weight:700">' + pct + '%</span></td>' +
+      '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.vPed) + '</td>' +
+      '<td class="money" style="color:#27ae60">' + dMoneyM(r.vEnt) + '</td>' +
+      '<td class="money" style="font-weight:700;color:' + penColor + '">' + dMoneyM(r.vPen) + '</td>' +
     '</tr>';
   }).join('');
 }
