@@ -988,8 +988,10 @@ function buildValorizacion() {
     trasladosByProd[key] += cant;
   });
 
-  // 3) Calcular déficit por producto y filtrar producir > 0
-  var deficitProducts = [];
+  // 3) Calcular la cobertura por producto con el mismo semáforo que
+  //    "Programación de planta". Ya NO se filtra: entran todos los
+  //    productos con pendiente, estén cubiertos por inventario o no.
+  var productosPlanta = [];
   Object.keys(acumProd).forEach(function(key) {
     var a = acumProd[key];
     var perEmp = saldos[key] || {};
@@ -997,19 +999,21 @@ function buildValorizacion() {
     empresasList.forEach(function(e) { existHolding += Math.max(0, perEmp[e.value] || 0); });
     var trasladosPend = trasladosByProd[key] || 0;
     var producir = Math.max(0, a.pendiente - existHolding - trasladosPend);
-    if (producir > 0) {
-      deficitProducts.push({
-        producto: a.producto, prodKey: a.prodKey,
-        pendiente: a.pendiente, existHolding: existHolding,
-        trasladosPend: trasladosPend, producir: producir,
-        _lineas: a._lineas
-      });
-    }
+    var estado;
+    if (existHolding >= a.pendiente) estado = 'verde';
+    else if (existHolding + trasladosPend >= a.pendiente) estado = 'amarillo';
+    else estado = 'rojo';
+    productosPlanta.push({
+      producto: a.producto, prodKey: a.prodKey,
+      pendiente: a.pendiente, existHolding: existHolding,
+      trasladosPend: trasladosPend, producir: producir, estado: estado,
+      _lineas: a._lineas
+    });
   });
 
   // 4) Agrupar por (empresa, producto) con precios
   var acum = {};
-  deficitProducts.forEach(function(prod) {
+  productosPlanta.forEach(function(prod) {
     prod._lineas.forEach(function(l) {
       var key = l.empresa + '||' + prod.prodKey;
       if (!acum[key]) {
@@ -1019,6 +1023,7 @@ function buildValorizacion() {
           prodKey: prod.prodKey,
           presentaciones: {},
           categoria: _getCategoria(prod.producto),
+          estado: prod.estado,
           numPedidos: 0,
           consecutivos: {},
           pendiente: 0,
@@ -1081,17 +1086,25 @@ function buildValorizacion() {
   var productosSet = {};
   var totalUnidades = 0;
   var totalValor = 0;
+  var deficitUnidades = 0;
+  var deficitValor = 0;
   valorizacionData.forEach(function(r) {
     empresasSet[r.empresa] = true;
     productosSet[r.prodKey] = true;
     totalUnidades += r.pendiente;
     totalValor += r.valorTotal;
+    if (r.estado === 'rojo') {
+      deficitUnidades += r.pendiente;
+      deficitValor += r.valorTotal;
+    }
   });
 
   document.getElementById('st-val-empresas').textContent = Object.keys(empresasSet).length;
   document.getElementById('st-val-productos').textContent = Object.keys(productosSet).length;
   document.getElementById('st-val-unidades').textContent = totalUnidades.toLocaleString('es-CO');
   document.getElementById('st-val-valor').textContent = fmtMoney(totalValor);
+  document.getElementById('st-val-defunid').textContent = deficitUnidades.toLocaleString('es-CO');
+  document.getElementById('st-val-defvalor').textContent = fmtMoney(deficitValor);
 
   renderValorizacionTable();
 }
@@ -1104,6 +1117,24 @@ function toggleValorizacionSort(col) {
     valorizacionSort.dir = (col === 'producto' || col === 'empresa' || col === 'categoria' || col === 'presentacionesStr') ? 'asc' : 'desc';
   }
   renderValorizacionTable();
+}
+
+// Semáforo de cobertura (mismo criterio que Programación de planta).
+function _estadoRank(e) { return e === 'verde' ? 0 : e === 'amarillo' ? 1 : e === 'rojo' ? 2 : 3; }
+
+function _estadoLabelVal(r) {
+  if (r.estado === 'verde') return 'Cubierto por inventario';
+  if (r.estado === 'amarillo') return 'Cubierto con traslados';
+  return (r.categoria && r.categoria !== 'Producción propia') ? 'Solicitar a proveedor' : 'Requiere producción';
+}
+
+function _valEstadoBadge(r) {
+  var st = { verde:    { bg: '#d5f5e3', fg: '#1e8449', ic: '🟢', txt: 'Cubierto' },
+             amarillo: { bg: '#fef5e7', fg: '#b7791f', ic: '🟡', txt: 'Cubierto c/ traslados' },
+             rojo:     { bg: '#fadbd8', fg: '#a93226', ic: '🔴',
+                         txt: (r.categoria && r.categoria !== 'Producción propia') ? 'Solicitar a proveedor' : 'Producir' } }[r.estado]
+        || { bg: '#fadbd8', fg: '#a93226', ic: '🔴', txt: 'Producir' };
+  return '<span style="background:' + st.bg + ';color:' + st.fg + ';padding:3px 8px;border-radius:10px;font-size:0.72rem;font-weight:700;white-space:nowrap">' + st.ic + ' ' + st.txt + '</span>';
 }
 
 function sortedValorizacion() {
@@ -1119,6 +1150,7 @@ function sortedValorizacion() {
     else if (col === 'valorTotal') { va = a.valorTotal; vb = b.valorTotal; }
     else if (col === 'producirGlobal') { va = a.producirGlobal; vb = b.producirGlobal; }
     else if (col === 'numPedidos') { va = a.numPedidos; vb = b.numPedidos; }
+    else if (col === 'estado') { va = _estadoRank(a.estado); vb = _estadoRank(b.estado); }
     else { va = a.valorTotal; vb = b.valorTotal; }
     var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
     return dir === 'asc' ? cmp : -cmp;
@@ -1135,7 +1167,8 @@ function renderValorizacionTable() {
     { id: 'numPedidos', label: 'Pedidos' },
     { id: 'pendiente', label: 'Cant. Pendiente' },
     { id: 'valorTotal', label: 'Valor Pendiente' },
-    { id: 'producirGlobal', label: 'A Producir (global)' }
+    { id: 'producirGlobal', label: 'A Producir (global)' },
+    { id: 'estado', label: 'Estado' }
   ];
 
   document.getElementById('val-head').innerHTML = cols.map(function(c) {
@@ -1150,7 +1183,7 @@ function renderValorizacionTable() {
   var tbody = document.getElementById('val-body');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="' + cols.length + '"><div class="empty-msg">No hay productos con déficit de producción/proveedor con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + cols.length + '"><div class="empty-msg">No hay ventas pendientes con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
@@ -1159,9 +1192,10 @@ function renderValorizacionTable() {
   var empTotals = {};
   rows.forEach(function(r) {
     var sigla = getSigla(r.empresa);
-    if (!empTotals[sigla]) empTotals[sigla] = { pendiente: 0, valor: 0 };
+    if (!empTotals[sigla]) empTotals[sigla] = { pendiente: 0, valor: 0, defValor: 0 };
     empTotals[sigla].pendiente += r.pendiente;
     empTotals[sigla].valor += r.valorTotal;
+    if (r.estado === 'rojo') empTotals[sigla].defValor += r.valorTotal;
   });
 
   rows.forEach(function(r, idx) {
@@ -1172,7 +1206,8 @@ function renderValorizacionTable() {
       html += '<tr><td colspan="' + cols.length + '" style="background:#eaf2f8;padding:10px 16px;font-weight:800;font-size:0.85rem;color:#1a5276;border-bottom:2px solid #2980b9">' +
         '🏢 ' + escHtml(sigla) + ' — ' + escHtml(r.empresa) +
         ' <span style="font-weight:400;font-size:0.78rem;color:#4a5568;margin-left:16px">' +
-        et.pendiente.toLocaleString('es-CO') + ' uds. pendientes · Valor: ' + fmtMoney(et.valor) +
+        et.pendiente.toLocaleString('es-CO') + ' uds. pendientes · Valor total: ' + fmtMoney(et.valor) +
+        (et.defValor > 0 ? ' · <span style="color:#c0392b;font-weight:700">🔴 sin cubrir: ' + fmtMoney(et.defValor) + '</span>' : '') +
         '</span></td></tr>';
     }
 
@@ -1190,7 +1225,8 @@ function renderValorizacionTable() {
       '<td class="center">' + r.numPedidos + '</td>' +
       '<td class="money" style="font-weight:700;color:#e74c3c">' + r.pendiente.toLocaleString('es-CO') + '</td>' +
       '<td class="money" style="font-weight:800;color:#8e44ad">' + fmtMoney(r.valorTotal) + '</td>' +
-      '<td class="money" style="font-weight:700;color:#c0392b">' + r.producirGlobal.toLocaleString('es-CO') + '</td>' +
+      '<td class="money" style="font-weight:700;color:' + (r.producirGlobal > 0 ? '#c0392b' : '#27ae60') + '">' + r.producirGlobal.toLocaleString('es-CO') + '</td>' +
+      '<td>' + _valEstadoBadge(r) + '</td>' +
     '</tr>';
 
     if (abierto) html += renderValorizacionDetail(r, cols.length);
@@ -1261,6 +1297,7 @@ function exportValorizacion() {
       'N° Pedidos': r.numPedidos,
       'Cant. Pendiente': r.pendiente,
       'Valor Pendiente': r.valorTotal,
+      'Estado': _estadoLabelVal(r),
       'A Producir (global)': r.producirGlobal,
       'Exist. Holding': r.existHolding
     };
@@ -1290,7 +1327,7 @@ function exportValorizacion() {
 
   var wb = XLSX.utils.book_new();
   var ws1 = XLSX.utils.json_to_sheet(resumen);
-  ws1['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 40 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+  ws1['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 40 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 16 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, ws1, 'Resumen por empresa');
 
   var ws2 = XLSX.utils.json_to_sheet(detalle);

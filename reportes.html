@@ -232,10 +232,12 @@
 
   <div id="panel-valorizacion" style="display:none">
     <div class="rpt-stats" id="val-stats">
-      <div class="rpt-stat" style="border-left-color:#8e44ad"><div class="num" id="st-val-empresas">0</div><div class="lbl">Empresas con déficit</div></div>
-      <div class="rpt-stat" style="border-left-color:#c0392b"><div class="num" id="st-val-productos">0</div><div class="lbl">Productos por cubrir</div></div>
-      <div class="rpt-stat" style="border-left-color:#e67e22"><div class="num" id="st-val-unidades">0</div><div class="lbl">Unidades a producir/solicitar</div></div>
+      <div class="rpt-stat" style="border-left-color:#8e44ad"><div class="num" id="st-val-empresas">0</div><div class="lbl">Empresas con pendientes</div></div>
+      <div class="rpt-stat" style="border-left-color:#2980b9"><div class="num" id="st-val-productos">0</div><div class="lbl">Productos pendientes</div></div>
+      <div class="rpt-stat" style="border-left-color:#16a085"><div class="num" id="st-val-unidades">0</div><div class="lbl">Unidades pendientes</div></div>
       <div class="rpt-stat" style="border-left-color:#27ae60"><div class="num" id="st-val-valor">$0</div><div class="lbl">Valor total ventas pendientes</div></div>
+      <div class="rpt-stat" style="border-left-color:#e74c3c"><div class="num" id="st-val-defunid">0</div><div class="lbl">🔴 Unidades sin cubrir</div></div>
+      <div class="rpt-stat" style="border-left-color:#c0392b"><div class="num" id="st-val-defvalor">$0</div><div class="lbl">🔴 Valor sin cubrir</div></div>
     </div>
     <div class="rpt-card">
       <div class="rpt-card-head">
@@ -252,8 +254,11 @@
         </div>
       </div>
       <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
-        Productos de la programación de planta con déficit (<strong>A producir &gt; 0</strong>), desglosados por empresa y pedido con su valorización.
-        Solo se muestran productos que requieren <span style="color:#e74c3c;font-weight:700">producción</span> o <span style="color:#a93226;font-weight:700">solicitud a proveedor</span>.
+        Todas las ventas pendientes de la programación de planta, desglosadas por empresa y pedido con su valorización.
+        La columna <strong>Estado</strong> toma la cobertura de <strong>Programación de planta</strong>:
+        <span style="color:#1e8449;font-weight:700">🟢 cubierto por inventario</span>,
+        <span style="color:#b7791f;font-weight:700">🟡 cubierto al aprobar traslados</span> o
+        <span style="color:#a93226;font-weight:700">🔴 requiere producción / solicitud a proveedor</span>.
         Use la <strong>fecha de corte</strong> para ver únicamente pedidos ingresados hasta esa fecha.
       </div>
       <div style="overflow-x:auto">
@@ -316,6 +321,6 @@
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260811a"></script>
-<script src="js/reportes.js?v=20260827b"></script>
+<script src="js/reportes.js?v=20260831a"></script>
 </body>
 </html>
