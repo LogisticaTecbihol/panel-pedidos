@@ -3721,6 +3721,7 @@ function iniciarConteo() {
   var productos = Object.keys(stock).sort();
   productos.forEach(function(prod) {
     var cantSist = stock[prod].cantidad;
+    if (cantSist === 0) return; // solo productos con existencia distinta de cero
     var pres = stock[prod].presentacion || '';
     invfDetailLines.push({
       producto: prod,
