@@ -22,6 +22,7 @@
 .est-bloqueado { background: #fff3e0; color: #e65100; }
 .est-mix { outline: 1px dashed #e65100; outline-offset: 1px; }
 .plazo-chip { display: inline-block; padding: 2px 8px; margin: 1px 2px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; background: #e8eef5; color: #1a5276; white-space: nowrap; }
+.nuevo-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.73rem; font-weight: 700; background: #fef3cd; color: #b7791f; white-space: nowrap; }
 </style>
 </head>
 <body data-modulo="clientes">
@@ -91,6 +92,7 @@
     <div class="fg"><label>Municipio</label><select id="f-muni"><option value="">Todos</option></select></div>
     <div class="fg"><label>Estado</label><select id="f-estado"><option value="">Todos</option><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Bloqueado por cartera">Bloqueado por cartera</option></select></div>
     <div class="fg"><label>Plazo de pago (pedidos)</label><select id="f-plazo"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Nuevos</label><select id="f-nuevo"><option value="">Todos</option><option value="1">Solo nuevos</option></select></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="Cliente, NIT, correo…" style="width:220px"></div>
     <button onclick="clearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
   </div>
@@ -113,6 +115,7 @@
             <th style="width:30px">#</th>
             <th>Empresa</th>
             <th>Cliente</th>
+            <th>Nuevo</th>
             <th>Identificación</th>
             <th>Tipo</th>
             <th>Teléfono</th>

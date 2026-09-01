@@ -47,6 +47,16 @@ function _grupoEstado(g) {
   return { estado: keys[0], mixto: true };
 }
 
+// Cliente dado de alta automáticamente desde un pedido manual y aún no
+// revisado en este módulo. La marca se limpia al editar/guardar el cliente.
+function _esNuevoRecord(r) {
+  return r && (r.Cliente_Nuevo === true || r.Cliente_Nuevo === 'true' || r.Cliente_Nuevo === 't');
+}
+
+function _grupoEsNuevo(g) {
+  return g.records.some(_esNuevoRecord);
+}
+
 function _estadoBadge(estado, mixto) {
   estado = _estadoNorm(estado);
   var cls = estado === 'Bloqueado por cartera' ? 'est-bloqueado'
@@ -274,6 +284,7 @@ function clearFilters() {
   document.getElementById('f-muni').value = '';
   document.getElementById('f-estado').value = '';
   document.getElementById('f-plazo').value = '';
+  document.getElementById('f-nuevo').value = '';
   document.getElementById('f-txt').value = '';
   _updateMuniFilter();
   currentPage = 1;
@@ -308,6 +319,9 @@ function renderTable() {
   });
   if (plazo) {
     filtered = filtered.filter(function(g) { return _plazosDeGrupo(g).indexOf(plazo) >= 0; });
+  }
+  if (document.getElementById('f-nuevo').value === '1') {
+    filtered = filtered.filter(_grupoEsNuevo);
   }
   currentGroups = filtered;
 
@@ -392,6 +406,7 @@ function renderTable() {
       '<td style="color:#a0aec0;font-size:0.74rem">' + (globalIdx + 1) + '</td>' +
       '<td>' + empresaHtml + '</td>' +
       '<td style="font-weight:600">' + escHtml(first.Cliente || '') + multiTag + '</td>' +
+      '<td>' + (_grupoEsNuevo(g) ? '<span class="nuevo-badge">🆕 Nuevo</span>' : '<span style="color:#cbd5e0">—</span>') + '</td>' +
       '<td>' + escHtml(_bestId(g.records)) + '</td>' +
       '<td>' + escHtml(first.Tipo_Identificacion || '') + '</td>' +
       '<td>' + escHtml(tel) + '</td>' +
@@ -420,6 +435,7 @@ document.getElementById('f-depto').addEventListener('change', function() { _upda
 document.getElementById('f-muni').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-estado').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-plazo').addEventListener('change', function() { currentPage = 1; renderTable(); });
+document.getElementById('f-nuevo').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-txt').addEventListener('input', debounce(function() { currentPage = 1; renderTable(); }, 300));
 
 // ── Detail modal ──
@@ -457,7 +473,9 @@ function openGroupDetail(groupIdx) {
   var _geDet = _grupoEstado(g);
   html += '<div style="margin-bottom:' + (isMulti ? '16' : '4') + 'px">' +
     '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">Estado</span>' +
-    _estadoBadge(_geDet.estado, _geDet.mixto) + '</div>';
+    _estadoBadge(_geDet.estado, _geDet.mixto) +
+    (_grupoEsNuevo(g) ? ' <span class="nuevo-badge">🆕 Nuevo</span> <span style="color:#a0aec0;font-size:0.78rem">— alta desde un pedido, pendiente de completar</span>' : '') +
+    '</div>';
 
   var _plzDet = _plazosDeGrupo(g);
   html += '<div style="margin-bottom:' + (isMulti ? '16' : '10') + 'px">' +
@@ -883,11 +901,12 @@ function exportExcel() {
   var filtered = getFiltered();
   if (!filtered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var rows = [['Empresa', 'Cliente', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Plazos Pago (pedidos)', 'Lista Precio', 'Estado']];
+  var rows = [['Empresa', 'Cliente', 'Nuevo', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Plazos Pago (pedidos)', 'Lista Precio', 'Estado']];
   filtered.forEach(function(c) {
     rows.push([
       getSigla(c.Nombre_Empresa),
       c.Cliente || '',
+      _esNuevoRecord(c) ? 'Sí' : '',
       c.Tipo_Identificacion || '',
       c.Identificacion || '',
       c.Telefono || '',

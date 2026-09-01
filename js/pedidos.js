@@ -4248,6 +4248,31 @@ async function guardarNuevoPedido() {
 
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
 
+    // Si el NIT del cliente no estaba en el maestro de Clientes, se da de alta
+    // ahí y queda marcado como "nuevo" en el módulo Clientes. Sin NIT no se
+    // crea nada. No bloquea la creación del pedido si algo falla.
+    var _nitNuevo = document.getElementById('nv-nit').value.trim();
+    if (_nitNuevo) {
+      try {
+        var _cliNuevo = await apiPost({
+          action: 'registrarClienteNuevoDesdePedido',
+          cliente: cliente,
+          nit: _nitNuevo,
+          empresa: empresa,
+          telefono: document.getElementById('nv-telefono').value.trim(),
+          direccion_envio: document.getElementById('nv-direccion').value.trim(),
+          municipio: _geoNv.municipio,
+          departamento: _geoNv.departamento || normalizarDepartamento(document.getElementById('nv-departamento').value.trim()),
+          plazo_pago: document.getElementById('nv-plazo').value.trim(),
+          lista_precio: document.getElementById('nv-precio').value.trim()
+        });
+        if (_cliNuevo && _cliNuevo.ok && _cliNuevo.created) {
+          clientesCache = null;
+          showToast('🆕 Cliente nuevo agregado al módulo Clientes');
+        }
+      } catch (e) { /* no bloquea la creación del pedido */ }
+    }
+
     await agregarProductosNuevosAlMaestro(productosValidos, empresa);
     generarPedidoPDF({
       empresa: empresa,

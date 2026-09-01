@@ -1330,6 +1330,23 @@ async function apiPost(body) {
       return { ok: true, added: rows.length };
     }
 
+    if (action === 'registrarClienteNuevoDesdePedido') {
+      var res = await _sb.rpc('registrar_cliente_nuevo_desde_pedido', {
+        p_cliente: body.cliente || '',
+        p_nit: body.nit || '',
+        p_empresa: body.empresa || '',
+        p_telefono: body.telefono || '',
+        p_direccion_envio: body.direccion_envio || '',
+        p_municipio: body.municipio || '',
+        p_departamento: body.departamento || '',
+        p_plazo_pago: body.plazo_pago || '',
+        p_lista_precio: body.lista_precio || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      var _d = res.data || {};
+      return { ok: true, created: !!_d.created, reason: _d.reason || null, id: _d.id || null };
+    }
+
     if (action === 'agregarClienteUnico') {
       var row = {
         Cliente: body.Cliente || '', Identificacion: body.Identificacion || '',
@@ -1360,7 +1377,10 @@ async function apiPost(body) {
         Correo_Electronico: body.Correo_Electronico || '',
         Cupo_Credito: body.Cupo_Credito || '',
         Plazo_Pago: body.Plazo_Pago || '',
-        Lista_Precio: body.Lista_Precio || ''
+        Lista_Precio: body.Lista_Precio || '',
+        // Al editar/guardar un cliente en el módulo Clientes se considera
+        // revisado: se limpia la marca de "cliente nuevo" (alta desde pedido).
+        Cliente_Nuevo: false
       };
       if (typeof body.Estado === 'string' && body.Estado) upd.Estado = body.Estado;
       var res = await _sb.from('ClientesUnicos').update(upd).eq('id', body.row);
