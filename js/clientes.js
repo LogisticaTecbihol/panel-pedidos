@@ -82,15 +82,102 @@ function groupClientes(list) {
   return order.map(function(k) { return map[k]; });
 }
 
+// ── Plazos de pago observados en Pedidos ──
+// Índice: NIT normalizado / nombre normalizado -> conjunto de plazos (ya
+// unificados). El cruce es por NIT y, si el cliente no aparece por NIT,
+// se usa el nombre como respaldo.
+var PLAZOS_POR_NIT = {};
+var PLAZOS_POR_NOMBRE = {};
+
+function _normNombre(n) {
+  return (n == null ? '' : String(n)).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Unifica variantes: "90", "90 días", "90 DIAS", "90 dias" -> "90 días";
+// "Contado" / "CONTADO" -> "Contado".
+function _normalizePlazo(raw) {
+  var s = (raw == null ? '' : String(raw)).replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  var low = s.toLowerCase();
+  if (low.indexOf('contado') >= 0) return 'Contado';
+  var m = low.match(/(\d+)\s*(?:d[ií]as?)?/);
+  if (m) return m[1] + ' días';
+  return s;
+}
+
+function _plazoOrden(p) {
+  var s = String(p).toLowerCase();
+  if (s.indexOf('contado') >= 0) return 0;
+  var m = s.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 9999;
+}
+
+function _cmpPlazo(a, b) {
+  var oa = _plazoOrden(a), ob = _plazoOrden(b);
+  if (oa !== ob) return oa - ob;
+  return String(a).localeCompare(String(b));
+}
+
+function _indexPlazosPedidos(pedidos) {
+  PLAZOS_POR_NIT = {};
+  PLAZOS_POR_NOMBRE = {};
+  (pedidos || []).forEach(function(p) {
+    var lbl = _normalizePlazo(p.Plazo_Pago);
+    if (!lbl) return;
+    var nk = _normalizeId(p.NIT);
+    if (nk) {
+      if (!PLAZOS_POR_NIT[nk]) PLAZOS_POR_NIT[nk] = {};
+      PLAZOS_POR_NIT[nk][lbl] = true;
+    }
+    var nombre = _normNombre(p.Cliente);
+    if (nombre) {
+      if (!PLAZOS_POR_NOMBRE[nombre]) PLAZOS_POR_NOMBRE[nombre] = {};
+      PLAZOS_POR_NOMBRE[nombre][lbl] = true;
+    }
+  });
+}
+
+// Plazos de un registro de cliente: primero por NIT; si ese NIT no aparece
+// en pedidos, se intenta por nombre.
+function _plazosParaRecord(c) {
+  var nk = _normalizeId(c.Identificacion);
+  if (nk && PLAZOS_POR_NIT[nk]) return Object.keys(PLAZOS_POR_NIT[nk]).sort(_cmpPlazo);
+  var nombre = _normNombre(c.Cliente);
+  if (nombre && PLAZOS_POR_NOMBRE[nombre]) return Object.keys(PLAZOS_POR_NOMBRE[nombre]).sort(_cmpPlazo);
+  return [];
+}
+
+function _plazosDeGrupo(g) {
+  var set = {};
+  g.records.forEach(function(r) {
+    _plazosParaRecord(r).forEach(function(k) { set[k] = true; });
+  });
+  return Object.keys(set).sort(_cmpPlazo);
+}
+
+function _plazosChips(list) {
+  if (!list.length) return '<span style="color:#cbd5e0">—</span>';
+  return list.map(function(p) {
+    return '<span class="plazo-chip">' + escHtml(p) + '</span>';
+  }).join('');
+}
+
 // ── Load ──
 async function loadClientes() {
   document.getElementById('load-zone').style.display = '';
   document.getElementById('main').style.display = 'none';
   try {
     await _authReady;
-    var res = await apiGet('getClientesAll');
+    var _r = await Promise.all([
+      apiGet('getClientesAll'),
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Plazo_Pago' })
+        .catch(function() { return { ok: false, pedidos: [] }; })
+    ]);
+    var res = _r[0];
+    var pedRes = _r[1];
     if (!res.ok) throw new Error(res.error || 'Error al cargar');
     clientesData = res.clientes || [];
+    _indexPlazosPedidos(pedRes && pedRes.ok ? pedRes.pedidos : []);
     document.getElementById('load-zone').style.display = 'none';
     document.getElementById('main').style.display = 'block';
     populateFilters();
@@ -267,6 +354,7 @@ function renderTable() {
       : '';
 
     var ge = _grupoEstado(g);
+    var plazosHtml = _plazosChips(_plazosDeGrupo(g));
 
     var actionHtml = '';
     if (canEd) {
@@ -291,6 +379,7 @@ function renderTable() {
       '<td>' + muniHtml + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(correo) + '</td>' +
       '<td>' + _estadoBadge(ge.estado, ge.mixto) + '</td>' +
+      '<td>' + plazosHtml + '</td>' +
       actionHtml +
       '</tr>';
   }).join('');
@@ -349,6 +438,13 @@ function openGroupDetail(groupIdx) {
   html += '<div style="margin-bottom:' + (isMulti ? '16' : '4') + 'px">' +
     '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">Estado</span>' +
     _estadoBadge(_geDet.estado, _geDet.mixto) + '</div>';
+
+  var _plzDet = _plazosDeGrupo(g);
+  html += '<div style="margin-bottom:' + (isMulti ? '16' : '10') + 'px">' +
+    '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">Plazos de pago (pedidos)</span>' +
+    (_plzDet.length ? _plzDet.map(function(p) { return '<span class="plazo-chip">' + escHtml(p) + '</span>'; }).join('')
+                    : '<span style="color:#a0aec0;font-size:0.85rem">Sin pedidos registrados</span>') +
+    '</div>';
 
   if (isMulti) {
     var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
@@ -767,7 +863,7 @@ function exportExcel() {
   var filtered = getFiltered();
   if (!filtered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var rows = [['Empresa', 'Cliente', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Lista Precio', 'Estado']];
+  var rows = [['Empresa', 'Cliente', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Plazos Pago (pedidos)', 'Lista Precio', 'Estado']];
   filtered.forEach(function(c) {
     rows.push([
       getSigla(c.Nombre_Empresa),
@@ -782,6 +878,7 @@ function exportExcel() {
       c.Municipio || '',
       c.Cupo_Credito || '',
       c.Plazo_Pago || '',
+      _plazosParaRecord(c).join(', '),
       c.Lista_Precio || '',
       _estadoNorm(c.Estado)
     ]);
