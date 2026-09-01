@@ -312,12 +312,13 @@ function buildMovimientos() {
     if (c.Tipo_Linea === 'ENTREGAR') _camTieneEntregar[(c.Empresa || '') + '||' + (c.Consecutivo || c.id)] = true;
   });
 
-  // Cambios de Mercancía — ENTRADA + SALIDA en un solo pase
+  // Cambios de Mercancía — ENTRADA + SALIDA en un solo pase.
+  // 'parcial' = solo un lado registrado; cada lado se emite igualmente según su remisión.
   kxCambios.forEach(function(c) {
     var cant = Number(c.Cantidad) || 0;
     if (cant <= 0) return;
     var estado = (c.Estado || '').toLowerCase();
-    if (estado !== 'cerrado' && estado !== 'cerrada') return;
+    if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
     var ref = 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '');
     var empresa = c.Empresa || '';
     var gk = empresa + '||' + (c.Consecutivo || c.id);
@@ -1537,7 +1538,7 @@ function buildNCMovimientos() {
   // ENTREGAR con Bodega_Salida NC = SALIDA
   kxCambios.forEach(function(c) {
     var estado = (c.Estado || '').toLowerCase();
-    if (estado !== 'cerrado' && estado !== 'cerrada') return;
+    if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
     var cant = Number(c.Cantidad) || 0;
     if (cant <= 0) return;
 

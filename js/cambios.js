@@ -8,6 +8,10 @@ var gestionarCamIds = null;
 var gestionarCamEmpresa = '';
 var gestionarCamWorkingLines = [];
 var camAsig = null;
+// Gestionar Cambio: qué lado(s) se van a registrar en esta pasada
+var gestionarCamLados = 'ambos';       // 'ambos' | 'ingreso' | 'salida'
+var gestionarCamYaIngreso = false;     // la remisión de ingreso ya estaba registrada al abrir
+var gestionarCamYaSalida = false;      // la remisión de salida ya estaba registrada al abrir
 var catalogoProductosCam = [];
 var catalogoClientesCam = [];
 var camViewingKey = null;
@@ -259,9 +263,9 @@ function renderCamTable() {
   var grouped = groupCambios(filtered);
   grouped.sort(function(a, b) { return (b.Fecha_Solicitud || '').localeCompare(a.Fecha_Solicitud || ''); });
 
-  // Ámbito de la sub-pestaña: Pendientes (estado Pendiente) vs Tramitadas (Completado + Cerrado)
-  if (camScope === 'tramitadas') grouped = grouped.filter(function(g) { return (g._estado || 'Pendiente') !== 'Pendiente'; });
-  else grouped = grouped.filter(function(g) { return (g._estado || 'Pendiente') === 'Pendiente'; });
+  // Ámbito de la sub-pestaña: Pendientes (Pendiente + Parcial) vs Tramitadas (Completado + Cerrado)
+  if (camScope === 'tramitadas') grouped = grouped.filter(function(g) { var e = g._estado || 'Pendiente'; return e !== 'Pendiente' && e !== 'Parcial'; });
+  else grouped = grouped.filter(function(g) { var e = g._estado || 'Pendiente'; return e === 'Pendiente' || e === 'Parcial'; });
 
   var camListTitle = document.getElementById('cam-list-title');
   if (camListTitle) camListTitle.textContent = camScope === 'tramitadas' ? 'Cambios tramitados (consulta)' : 'Cambios pendientes';
@@ -278,7 +282,7 @@ function renderCamTable() {
   var cliSet = {};
   cambios.forEach(function(r) { if (r.Cliente) cliSet[r.Cliente] = true; });
   document.getElementById('sc-clientes').textContent = Object.keys(cliSet).length;
-  document.getElementById('sc-pendientes').textContent = allGrouped.filter(function(g) { return g._estado === 'Pendiente'; }).length;
+  document.getElementById('sc-pendientes').textContent = allGrouped.filter(function(g) { return g._estado === 'Pendiente' || g._estado === 'Parcial'; }).length;
   document.getElementById('row-ct-cam').textContent = '(' + grouped.length + ' mostrados)';
 
   // Header
@@ -296,11 +300,14 @@ function renderCamTable() {
     var keyEsc = (r._key||'').replace(/'/g, "\\'");
     var esPend = r._estado === 'Pendiente';
     var esCerrado = r._estado === 'Cerrado';
+    var esParcial = r._estado === 'Parcial';
     var estadoBadge = esCerrado
       ? '<span style="background:#d1ecf1;color:#0c5460;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Cerrado</span>'
-      : esPend
-        ? '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>'
-        : '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Completado</span>';
+      : esParcial
+        ? '<span style="background:#ffe8cc;color:#b45309;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700" title="Falta registrar un lado de la remisión">Parcial</span>'
+        : esPend
+          ? '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>'
+          : '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Completado</span>';
     var gestionarBtn = (AUTH.canEdit() && camScope !== 'tramitadas') ? '<button onclick="openGestionarCam(\''+keyEsc+'\')" title="Gestionar cambio" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Gestionar</button>' : '';
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">'+(i+1)+'</td>' +
@@ -347,9 +354,11 @@ function viewCamDetail(key) {
   }
   var estadoLabel = r.Estado === 'Cerrado'
     ? '<span style="background:#d1ecf1;color:#0c5460;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Cerrado</span>'
-    : r.Estado === 'Completado'
-      ? '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Completado</span>'
-      : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Pendiente</span>';
+    : r.Estado === 'Parcial'
+      ? '<span style="background:#ffe8cc;color:#b45309;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Parcial</span>'
+      : r.Estado === 'Completado'
+        ? '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Completado</span>'
+        : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Pendiente</span>';
 
   var html = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem">' +
     cf('Empresa', getSiglaCam(r.Empresa)) +
@@ -788,6 +797,13 @@ async function openGestionarCam(key) {
   gestionarCamIds = lines.map(function(l) { return l.__row || l.id; });
   gestionarCamEmpresa = r.Empresa || '';
 
+  // ¿Qué lados quedan por registrar? (permite tramitar solo ingreso o solo salida)
+  gestionarCamYaIngreso = !!String(r.Remision_Ingreso || '').trim();
+  gestionarCamYaSalida = !!String(r.Remision_Salida || '').trim();
+  gestionarCamLados = (gestionarCamYaIngreso && !gestionarCamYaSalida) ? 'salida'
+                    : (gestionarCamYaSalida && !gestionarCamYaIngreso) ? 'ingreso'
+                    : 'ambos';
+
   document.getElementById('gestionar-cam-meta').innerHTML =
     '<span>📋 Consec: '+(r.Consecutivo||'—')+'</span>' +
     '<span>👤 '+(r.Cliente||'—')+'</span>' +
@@ -858,7 +874,61 @@ async function openGestionarCam(key) {
     camAsig = null;
   }
 
+  _applyGestionarCamLados();
   document.getElementById('gestionar-cam-overlay').classList.add('show');
+}
+
+// Selector "¿Qué vas a registrar?" — ingreso y salida / solo ingreso / solo salida
+function setGestionarCamLados(lados) {
+  gestionarCamLados = lados;
+  _applyGestionarCamLados();
+}
+
+function _applyGestionarCamLados() {
+  var lados = gestionarCamLados;
+  var doIng = lados === 'ambos' || lados === 'ingreso';
+  var doSal = lados === 'ambos' || lados === 'salida';
+
+  var selector = document.getElementById('gestionar-cam-lados-selector');
+  if (selector) {
+    selector.querySelectorAll('.gc-lado-btn').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.lado === lados);
+    });
+  }
+
+  var bi = document.getElementById('gestionar-cam-bloque-ingreso');
+  var bs = document.getElementById('gestionar-cam-bloque-salida');
+  if (bi) bi.style.display = doIng ? '' : 'none';
+  if (bs) bs.style.display = doSal ? '' : 'none';
+
+  // La asignación de inventario solo aplica si la salida está en alcance y aún no se registró
+  var section = document.getElementById('gestionar-cam-lineas-section');
+  if (section) section.style.display = (doSal && camAsig && !gestionarCamYaSalida) ? '' : 'none';
+
+  // Estado resultante tras guardar
+  var finalIng = gestionarCamYaIngreso || doIng;
+  var finalSal = gestionarCamYaSalida || doSal;
+  var cerrado = finalIng && finalSal;
+  var hint = document.getElementById('gestionar-cam-estado-hint');
+  if (hint) {
+    hint.textContent = cerrado ? 'Cerrado' : 'Parcial';
+    hint.style.color = cerrado ? '#27ae60' : '#e67e22';
+  }
+  var btn = document.getElementById('btn-gestionar-cam');
+  if (btn && !btn.disabled) btn.textContent = cerrado ? '✓ Cerrar cambio y enviar' : '✓ Registrar y enviar';
+
+  var aviso = document.getElementById('gestionar-cam-parcial-aviso');
+  if (aviso) {
+    var msgs = [];
+    if (gestionarCamYaIngreso) msgs.push('El ingreso ya está registrado.');
+    if (gestionarCamYaSalida) msgs.push('La salida ya está registrada.');
+    if (msgs.length) {
+      aviso.textContent = msgs.join(' ') + ' Solo se guardará el lado seleccionado arriba.';
+      aviso.style.display = '';
+    } else {
+      aviso.style.display = 'none';
+    }
+  }
 }
 
 function closeGestionarCam() {
@@ -867,6 +937,9 @@ function closeGestionarCam() {
   gestionarCamWorkingLines = [];
   gestionarCamEmpresa = '';
   camAsig = null;
+  gestionarCamLados = 'ambos';
+  gestionarCamYaIngreso = false;
+  gestionarCamYaSalida = false;
   var section = document.getElementById('gestionar-cam-lineas-section');
   if (section) { section.innerHTML = ''; section.style.display = 'none'; }
 }
@@ -883,19 +956,24 @@ async function gestionarYEnviarCam() {
 }
 
 async function saveGestionarCam() {
+  var lados = gestionarCamLados;
+  var doIng = lados === 'ambos' || lados === 'ingreso';
+  var doSal = lados === 'ambos' || lados === 'salida';
+
   var remIngreso = document.getElementById('gestionar-cam-remision-ingreso').value.trim();
   var bodegaIngreso = document.getElementById('gestionar-cam-bodega-ingreso').value;
   var fechaIngreso = document.getElementById('gestionar-cam-fecha-ingreso').value;
   var remSalida = document.getElementById('gestionar-cam-remision-salida').value.trim();
   var bodegaSalida = document.getElementById('gestionar-cam-bodega-salida').value;
   var fechaSalida = document.getElementById('gestionar-cam-fecha-salida').value;
-  if (!fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
-  if (!fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
+  if (doIng && !fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
+  if (doSal && !fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
   if (!gestionarCamIds || !gestionarCamIds.length) return;
 
   var entregas = [];
   var solicitudesCompra = [];
-  if (camAsig) {
+  var usarAsig = doSal && camAsig && !gestionarCamYaSalida;
+  if (usarAsig) {
     var split = camAsig.splitAsignaciones();
     entregas = split.entregas;
     solicitudesCompra = split.solicitudesCompra;
@@ -903,7 +981,6 @@ async function saveGestionarCam() {
 
   var entregasUpdate = {};
   if (entregas.length) {
-    if (!fechaSalida) { showToast('Selecciona la fecha de salida para registrar entregas', '#e74c3c'); return; }
     entregas.forEach(function(e) {
       var wl = gestionarCamWorkingLines[e._idx];
       if (!wl) return;
@@ -921,6 +998,7 @@ async function saveGestionarCam() {
     var result = await apiPost({
       action: 'gestionarCambio',
       Empresa: gestionarCamEmpresa,
+      lados: lados,
       Remision_Ingreso: remIngreso,
       Bodega_Ingreso: bodegaIngreso,
       Fecha_Ingreso: fechaIngreso,
@@ -944,8 +1022,8 @@ async function saveGestionarCam() {
       });
     }
 
-    var _finalRemIngC = result.remision_ingreso || remIngreso;
-    var _finalRemSalC = result.remision_salida || remSalida;
+    var _finalRemIngC = doIng ? (result.remision_ingreso || remIngreso) : '';
+    var _finalRemSalC = doSal ? (result.remision_salida || remSalida) : '';
     if (_pendingContabCam && _pendingContabCam.contabIds && _pendingContabCam.contabIds.length && (_finalRemIngC || _finalRemSalC) && typeof NOTIF !== 'undefined') {
       try {
         var camLines = cambios.filter(function(r) { return gestionarCamIds.indexOf(r.__row || r.id) >= 0; });
@@ -981,8 +1059,9 @@ async function saveGestionarCam() {
       } catch (e) { console.error('Auto-send contabilidad error', e); }
     }
     _pendingContabCam = null;
+    var _estadoFinal = result.estado || 'Cerrado';
     closeGestionarCam();
-    var toastParts = ['✅ Cambio cerrado'];
+    var toastParts = [_estadoFinal === 'Cerrado' ? '✅ Cambio cerrado' : '✅ Cambio registrado (Parcial)'];
     if (result.remision_ingreso) toastParts.push('RE: ' + result.remision_ingreso);
     if (result.remision_salida) toastParts.push('RS: ' + result.remision_salida);
     if (entregas.length) toastParts.push(entregas.length + ' entrega(s) directa(s)');
@@ -992,7 +1071,7 @@ async function saveGestionarCam() {
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = '✓ Cerrar cambio y enviar';
+    _applyGestionarCamLados();
     _pendingContabCam = null;
   }
 }

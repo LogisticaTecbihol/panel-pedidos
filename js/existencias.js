@@ -189,13 +189,13 @@
       _cTE[gk] = _cGrp[gk].some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
     });
 
-    // Cambios de Mercancía — ENTRADA (CAMBIAR a bodega buena, cerrado)
+    // Cambios de Mercancía — ENTRADA (CAMBIAR a bodega buena; cerrado o parcial)
     (src.cambios || []).forEach(function(c) {
       if (c.Tipo_Linea !== 'CAMBIAR') return;
       var cant = Number(c.Cantidad) || 0;
       if (cant <= 0) return;
       var estado = (c.Estado || '').toLowerCase();
-      if (estado !== 'cerrado' && estado !== 'cerrada') return;
+      if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
       var bodegaIng = (c.Bodega_Ingreso || 'Productos Buenos').trim();
       if (bodegaIng !== 'Productos Buenos' && bodegaIng !== 'Producto Terminado') return;
       var rem = String(c.Remision_Ingreso || '').trim();
@@ -217,7 +217,7 @@
       var cant = Number(c.Cantidad) || 0;
       if (cant <= 0) return;
       var estado = (c.Estado || '').toLowerCase();
-      if (estado !== 'cerrado' && estado !== 'cerrada') return;
+      if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
       var bodegaSal = (c.Bodega_Salida || 'Productos Buenos').trim();
       if (bodegaSal !== 'Productos Buenos' && bodegaSal !== 'Producto Terminado') return;
       var rem = String(c.Remision_Salida || '').trim();
@@ -385,7 +385,7 @@
         .catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getKardexNC',    { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Salida' })
+      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida' })
         .catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' })
         .catch(function() { return { ok: true, remisionesAnuladas: [] }; })
@@ -555,17 +555,23 @@
     Object.keys(cambiosGrp).forEach(function(gk) {
       var lines = cambiosGrp[gk];
       var hdr = lines[0];
-      if ((hdr.Estado || '').toLowerCase() !== 'cerrado') return;
+      var estCam = (hdr.Estado || '').toLowerCase();
+      if (estCam !== 'cerrado' && estCam !== 'parcial') return;
       var tieneEntregar = lines.some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+      // Cada lado cuenta solo si su remisión está registrada.
+      var hayRemIng = String(hdr.Remision_Ingreso || '').trim() !== '';
+      var hayRemSal = String(hdr.Remision_Salida || '').trim() !== '';
+      // Compat.: cambios cerrados antiguos sin remisiones guardadas → contar ambos lados.
+      if (estCam === 'cerrado' && !hayRemIng && !hayRemSal) { hayRemIng = true; hayRemSal = true; }
       lines.forEach(function(l) {
         var cant = Number(l.Cantidad) || 0;
         if (cant <= 0) return;
-        if (l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Ingreso)) {
+        if (hayRemIng && l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Ingreso)) {
           add(hdr.Empresa, l.Producto, cant);
         }
-        if (l.Tipo_Linea === 'ENTREGAR' && _esBueno(hdr.Bodega_Salida)) {
+        if (hayRemSal && l.Tipo_Linea === 'ENTREGAR' && _esBueno(hdr.Bodega_Salida)) {
           add(hdr.Empresa, l.Producto, -cant);
-        } else if (!tieneEntregar && l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Salida)) {
+        } else if (hayRemSal && !tieneEntregar && l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Salida)) {
           add(hdr.Empresa, l.Producto, -cant);
         }
       });

@@ -652,34 +652,54 @@ async function apiPost(body) {
 
     if (action === 'gestionarCambio') {
       var ids = body.ids || [];
+      // 'ambos' (default) | 'ingreso' | 'salida' — permite cerrar el cambio en dos pasos
+      var ladosCam = body.lados || 'ambos';
+      var doIngCam = ladosCam === 'ambos' || ladosCam === 'ingreso';
+      var doSalCam = ladosCam === 'ambos' || ladosCam === 'salida';
       var remIngCam = (body.Remision_Ingreso || '').trim();
       var remSalCam = (body.Remision_Salida || '').trim();
       var empCam = (body.Empresa || '').trim();
       if (empCam) {
-        if (!remIngCam) remIngCam = await generarRemisionConsecutivo(empCam, 'ENTRADA');
-        if (!remSalCam) remSalCam = await generarRemisionConsecutivo(empCam, 'SALIDA');
+        if (doIngCam && !remIngCam) remIngCam = await generarRemisionConsecutivo(empCam, 'ENTRADA');
+        if (doSalCam && !remSalCam) remSalCam = await generarRemisionConsecutivo(empCam, 'SALIDA');
       }
       var entregasUpd = body.entregasUpdate || {};
+      var estadoFinalCam = 'Cerrado';
       for (var i = 0; i < ids.length; i++) {
-        var updObj = {
-          Remision_Ingreso: remIngCam,
-          Bodega_Ingreso: body.Bodega_Ingreso || 'Productos Buenos',
-          Fecha_Ingreso: body.Fecha_Ingreso || '',
-          Remision_Salida: remSalCam,
-          Bodega_Salida: body.Bodega_Salida || 'Productos Buenos',
-          Fecha_Salida: body.Fecha_Salida || '',
-          Estado: 'Cerrado',
-          modificado_por: _uid()
-        };
-        if (entregasUpd[ids[i]]) {
-          var rowRes = await _sb.from('CambiosMercancia').select('Cant_Entregada').eq('id', ids[i]).single();
-          var prev = (rowRes.data && Number(rowRes.data.Cant_Entregada)) || 0;
+        var curRes = await _sb.from('CambiosMercancia')
+          .select('Remision_Ingreso,Remision_Salida,Cant_Entregada').eq('id', ids[i]).single();
+        var curCam = curRes.data || {};
+        var rowRemIng = String(curCam.Remision_Ingreso || '').trim();
+        var rowRemSal = String(curCam.Remision_Salida || '').trim();
+        var updObj = { modificado_por: _uid() };
+        if (doIngCam) {
+          updObj.Remision_Ingreso = remIngCam;
+          updObj.Bodega_Ingreso = body.Bodega_Ingreso || 'Productos Buenos';
+          updObj.Fecha_Ingreso = body.Fecha_Ingreso || '';
+          rowRemIng = remIngCam;
+        }
+        if (doSalCam) {
+          updObj.Remision_Salida = remSalCam;
+          updObj.Bodega_Salida = body.Bodega_Salida || 'Productos Buenos';
+          updObj.Fecha_Salida = body.Fecha_Salida || '';
+          rowRemSal = remSalCam;
+        }
+        var estadoRow = (rowRemIng && rowRemSal) ? 'Cerrado' : 'Parcial';
+        updObj.Estado = estadoRow;
+        if (estadoRow !== 'Cerrado') estadoFinalCam = 'Parcial';
+        if (doSalCam && entregasUpd[ids[i]]) {
+          var prev = (curCam && Number(curCam.Cant_Entregada)) || 0;
           updObj.Cant_Entregada = prev + (entregasUpd[ids[i]].cantDirecta || 0);
         }
         var res = await _sb.from('CambiosMercancia').update(updObj).eq('id', ids[i]);
         if (res.error) return { ok: false, error: res.error.message };
       }
-      return { ok: true, updated: ids.length, remision_ingreso: remIngCam, remision_salida: remSalCam };
+      return {
+        ok: true, updated: ids.length,
+        remision_ingreso: doIngCam ? remIngCam : '',
+        remision_salida: doSalCam ? remSalCam : '',
+        estado: estadoFinalCam
+      };
     }
 
     if (action === 'eliminarCambio') {

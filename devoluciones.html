@@ -49,6 +49,10 @@
 /* ── Sub-pestañas Pendientes / Tramitadas ── */
 #panel-dev-ordenes.solo-lectura .dev-accion-escritura,
 #panel-cam-lista.solo-lectura .cam-accion-escritura{display:none!important}
+/* ── Selector de lados en Gestionar Cambio ── */
+.gc-lado-btn{background:#f0f4f8;color:#4a5568;border:1px solid #cbd5e0;border-radius:7px;padding:7px 14px;cursor:pointer;font-size:0.8rem;font-weight:700;transition:all 0.15s}
+.gc-lado-btn:hover{border-color:#27ae60;color:#276749}
+.gc-lado-btn.active{background:#27ae60;color:#fff;border-color:#27ae60}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
@@ -963,11 +967,21 @@
       <button class="btn-close" onclick="closeGestionarCam()">✕</button>
     </div>
     <div class="mbody">
-      <div style="background:#f0faf4;border:1px solid #c6f6d5;border-radius:8px;padding:14px 16px;margin-bottom:18px;font-size:0.84rem;color:#276749">
+      <div style="background:#f0faf4;border:1px solid #c6f6d5;border-radius:8px;padding:14px 16px;margin-bottom:14px;font-size:0.84rem;color:#276749">
         Registra las remisiones de ingreso y salida para cerrar este cambio de mercancía.
       </div>
+      <!-- Selector: qué lado(s) registrar -->
+      <div style="margin-bottom:16px">
+        <label class="ef-label">¿Qué vas a registrar?</label>
+        <div id="gestionar-cam-lados-selector" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button type="button" class="gc-lado-btn active" data-lado="ambos" onclick="setGestionarCamLados('ambos')">📥📤 Ingreso y salida</button>
+          <button type="button" class="gc-lado-btn" data-lado="ingreso" onclick="setGestionarCamLados('ingreso')">📥 Solo ingreso</button>
+          <button type="button" class="gc-lado-btn" data-lado="salida" onclick="setGestionarCamLados('salida')">📤 Solo salida</button>
+        </div>
+        <div id="gestionar-cam-parcial-aviso" style="display:none;margin-top:8px;font-size:0.8rem;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 10px;color:#8a6d3b"></div>
+      </div>
       <!-- Remisión de Ingreso -->
-      <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+      <div id="gestionar-cam-bloque-ingreso" style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px 16px;margin-bottom:14px">
         <div style="font-weight:700;font-size:0.86rem;color:#e65100;margin-bottom:10px">📥 Remisión de Ingreso <span style="font-weight:400;font-size:0.76rem;color:#718096">(producto devuelto que ingresa a bodega)</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div>
@@ -989,7 +1003,7 @@
         </div>
       </div>
       <!-- Remisión de Salida -->
-      <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+      <div id="gestionar-cam-bloque-salida" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:14px 16px;margin-bottom:14px">
         <div style="font-weight:700;font-size:0.86rem;color:#2e7d32;margin-bottom:10px">📤 Remisión de Salida <span style="font-weight:400;font-size:0.76rem;color:#718096">(producto de reposición que sale de bodega)</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div>
@@ -1014,7 +1028,7 @@
       <div id="gestionar-cam-lineas-section" style="display:none"></div>
     </div>
     <div class="mftr">
-      <div style="font-size:0.8rem;color:#718096">El estado cambiará a <strong style="color:#27ae60">Cerrado</strong></div>
+      <div style="font-size:0.8rem;color:#718096">El estado cambiará a <strong id="gestionar-cam-estado-hint" style="color:#27ae60">Cerrado</strong></div>
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="closeGestionarCam()">Cancelar</button>
         <button class="btn-confirm" id="btn-gestionar-cam" onclick="gestionarYEnviarCam()" style="background:#27ae60">✓ Cerrar cambio y enviar</button>
@@ -1035,13 +1049,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20260901b"></script>
+<script src="js/shared.js?v=20260901c"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js?v=20260831b"></script>
 <script src="js/pdf-remision.js?v=20260818g"></script>
-<script src="js/existencias.js"></script>
+<script src="js/existencias.js?v=20260901c"></script>
 <script src="js/asignacion-inventario.js"></script>
 <script src="js/devoluciones.js?v=20260831a"></script>
-<script src="js/cambios.js?v=20260831a"></script>
+<script src="js/cambios.js?v=20260901c"></script>
 </body>
 </html>
