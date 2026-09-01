@@ -2124,7 +2124,20 @@ async function guardarYEnviar() {
   if (activeIdx === null) return;
   var c = consecs[activeIdx];
   if (!c) return;
-  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+
+  // Solo se envía el paquete a contabilidad cuando este guardado emite
+  // una remisión al cliente, es decir cuando hay entregas directas
+  // pendientes (asignaciones desde la misma empresa del pedido). Si solo
+  // se cambió el estado / encabezado / etc. no se genera remisión nueva y
+  // no se debe activar el envío ni pedir confirmación: solo guardar.
+  var empPedidoN = norm(c.Nombre_Empresa);
+  var hayEntregaDirecta = detailWorkingLines.some(function(dl) {
+    return ((dl && dl._asignaciones) || []).some(function(a) {
+      return (Number(a.cantidad) || 0) > 0 && norm(a.empresa_stock) === empPedidoN;
+    });
+  });
+
+  if (hayEntregaDirecta && typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
     var r = await NOTIF.confirmarEnvioContabilidad(c.Nombre_Empresa, 'pedidos');
     if (!r.confirmed) return;
     _pendingContab = r;
