@@ -88,6 +88,7 @@ function groupClientes(list) {
 // se usa el nombre como respaldo.
 var PLAZOS_POR_NIT = {};
 var PLAZOS_POR_NOMBRE = {};
+var PLAZOS_LISTA = [];
 
 function _normNombre(n) {
   return (n == null ? '' : String(n)).toLowerCase().replace(/\s+/g, ' ').trim();
@@ -121,9 +122,11 @@ function _cmpPlazo(a, b) {
 function _indexPlazosPedidos(pedidos) {
   PLAZOS_POR_NIT = {};
   PLAZOS_POR_NOMBRE = {};
+  var todos = {};
   (pedidos || []).forEach(function(p) {
     var lbl = _normalizePlazo(p.Plazo_Pago);
     if (!lbl) return;
+    todos[lbl] = true;
     var nk = _normalizeId(p.NIT);
     if (nk) {
       if (!PLAZOS_POR_NIT[nk]) PLAZOS_POR_NIT[nk] = {};
@@ -135,6 +138,7 @@ function _indexPlazosPedidos(pedidos) {
       PLAZOS_POR_NOMBRE[nombre][lbl] = true;
     }
   });
+  PLAZOS_LISTA = Object.keys(todos).sort(_cmpPlazo);
 }
 
 // Plazos de un registro de cliente: primero por NIT; si ese NIT no aparece
@@ -215,6 +219,14 @@ function populateFilters() {
   });
   selDepto.value = curDepto;
 
+  var selPlazo = document.getElementById('f-plazo');
+  var curPlazo = selPlazo.value;
+  selPlazo.innerHTML = '<option value="">Todos</option>';
+  PLAZOS_LISTA.forEach(function(p) {
+    selPlazo.innerHTML += '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>';
+  });
+  selPlazo.value = PLAZOS_LISTA.indexOf(curPlazo) >= 0 ? curPlazo : '';
+
   _updateMuniFilter();
 }
 
@@ -239,12 +251,14 @@ function getFiltered() {
   var depto = document.getElementById('f-depto').value;
   var muni = document.getElementById('f-muni').value;
   var est = document.getElementById('f-estado').value;
+  var plazo = document.getElementById('f-plazo').value;
   var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
   return clientesData.filter(function(c) {
     if (emp && c.Nombre_Empresa !== emp) return false;
     if (depto && c.Departamento !== depto) return false;
     if (muni && c.Municipio !== muni) return false;
     if (est && _estadoNorm(c.Estado) !== est) return false;
+    if (plazo && _plazosParaRecord(c).indexOf(plazo) < 0) return false;
     if (txt) {
       var haystack = [c.Cliente, c.Identificacion, c.Correo_Electronico, c.Telefono, c.Municipio, c.Departamento]
         .join(' ').toLowerCase();
@@ -259,6 +273,7 @@ function clearFilters() {
   document.getElementById('f-depto').value = '';
   document.getElementById('f-muni').value = '';
   document.getElementById('f-estado').value = '';
+  document.getElementById('f-plazo').value = '';
   document.getElementById('f-txt').value = '';
   _updateMuniFilter();
   currentPage = 1;
@@ -273,6 +288,7 @@ function renderTable() {
   var depto = document.getElementById('f-depto').value;
   var muni = document.getElementById('f-muni').value;
   var est = document.getElementById('f-estado').value;
+  var plazo = document.getElementById('f-plazo').value;
   var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
 
   var filtered = allGrps.filter(function(g) {
@@ -290,6 +306,9 @@ function renderTable() {
       return true;
     });
   });
+  if (plazo) {
+    filtered = filtered.filter(function(g) { return _plazosDeGrupo(g).indexOf(plazo) >= 0; });
+  }
   currentGroups = filtered;
 
   var empSet = {}, deptoSet = {};
@@ -400,6 +419,7 @@ document.getElementById('f-emp').addEventListener('change', function() { current
 document.getElementById('f-depto').addEventListener('change', function() { _updateMuniFilter(); currentPage = 1; renderTable(); });
 document.getElementById('f-muni').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-estado').addEventListener('change', function() { currentPage = 1; renderTable(); });
+document.getElementById('f-plazo').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-txt').addEventListener('input', debounce(function() { currentPage = 1; renderTable(); }, 300));
 
 // ── Detail modal ──
