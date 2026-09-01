@@ -124,18 +124,24 @@ function dBuildOrders(ped) {
     o.esPendiente = o.pendUds > 0;
     o.pct = o.cantPedida > 0 ? Math.round(o.cantEntregada / o.cantPedida * 100) : 0;
 
-    // Valor ($COP). Se excluyen líneas anuladas. Valor pedido = Valor_Total
-    // (= Valor_Unitario × Cantidad); entregado = Valor_Unitario × Cant_Entregada.
-    o.valorPedido = 0; o.valorEntregado = 0; o.lineasSinPrecio = 0;
+    // Valor ($COP). "Pedido" y "Entregado" cuentan TODAS las líneas no
+    // anuladas (volumen histórico del comercial — por ahí se ordena el
+    // ranking). "Pendiente" usa el MISMO criterio que reportes.js ›
+    // "Valorización ventas": solo líneas con Cant_Pendiente > 0 y Estado_2
+    // fuera de {Anulado, Alistado, Cerrado, Bloqueado por cartera, Entregado
+    // por proveedor}. Por eso Pendiente ≠ Pedido − Entregado: los pedidos ya
+    // cerrados siguen sumando a Pedido pero no a Pendiente.
+    o.valorPedido = 0; o.valorEntregado = 0; o.valorPendiente = 0;
+    o.lineasSinPrecio = 0;
     o.lines.forEach(function(l) {
       if ((l.Estado_2 || 'Abierto').trim() === 'Anulado') return;
       var vu = Number(l.Valor_Unitario) || 0;
       var cant = Number(l.Cantidad) || 0;
       o.valorPedido += Number(l.Valor_Total) || (vu * cant);
       o.valorEntregado += vu * (Number(l.Cant_Entregada) || 0);
+      if (dLineaPendiente(l)) o.valorPendiente += vu * (Number(l.Cant_Pendiente) || 0);
       if (vu === 0 && cant > 0) o.lineasSinPrecio++;
     });
-    o.valorPendiente = Math.max(0, o.valorPedido - o.valorEntregado);
     return o;
   });
 }
@@ -627,7 +633,7 @@ function buildTopComerciales(orders) {
 
   var notaEl = document.getElementById('com-nota');
   if (notaEl) {
-    var notas = [];
+    var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). Por eso no cuadra con Pedido − Entregado.'];
     if (sinPrecio > 0) notas.push('⚠️ ' + sinPrecio.toLocaleString('es-CO') + ' línea(s) sin precio no suman al valor');
     if (sinComercial > 0) notas.push(sinComercial.toLocaleString('es-CO') + ' orden(es) sin comercial asignado');
     notaEl.textContent = notas.join(' · ');
