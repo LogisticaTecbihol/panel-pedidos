@@ -2137,6 +2137,7 @@ async function guardarYEnviar() {
     });
   });
 
+  _pendingContab = null;
   if (hayEntregaDirecta && typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
     var r = await NOTIF.confirmarEnvioContabilidad(c.Nombre_Empresa, 'pedidos');
     if (!r.confirmed) return;

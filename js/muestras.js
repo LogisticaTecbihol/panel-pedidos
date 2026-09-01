@@ -1273,9 +1273,30 @@ function syncMuLinesFromDOM() {
 // ── Save ──
 
 var _pendingContabMu = null;
+
+// ¿Este guardado emite una remisión nueva? Solo entonces se envía el
+// paquete a contabilidad y se pide confirmación; si no, solo se guarda.
+// (Misma condición que pedidos.js con guardarYEnviar.)
+function _muestraEmiteRemisionNueva() {
+  var estado = document.getElementById('mu-estado').value;
+  var manualRem = document.getElementById('mu-remision').value.trim();
+  if (!muEditId) {
+    // Creación: hay remisión si se registra ya despachada (auto o manual).
+    return estado === 'Despachada' || manualRem !== '';
+  }
+  // Edición: solo si pasa a despachada y todavía no tiene remisión.
+  var cantEnt = Number((document.getElementById('mu-edit-cant-entregada') || {}).value) || 0;
+  var seraDespachada = estado === 'Despachada' || cantEnt > 0;
+  var row = (typeof allMuestras !== 'undefined' && allMuestras)
+    ? allMuestras.filter(function(x) { return x.id === muEditId; })[0] : null;
+  var remExistente = row ? String(row.Remision || '').trim() : '';
+  return seraDespachada && !remExistente;
+}
+
 async function registrarYEnviarMuestra() {
   var empresa = document.getElementById('mu-empresa').value || '';
-  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+  _pendingContabMu = null;
+  if (_muestraEmiteRemisionNueva() && typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
     var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'muestras');
     if (!r.confirmed) return;
     _pendingContabMu = r;

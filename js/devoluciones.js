@@ -1666,7 +1666,18 @@ var _pendingContabDev = null;
 async function tramitarYEnviarDev() {
   var devLines = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
   var empresaDev = devLines.length ? (devLines[0].Empresa || '') : '';
-  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+
+  // Solo se emite remisión nueva (y por tanto envío a contabilidad) si se
+  // tramita un lado que aún no tiene remisión. Si no, solo se guarda.
+  // (Misma condición que pedidos.js con guardarYEnviar.)
+  var _ingEn = document.getElementById('tramitar-ingreso-enabled').checked;
+  var _salEn = document.getElementById('tramitar-salida-enabled').checked;
+  var _rowRemIng = devLines.length ? String(devLines[0].Remision_Ingreso || devLines[0].Remision || '').trim() : '';
+  var _rowRemSal = devLines.length ? String(devLines[0].Remision_Salida || '').trim() : '';
+  var _emiteRemDev = (_ingEn && !_rowRemIng) || (_salEn && !_rowRemSal);
+
+  _pendingContabDev = null;
+  if (_emiteRemDev && typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
     var r = await NOTIF.confirmarEnvioContabilidad(empresaDev, 'devoluciones');
     if (!r.confirmed) return;
     _pendingContabDev = r;
