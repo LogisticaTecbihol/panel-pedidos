@@ -225,9 +225,15 @@ async function apiGet(action, opts) {
     }
 
     if (action === 'getInventarioFisico') {
-      var res = await _sb.from('InventarioFisico').select(cols).order('id');
-      if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, conteos: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
+      var all = [], from = 0, size = 1000;
+      while (true) {
+        var res = await _sb.from('InventarioFisico').select(cols).order('id').range(from, from + size - 1);
+        if (res.error) return { ok: false, error: res.error.message };
+        all = all.concat(res.data);
+        if (res.data.length < size) break;
+        from += size;
+      }
+      return { ok: true, conteos: _addRow(_filterGerenteIaso(all, 'Empresa')) };
     }
 
     return { error: 'Accion no reconocida: ' + action };

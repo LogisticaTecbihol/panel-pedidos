@@ -3783,7 +3783,12 @@ function _computeExistenciasParaEmpresa(empresa, bodega, fechaHasta) {
       if (m.empresa !== empresa) return;
     } else {
       var bucket = _empresaExistKey(m.empresa, m.producto);
-      if (bucket !== empresa) return;
+      if (empresa === PARCELAR_EMPRESA_VAL) {
+        // Conteo único de PARCELAR: incluye los 3 cubos (Propio + Carval + Germisemillas)
+        if (_allParcelarKeys().indexOf(bucket) < 0) return;
+      } else if (bucket !== empresa) {
+        return;
+      }
     }
     var key = m.producto;
     if (!saldos[key]) saldos[key] = { cantidad: 0, presentacion: '' };
