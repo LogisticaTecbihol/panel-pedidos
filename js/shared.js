@@ -208,9 +208,15 @@ async function apiGet(action, opts) {
       return { ok: true, remisionesAnuladas: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getListaPrecios') {
-      var res = await _sb.from('ListaPrecios').select(cols).order('Producto');
-      if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, precios: _addRow(res.data) };
+      var all = [], from = 0, size = 1000;
+      while (true) {
+        var res = await _sb.from('ListaPrecios').select(cols).order('Producto').order('id').range(from, from + size - 1);
+        if (res.error) return { ok: false, error: res.error.message };
+        all = all.concat(res.data);
+        if (res.data.length < size) break;
+        from += size;
+      }
+      return { ok: true, precios: _addRow(all) };
     }
     if (action === 'getClientesAll') {
       var allData = [], from = 0, pageSize = 1000;
