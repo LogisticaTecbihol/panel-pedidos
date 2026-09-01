@@ -868,9 +868,18 @@ async function apiPost(body) {
       if (!lineas.length && body.Producto) {
         lineas = [{ Producto: body.Producto, Presentacion: body.Presentacion, Cantidad: body.Cantidad }];
       }
+      // El consecutivo lo asigna la base (generar_consecutivo_muestra),
+      // no el navegador: así no se repite aunque la lista en memoria del
+      // cliente esté vieja o dos personas creen a la vez.
+      var consecMu = (body.Consecutivo || '').trim();
+      if ((body.Empresa || '').trim()) {
+        var _cm = await _sb.rpc('generar_consecutivo_muestra', { p_empresa_nombre: body.Empresa });
+        if (_cm.error) return { ok: false, error: 'No se pudo asignar el consecutivo: ' + _cm.error.message };
+        if (_cm.data != null && String(_cm.data).trim()) consecMu = String(_cm.data).trim();
+      }
       var rows = lineas.map(function(lin) {
         return {
-          Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || null,
+          Empresa: body.Empresa || '', Consecutivo: consecMu, Fecha_Solicitud: body.Fecha_Solicitud || null,
           Fecha_Despacho: body.Fecha_Despacho || null, Responsable: body.Responsable || '',
           Departamento: body.Departamento || '', Municipio: body.Municipio || '', Tipo_Cultivo: body.Tipo_Cultivo || '',
           Fecha_Aplicacion: body.Fecha_Aplicacion || null, Fecha_Seguimiento: body.Fecha_Seguimiento || null,
@@ -893,7 +902,7 @@ async function apiPost(body) {
       }
       var res = await _sb.from('SolicitudMuestras').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
-      return { ok: true, added: rows.length, remision: remMu };
+      return { ok: true, added: rows.length, remision: remMu, consecutivo: consecMu };
     }
 
     if (action === 'aprobarMuestra') {

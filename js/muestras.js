@@ -1298,10 +1298,25 @@ async function saveMuestra() {
     var estado = document.getElementById('mu-estado').value;
     if (cantEntregada > 0) estado = 'Despachada';
 
+    var muEditRow = allMuestras ? allMuestras.filter(function(x) { return x.id === muEditId; })[0] : null;
+
+    // Si cambian el consecutivo, no dejar que choque con otra solicitud
+    // de la misma empresa (se valida contra datos frescos, no la lista
+    // en memoria que puede estar vieja).
+    var _consEdit = document.getElementById('mu-consecutivo').value.trim();
+    if (muEditRow && _consEdit && _consEdit !== String(muEditRow.Consecutivo || '')) {
+      var _chkE = await _sb.from('SolicitudMuestras').select('id')
+        .eq('Empresa', document.getElementById('mu-empresa').value)
+        .eq('Consecutivo', _consEdit);
+      if (!_chkE.error && (_chkE.data || []).some(function(x) { return x.id !== muEditId; })) {
+        showToast('El consecutivo ' + _consEdit + ' ya pertenece a otra solicitud de esta empresa. Usa otro número.', '#e74c3c');
+        return;
+      }
+    }
+
     btn.disabled = true;
     btn.textContent = '⏳ Guardando...';
 
-    var muEditRow = allMuestras ? allMuestras.filter(function(x) { return x.id === muEditId; })[0] : null;
     var generarRemMu = estado === 'Despachada' && !(muEditRow && (muEditRow.Remision || '').trim()) && !document.getElementById('mu-remision').value.trim();
     try {
       var result = await apiPost({
@@ -1407,6 +1422,15 @@ async function saveMuestra() {
     });
 
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+
+    // El servidor asigna el consecutivo definitivo. Si difiere del que se
+    // tecleó (lista vieja / número ya usado), se avisa y se usa el real
+    // para el PDF, la notificación a contabilidad y el aviso a admins.
+    if (result.consecutivo != null && String(result.consecutivo) !== String(consecutivo)) {
+      showToast('El consecutivo ' + consecutivo + ' ya estaba en uso; se asignó el ' + result.consecutivo, '#e67e22');
+      consecutivo = String(result.consecutivo);
+    }
+
     if (_pendingContabMu && _pendingContabMu.contabIds && _pendingContabMu.contabIds.length && result.remision && typeof NOTIF !== 'undefined') {
       try {
         var _entMuN = productosValidos.map(function(p) {
