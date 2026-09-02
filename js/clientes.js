@@ -438,6 +438,38 @@ document.getElementById('f-plazo').addEventListener('change', function() { curre
 document.getElementById('f-nuevo').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-txt').addEventListener('input', debounce(function() { currentPage = 1; renderTable(); }, 300));
 
+// ── Auditoría (creado / modificado) ──
+function _fmtAudTs(ts) {
+  if (!ts) return '—';
+  var d = new Date(ts);
+  if (isNaN(d)) return String(ts);
+  var p = function(n) { return String(n).padStart(2, '0'); };
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() +
+         ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+// Bloque de auditoría de un registro. compact=true -> una línea gris tenue
+// (tarjetas de sede en clientes con varios registros); compact=false -> bloque
+// con borde superior (cliente de un solo registro).
+function _auditoriaHtml(r, compact) {
+  var crNom = r.creado_por_nombre ? escHtml(r.creado_por_nombre) : '—';
+  var crEn = _fmtAudTs(r.creado_en);
+  var moNom = r.modificado_por_nombre ? escHtml(r.modificado_por_nombre) : '';
+  var moEn = r.modificado_en ? _fmtAudTs(r.modificado_en) : '';
+
+  if (compact) {
+    return '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #edf2f7;font-size:0.72rem;color:#a0aec0">' +
+      'Creado ' + crEn + ' por ' + crNom +
+      (moNom ? ' &nbsp;·&nbsp; Modif. ' + moEn + ' por ' + moNom : '') +
+      '</div>';
+  }
+  var modTxt = moNom ? (moNom + ' · ' + moEn) : '<span style="color:#a0aec0">Sin modificaciones</span>';
+  return '<div style="border-top:1px solid #e2e8f0;margin-top:16px;padding-top:12px;display:flex;gap:28px;flex-wrap:wrap;font-size:0.8rem;color:#4a5568">' +
+    '<div><div style="font-size:0.7rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-bottom:2px">Creado</div>' + crNom + ' · ' + crEn + '</div>' +
+    '<div><div style="font-size:0.7rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-bottom:2px">Última modificación</div>' + modTxt + '</div>' +
+    '</div>';
+}
+
 // ── Detail modal ──
 function openGroupDetail(groupIdx) {
   var g = currentGroups[groupIdx];
@@ -518,7 +550,7 @@ function openGroupDetail(groupIdx) {
       sedeFields.forEach(function(f) {
         html += '<div><span style="color:#a0aec0;font-size:0.72rem;font-weight:600">' + f[0] + ':</span> ' + escHtml(f[1] || '—') + '</div>';
       });
-      html += '</div></div>';
+      html += '</div>' + _auditoriaHtml(r, true) + '</div>';
     });
     html += '</div>';
   } else {
@@ -541,6 +573,7 @@ function openGroupDetail(groupIdx) {
         '</div>';
     });
     html += '</div>';
+    html += _auditoriaHtml(first, false);
   }
 
   document.getElementById('det-body').innerHTML = html;
