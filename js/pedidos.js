@@ -2188,9 +2188,11 @@ async function guardarTodo() {
     });
   });
 
+  var remGenerada = '';
   if (entregas.length > 0 && !rem) {
     try {
       rem = await generarRemisionConsecutivo(c.Nombre_Empresa, 'SALIDA');
+      remGenerada = rem;
       entregas.forEach(function(e) { e.remision = rem; });
       document.getElementById('m-remision').value = rem;
     } catch (err) {
@@ -2416,6 +2418,10 @@ async function guardarTodo() {
     await loadFromAPI();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
+    // Si la remisión se generó en este intento y el guardado no llegó a
+    // ningún registro, devolvemos el consecutivo al contador (best-effort;
+    // el RPC no la libera si ya quedó en algún registro).
+    if (remGenerada) await liberarRemisionConsecutivo(c.Nombre_Empresa, 'SALIDA', remGenerada);
     btn.disabled = false;
     btn.textContent = '✓ Guardar cambios y enviar';
     _pendingContab = null;

@@ -1156,11 +1156,15 @@ async function confirmAndSaveReenvase() {
   try {
     var remAutoSalida = remision;
     var remAutoEntrada = '';
+    var remSalidaGenerada = '';
+    var remEntradaGenerada = '';
     if (!remAutoSalida && empresa) {
       remAutoSalida = await generarRemisionConsecutivo(empresa, 'SALIDA');
+      remSalidaGenerada = remAutoSalida;
     }
     if (empresaDestino && empresaDestino !== empresa) {
       remAutoEntrada = await generarRemisionConsecutivo(empresaDestino, 'ENTRADA');
+      remEntradaGenerada = remAutoEntrada;
     }
     var added = 0;
     var bodegaVal = document.getElementById('re-bodega').value;
@@ -1204,6 +1208,11 @@ async function confirmAndSaveReenvase() {
     await loadReenvases();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
+    // Si alguna remisión se generó en este intento y no llegó a ningún
+    // registro, devolvemos el consecutivo al contador (el RPC no la libera
+    // si ya quedó guardada en algún lado).
+    if (remSalidaGenerada) await liberarRemisionConsecutivo(empresa, 'SALIDA', remSalidaGenerada);
+    if (remEntradaGenerada) await liberarRemisionConsecutivo(empresaDestino, 'ENTRADA', remEntradaGenerada);
     btn.disabled = false;
     btn.textContent = '✓ Confirmar, registrar y enviar';
     _pendingContabRe = null;

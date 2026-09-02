@@ -680,9 +680,11 @@ async function saveEntregas() {
     return;
   }
 
+  var remGenerada = '';
   if (entregas.length > 0 && !remision) {
     try {
       remision = await generarRemisionConsecutivo(muViewEmpresa, 'SALIDA');
+      remGenerada = remision;
       document.getElementById('mu-view-remision').value = remision;
     } catch (err) {
       showToast('Error generando remisión: ' + err.message, '#e74c3c');
@@ -777,6 +779,9 @@ async function saveEntregas() {
     await loadMuestras();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
+    // Si la remisión se generó en este intento y no llegó a ningún registro,
+    // devolvemos el consecutivo al contador (el RPC no la libera si ya quedó).
+    if (remGenerada) await liberarRemisionConsecutivo(muViewEmpresa, 'SALIDA', remGenerada);
     btn.disabled = false;
     btn.textContent = '💾 Guardar entregas';
   }

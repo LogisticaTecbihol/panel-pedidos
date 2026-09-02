@@ -43,6 +43,30 @@ async function generarRemisionDual(empresaSalida, empresaEntrada) {
   return res.data;
 }
 
+// Devuelve al contador un consecutivo de remisión que se generó pero cuyo
+// guardado falló, para que no quede "quemado" (salto en el listado). El RPC
+// solo revierte si es seguro: la remisión no quedó en ningún registro y el
+// contador sigue en ese número. Best-effort — nunca lanza.
+async function liberarRemisionConsecutivo(empresa, tipo, remision) {
+  if (!empresa || !tipo || !remision) return false;
+  try {
+    var res = await _sb.rpc('liberar_remision', {
+      p_empresa_nombre: empresa, p_tipo: tipo, p_remision: remision
+    });
+    return !res.error && res.data === true;
+  } catch (e) { return false; }
+}
+
+// Registro de los consecutivos de remisión generados durante el apiPost en
+// curso. Si el apiPost termina en error, apiPost() los libera uno a uno.
+var _remLedger = [];
+var _genRemImpl = generarRemisionConsecutivo;
+async function _genRem(empresa, tipo) {
+  var rem = await _genRemImpl(empresa, tipo);
+  _remLedger.push({ empresa: empresa, tipo: tipo, remision: rem });
+  return rem;
+}
+
 function populateEmpresaSelect(id, defaultLabel, extras, allAccess) {
   var sel = document.getElementById(id);
   if (!sel) return;
@@ -253,7 +277,29 @@ function _uid() {
 }
 
 // ── Capa de compatibilidad: apiPost ──
+// Envoltorio: ejecuta la operación y, si termina en error, libera los
+// consecutivos de remisión que se generaron y no llegaron a ningún registro.
 async function apiPost(body) {
+  var ledgerPrev = _remLedger;
+  var ledger = [];
+  _remLedger = ledger;
+  var result;
+  try {
+    result = await _apiPostCore(body);
+  } catch (err) {
+    result = { ok: false, error: (err && err.message) ? err.message : String(err) };
+  } finally {
+    _remLedger = ledgerPrev;
+  }
+  if (result && result.ok === false && ledger.length) {
+    for (var _li = 0; _li < ledger.length; _li++) {
+      await liberarRemisionConsecutivo(ledger[_li].empresa, ledger[_li].tipo, ledger[_li].remision);
+    }
+  }
+  return result;
+}
+
+async function _apiPostCore(body) {
   try {
     var action = body.action;
 
@@ -413,10 +459,10 @@ async function apiPost(body) {
       var esPlanta = /planta/i.test(origen);
       var esHolding = _esEmpresaHolding(empOrigen);
       if (!remDestino && empDestino) {
-        remDestino = await generarRemisionConsecutivo(empDestino, 'ENTRADA');
+        remDestino = await _genRem(empDestino, 'ENTRADA');
       }
       if (!remOrigen && esHolding && !esPlanta && empOrigen !== empDestino) {
-        remOrigen = await generarRemisionConsecutivo(empOrigen, 'SALIDA');
+        remOrigen = await _genRem(empOrigen, 'SALIDA');
       }
       var rows = lineas.map(function(lin) {
         return {
@@ -443,10 +489,10 @@ async function apiPost(body) {
       var esPlantaE = /planta/i.test(origenE);
       var esHoldingE = _esEmpresaHolding(empOrigenE);
       if (!remDestinoE && empDestinoE && !body._remision_destino_existente) {
-        remDestinoE = await generarRemisionConsecutivo(empDestinoE, 'ENTRADA');
+        remDestinoE = await _genRem(empDestinoE, 'ENTRADA');
       }
       if (!remOrigenE && esHoldingE && !esPlantaE && empOrigenE !== empDestinoE && !body._remision_origen_existente) {
-        remOrigenE = await generarRemisionConsecutivo(empOrigenE, 'SALIDA');
+        remOrigenE = await _genRem(empOrigenE, 'SALIDA');
       }
       var res = await _sb.from('Ingresos').update({
         Fecha: body.Fecha || '', Origen: body.Origen || '',
@@ -533,8 +579,8 @@ async function apiPost(body) {
       var remSalDev = genSalida ? (body.Remision_Salida || '').trim() : '';
       var empDev = (body.Empresa || '').trim();
       if (empDev) {
-        if (genIngreso && !remIngDev) remIngDev = await generarRemisionConsecutivo(empDev, 'ENTRADA');
-        if (genSalida && !remSalDev) remSalDev = await generarRemisionConsecutivo(empDev, 'SALIDA');
+        if (genIngreso && !remIngDev) remIngDev = await _genRem(empDev, 'ENTRADA');
+        if (genSalida && !remSalDev) remSalDev = await _genRem(empDev, 'SALIDA');
       }
       var nuevasAdded = 0;
       if (nuevasLineas.length && lineas.length) {
@@ -660,8 +706,8 @@ async function apiPost(body) {
       var remSalCam = (body.Remision_Salida || '').trim();
       var empCam = (body.Empresa || '').trim();
       if (empCam) {
-        if (doIngCam && !remIngCam) remIngCam = await generarRemisionConsecutivo(empCam, 'ENTRADA');
-        if (doSalCam && !remSalCam) remSalCam = await generarRemisionConsecutivo(empCam, 'SALIDA');
+        if (doIngCam && !remIngCam) remIngCam = await _genRem(empCam, 'ENTRADA');
+        if (doSalCam && !remSalCam) remSalCam = await _genRem(empCam, 'SALIDA');
       }
       var entregasUpd = body.entregasUpdate || {};
       var estadoFinalCam = 'Cerrado';
@@ -858,11 +904,11 @@ async function apiPost(body) {
       var generatedRemOC = {};
       if (body._legalizar && empDestOC) {
         if (remOC !== undefined && !remOC) {
-          remOC = await generarRemisionConsecutivo(empDestOC, 'ENTRADA');
+          remOC = await _genRem(empDestOC, 'ENTRADA');
           generatedRemOC.remision_destino = remOC;
         }
         if (remOrigenOC !== undefined && !remOrigenOC && empOrigOC && empOrigOC !== empDestOC) {
-          remOrigenOC = await generarRemisionConsecutivo(empOrigOC, 'SALIDA');
+          remOrigenOC = await _genRem(empOrigOC, 'SALIDA');
           generatedRemOC.remision_origen = remOrigenOC;
         }
       }
@@ -917,7 +963,7 @@ async function apiPost(body) {
       });
       var remMu = (body.Remision || '').trim();
       if (!remMu && body._generar_remision && (body.Empresa || '').trim()) {
-        remMu = await generarRemisionConsecutivo(body.Empresa, 'SALIDA');
+        remMu = await _genRem(body.Empresa, 'SALIDA');
         rows.forEach(function(r) { r.Remision = remMu; });
       }
       var res = await _sb.from('SolicitudMuestras').insert(rows);
@@ -976,7 +1022,7 @@ async function apiPost(body) {
     if (action === 'editarMuestra') {
       var remMuE = (body.Remision || '').trim();
       if (!remMuE && body._generar_remision && (body.Empresa || '').trim()) {
-        remMuE = await generarRemisionConsecutivo(body.Empresa, 'SALIDA');
+        remMuE = await _genRem(body.Empresa, 'SALIDA');
       }
       var res = await _sb.from('SolicitudMuestras').update({
         Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || null,
@@ -1193,10 +1239,10 @@ async function apiPost(body) {
       var empReenv = (body.Empresa || '').trim();
       var empReenvDest = (body.Empresa_Destino || '').trim();
       if (!remReenv && empReenv) {
-        remReenv = await generarRemisionConsecutivo(empReenv, 'SALIDA');
+        remReenv = await _genRem(empReenv, 'SALIDA');
       }
       if (!remReenvDest && empReenvDest && empReenvDest !== empReenv) {
-        remReenvDest = await generarRemisionConsecutivo(empReenvDest, 'ENTRADA');
+        remReenvDest = await _genRem(empReenvDest, 'ENTRADA');
       }
       var row = {
         Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
@@ -1218,10 +1264,10 @@ async function apiPost(body) {
       var empReenvEd = (body.Empresa || '').trim();
       var empReenvDestEd = (body.Empresa_Destino || '').trim();
       if (!remReenvEd && empReenvEd && !body._remision_existente) {
-        remReenvEd = await generarRemisionConsecutivo(empReenvEd, 'SALIDA');
+        remReenvEd = await _genRem(empReenvEd, 'SALIDA');
       }
       if (!remReenvDestEd && empReenvDestEd && empReenvDestEd !== empReenvEd && !body._remision_destino_existente) {
-        remReenvDestEd = await generarRemisionConsecutivo(empReenvDestEd, 'ENTRADA');
+        remReenvDestEd = await _genRem(empReenvDestEd, 'ENTRADA');
       }
       var res = await _sb.from('Reenvases').update({
         Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
