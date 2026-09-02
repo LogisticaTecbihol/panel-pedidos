@@ -1668,7 +1668,10 @@ function _buildRemisionesInner() {
   Object.keys(cambiosGrouped).forEach(function(gKey) {
     var lines = cambiosGrouped[gKey];
     var r = lines[0];
-    if (r.Estado !== 'Cerrado') return;
+    // 'Parcial' = cambio con solo un lado de la remisión registrado; se muestra
+    // el lado que exista (los bloques de abajo filtran por presencia de
+    // Remision_Ingreso / Remision_Salida).
+    if (r.Estado !== 'Cerrado' && r.Estado !== 'Parcial') return;
     var empNombre = r.Empresa || '';
     if (fEmp && empNombre !== fEmp) return;
     var remIngreso = String(r.Remision_Ingreso || '').trim();
