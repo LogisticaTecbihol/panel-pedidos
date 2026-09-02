@@ -2008,6 +2008,8 @@ function openNCModal(tipo) {
   document.getElementById('nc-remision').value = '';
   document.getElementById('nc-observaciones').value = '';
   document.getElementById('btn-save-nc').disabled = false;
+  var _ncA = document.getElementById('nc-audit');
+  if (_ncA) _ncA.innerHTML = '';
   ncLineas = [{ Producto: '', Presentacion: '', Cantidad: '' }];
   renderNCLines();
   document.getElementById('nc-overlay').classList.add('show');
@@ -2127,6 +2129,9 @@ function openEditNC(id) {
   _populateNCMotivos(isIngreso, reg.Motivo || 'Otro');
   document.getElementById('nc-remision').value = reg.Remision || '';
   document.getElementById('nc-observaciones').value = reg.Observaciones || '';
+
+  var _ncA = document.getElementById('nc-audit');
+  if (_ncA) _ncA.innerHTML = _auditoriaHtml(reg, false);
 
   ncLineas = [{ Producto: reg.Producto || '', Presentacion: reg.Presentacion || '', Cantidad: reg.Cantidad || 0 }];
   renderNCLines();

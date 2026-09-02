@@ -625,6 +625,9 @@ function openNewOC() {
   var _ocUp = document.getElementById('oc-upload-section');
   if (_ocUp) _ocUp.style.display = 'none';
 
+  var _ocA = document.getElementById('oc-audit');
+  if (_ocA) _ocA.innerHTML = '';
+
   ocLineas = [{ Producto: '', Presentacion: '', Cantidad: '', Valor_Unitario: '', Valor_Total: '', Bonificado: '' }];
   renderOCLines();
   // Botones PDF sólo aplican al editar una OC existente; ocultar aquí.
@@ -776,6 +779,15 @@ function openEditOC(row) {
     btnRem.title = tieneRems
       ? 'Descargar las Remisiones (Destino y Origen) en PDF'
       : 'Aún no hay remisiones cargadas — legalizar primero (cargar Remisión Destino y/o Origen)';
+  }
+
+  var _ocA = document.getElementById('oc-audit');
+  if (_ocA) {
+    var _ocLines = ordenes.filter(function(o) {
+      return (o.Consecutivo || '') === (r.Consecutivo || '') &&
+             (o.Empresa_Destino || '') === (r.Empresa_Destino || '');
+    });
+    _ocA.innerHTML = _auditoriaHtml(_ocLines.length ? _ocLines : r, false);
   }
 
   document.getElementById('oc-overlay').classList.add('show');

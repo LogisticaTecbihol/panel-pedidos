@@ -563,6 +563,8 @@ function viewDevDetail(key) {
     '<td style="text-align:right">' + fmtMoney(totalValor) + '</td><td></td></tr>';
   html += '</tbody></table></div>';
 
+  html += _auditoriaHtml(lines, false);
+
   document.getElementById('view-dev-meta').innerHTML =
     '<span>📋 Consec: ' + (consecList.length ? consecList.join(', ') : '—') + '</span>' +
     '<span>📅 ' + fmtDate(r.Fecha) + '</span>' +

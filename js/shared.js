@@ -1594,9 +1594,35 @@ function _fmtAudTs(ts) {
          ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 
+// Para registros agrupados (varias filas = un mismo documento): toma la
+// creación más antigua y la modificación más reciente del conjunto.
+function _auditoriaAgg(rows) {
+  if (!rows || !rows.length) return null;
+  var acc = null;
+  rows.forEach(function(r) {
+    if (!r) return;
+    if (!acc) {
+      acc = {
+        creado_por_nombre: r.creado_por_nombre, creado_en: r.creado_en,
+        modificado_por_nombre: r.modificado_por_nombre, modificado_en: r.modificado_en
+      };
+      return;
+    }
+    if (r.creado_en && (!acc.creado_en || r.creado_en < acc.creado_en)) {
+      acc.creado_en = r.creado_en; acc.creado_por_nombre = r.creado_por_nombre;
+    }
+    if (r.modificado_en && (!acc.modificado_en || r.modificado_en > acc.modificado_en)) {
+      acc.modificado_en = r.modificado_en; acc.modificado_por_nombre = r.modificado_por_nombre;
+    }
+  });
+  return acc;
+}
+
 // compact=true -> una línea gris tenue (tarjetas/sedes); compact=false ->
 // bloque con borde superior (pie de un modal de detalle/edición).
+// `r` puede ser un registro o un array de registros (se agrega).
 function _auditoriaHtml(r, compact) {
+  if (Array.isArray(r)) r = _auditoriaAgg(r);
   var crNom = (r && r.creado_por_nombre) ? escHtml(r.creado_por_nombre) : '—';
   var crEn = _fmtAudTs(r && r.creado_en);
   var moNom = (r && r.modificado_por_nombre) ? escHtml(r.modificado_por_nombre) : '';

@@ -1396,6 +1396,8 @@ async function openDetail(idx) {
   document.getElementById('m-total').textContent = fmtMoney(c.Total_Orden);
   var obsText = c.Observaciones || lines.reduce(function(a, l) { return a || l.Observaciones; }, '') || '';
   document.getElementById('m-observaciones').value = obsText ? String(obsText).trim() : '';
+  var _mdA = document.getElementById('md-audit');
+  if (_mdA) _mdA.innerHTML = _auditoriaHtml(lines, false);
   renderSolicitudesCompraSection(c);
   document.getElementById('m-fecha').value = today();
   document.getElementById('m-remision').value = '';

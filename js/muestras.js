@@ -633,6 +633,7 @@ async function viewMuestra(id) {
   '</div>';
 
   muViewNewLines = [];
+  html += _auditoriaHtml(sameConsec.length ? sameConsec : rows, false);
   document.getElementById('view-mu-body').innerHTML = html;
   var _muViewRem = document.getElementById('mu-view-remision');
   if (_muViewRem) { _muViewRem.readOnly = true; _muViewRem.style.background = '#f0f4f8'; }

@@ -449,6 +449,8 @@ function viewCamDetail(key) {
     '</div>' +
   '</div>';
 
+  html += _auditoriaHtml(lines, false);
+
   document.getElementById('view-cam-meta').innerHTML =
     '<span>📋 Consec: '+(r.Consecutivo||'—')+'</span>' +
     '<span>👤 '+(r.Cliente||'—')+'</span>';

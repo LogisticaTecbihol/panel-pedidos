@@ -681,6 +681,8 @@ function addProductToReGroup() {
   document.getElementById('re-multi-lines').style.display = '';
   document.getElementById('re-edit-single').style.display = 'none';
 
+  var _reA = document.getElementById('re-audit');
+  if (_reA) _reA.innerHTML = '';
   reLines = [{ producto: '', presentacion: '', cantidad: 0, observaciones: '' }];
   renderReLines();
   document.getElementById('re-overlay').classList.add('show');
@@ -928,6 +930,8 @@ async function openNewReenvase() {
   document.getElementById('re-multi-lines').style.display = '';
   document.getElementById('re-edit-single').style.display = 'none';
 
+  var _reA = document.getElementById('re-audit');
+  if (_reA) _reA.innerHTML = '';
   reLines = [{ producto: '', presentacion: '', cantidad: 0, observaciones: '' }];
   renderReLines();
   document.getElementById('re-overlay').classList.add('show');
@@ -966,6 +970,14 @@ async function editReenvase(id) {
   document.getElementById('re-edit-presentacion').value = r.Presentacion || '';
   document.getElementById('re-edit-cantidad').value = r.Cantidad || 0;
   document.getElementById('re-edit-observaciones').value = r.Observaciones || '';
+
+  var _reA = document.getElementById('re-audit');
+  if (_reA) {
+    var _reLines = allReenvases.filter(function(x) {
+      return (x.Remision || '') === (r.Remision || '') && (x.Empresa || '') === (r.Empresa || '');
+    });
+    _reA.innerHTML = _auditoriaHtml(_reLines.length ? _reLines : r, false);
+  }
 
   document.getElementById('re-overlay').classList.add('show');
   await loadProductosCache();

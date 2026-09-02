@@ -309,6 +309,9 @@ function openIngDetail(idx) {
 
   renderIngDetailProducts();
 
+  var _a = document.getElementById('igd-audit');
+  if (_a) _a.innerHTML = _auditoriaHtml(getLinesForIng(g), false);
+
   var canUpload = AUTH.canUploadAdjuntos();
   document.getElementById('ing-btn-adjuntar').style.display = canUpload ? '' : 'none';
   document.getElementById('ing-adjunto-dropzone').style.display = canUpload ? '' : 'none';

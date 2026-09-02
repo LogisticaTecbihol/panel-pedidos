@@ -154,6 +154,8 @@ function openNewUser() {
   document.getElementById('btn-save-usr').textContent = '✓ Crear usuario';
   renderEmpresaChecks([], {});
   renderModuloChecks([], 'editor');
+  var _uA = document.getElementById('usr-audit');
+  if (_uA) _uA.innerHTML = '';
   document.getElementById('usr-overlay').classList.add('show');
 }
 
@@ -176,6 +178,8 @@ function openEditUser(userId) {
   userEmps.forEach(function(e) { if (e.codigo_comercial) userEmpCodes[e.sigla] = e.codigo_comercial; });
   renderEmpresaChecks(userEmpSiglas, userEmpCodes);
   renderModuloChecks(usrModulos[userId] || [], u.rol || 'lector');
+  var _uA = document.getElementById('usr-audit');
+  if (_uA) _uA.innerHTML = _auditoriaHtml(u, false);
   document.getElementById('usr-overlay').classList.add('show');
 }
 
