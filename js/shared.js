@@ -1142,21 +1142,38 @@ async function _apiPostCore(body) {
       var bodega = body.Bodega || 'Productos Buenos';
       var estado = body.Estado || 'Borrador';
       if (!empresa || !fechaConteo) return { ok: false, error: 'Empresa y fecha son requeridos' };
+
+      // Esta acción borra y reinserta todas las líneas del conteo en cada
+      // guardado. Preservamos la autoría de creación (quién y cuándo inició el
+      // conteo) a través de los re-guardados; modificado_* refleja el último
+      // que guardó/cerró.
+      var prevRes = await _sb.from('InventarioFisico')
+        .select('creado_por, creado_por_nombre, creado_en')
+        .eq('Empresa', empresa).eq('Fecha_Conteo', fechaConteo).eq('Bodega', bodega)
+        .order('creado_en', { ascending: true }).limit(1);
+      var prevAud = (prevRes.data && prevRes.data[0]) || null;
+
       var delRes = await _sb.from('InventarioFisico').delete()
         .eq('Empresa', empresa).eq('Fecha_Conteo', fechaConteo).eq('Bodega', bodega);
       if (delRes.error) return { ok: false, error: delRes.error.message };
       if (!lineas.length) return { ok: true, saved: 0 };
+
+      var audExtra = prevAud
+        ? { creado_por: prevAud.creado_por, creado_por_nombre: prevAud.creado_por_nombre,
+            creado_en: prevAud.creado_en, modificado_por: _uid() }
+        : {};
       var rows = lineas.map(function(l) {
         var dif = (Number(l.Cantidad_Fisica) || 0) - (Number(l.Cantidad_Sistema) || 0);
-        return {
+        var row = {
           Fecha_Conteo: fechaConteo, Empresa: empresa, Bodega: bodega,
           Producto: l.Producto || '', Presentacion: l.Presentacion || '',
           Cantidad_Fisica: Number(l.Cantidad_Fisica) || 0,
           Cantidad_Sistema: Number(l.Cantidad_Sistema) || 0,
           Diferencia: dif, Observaciones: l.Observaciones || '',
-          Estado: estado, Fecha_Registro: now,
-          creado_por: _uid(), modificado_por: _uid()
+          Estado: estado, Fecha_Registro: now
         };
+        for (var k in audExtra) row[k] = audExtra[k];
+        return row;
       });
       var res = await _sb.from('InventarioFisico').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
@@ -1563,6 +1580,39 @@ function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&
 function debounce(fn, ms) {
   var t;
   return function() { clearTimeout(t); t = setTimeout(fn, ms); };
+}
+
+// ── Auditoría: "Creado / Última modificación" (columnas creado_por_nombre,
+// creado_en, modificado_por_nombre, modificado_en en ClientesUnicos,
+// maestro_productos, ListaPrecios, InventarioFisico) ──
+function _fmtAudTs(ts) {
+  if (!ts) return '—';
+  var d = new Date(ts);
+  if (isNaN(d)) return String(ts);
+  var p = function(n) { return String(n).padStart(2, '0'); };
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() +
+         ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+// compact=true -> una línea gris tenue (tarjetas/sedes); compact=false ->
+// bloque con borde superior (pie de un modal de detalle/edición).
+function _auditoriaHtml(r, compact) {
+  var crNom = (r && r.creado_por_nombre) ? escHtml(r.creado_por_nombre) : '—';
+  var crEn = _fmtAudTs(r && r.creado_en);
+  var moNom = (r && r.modificado_por_nombre) ? escHtml(r.modificado_por_nombre) : '';
+  var moEn = (r && r.modificado_en) ? _fmtAudTs(r.modificado_en) : '';
+
+  if (compact) {
+    return '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #edf2f7;font-size:0.72rem;color:#a0aec0">' +
+      'Creado ' + crEn + ' por ' + crNom +
+      (moNom ? ' &nbsp;·&nbsp; Modif. ' + moEn + ' por ' + moNom : '') +
+      '</div>';
+  }
+  var modTxt = moNom ? (moNom + ' · ' + moEn) : '<span style="color:#a0aec0">Sin modificaciones</span>';
+  return '<div style="border-top:1px solid #e2e8f0;margin-top:16px;padding-top:12px;display:flex;gap:28px;flex-wrap:wrap;font-size:0.8rem;color:#4a5568">' +
+    '<div><div style="font-size:0.7rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-bottom:2px">Creado</div>' + crNom + ' · ' + crEn + '</div>' +
+    '<div><div style="font-size:0.7rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-bottom:2px">Última modificación</div>' + modTxt + '</div>' +
+    '</div>';
 }
 
 function initAutocomplete(input, opts) {

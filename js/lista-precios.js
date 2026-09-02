@@ -166,6 +166,7 @@ function openNuevoPrecio() {
   document.getElementById('ed-tipo').value = '';
   document.getElementById('ed-producto').value = '';
   document.getElementById('ed-precio').value = '';
+  document.getElementById('ed-audit').innerHTML = '';
   document.getElementById('edit-overlay').style.display = 'flex';
 }
 
@@ -180,6 +181,7 @@ function openEditPrecio(id) {
   document.getElementById('ed-tipo').value = p.Tipo_Precio || '';
   document.getElementById('ed-producto').value = p.Producto || '';
   document.getElementById('ed-precio').value = p.Precio || '';
+  document.getElementById('ed-audit').innerHTML = _auditoriaHtml(p, false);
   document.getElementById('edit-overlay').style.display = 'flex';
 }
 

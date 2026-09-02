@@ -17,7 +17,7 @@ async function loadProductos() {
     await _authReady;
     var all = [], from = 0, size = 1000;
     while (true) {
-      var res = await _sb.from('maestro_productos').select('id, Producto').order('Producto').range(from, from + size - 1);
+      var res = await _sb.from('maestro_productos').select('*').order('Producto').range(from, from + size - 1);
       if (res.error) throw new Error(res.error.message);
       all = all.concat(res.data || []);
       if (!res.data || res.data.length < size) break;
@@ -124,6 +124,7 @@ function openNuevoProducto() {
   document.getElementById('ed-titulo').textContent = '➕ Agregar Producto';
   document.getElementById('ed-producto').value = '';
   document.getElementById('ed-warn').style.display = 'none';
+  document.getElementById('ed-audit').innerHTML = '';
   document.getElementById('edit-overlay').style.display = 'flex';
   setTimeout(function() { document.getElementById('ed-producto').focus(); }, 50);
 }
@@ -135,6 +136,7 @@ function openEditProducto(id) {
   document.getElementById('ed-titulo').textContent = '✏️ Editar Producto';
   document.getElementById('ed-producto').value = p.Producto || '';
   document.getElementById('ed-warn').style.display = 'none';
+  document.getElementById('ed-audit').innerHTML = _auditoriaHtml(p, false);
   document.getElementById('edit-overlay').style.display = 'flex';
   setTimeout(function() { document.getElementById('ed-producto').focus(); }, 50);
 }
@@ -166,9 +168,9 @@ async function saveEdit() {
   try {
     var res;
     if (editingId) {
-      res = await _sb.from('maestro_productos').update({ Producto: nombre }).eq('id', editingId).select('id, Producto').single();
+      res = await _sb.from('maestro_productos').update({ Producto: nombre }).eq('id', editingId).select('*').single();
     } else {
-      res = await _sb.from('maestro_productos').insert({ Producto: nombre }).select('id, Producto').single();
+      res = await _sb.from('maestro_productos').insert({ Producto: nombre }).select('*').single();
     }
     if (res.error) {
       if (res.error.code === '23505') throw new Error('Ya existe un producto con ese nombre');

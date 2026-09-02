@@ -3605,6 +3605,7 @@ var invfCurrentEmpresa = '';
 var invfCurrentFecha = '';
 var invfCurrentBodega = 'Productos Buenos';
 var invfCurrentEstado = 'Borrador';
+var invfCurrentAudit = null;   // { creado_por_nombre, creado_en, modificado_por_nombre, modificado_en } del conteo abierto
 var invfFiltersAttached = false;
 var invfDirty = false;
 
@@ -3823,6 +3824,27 @@ function openConteo(empresa, fecha, bodega) {
 
   invfCurrentEstado = lineas.length ? lineas[0].Estado : 'Borrador';
 
+  // Auditoría del conteo (agregada sobre sus líneas): creación más antigua,
+  // modificación más reciente.
+  invfCurrentAudit = null;
+  lineas.forEach(function(c) {
+    if (!invfCurrentAudit) {
+      invfCurrentAudit = {
+        creado_por_nombre: c.creado_por_nombre, creado_en: c.creado_en,
+        modificado_por_nombre: c.modificado_por_nombre, modificado_en: c.modificado_en
+      };
+      return;
+    }
+    if (c.creado_en && (!invfCurrentAudit.creado_en || c.creado_en < invfCurrentAudit.creado_en)) {
+      invfCurrentAudit.creado_en = c.creado_en;
+      invfCurrentAudit.creado_por_nombre = c.creado_por_nombre;
+    }
+    if (c.modificado_en && (!invfCurrentAudit.modificado_en || c.modificado_en > invfCurrentAudit.modificado_en)) {
+      invfCurrentAudit.modificado_en = c.modificado_en;
+      invfCurrentAudit.modificado_por_nombre = c.modificado_por_nombre;
+    }
+  });
+
   invfDetailLines = lineas.map(function(c) {
     return {
       producto: c.Producto,
@@ -3852,6 +3874,9 @@ function _showInvfDetail() {
   badge.textContent = invfCurrentEstado;
   badge.style.background = invfCurrentEstado === 'Cerrado' ? '#27ae60' : '#e67e22';
   badge.style.color = '#fff';
+
+  var auditEl = document.getElementById('invf-detail-audit');
+  if (auditEl) auditEl.innerHTML = invfCurrentAudit ? _auditoriaHtml(invfCurrentAudit, false) : '';
 
   var isCerrado = invfCurrentEstado === 'Cerrado';
   var btnSave = document.getElementById('invf-btn-save');
