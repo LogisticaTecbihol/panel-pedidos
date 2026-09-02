@@ -578,6 +578,17 @@ async function _apiPostCore(body) {
       var remIngDev = genIngreso ? (body.Remision_Ingreso || '').trim() : '';
       var remSalDev = genSalida ? (body.Remision_Salida || '').trim() : '';
       var empDev = (body.Empresa || '').trim();
+      // Reutiliza la remisión que ya traigan las líneas de un intento anterior
+      // (evita quemar un consecutivo nuevo al reintentar tras un error).
+      var _devIds = lineas.map(function(l) { return l.id; }).filter(function(x) { return x != null; });
+      if (_devIds.length && ((genIngreso && !remIngDev) || (genSalida && !remSalDev))) {
+        var peekDev = await _sb.from('Devoluciones')
+          .select('Remision_Ingreso,Remision_Salida').in('id', _devIds);
+        (peekDev.data || []).forEach(function(rw) {
+          if (genIngreso && !remIngDev && String(rw.Remision_Ingreso || '').trim()) remIngDev = String(rw.Remision_Ingreso).trim();
+          if (genSalida && !remSalDev && String(rw.Remision_Salida || '').trim()) remSalDev = String(rw.Remision_Salida).trim();
+        });
+      }
       if (empDev) {
         if (genIngreso && !remIngDev) remIngDev = await _genRem(empDev, 'ENTRADA');
         if (genSalida && !remSalDev) remSalDev = await _genRem(empDev, 'SALIDA');
@@ -705,6 +716,17 @@ async function _apiPostCore(body) {
       var remIngCam = (body.Remision_Ingreso || '').trim();
       var remSalCam = (body.Remision_Salida || '').trim();
       var empCam = (body.Empresa || '').trim();
+      // Si las filas ya traen una remisión de un intento anterior (p. ej. el
+      // guardado falló en una línea posterior tras escribir esta), se reutiliza
+      // en vez de generar y "quemar" un consecutivo nuevo al reintentar.
+      if (ids.length && ((doIngCam && !remIngCam) || (doSalCam && !remSalCam))) {
+        var peekCam = await _sb.from('CambiosMercancia')
+          .select('Remision_Ingreso,Remision_Salida').in('id', ids);
+        (peekCam.data || []).forEach(function(rw) {
+          if (doIngCam && !remIngCam && String(rw.Remision_Ingreso || '').trim()) remIngCam = String(rw.Remision_Ingreso).trim();
+          if (doSalCam && !remSalCam && String(rw.Remision_Salida || '').trim()) remSalCam = String(rw.Remision_Salida).trim();
+        });
+      }
       if (empCam) {
         if (doIngCam && !remIngCam) remIngCam = await _genRem(empCam, 'ENTRADA');
         if (doSalCam && !remSalCam) remSalCam = await _genRem(empCam, 'SALIDA');
