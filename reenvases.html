@@ -93,6 +93,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
   <div class="stats">
     <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total salidas</div></div>
     <div class="sc entregado"><div class="num" id="s-con-remision">0</div><div class="lbl">Con remisión</div></div>
+    <div class="sc parcial"><div class="num" id="s-pendientes-retorno">0</div><div class="lbl">Pendientes de retorno</div></div>
     <div class="sc recibido"><div class="num" id="s-sin-remision">0</div><div class="lbl">Sin remisión</div></div>
     <div class="sc parcial"><div class="num" id="s-cantidad">0</div><div class="lbl">Unidades totales</div></div>
   </div>
@@ -101,6 +102,15 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
     <div class="fg">
       <label>Empresa</label>
       <select id="f-empresa"><option value="">Todas</option></select>
+    </div>
+    <div class="fg">
+      <label>Estado retorno</label>
+      <select id="f-estado">
+        <option value="">Todos</option>
+        <option value="Pendiente">Pendiente</option>
+        <option value="Parcial">Parcial</option>
+        <option value="Cerrada">Cerrada</option>
+      </select>
     </div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="producto, remisión…" style="width:175px"></div>
     <button onclick="clearReenvaseFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
@@ -150,6 +160,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
         <div><label class="ef-label">Fecha</label><div class="ef" id="red-fecha" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
         <div><label class="ef-label">N° Remisión Salida</label><div class="ef" id="red-remision" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
         <div><label class="ef-label">N° Remisión Entrada</label><div class="ef" id="red-rem-dest" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
+        <div><label class="ef-label">Estado de retorno</label><div class="ef" id="red-estado" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
       </div>
       <div id="red-audit"></div>
       <div style="border-top:1px solid #e2e8f0;padding-top:14px">
@@ -174,6 +185,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
         </div>
         <div id="red-total" style="text-align:right;font-weight:700;font-size:0.9rem;margin-top:8px;color:#2d3748"></div>
       </div>
+      <div id="red-retornos-wrap"></div>
     </div>
     <div class="mftr">
       <div style="font-size:0.8rem;color:#718096" id="red-footer-info"></div>
@@ -370,10 +382,10 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260902e"></script>
+<script src="js/shared.js?v=20260902f"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js?v=20260831b"></script>
 <script src="js/pdf-remision.js?v=20260818g"></script>
-<script src="js/reenvases.js?v=20260902c"></script>
+<script src="js/reenvases.js?v=20260902d"></script>
 </body>
 </html>

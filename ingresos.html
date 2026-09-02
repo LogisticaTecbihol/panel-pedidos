@@ -215,6 +215,7 @@
         <div><label class="ef-label">Remisión Destino</label><div class="ef" id="igd-rem-dest" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
         <div style="grid-column:span 2"><label class="ef-label">Observaciones</label><div class="ef" id="igd-obs" style="background:#fef9e7;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
       </div>
+      <div id="igd-reenvase-ref-wrap" style="display:none;background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:0.84rem;color:#1e6b3f"><span id="igd-reenvase-ref"></span></div>
       <div id="igd-audit"></div>
       <div style="border-top:1px solid #e2e8f0;padding-top:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -298,6 +299,12 @@
             <option value="__otro__">Otro (escribir nombre)</option>
           </select>
           <input class="ef" id="ing-origen-custom" type="text" placeholder="Escribir nombre del proveedor" style="display:none;margin-top:4px" oninput="onOrigenChange()">
+        </div>
+        <div id="ing-reenvase-ref-wrap" style="display:none;grid-column:1/-1">
+          <label class="ef-label">Salida a producción de origen <span style="font-weight:400;color:#a0aec0;font-size:0.76rem">(vincula este ingreso con la salida que lo generó)</span></label>
+          <select class="ef" id="ing-reenvase-ref" onchange="onReenvaseRefChange()">
+            <option value="">— Ninguna (ingreso no ligado) —</option>
+          </select>
         </div>
         <div id="ing-empresa-origen-wrap">
           <label class="ef-label">Empresa Origen</label>
@@ -460,10 +467,10 @@
 
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260902e"></script>
+<script src="js/shared.js?v=20260902f"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js?v=20260831b"></script>
 <script src="js/pdf-remision.js?v=20260818g"></script>
-<script src="js/ingresos.js?v=20260902b"></script>
+<script src="js/ingresos.js?v=20260902c"></script>
 </body>
 </html>

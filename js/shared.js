@@ -128,7 +128,11 @@ async function apiGet(action, opts) {
       return { ok: true, consecutivos: res.data };
     }
     if (action === 'getIngresos') {
-      var res = await _sb.from('Ingresos').select(cols).order('id');
+      var qIng = _sb.from('Ingresos').select(cols).order('id');
+      // Solo los ingresos ligados a una salida a producción (para la página
+      // de Reenvases): usa el índice parcial idx_ingresos_reenvase_ref.
+      if (opts && opts.reenvaseRefOnly) qIng = qIng.neq('Reenvase_Ref', '');
+      var res = await qIng;
       if (res.error) return { ok: false, error: res.error.message };
       var ingData = _filterGerenteIaso(res.data, ['Empresa_Origen', 'Empresa_Destino']);
       return { ok: true, ingresos: _addRow(ingData) };
@@ -212,7 +216,13 @@ async function apiGet(action, opts) {
       return { ok: true, muestras: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getReenvases') {
-      var res = await _sb.from('Reenvases').select(cols).order('id');
+      var qRe = _sb.from('Reenvases').select(cols).order('id');
+      // Trae solo una salida concreta (por su remisión) — para el flujo de
+      // "registrar retorno" desde el módulo de Ingresos.
+      if (opts && opts.remisionEq) qRe = qRe.eq('Remision', opts.remisionEq);
+      // Solo salidas no cerradas — para el selector de retornos en Ingresos.
+      if (opts && opts.abiertasOnly) qRe = qRe.neq('Estado', 'Cerrada');
+      var res = await qRe;
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, reenvases: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
@@ -472,6 +482,7 @@ async function _apiPostCore(body) {
           Cantidad: Number(lin.Cantidad) || 0, Responsable: body.Responsable || '',
           Remision_Origen: remOrigen, Remision_Destino: remDestino,
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          Reenvase_Ref: (body.Reenvase_Ref || '').trim(),
           creado_por: _uid()
         };
       });
@@ -494,7 +505,7 @@ async function _apiPostCore(body) {
       if (!remOrigenE && esHoldingE && !esPlantaE && empOrigenE !== empDestinoE && !body._remision_origen_existente) {
         remOrigenE = await _genRem(empOrigenE, 'SALIDA');
       }
-      var res = await _sb.from('Ingresos').update({
+      var _updIng = {
         Fecha: body.Fecha || '', Origen: body.Origen || '',
         Empresa_Origen: body.Empresa_Origen || '', Empresa_Destino: body.Empresa_Destino || '',
         Producto: body.Producto || '', Presentacion: body.Presentacion || '',
@@ -502,7 +513,10 @@ async function _apiPostCore(body) {
         Remision_Origen: remOrigenE, Remision_Destino: remDestinoE,
         Observaciones: body.Observaciones || '',
         modificado_por: _uid()
-      }).eq('id', body.row);
+      };
+      // Solo tocar el vínculo a la salida a producción si el form lo envía.
+      if (body.Reenvase_Ref !== undefined) _updIng.Reenvase_Ref = (body.Reenvase_Ref || '').trim();
+      var res = await _sb.from('Ingresos').update(_updIng).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1, remision_origen: remOrigenE, remision_destino: remDestinoE };
     }
@@ -1326,6 +1340,21 @@ async function _apiPostCore(body) {
       var res = await _sb.from('Reenvases').delete().eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, deleted: 1 };
+    }
+
+    // Cierra o reabre una salida a producción (todas sus líneas comparten
+    // Remision + Empresa). Estado: 'Pendiente' | 'Cerrada'.
+    if (action === 'editarEstadoSalidaReenvase') {
+      var _remSal = (body.Remision || '').trim();
+      var _empSal = (body.Empresa || '').trim();
+      var _estSal = body.Estado === 'Cerrada' ? 'Cerrada' : 'Pendiente';
+      if (!_remSal) return { ok: false, error: 'Falta la remisión de la salida.' };
+      var _qSal = _sb.from('Reenvases').update({ Estado: _estSal, modificado_por: _uid() })
+        .eq('Remision', _remSal);
+      if (_empSal) _qSal = _qSal.eq('Empresa', _empSal);
+      var res = await _qSal;
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, estado: _estSal };
     }
 
     if (action === 'agregarRemisionAnulada') {

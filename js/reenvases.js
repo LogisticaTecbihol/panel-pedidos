@@ -16,6 +16,10 @@ var reGroups = [];
 var activeReGroup = null;
 var reViewMode = 'salidas';
 
+// Ingresos de retorno indexados por la Remisión de la salida a producción
+// { 'GREEN-RS-0042': [ {id, Fecha, Producto, Presentacion, Cantidad, ...}, ... ] }
+var retornosByRef = {};
+
 // ── Sort for productos view ──
 var reSortColsProd = [
   { id: 'Fecha', dir: 'desc' }
@@ -177,16 +181,48 @@ function rebuildReGroups() {
       seen[k] = {
         _key: k, Fecha: r.Fecha, Empresa: r.Empresa, Empresa_Destino: r.Empresa_Destino,
         Planta: r.Planta, Remision: r.Remision, Remision_Destino: r.Remision_Destino,
-        Bodega: bod
+        Bodega: bod, Estado: r.Estado || 'Pendiente'
       };
       order.push(k);
     }
+    // Todas las líneas de una salida comparten Estado; si alguna viene 'Cerrada'
+    // el grupo se considera cerrado.
+    if (r.Estado === 'Cerrada') seen[k].Estado = 'Cerrada';
   });
   reGroups = order.map(function(k) { return seen[k]; });
 }
 
 function getLinesForRe(g) {
   return allReenvases.filter(function(r) { return keyOfRe(r) === g._key; });
+}
+
+// ── Retornos / estado de la salida a producción ──
+
+function retornosDe(g) {
+  var rem = (g && g.Remision || '').trim();
+  return rem ? (retornosByRef[rem] || []) : [];
+}
+
+function totalesSalida(g) {
+  var salio = getLinesForRe(g).reduce(function(s, l) { return s + (Number(l.Cantidad) || 0); }, 0);
+  var volvio = retornosDe(g).reduce(function(s, l) { return s + (Number(l.Cantidad) || 0); }, 0);
+  return { salio: salio, volvio: volvio, pendiente: salio - volvio };
+}
+
+// Estado mostrado: 'Cerrada' (manual) > 'Parcial' (hay retornos) > 'Pendiente'.
+function estadoSalida(g) {
+  if (g && g.Estado === 'Cerrada') return 'Cerrada';
+  return retornosDe(g).length ? 'Parcial' : 'Pendiente';
+}
+
+function estadoBadgeRe(estado) {
+  var map = {
+    'Pendiente': ['#c0392b', '#fdecea'],
+    'Parcial':   ['#b9770e', '#fef5e7'],
+    'Cerrada':   ['#1e8449', '#eafaf1']
+  };
+  var c = map[estado] || map['Pendiente'];
+  return '<span style="background:' + c[1] + ';color:' + c[0] + ';padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700;white-space:nowrap">' + estado + '</span>';
 }
 
 // ── Sort columns ──
@@ -225,10 +261,54 @@ async function loadReenvases() {
   }
 
   allReenvases = res.reenvases || [];
+
+  // Ingresos de retorno (solo los ligados a una salida a producción).
+  // Si la columna aún no existe (migración sin aplicar) degrada a {} sin romper.
+  try {
+    var retRes = await apiGet('getIngresos', {
+      columns: 'id,Fecha,Reenvase_Ref,Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Origen,Empresa_Destino,Origen,Responsable',
+      reenvaseRefOnly: true
+    });
+    retornosByRef = {};
+    if (retRes && retRes.ok) {
+      (retRes.ingresos || []).forEach(function(ing) {
+        var k = (ing.Reenvase_Ref || '').trim();
+        if (!k) return;
+        (retornosByRef[k] = retornosByRef[k] || []).push(ing);
+      });
+    }
+  } catch (e) { retornosByRef = {}; }
+
   loadZone.style.display = 'none';
   main.style.display = 'block';
   populateReFilters();
   applyReFilters();
+  _maybeOpenSalidaFromURL();
+}
+
+// Deep-link desde Ingresos: reenvases.html?salida=GREEN-RS-0042 abre el detalle
+// de esa salida.
+var _salidaURLHandled = false;
+function _maybeOpenSalidaFromURL() {
+  if (_salidaURLHandled) return;
+  var ref = null;
+  try { ref = new URLSearchParams(location.search).get('salida'); } catch (e) {}
+  if (!ref) return;
+  _salidaURLHandled = true;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  ref = ref.trim();
+  var row = allReenvases.filter(function(r) { return (r.Remision || '').trim() === ref; })[0];
+  if (!row) { showToast('No se encontró la salida ' + ref, '#e67e22'); return; }
+  var targetTab = isBodegaBuenos(row.Bodega) ? 'buenos' : 'no_conforme';
+  if (activeTab !== targetTab) switchReTab(targetTab);
+  var fTxtEl = document.getElementById('f-txt');
+  if (fTxtEl) fTxtEl.value = ref;
+  applyReFilters();
+  var idx = -1;
+  for (var i = 0; i < filteredRe.length; i++) {
+    if ((filteredRe[i].Remision || '').trim() === ref) { idx = i; break; }
+  }
+  if (idx >= 0) openReDetail(idx);
 }
 
 // ── Filters ──
@@ -255,11 +335,14 @@ function populateReFilters() {
 function applyReFilters() {
   var fEmp = document.getElementById('f-empresa').value;
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
+  var fEstEl = document.getElementById('f-estado');
+  var fEst = fEstEl ? fEstEl.value : '';
 
   rebuildReGroups();
 
   filteredRe = reGroups.filter(function(g) {
     if (fEmp && g.Empresa !== fEmp) return false;
+    if (fEst && estadoSalida(g) !== fEst) return false;
     if (fTxt) {
       var lines = getLinesForRe(g);
       var hay = [g.Empresa, g.Empresa_Destino, g.Planta, g.Remision, g.Remision_Destino].join(' ');
@@ -277,22 +360,30 @@ function applyReFilters() {
 function clearReenvaseFilters() {
   document.getElementById('f-empresa').value = '';
   document.getElementById('f-txt').value = '';
+  var fEstEl = document.getElementById('f-estado');
+  if (fEstEl) fEstEl.value = '';
   applyReFilters();
 }
 
 document.getElementById('f-empresa').addEventListener('change', applyReFilters);
 document.getElementById('f-txt').addEventListener('input', debounce(applyReFilters, 300));
+(function() {
+  var fEstEl = document.getElementById('f-estado');
+  if (fEstEl) fEstEl.addEventListener('change', applyReFilters);
+})();
 
 // ── Stats ──
 
 function updateReStats() {
-  var conRem = 0, sinRem = 0, totalCant = 0;
+  var conRem = 0, sinRem = 0, totalCant = 0, pendRetorno = 0;
   var bodegaActual = getBodegaFromTab();
   rebuildReGroups();
   var totalTab = reGroups.length;
   reGroups.forEach(function(g) {
     if (g.Remision && g.Remision.trim()) conRem++;
     else sinRem++;
+    var est = estadoSalida(g);
+    if (est === 'Pendiente' || est === 'Parcial') pendRetorno++;
     var lines = getLinesForRe(g);
     lines.forEach(function(r) { totalCant += Number(r.Cantidad) || 0; });
   });
@@ -300,6 +391,8 @@ function updateReStats() {
   document.getElementById('s-con-remision').textContent = conRem;
   document.getElementById('s-sin-remision').textContent = sinRem;
   document.getElementById('s-cantidad').textContent = totalCant;
+  var elPend = document.getElementById('s-pendientes-retorno');
+  if (elPend) elPend.textContent = pendRetorno;
 
   if (reViewMode === 'productos') {
     var prodRows = getFilteredProductos();
@@ -403,6 +496,7 @@ function renderReHeader() {
     { label:'Unidades', id:'unidades' },
     { label:'N° Remisión', id:'Remision' },
     { label:'Rem. Destino', id:null },
+    { label:'Retorno', id:null },
     { label:'Acción', id:null },
   ];
   var thead = document.getElementById('t-head-re');
@@ -434,7 +528,7 @@ function renderReTable() {
     var emptyMsg = activeTab === 'buenos'
       ? 'No hay registros en Bodega Producto Terminado'
       : 'No hay registros en Bodega Producto No Conforme';
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">' + emptyMsg + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">' + emptyMsg + '</td></tr>';
     return;
   }
 
@@ -446,6 +540,8 @@ function renderReTable() {
     var siglaDestino = g.Empresa_Destino ? (EMPRESAS_SIGLA[g.Empresa_Destino] || g.Empresa_Destino) : '';
     var siglaDCls = g.Empresa_Destino ? 'sigla-' + (EMPRESAS_SIGLA[g.Empresa_Destino] || 'DEFAULT') : '';
     var plantaShort = (g.Planta || '').replace('Planta ', '');
+    var est = estadoSalida(g);
+    var nRet = retornosDe(g).length;
 
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
@@ -457,6 +553,7 @@ function renderReTable() {
       '<td style="text-align:center;font-weight:700">' + totalQty.toLocaleString('es-CO') + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(g.Remision || '—') + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(g.Remision_Destino || '—') + '</td>' +
+      '<td style="white-space:nowrap">' + estadoBadgeRe(est) + (nRet ? ' <span style="color:#718096;font-size:0.72rem">' + nRet + '</span>' : '') + '</td>' +
       '<td><button class="btn-ver" onclick="openReDetail(' + i + ')">📦 Ver salida</button></td>' +
     '</tr>';
   }).join('');
@@ -469,11 +566,14 @@ function renderReTable() {
 function getFilteredProductos() {
   var fEmp = document.getElementById('f-empresa').value;
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
+  var fEstEl = document.getElementById('f-estado');
+  var fEst = fEstEl ? fEstEl.value : '';
   var bodegaActual = getBodegaFromTab();
 
   var rows = allReenvases.filter(function(r) {
     if (normBodegaRe(r.Bodega) !== bodegaActual) return false;
     if (fEmp && r.Empresa !== fEmp) return false;
+    if (fEst && estadoSalida(r) !== fEst) return false;
     if (fTxt) {
       var hay = [r.Empresa, r.Empresa_Destino, r.Planta, r.Remision,
                  r.Producto, r.Presentacion, r.Observaciones].join(' ').toLowerCase();
@@ -496,6 +596,7 @@ function renderReHeaderProductos() {
     { label:'Presentación', id:'Presentacion' },
     { label:'Cantidad', id:'Cantidad' },
     { label:'N° Remisión', id:'Remision' },
+    { label:'Retorno', id:null },
     { label:'Observaciones', id:null },
   ];
   var thead = document.getElementById('t-head-re');
@@ -525,7 +626,7 @@ function renderReTableProductos() {
     var emptyMsg = activeTab === 'buenos'
       ? 'No hay productos en Bodega Producto Terminado'
       : 'No hay productos en Bodega Producto No Conforme';
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">' + emptyMsg + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">' + emptyMsg + '</td></tr>';
     return;
   }
 
@@ -547,6 +648,7 @@ function renderReTableProductos() {
       '<td>' + escHtml(r.Presentacion || '—') + '</td>' +
       '<td style="text-align:right;font-weight:700">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(r.Remision || '—') + '</td>' +
+      '<td style="white-space:nowrap">' + estadoBadgeRe(estadoSalida(r)) + '</td>' +
       '<td style="font-size:0.78rem">' + obs + '</td>' +
     '</tr>';
   }).join('');
@@ -576,8 +678,11 @@ function openReDetail(idx) {
   document.getElementById('red-fecha').textContent = fmtDate(g.Fecha);
   document.getElementById('red-remision').textContent = g.Remision || '—';
   document.getElementById('red-rem-dest').textContent = g.Remision_Destino || '—';
+  var _redEst = document.getElementById('red-estado');
+  if (_redEst) _redEst.innerHTML = estadoBadgeRe(estadoSalida(g));
 
   renderReDetailProducts();
+  renderReRetornos();
 
   var _redA = document.getElementById('red-audit');
   if (_redA) _redA.innerHTML = _auditoriaHtml(getLinesForRe(g), false);
@@ -632,6 +737,78 @@ function renderReDetailProducts() {
   }).join('');
 }
 
+// ── Retornos / Ingresos vinculados (dentro del detalle de la salida) ──
+
+function renderReRetornos() {
+  var g = activeReGroup;
+  var wrap = document.getElementById('red-retornos-wrap');
+  if (!g || !wrap) return;
+
+  var rem = (g.Remision || '').trim();
+  var rets = retornosDe(g);
+  var t = totalesSalida(g);
+  var est = estadoSalida(g);
+  var puedeEditar = (typeof AUTH !== 'undefined' && AUTH.canEdit && AUTH.canEdit());
+
+  var rowsHtml = rets.length ? rets.map(function(l) {
+    return '<tr>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(l.Fecha) + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(l.Remision_Destino || l.Remision_Origen || '—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(l.Producto || '—') + '</td>' +
+      '<td>' + escHtml(l.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right;font-weight:700">' + (Number(l.Cantidad) || 0).toLocaleString('es-CO') + '</td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="5"><div class="empty" style="padding:14px">Sin ingresos de retorno todavía.</div></td></tr>';
+
+  var botones = '';
+  if (rem && puedeEditar) {
+    botones += '<button onclick="registrarRetornoReenvase()" style="background:#27ae60;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">📥 Registrar retorno</button>';
+    botones += ' <button onclick="toggleEstadoSalidaReenvase()" id="btn-re-estado" style="background:' + (est === 'Cerrada' ? '#718096' : '#1e8449') + ';color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">' + (est === 'Cerrada' ? '🔓 Reabrir salida' : '🔒 Cerrar salida') + '</button>';
+  }
+
+  wrap.innerHTML =
+    '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-top:16px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+        '<div style="font-weight:700;font-size:0.88rem;color:#2d3748">📥 Retornos / Ingresos vinculados ' + estadoBadgeRe(est) + '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + botones + '</div>' +
+      '</div>' +
+      (rem ? '' : '<div style="font-size:0.78rem;color:#b9770e;margin-bottom:8px">Esta salida no tiene número de remisión; no se pueden vincular retornos.</div>') +
+      '<div style="overflow-x:auto"><table style="font-size:0.85rem"><thead><tr style="background:#f7fafc">' +
+        '<th>Fecha</th><th>N° Remisión</th><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th>' +
+      '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' +
+      '<div style="text-align:right;font-size:0.86rem;margin-top:8px;color:#2d3748">' +
+        'Salió <strong>' + t.salio.toLocaleString('es-CO') + '</strong> · ' +
+        'Volvió <strong>' + t.volvio.toLocaleString('es-CO') + '</strong> · ' +
+        'Pendiente <strong>' + t.pendiente.toLocaleString('es-CO') + '</strong> ' +
+        '<span style="color:#a0aec0;font-weight:400">(unidades registradas)</span>' +
+      '</div>' +
+    '</div>';
+}
+
+function registrarRetornoReenvase() {
+  var g = activeReGroup;
+  if (!g || !(g.Remision || '').trim()) return;
+  window.location.href = 'ingresos.html?reenvase=' + encodeURIComponent(g.Remision);
+}
+
+async function toggleEstadoSalidaReenvase() {
+  var g = activeReGroup;
+  if (!g || !(g.Remision || '').trim()) return;
+  var nuevo = (g.Estado === 'Cerrada') ? 'Pendiente' : 'Cerrada';
+  var btn = document.getElementById('btn-re-estado');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  try {
+    var result = await apiPost({ action: 'editarEstadoSalidaReenvase', Remision: g.Remision, Empresa: g.Empresa, Estado: nuevo });
+    if (!result.ok) throw new Error(result.error || 'Error al cambiar el estado');
+    showToast(nuevo === 'Cerrada' ? '🔒 Salida cerrada' : '🔓 Salida reabierta');
+    await loadReenvases();
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+    if (btn) btn.disabled = false;
+    renderReRetornos();
+  }
+}
+
 function closeReDetail() {
   document.getElementById('re-detail-overlay').classList.remove('show');
   activeReGroup = null;
@@ -648,7 +825,10 @@ function refreshReDetail() {
   }
   if (newGroup) {
     activeReGroup = newGroup;
+    var _redEst = document.getElementById('red-estado');
+    if (_redEst) _redEst.innerHTML = estadoBadgeRe(estadoSalida(newGroup));
     renderReDetailProducts();
+    renderReRetornos();
   } else {
     closeReDetail();
   }

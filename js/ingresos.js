@@ -6,6 +6,12 @@ var ingLineas = [];
 var ingGroups = [];
 var activeIngGroup = null;
 
+// Vínculo del ingreso en edición/alta con una salida a producción (Reenvases).
+// Es la "Remision" de esa salida (ej. 'GREEN-RS-0042') o '' si no está ligado.
+var _ingReenvaseRef = '';
+// Cache de salidas a producción abiertas (para el selector del formulario).
+var _reenvasesAbiertasCache = null;
+
 // ── Constants ──
 var ORIGENES = ['Planta Mosquera', 'Planta Cachipay', 'Proveedor Carval', 'Chia Abago', 'Bodega Villeta', 'Germisemillas'];
 function getSiglaIng(n) { return getSigla(n); }
@@ -28,7 +34,7 @@ var SORT_COLS_ING = [
 
 // ── Grouping ──
 function keyOfIng(r) {
-  return [r.Fecha||'', r.Origen||'', r.Empresa_Origen||'', r.Empresa_Destino||'', r.Responsable||'', r.Remision_Origen||'', r.Remision_Destino||''].join('||');
+  return [r.Fecha||'', r.Origen||'', r.Empresa_Origen||'', r.Empresa_Destino||'', r.Responsable||'', r.Remision_Origen||'', r.Remision_Destino||'', r.Reenvase_Ref||''].join('||');
 }
 
 function rebuildIngGroups() {
@@ -41,7 +47,7 @@ function rebuildIngGroups() {
         _key: k, Fecha: r.Fecha, Origen: r.Origen, Empresa_Origen: r.Empresa_Origen,
         Empresa_Destino: r.Empresa_Destino, Responsable: r.Responsable,
         Remision_Origen: r.Remision_Origen, Remision_Destino: r.Remision_Destino,
-        Observaciones: r.Observaciones,
+        Observaciones: r.Observaciones, Reenvase_Ref: r.Reenvase_Ref || '',
       };
       order.push(k);
     }
@@ -104,7 +110,7 @@ async function loadIngresos() {
   }
 
   try {
-    var data = await apiGet('getIngresos', { columns: 'id,Fecha,Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Responsable,Remision_Origen,Remision_Destino,Observaciones' });
+    var data = await apiGet('getIngresos', { columns: 'id,Fecha,Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Responsable,Remision_Origen,Remision_Destino,Observaciones,Reenvase_Ref' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ingresos = (data.ingresos || []).map(function(r) {
@@ -118,6 +124,7 @@ async function loadIngresos() {
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
     setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
+    _maybeOpenRetornoFromURL();
     document.getElementById('hdr-status').textContent = '☁️ Supabase · ' + ingGroups.length + ' ingresos · ' + ingresos.length + ' líneas';
   } catch (err) {
     if (mainEl.style.display === 'block') {
@@ -136,6 +143,131 @@ async function loadCatalogo() {
     var data = await apiGet('getMaestroProductos');
     if (data.ok) catalogoProductos = data.productos || [];
   } catch(e) {}
+}
+
+// ── Vínculo con salidas a producción (Reenvases) ──
+
+// Deep-link: ingresos.html?reenvase=GREEN-RS-0042 abre el alta de un ingreso
+// ya vinculado a esa salida, con las líneas pre-cargadas.
+var _retornoURLHandled = false;
+async function _maybeOpenRetornoFromURL() {
+  if (_retornoURLHandled) return;
+  var ref = null;
+  try { ref = new URLSearchParams(location.search).get('reenvase'); } catch (e) {}
+  if (!ref) return;
+  _retornoURLHandled = true;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  ref = ref.trim();
+  if (typeof AUTH !== 'undefined' && AUTH.canEdit && !AUTH.canEdit()) {
+    showToast('No tienes permiso para registrar ingresos.', '#e67e22');
+    return;
+  }
+  var salLines = null;
+  try {
+    var r = await apiGet('getReenvases', {
+      columns: 'id,Empresa,Empresa_Destino,Planta,Producto,Presentacion,Cantidad,Remision,Fecha,Bodega',
+      remisionEq: ref
+    });
+    if (r && r.ok && (r.reenvases || []).length) salLines = r.reenvases;
+  } catch (e) {}
+  if (!salLines) { showToast('No se encontró la salida a producción ' + ref, '#e67e22'); return; }
+  openRetornoIngreso(ref, salLines);
+}
+
+function openRetornoIngreso(ref, salLines) {
+  openNewIngreso();
+  var hdr = salLines[0] || {};
+  var planta = hdr.Planta || '';
+  var origen = /mosquera/i.test(planta) ? 'Planta Mosquera'
+             : /cachipay/i.test(planta) ? 'Planta Cachipay'
+             : /ch[ií]a\s*abago/i.test(planta) ? 'Chia Abago'
+             : (planta || '');
+  if (origen) { setOrigenValue(origen); onOrigenChange(); }
+  // El producto re-envasado vuelve a la empresa que lo despachó.
+  if (hdr.Empresa) {
+    var elDest = document.getElementById('ing-empresa-destino');
+    if (elDest) elDest.value = hdr.Empresa;
+  }
+  document.getElementById('ing-observaciones').value = 'Retorno de salida a producción ' + ref;
+  _ingReenvaseRef = ref;
+  // Líneas copiadas de la salida — el usuario ajusta presentación/nombre/cantidad
+  // reales de lo que efectivamente volvió.
+  ingLineas = salLines.map(function(l) {
+    return { Producto: l.Producto || '', Presentacion: l.Presentacion || '', Cantidad: '' };
+  });
+  if (!ingLineas.length) ingLineas = [{ Producto: '', Presentacion: '', Cantidad: '' }];
+  renderIngLines();
+  _syncReenvaseSelector();
+  showToast('Registrando retorno de ' + ref + ' — ajusta presentación y cantidad reales', '#1a5276');
+}
+
+async function _loadReenvasesAbiertas() {
+  if (_reenvasesAbiertasCache) return _reenvasesAbiertasCache;
+  var grouped = [];
+  try {
+    var r = await apiGet('getReenvases', { columns: 'Remision,Empresa,Planta,Estado,Fecha,Producto,Presentacion,Cantidad,Bodega', abiertasOnly: true });
+    if (r && r.ok) {
+      var byRem = {};
+      (r.reenvases || []).forEach(function(row) {
+        var rem = (row.Remision || '').trim();
+        if (!rem) return;
+        if ((row.Estado || 'Pendiente') === 'Cerrada') return;
+        if (!byRem[rem]) {
+          byRem[rem] = { Remision: rem, Empresa: row.Empresa || '', Planta: row.Planta || '', Fecha: row.Fecha || '', nLineas: 0, unidades: 0 };
+          grouped.push(byRem[rem]);
+        }
+        byRem[rem].nLineas++;
+        byRem[rem].unidades += Number(row.Cantidad) || 0;
+      });
+    }
+  } catch (e) {}
+  grouped.sort(function(a, b) { return String(b.Fecha).localeCompare(String(a.Fecha)); });
+  _reenvasesAbiertasCache = grouped;
+  return grouped;
+}
+
+// Muestra/oculta y llena el selector "Salida a producción de origen". Se muestra
+// cuando el Origen parece una planta de producción o cuando ya hay un vínculo.
+// NO borra _ingReenvaseRef por sí solo: solo el usuario lo quita eligiendo
+// "— Ninguna —" (onReenvaseRefChange).
+function _esOrigenPlantaProduccion(origen) {
+  return /planta|cachipay|mosquera|ch[ií]a\s*abago/i.test(origen || '');
+}
+
+function _syncReenvaseSelector() {
+  var wrap = document.getElementById('ing-reenvase-ref-wrap');
+  var sel = document.getElementById('ing-reenvase-ref');
+  if (!wrap || !sel) return;
+  var origen = getOrigenValue();
+  var mostrar = _esOrigenPlantaProduccion(origen) || !!_ingReenvaseRef;
+  wrap.style.display = mostrar ? '' : 'none';
+  if (!mostrar) return;
+
+  _loadReenvasesAbiertas().then(function(list) {
+    var plantaKey = /mosquera/i.test(origen) ? 'mosquera'
+                  : /cachipay/i.test(origen) ? 'cachipay'
+                  : /ch[ií]a\s*abago/i.test(origen) ? 'abago'
+                  : '';
+    var filt = list.filter(function(s) {
+      return !plantaKey || (s.Planta || '').toLowerCase().indexOf(plantaKey) >= 0;
+    });
+    var cur = _ingReenvaseRef || '';
+    var opts = '<option value="">— Ninguna (ingreso no ligado) —</option>';
+    filt.forEach(function(s) {
+      opts += '<option value="' + escHtml(s.Remision) + '">' +
+        escHtml(s.Remision + ' · ' + fmtDate(s.Fecha) + ' · ' + s.nLineas + ' prod · ' + s.unidades + ' uds') + '</option>';
+    });
+    if (cur && !filt.some(function(s) { return s.Remision === cur; })) {
+      opts += '<option value="' + escHtml(cur) + '">' + escHtml(cur + ' (vinculada)') + '</option>';
+    }
+    sel.innerHTML = opts;
+    sel.value = cur;
+  });
+}
+
+function onReenvaseRefChange() {
+  var sel = document.getElementById('ing-reenvase-ref');
+  _ingReenvaseRef = sel ? sel.value : '';
 }
 
 // ── Filters ──
@@ -270,6 +402,9 @@ function renderIngTable() {
     var origenBadge = g.Origen === 'Devolución'
       ? '<span class="badge b-rec">Devolución</span>'
       : '<span class="badge b-par">' + (g.Origen||'—') + '</span>';
+    if ((g.Reenvase_Ref || '').trim()) {
+      origenBadge += ' <span title="Retorno de salida a producción ' + escHtml(g.Reenvase_Ref) + '" style="background:#eafaf1;color:#1e8449;padding:1px 6px;border-radius:10px;font-size:0.68rem;font-weight:700">↩ producción</span>';
+    }
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(g.Fecha) + '</td>' +
@@ -306,6 +441,17 @@ function openIngDetail(idx) {
   document.getElementById('igd-rem-orig').textContent = g.Remision_Origen || '—';
   document.getElementById('igd-rem-dest').textContent = g.Remision_Destino || '—';
   document.getElementById('igd-obs').textContent = g.Observaciones || '—';
+
+  var _rvWrap = document.getElementById('igd-reenvase-ref-wrap');
+  if (_rvWrap) {
+    var _rv = (g.Reenvase_Ref || '').trim();
+    _rvWrap.style.display = _rv ? '' : 'none';
+    if (_rv) {
+      document.getElementById('igd-reenvase-ref').innerHTML =
+        '↩️ Proviene de salida a producción <strong>' + escHtml(_rv) + '</strong> ' +
+        '<a href="reenvases.html?salida=' + encodeURIComponent(_rv) + '" style="color:#1e6b3f;font-weight:700;text-decoration:none">→ ver salida</a>';
+    }
+  }
 
   renderIngDetailProducts();
 
@@ -393,6 +539,7 @@ function addProductToGroup() {
   if (!activeIngGroup) return;
   var g = activeIngGroup;
   editIngreso = null;
+  _ingReenvaseRef = g.Reenvase_Ref || '';
   document.getElementById('ing-modal-title').textContent = '📥 Agregar Producto';
   document.getElementById('ing-fecha').value = toDateInput(g.Fecha);
   setOrigenValue(g.Origen || '');
@@ -455,6 +602,7 @@ function enviarRemisionIngreso(btn) {
     ['Rem. Origen', g.Remision_Origen || ''],
     ['Rem. Destino', g.Remision_Destino || '']
   ];
+  if ((g.Reenvase_Ref || '').trim()) right.push(['Ref. Producción', g.Reenvase_Ref]);
 
   var data = {
     empresa: empresa,
@@ -524,6 +672,7 @@ function exportarRemisionIngreso() {
     ['Rem. Origen', g.Remision_Origen || ''],
     ['Rem. Destino', g.Remision_Destino || '']
   ];
+  if ((g.Reenvase_Ref || '').trim()) right.push(['Ref. Producción', g.Reenvase_Ref]);
 
   generarRemisionPDF({
     empresa: empresa,
@@ -722,11 +871,13 @@ function onOrigenChange() {
       elOrigen.placeholder = '(Auto al guardar)';
     }
   }
+  _syncReenvaseSelector();
 }
 
 // ── New Ingreso Modal ──
 function openNewIngreso() {
   editIngreso = null;
+  _ingReenvaseRef = '';
   document.getElementById('ing-modal-title').textContent = '📥 Registrar Ingreso';
   document.getElementById('ing-fecha').value = today();
   setOrigenValue('Planta Mosquera');
@@ -767,6 +918,7 @@ function openEditIng(row) {
   }
   if (!r) return;
   editIngreso = r;
+  _ingReenvaseRef = r.Reenvase_Ref || '';
   document.getElementById('ing-modal-title').textContent = '✏️ Editar Ingreso';
   document.getElementById('ing-fecha').value = toDateInput(r.Fecha);
   setOrigenValue(r.Origen || '');
@@ -833,6 +985,7 @@ async function saveIngreso() {
         Fecha: fecha, Origen: origen, Empresa_Origen: empresa_origen, Empresa_Destino: empresa_destino,
         Producto: prod, Presentacion: pres, Cantidad: cant,
         Responsable: responsable, Remision_Origen: remision_origen, Remision_Destino: remision_destino, Observaciones: observaciones,
+        Reenvase_Ref: _ingReenvaseRef || '',
         _remision_origen_existente: !!(editIngreso.Remision_Origen || '').trim(),
         _remision_destino_existente: !!(editIngreso.Remision_Destino || '').trim(),
       });
@@ -916,6 +1069,7 @@ async function confirmAndSaveIngreso() {
       action: 'agregarIngreso',
       Fecha: fecha, Origen: origen, Empresa_Origen: empresa_origen, Empresa_Destino: empresa_destino,
       Responsable: responsable, Remision_Origen: remision_origen, Remision_Destino: remision_destino, Observaciones: observaciones,
+      Reenvase_Ref: _ingReenvaseRef || '',
       lineas: validLines,
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
@@ -926,11 +1080,13 @@ async function confirmAndSaveIngreso() {
         var _entregas = validLines.map(function(l) {
           return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l.Cantidad)||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
         }).filter(function(p) { return p.cantidad > 0; });
+        var _rightIng = [['Emp. Destino', empresa_destino], ['Rem. Origen', result.remision_origen||remision_origen], ['Rem. Destino', result.remision_destino||remision_destino]];
+        if ((_ingReenvaseRef || '').trim()) _rightIng.push(['Ref. Producción', _ingReenvaseRef]);
         var _pdfData = {
           empresa: _empresa, consecutivo: '', doc_title: 'REMISION DE INGRESO', doc_number: _remIng,
           ref_label: null, date_label: 'Fecha ingreso', fecha_entrega: fecha, remision: _remIng,
           left_fields: [['Origen', origen], ['Emp. Origen', empresa_origen], ['Responsable', responsable]],
-          right_fields: [['Emp. Destino', empresa_destino], ['Rem. Origen', result.remision_origen||remision_origen], ['Rem. Destino', result.remision_destino||remision_destino]],
+          right_fields: _rightIng,
           entregas: _entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Ingreso',
           return_doc: true, copies: ['COPIA - CONTABILIDAD']
         };
