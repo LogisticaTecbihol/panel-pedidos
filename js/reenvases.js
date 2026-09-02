@@ -578,6 +578,10 @@ function openReDetail(idx) {
   document.getElementById('red-rem-dest').textContent = g.Remision_Destino || '—';
 
   renderReDetailProducts();
+
+  var _redA = document.getElementById('red-audit');
+  if (_redA) _redA.innerHTML = _auditoriaHtml(getLinesForRe(g), false);
+
   document.getElementById('re-detail-overlay').classList.add('show');
 
   var _envBtn = document.querySelector('#re-detail-overlay button[onclick*="enviarRemisionReenvase"]');
