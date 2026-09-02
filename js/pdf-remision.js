@@ -54,6 +54,13 @@ var _pdfRemisionHeaderInfo = {
     'Av. Troncal Occidente #11E-03E, Mosquera, Cundinamarca',
     'Parque Agroindustrial de la Sabana - Administracion Of. 3',
     'Cel: 310 6716741  ·  Correo: inagrosabana22@gmail.com'
+  ],
+  RESO: [
+    'SOLUCIONES INTEGRALES RESOS S.A.S',
+    'NIT: 901.311.335-5',
+    'Parque Agroindustrial Maxiabastos Km. 18, Mosquera,',
+    'Cundinamarca - Bod 1301, Via Bogota',
+    'Cel: 3174271771 - 3232296718  ·  solucionesintegralesresosas@gmail.com'
   ]
 };
 
@@ -524,12 +531,15 @@ function _ocEmpresaInfoParaCliente(empresa) {
 
 // Remisiones del traslado — PDF de 2 páginas usando el MISMO layout
 // que la remisión de pedidos (Cliente/NIT/Comercial/Teléfono ↔
-// Dirección/Municipio/Departamento). En ambas páginas:
-//   • Header (empresa emisora)  = Empresa Origen (quien despacha)
-//   • Cliente (destinatario)    = Empresa Destino (quien recibe)
-//   • Sólo cambia el N° remisión:
-//       - Página 1: Remision (número usado por Destino)
-//       - Página 2: Remision_Origen (número usado por Origen)
+// Dirección/Municipio/Departamento). Cada página lleva el membrete
+// (logo + nombre + banner NIT/dirección + color) de la empresa DUEÑA
+// de su número de remisión — el prefijo del número ya lo identifica:
+//   • Página 1: Remision (…-RE-…)        → Empresa DESTINO (registra la ENTRADA)
+//       - Membrete = Empresa Destino
+//       - Contraparte (bloque izq.) = Empresa Origen, rotulada "Remitente"
+//   • Página 2: Remision_Origen (…-RS-…) → Empresa ORIGEN (registra la SALIDA)
+//       - Membrete = Empresa Origen
+//       - Contraparte (bloque izq.) = Empresa Destino, rotulada "Cliente"
 // Si una de las remisiones aún no está cargada, esa página se omite.
 // Si NINGUNA está cargada, avisa y no genera nada.
 function generarRemisionesTrasladoPDF(ocs, opts) {
@@ -553,47 +563,50 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
   var fechaFmt = _ocFmtDate(hdr.Fecha);
   var genStamp = new Date().toLocaleString('es-CO');
 
-  // Empresa Origen emite ambos documentos (branding en header).
-  // Empresa Destino actúa como Cliente.
-  var palette = _pdfPaletteFor(hdr.Empresa_Origen);
-  var infoCliente = _ocEmpresaInfoParaCliente(hdr.Empresa_Destino);
-  var direccion = String(hdr.Direccion || '').trim() || infoCliente.direccion;
-  var municipio = String(hdr.Municipio || '').trim() || infoCliente.municipio;
+  // Cada página lleva el membrete de la empresa dueña de su número
+  // de remisión (ver comentario del encabezado de la función).
+  var paletteDest = _pdfPaletteFor(hdr.Empresa_Destino);
+  var paletteOrig = _pdfPaletteFor(hdr.Empresa_Origen);
+  var infoOrigen = _ocEmpresaInfoParaCliente(hdr.Empresa_Origen);
+  var infoDestino = _ocEmpresaInfoParaCliente(hdr.Empresa_Destino);
 
-  // Fields alineados al layout del pedido — mismos labels y orden.
-  function baseFields() {
-    return {
-      left_fields: [
-        ['Cliente', infoCliente.nombre + (siglaDest && siglaDest !== infoCliente.nombre ? ' (' + siglaDest + ')' : '')],
-        ['NIT', infoCliente.nit || '—'],
-        ['Comercial', '—'],
-        ['Telefono', infoCliente.telefono || '—'],
-      ],
-      right_fields: [
-        ['Direccion', direccion || '—'],
-        ['Municipio', municipio || '—'],
-        ['Departamento', infoCliente.departamento || '—'],
-      ]
-    };
+  // Dirección/municipio de la entrega = a dónde llega la mercancía
+  // (bodega de la Empresa Destino). Igual en ambas páginas.
+  var dirEntrega = String(hdr.Direccion || '').trim() || infoDestino.direccion;
+  var munEntrega = String(hdr.Municipio || '').trim() || infoDestino.municipio;
+
+  function _conSigla(nombre, sigla) {
+    return String(nombre || '') + (sigla && sigla !== nombre ? ' (' + sigla + ')' : '');
   }
 
-  function drawSide(data, footerLabel) {
+  // Bloque derecho (destino de la entrega) — común a ambas páginas.
+  function rightEntrega() {
+    var r = [
+      ['Direccion', dirEntrega || '—'],
+      ['Municipio', munEntrega || '—'],
+      ['Departamento', infoDestino.departamento || '—'],
+    ];
+    if (String(hdr.Bodega || '').trim()) r.push(['Bodega', hdr.Bodega]);
+    return r;
+  }
+
+  function drawSide(data, footerLabel, pal) {
     var startPage = doc.internal.getNumberOfPages();
-    _drawRemisionCopy(doc, data, palette);
+    _drawRemisionCopy(doc, data, pal);
     var endPage = doc.internal.getNumberOfPages();
     var total = endPage - startPage + 1;
     for (var p = startPage; p <= endPage; p++) {
       doc.setPage(p);
-      _drawRemisionCopyFooter(doc, footerLabel, palette, p - startPage + 1, total, genStamp);
+      _drawRemisionCopyFooter(doc, footerLabel, pal, p - startPage + 1, total, genStamp);
     }
   }
 
   var firstPageAdded = false;
 
   if (remDest) {
-    var bf1 = baseFields();
+    // Remisión de ENTRADA de la Empresa Destino. Contraparte = Origen (remitente).
     var dataDest = {
-      empresa: hdr.Empresa_Origen,
+      empresa: hdr.Empresa_Destino,
       consecutivo: hdr.Consecutivo,
       remision: remDest,
       fecha_entrega: fechaFmt,
@@ -603,25 +616,24 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
       ref_label: 'OC',
       qty_header: 'Cant. Entregada',
       entregas: entregas,
-      cliente: infoCliente.nombre,
-      nit: infoCliente.nit,
-      telefono: infoCliente.telefono,
-      direccion: direccion,
-      municipio: municipio,
-      departamento: infoCliente.departamento,
-      left_fields: bf1.left_fields,
-      right_fields: bf1.right_fields
+      left_fields: [
+        ['Remitente', _conSigla(infoOrigen.nombre, siglaOrig)],
+        ['NIT', infoOrigen.nit || '—'],
+        ['Comercial', '—'],
+        ['Telefono', infoOrigen.telefono || '—'],
+      ],
+      right_fields: rightEntrega()
     };
     var footerDest = opts.contabilidad
       ? 'COPIA - CONTABILIDAD'
       : 'COPIA DESTINO (' + (siglaDest || 'DEST') + ') - N° Rem ' + remDest;
-    drawSide(dataDest, footerDest);
+    drawSide(dataDest, footerDest, paletteDest);
     firstPageAdded = true;
   }
 
   if (remOrig) {
     if (firstPageAdded) doc.addPage();
-    var bf2 = baseFields();
+    // Remisión de SALIDA de la Empresa Origen. Contraparte = Destino (cliente).
     var dataOrig = {
       empresa: hdr.Empresa_Origen,
       consecutivo: hdr.Consecutivo,
@@ -633,19 +645,24 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
       ref_label: 'OC',
       qty_header: 'Cant. Entregada',
       entregas: entregas,
-      cliente: infoCliente.nombre,
-      nit: infoCliente.nit,
-      telefono: infoCliente.telefono,
-      direccion: direccion,
-      municipio: municipio,
-      departamento: infoCliente.departamento,
-      left_fields: bf2.left_fields,
-      right_fields: bf2.right_fields
+      cliente: infoDestino.nombre,
+      nit: infoDestino.nit,
+      telefono: infoDestino.telefono,
+      direccion: dirEntrega,
+      municipio: munEntrega,
+      departamento: infoDestino.departamento,
+      left_fields: [
+        ['Cliente', _conSigla(infoDestino.nombre, siglaDest)],
+        ['NIT', infoDestino.nit || '—'],
+        ['Comercial', '—'],
+        ['Telefono', infoDestino.telefono || '—'],
+      ],
+      right_fields: rightEntrega()
     };
     var footerOrig = opts.contabilidad
       ? 'COPIA - CONTABILIDAD'
       : 'COPIA ORIGEN (' + (siglaOrig || 'ORIG') + ') - N° Rem ' + remOrig;
-    drawSide(dataOrig, footerOrig);
+    drawSide(dataOrig, footerOrig, paletteOrig);
   }
 
   var fname = 'Remisiones_Traslado_' + (siglaDest || 'DEST') + '_' + (siglaOrig || 'ORIG') + '_' + (hdr.Consecutivo || '') + '.pdf';
