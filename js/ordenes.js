@@ -93,7 +93,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,creado_por' });
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,Bonificado,creado_por' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {
@@ -185,6 +185,7 @@ function renderOCHeader() {
     { label:'N° OC', id:'consecutivo' },
     { label:'Producto', id:'producto' },
     { label:'Presentación', id:null },
+    { label:'Bonif.', id:null },
     { label:'Cantidad', id:'cantidad' },
     { label:'Valor Unit.', id:null },
     { label:'Valor Total', id:'valor_total' },
@@ -205,6 +206,23 @@ function renderOCHeader() {
   }).join('');
   var btn = document.getElementById('btn-clear-sort-oc');
   if (btn) btn.style.display = sortLevelsOC.length ? 'inline-block' : 'none';
+}
+
+// Una línea de OC se considera bonificada si tiene el flag guardado
+// ('Sí') o si el nombre del producto ya trae la palabra "bonificado".
+// (A diferencia de Pedidos no usamos el heurístico de "valor unitario
+// bajo": en OC el flag se captura desde el alta, no hay datos viejos.)
+function _esOCBonificada(r) {
+  if (!r) return false;
+  var bonif = String(r.Bonificado || '').trim();
+  if (bonif === 'Sí' || bonif === 'Si') return true;
+  return /bonificado/i.test(String(r.Producto || ''));
+}
+
+function bonifBadgeOC(r) {
+  return _esOCBonificada(r)
+    ? '<span style="background:#d5f5e3;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:700">Sí</span>'
+    : '<span style="color:#718096;font-size:0.75rem">No</span>';
 }
 
 function estadoBadge(estado) {
@@ -307,7 +325,7 @@ function renderOCTable() {
 
   var tbody = document.getElementById('t-body-oc');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="15"><div class="empty">No hay órdenes de compra con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="16"><div class="empty">No hay órdenes de compra con los filtros seleccionados.</div></td></tr>';
     _renderOCPagination(0, 0);
     return;
   }
@@ -353,6 +371,7 @@ function renderOCTable() {
       '<td style="font-weight:600;font-size:0.82rem">' + (r.Consecutivo||'—') + solBadge + '</td>' +
       '<td style="font-weight:700">' + (r.Producto||'—') + '</td>' +
       '<td>' + (r.Presentacion||'—') + '</td>' +
+      '<td style="text-align:center">' + bonifBadgeOC(r) + '</td>' +
       '<td style="text-align:center;font-weight:700">' + (r.Cantidad||0) + '</td>' +
       '<td style="text-align:right;font-size:0.82rem">' + fmtMoney(r.Valor_Unitario) + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(r.Valor_Total) + '</td>' +
@@ -504,6 +523,7 @@ function renderOCLines() {
       '<td><input class="ef oc-cant" data-line="' + i + '" type="number" min="1" value="' + (l.Cantidad||'') + '" placeholder="0" style="width:80px;text-align:right" onchange="calcOCLineTotal(' + i + ')"></td>' +
       '<td><input class="ef oc-vunit" data-line="' + i + '" type="number" min="0" value="' + (l.Valor_Unitario||'') + '" placeholder="0" style="width:100px;text-align:right" onchange="calcOCLineTotal(' + i + ')"></td>' +
       '<td><input class="ef oc-vtotal" data-line="' + i + '" type="number" min="0" value="' + (l.Valor_Total||'') + '" placeholder="0" style="width:100px;text-align:right" onchange="updateOCTotal()"></td>' +
+      '<td style="text-align:center"><input type="checkbox" class="oc-bonif" data-line="' + i + '"' + (l.Bonificado === 'Sí' ? ' checked' : '') + ' style="width:16px;height:16px;cursor:pointer" onchange="onOCBonifChange(' + i + ',this.checked)"></td>' +
       '<td style="text-align:center">' +
         '<button onclick="removeOCLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button>' +
       '</td>' +
@@ -530,8 +550,29 @@ function updateOCTotal() {
   document.getElementById('oc-total-display').textContent = fmtMoney(total);
 }
 
+// Al marcar "Bonif." en una línea nueva se fuerza Valor Unit. = 1
+// (mismo comportamiento que el formulario de Nuevo Pedido). Al
+// desmarcarlo se deja el valor como esté para que el usuario lo edite.
+function onOCBonifChange(i, checked) {
+  if (ocLineas[i]) ocLineas[i].Bonificado = checked ? 'Sí' : '';
+  if (checked) {
+    var vunitInp = document.querySelector('.oc-vunit[data-line="' + i + '"]');
+    if (vunitInp) vunitInp.value = 1;
+    calcOCLineTotal(i);
+  }
+}
+
+// Igual que arriba pero para el formulario de edición (una sola línea).
+function onOCEditBonifChange(checked) {
+  if (!checked) return;
+  document.getElementById('oc-edit-valorunit').value = 1;
+  var cant = Number(document.getElementById('oc-edit-cantidad').value) || 0;
+  document.getElementById('oc-edit-valortotal').value = cant * 1 || '';
+}
+
 function addOCLine() {
-  ocLineas.push({ Producto: '', Presentacion: '', Cantidad: '', Valor_Unitario: '', Valor_Total: '' });
+  readOCLines();
+  ocLineas.push({ Producto: '', Presentacion: '', Cantidad: '', Valor_Unitario: '', Valor_Total: '', Bonificado: '' });
   renderOCLines();
   var lastInput = document.querySelector('.oc-prod-search[data-line="' + (ocLineas.length - 1) + '"]');
   if (lastInput) lastInput.focus();
@@ -539,6 +580,7 @@ function addOCLine() {
 
 function removeOCLine(i) {
   if (ocLineas.length <= 1) { showToast('Debe haber al menos una línea', '#e67e22'); return; }
+  readOCLines();
   ocLineas.splice(i, 1);
   renderOCLines();
 }
@@ -558,6 +600,9 @@ function readOCLines() {
   });
   document.querySelectorAll('.oc-vtotal').forEach(function(inp) {
     var i = Number(inp.dataset.line); if (ocLineas[i]) ocLineas[i].Valor_Total = Number(inp.value) || 0;
+  });
+  document.querySelectorAll('.oc-bonif').forEach(function(inp) {
+    var i = Number(inp.dataset.line); if (ocLineas[i]) ocLineas[i].Bonificado = inp.checked ? 'Sí' : '';
   });
 }
 
@@ -676,7 +721,7 @@ async function loadOCFromFile(file) {
     document.getElementById('oc-observaciones').value = oc.observaciones;
 
     ocLineas = oc.productos.map(function(p) {
-      return { Producto: p.Producto, Presentacion: p.Presentacion, Cantidad: p.Cantidad, Valor_Unitario: p.Valor_Unitario, Valor_Total: p.Valor_Total };
+      return { Producto: p.Producto, Presentacion: p.Presentacion, Cantidad: p.Cantidad, Valor_Unitario: p.Valor_Unitario, Valor_Total: p.Valor_Total, Bonificado: '' };
     });
     renderOCLines();
 
@@ -724,7 +769,7 @@ function openNewOC() {
   document.getElementById('oc-upload-section').style.display = 'block';
   clearOCFile();
 
-  ocLineas = [{ Producto: '', Presentacion: '', Cantidad: '', Valor_Unitario: '', Valor_Total: '' }];
+  ocLineas = [{ Producto: '', Presentacion: '', Cantidad: '', Valor_Unitario: '', Valor_Total: '', Bonificado: '' }];
   renderOCLines();
   // Botones PDF sólo aplican al editar una OC existente; ocultar aquí.
   var btnSol = document.getElementById('btn-oc-pdf-solicitud');
@@ -818,6 +863,7 @@ function openEditOC(row) {
   document.getElementById('oc-edit-cantidad').value = r.Cantidad || '';
   document.getElementById('oc-edit-valorunit').value = r.Valor_Unitario || '';
   document.getElementById('oc-edit-valortotal').value = r.Valor_Total || '';
+  document.getElementById('oc-edit-bonificado').checked = _esOCBonificada(r);
 
   // Botones PDF: mostrar en edición (siempre solicitud; remisiones
   // sólo si al menos una de las remisiones está cargada).
@@ -877,6 +923,7 @@ async function saveOC() {
     var cant = Number(document.getElementById('oc-edit-cantidad').value) || 0;
     var vunit = Number(document.getElementById('oc-edit-valorunit').value) || 0;
     var vtotal = Number(document.getElementById('oc-edit-valortotal').value) || 0;
+    var bonif = document.getElementById('oc-edit-bonificado').checked ? 'Sí' : '';
     if (!prod) { showToast('Ingresa el producto', '#e74c3c'); return; }
     if (cant <= 0) { showToast('Ingresa una cantidad válida', '#e74c3c'); return; }
 
@@ -890,7 +937,7 @@ async function saveOC() {
         Fecha: fecha, Empresa_Destino: empresa_destino, Empresa_Origen: empresa_origen,
         Consecutivo: consecutivo, Direccion: direccion, Bodega: bodega, Municipio: municipio,
         Producto: prod, Presentacion: pres, Cantidad: cant,
-        Valor_Unitario: vunit, Valor_Total: vtotal || (cant * vunit),
+        Valor_Unitario: vunit, Valor_Total: vtotal || (cant * vunit), Bonificado: bonif,
         Total_Orden: '', Observaciones: observaciones, Estado: estado, Remision: remision, Remision_Origen: remision_origen,
         _legalizar: esLegalizar,
       });

@@ -426,7 +426,7 @@ function _ocProductosParaPDF(ocs) {
       cantidad: Number(oc.Cantidad) || 0,
       valor_unitario: Number(oc.Valor_Unitario) || 0,
       valor_total: Number(oc.Valor_Total) || 0,
-      bonificado: ''
+      bonificado: oc.Bonificado || ''
     };
   });
 }

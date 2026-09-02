@@ -829,7 +829,7 @@ async function _apiPostCore(body) {
       if (!lineas.length && body.Producto) {
         lineas = [{
           Producto: body.Producto, Presentacion: body.Presentacion, Cantidad: body.Cantidad,
-          Valor_Unitario: body.Valor_Unitario, Valor_Total: body.Valor_Total
+          Valor_Unitario: body.Valor_Unitario, Valor_Total: body.Valor_Total, Bonificado: body.Bonificado
         }];
       }
       var rows = lineas.map(function(lin) {
@@ -842,6 +842,7 @@ async function _apiPostCore(body) {
           Producto: lin.Producto || '', Presentacion: lin.Presentacion || '',
           Cantidad: cant, Valor_Unitario: vU,
           Valor_Total: Number(lin.Valor_Total) || (cant * vU),
+          Bonificado: lin.Bonificado || '',
           Total_Orden: Number(body.Total_Orden) || 0, Observaciones: body.Observaciones || '',
           Estado: body.Estado || 'Abierta', Fecha_Registro: now, Remision: body.Remision || '',
           Remision_Origen: body.Remision_Origen || '',
@@ -919,6 +920,7 @@ async function _apiPostCore(body) {
         Total_Orden: Number(body.Total_Orden) || 0, Observaciones: body.Observaciones || '',
         Estado: body.Estado || 'Abierta'
       };
+      if (body.Bonificado !== undefined) upd.Bonificado = body.Bonificado || '';
       var remOC = (body.Remision !== undefined) ? (body.Remision || '').trim() : undefined;
       var remOrigenOC = (body.Remision_Origen !== undefined) ? (body.Remision_Origen || '').trim() : undefined;
       var empDestOC = (body.Empresa_Destino || '').trim();

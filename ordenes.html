@@ -238,6 +238,7 @@
                 <th style="width:80px">Cantidad</th>
                 <th style="width:100px">Valor Unit.</th>
                 <th style="width:100px">Valor Total</th>
+                <th style="width:60px" title="Producto bonificado (sin costo). Al marcarlo, el Valor Unit. pasa a 1.">Bonif.</th>
                 <th style="width:50px"></th>
               </tr>
             </thead>
@@ -272,6 +273,13 @@
           <div>
             <label class="ef-label">Valor Total</label>
             <input class="ef" id="oc-edit-valortotal" type="number" min="0" placeholder="0">
+          </div>
+          <div>
+            <label class="ef-label">Bonificado</label>
+            <label style="display:flex;align-items:center;gap:8px;height:38px;cursor:pointer">
+              <input type="checkbox" id="oc-edit-bonificado" style="width:16px;height:16px;cursor:pointer" onchange="onOCEditBonifChange(this.checked)">
+              <span style="font-size:0.85rem;color:#4a5568">Producto bonificado (Valor Unit. = 1)</span>
+            </label>
           </div>
         </div>
       </div>
@@ -337,10 +345,10 @@
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
-<script src="js/shared.js?v=20260902b"></script>
+<script src="js/shared.js?v=20260902c"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
-<script src="js/pdf-remision.js"></script>
-<script src="js/ordenes.js?v=20260827b"></script>
+<script src="js/pdf-remision.js?v=20260902c"></script>
+<script src="js/ordenes.js?v=20260902c"></script>
 </body>
 </html>
