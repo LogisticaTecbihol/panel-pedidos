@@ -598,7 +598,10 @@ function openNewOC() {
   editOrden = null;
   document.getElementById('oc-modal-title').textContent = '🛒 Nueva Orden de Compra';
   document.getElementById('oc-fecha').value = today();
-  document.getElementById('oc-consecutivo').value = '';
+  var elCons = document.getElementById('oc-consecutivo');
+  elCons.value = '';
+  elCons.readOnly = true; elCons.style.background = '#f0f4f8';
+  elCons.placeholder = 'Se asigna al elegir las dos empresas';
   document.getElementById('oc-emp-dest').value = '';
   document.getElementById('oc-emp-orig').value = '';
   document.getElementById('oc-direccion').value = '';
@@ -630,6 +633,7 @@ function openNewOC() {
   if (btnSol) btnSol.style.display = 'none';
   if (btnRem) btnRem.style.display = 'none';
   _applyAprobacionLockOC({ Estado_Aprobacion: 'Aprobada' });
+  _previewConsecutivoOC();
   document.getElementById('oc-overlay').classList.add('show');
 }
 
@@ -671,6 +675,42 @@ function closeOCModal() {
 
 document.getElementById('oc-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeOCModal(); });
 
+// ── Consecutivo automático por par Empresa Destino + Empresa Origen ──
+// El N° de OC se asigna solo: OC-<siglaDestino>-<siglaOrigen>-<n>.
+// El campo es de solo lectura; el servidor (RPC generar_consecutivo_orden_compra)
+// asigna el número definitivo al guardar. Esto es solo una vista previa.
+function _siglaConsecOC(empresa) {
+  return String(getSiglaOC(empresa) || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'NA';
+}
+
+function _previewConsecutivoOC() {
+  if (editOrden) return; // en edición no se renumera
+  var inp = document.getElementById('oc-consecutivo');
+  if (!inp) return;
+  var dest = (document.getElementById('oc-emp-dest').value || '').trim();
+  var orig = (document.getElementById('oc-emp-orig').value || '').trim();
+  if (!dest || !orig) {
+    inp.value = '';
+    inp.placeholder = 'Se asigna al elegir las dos empresas';
+    return;
+  }
+  var maxN = 0;
+  var re = /^OC-.+-(\d+)$/;
+  ordenes.forEach(function(r) {
+    if (String(r.Tipo || 'Compra') !== 'Compra') return;
+    if (String(r.Empresa_Destino || '').trim() !== dest) return;
+    if (String(r.Empresa_Origen || '').trim() !== orig) return;
+    var m = re.exec(String(r.Consecutivo || ''));
+    if (m) { var n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
+  });
+  inp.value = 'OC-' + _siglaConsecOC(dest) + '-' + _siglaConsecOC(orig) + '-' + (maxN + 1);
+}
+
+['oc-emp-dest', 'oc-emp-orig'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('change', _previewConsecutivoOC);
+});
+
 function onOCRemisionChange() {
   var rem = document.getElementById('oc-remision').value.trim();
   if (rem) {
@@ -688,7 +728,10 @@ function openEditOC(row) {
   editOrden = r;
   document.getElementById('oc-modal-title').textContent = '✏️ Editar Orden de Compra';
   document.getElementById('oc-fecha').value = toDateInput(r.Fecha);
-  document.getElementById('oc-consecutivo').value = r.Consecutivo || '';
+  var elConsE = document.getElementById('oc-consecutivo');
+  elConsE.value = r.Consecutivo || '';
+  elConsE.readOnly = true; elConsE.style.background = '#f0f4f8';
+  elConsE.placeholder = '';
   document.getElementById('oc-emp-dest').value = r.Empresa_Destino || '';
   document.getElementById('oc-emp-orig').value = r.Empresa_Origen || '';
   document.getElementById('oc-direccion').value = r.Direccion || '';
@@ -819,20 +862,38 @@ async function saveOC() {
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
 
+  // Consecutivo automático por par Destino+Origen. El servidor asigna el
+  // número (MAX+1, con lock por par); el cliente lo formatea con las siglas.
+  var consecFinal = '';
+  try {
+    var _rpcOC = await _sb.rpc('generar_consecutivo_orden_compra', {
+      p_empresa_destino: empresa_destino, p_empresa_origen: empresa_origen
+    });
+    if (_rpcOC.error) throw new Error(_rpcOC.error.message);
+    var _nOC = _rpcOC.data;
+    if (_nOC == null || !String(_nOC).trim()) throw new Error('respuesta vacía');
+    consecFinal = 'OC-' + _siglaConsecOC(empresa_destino) + '-' + _siglaConsecOC(empresa_origen) + '-' + String(_nOC).trim();
+  } catch (e) {
+    showToast('❌ No se pudo asignar el N° de OC: ' + e.message, '#e74c3c');
+    btn.disabled = false;
+    btn.textContent = '✓ Registrar orden';
+    return;
+  }
+
   try {
     var result = await apiPost({
       action: 'agregarOrdenCompra',
       Fecha: fecha, Empresa_Destino: empresa_destino, Empresa_Origen: empresa_origen,
-      Consecutivo: consecutivo, Direccion: direccion, Bodega: bodega, Municipio: municipio,
+      Consecutivo: consecFinal, Direccion: direccion, Bodega: bodega, Municipio: municipio,
       Total_Orden: totalOrden, Observaciones: observaciones, Estado: estado, Remision: remision, Remision_Origen: remision_origen,
       Estado_Aprobacion: 'Aprobada',
       lineas: validLines,
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     closeOCModal();
-    showToast('✅ ' + result.added + ' línea(s) registradas en la nube');
+    showToast('✅ ' + result.added + ' línea(s) registradas · ' + consecFinal);
     _notifyAprobadoresNuevaOC({
-      empresaDest: empresa_destino, empresaOrig: empresa_origen, consecutivo: consecutivo,
+      empresaDest: empresa_destino, empresaOrig: empresa_origen, consecutivo: consecFinal,
       nLineas: validLines.length, total: fmtMoney(totalOrden)
     });
     await loadOrdenes();
