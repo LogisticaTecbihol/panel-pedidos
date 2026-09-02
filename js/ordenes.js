@@ -12,19 +12,6 @@ var ocPageSize = 50;
 function getSiglaOC(n) { return getSigla(n); }
 function getSiglaClassOC(n) { return getSiglaClass(n); }
 
-function matchEmpresa(name) {
-  var n = (name || '').trim().toUpperCase();
-  if (!n) return '';
-  for (var i = 0; i < EMPRESAS_HOLDING.length; i++) {
-    var e = EMPRESAS_HOLDING[i];
-    if (e.sigla.toUpperCase() === n || e.value.toUpperCase() === n ||
-        e.value.toUpperCase().indexOf(n) >= 0 || n.indexOf(e.sigla.toUpperCase()) >= 0) {
-      return e.value;
-    }
-  }
-  return '';
-}
-
 // ── Sorting ──
 var sortLevelsOC = [
   { id: 'fecha', dir: 'desc' }
@@ -606,141 +593,6 @@ function readOCLines() {
   });
 }
 
-// ── Excel parser ──
-function parseOCExcel(file) {
-  return new Promise(function(resolve, reject) {
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        var wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
-        var ws = wb.Sheets[wb.SheetNames[0]];
-        var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-        var oc = {
-          empresa_destino: '', empresa_origen: '', fecha: '',
-          direccion: '', bodega: '', municipio: '',
-          observaciones: '', productos: []
-        };
-
-        var colProd = 0, colPres = 1, colCant = 5, colValUnit = 10, colValTotal = 15;
-        var productStartRow = -1;
-
-        for (var i = 0; i < data.length; i++) {
-          var cellA = String(data[i][0] || '').trim().toUpperCase();
-          var cellB = data[i][1] !== undefined ? data[i][1] : '';
-
-          if (cellA.indexOf('NOMBRE') >= 0 && cellA.indexOf('EMPRESA') >= 0) {
-            oc.empresa_destino = String(cellB || '').trim();
-          } else if (cellA === 'PROVEEDOR') {
-            oc.empresa_origen = String(cellB || '').trim();
-          } else if (cellA === 'FECHA') {
-            if (cellB instanceof Date) {
-              oc.fecha = cellB.getFullYear() + '-' + String(cellB.getMonth()+1).padStart(2,'0') + '-' + String(cellB.getDate()).padStart(2,'0');
-            } else {
-              oc.fecha = String(cellB || '');
-            }
-          } else if (cellA.indexOf('DIRECC') >= 0) {
-            oc.direccion = String(cellB || '').trim();
-          } else if (cellA.indexOf('BODEGA') >= 0) {
-            oc.bodega = String(cellB || '').trim();
-          } else if (cellA === 'MUNICIPIO') {
-            oc.municipio = String(cellB || '').trim();
-          } else if (cellA === 'OBSERVACIONES') {
-            for (var c = 1; c < (data[i].length || 0); c++) {
-              if (data[i][c]) { oc.observaciones = String(data[i][c]).trim(); break; }
-            }
-          } else if (cellA === 'PRODUCTOS' || cellA === 'PRODUCTO') {
-            for (var c2 = 0; c2 < data[i].length; c2++) {
-              var h = String(data[i][c2] || '').trim().toUpperCase();
-              if (h === 'PRODUCTOS' || h === 'PRODUCTO') colProd = c2;
-              else if (h === 'PRESENTACION' || h === 'PRESENTACIÓN') colPres = c2;
-              else if (h === 'CANTIDAD') colCant = c2;
-              else if (h.indexOf('VALOR UNIT') >= 0 || h === 'VALOR UNITARIO') colValUnit = c2;
-              else if (h.indexOf('VALOR TOTAL') >= 0) colValTotal = c2;
-            }
-            productStartRow = i + 1;
-          }
-        }
-
-        if (productStartRow >= 0) {
-          for (var p = productStartRow; p < data.length; p++) {
-            var producto = String(data[p][colProd] || '').trim();
-            if (!producto) continue;
-            var upper = producto.toUpperCase();
-            if (['OBSERVACIONES','DESCUENTOS','SUBTOTAL','VALOR BRUTO','TOTAL A PAGAR','IVA','TOTAL'].indexOf(upper) >= 0) break;
-            if (upper.indexOf('CONDICIONES') >= 0) break;
-
-            var cant = Number(data[p][colCant]) || 0;
-            if (cant <= 0) continue;
-
-            oc.productos.push({
-              Producto: producto,
-              Presentacion: String(data[p][colPres] || '').trim(),
-              Cantidad: cant,
-              Valor_Unitario: Number(data[p][colValUnit]) || 0,
-              Valor_Total: Number(data[p][colValTotal]) || 0
-            });
-          }
-        }
-
-        resolve(oc);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-function handleOCFile(input) {
-  var file = input.files && input.files[0];
-  if (file) loadOCFromFile(file);
-}
-
-function handleOCDrop(event) {
-  var file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-  if (file) loadOCFromFile(file);
-}
-
-async function loadOCFromFile(file) {
-  try {
-    showToast('📂 Leyendo archivo...', '#00897b');
-    var oc = await parseOCExcel(file);
-
-    if (!oc.productos.length) {
-      showToast('⚠️ No se encontraron líneas de producto en el archivo', '#e67e22');
-      return;
-    }
-
-    if (oc.fecha) document.getElementById('oc-fecha').value = oc.fecha;
-    document.getElementById('oc-emp-dest').value = matchEmpresa(oc.empresa_destino);
-    document.getElementById('oc-emp-orig').value = matchEmpresa(oc.empresa_origen);
-    document.getElementById('oc-direccion').value = oc.direccion;
-    document.getElementById('oc-bodega').value = oc.bodega;
-    document.getElementById('oc-municipio').value = oc.municipio;
-    document.getElementById('oc-observaciones').value = oc.observaciones;
-
-    ocLineas = oc.productos.map(function(p) {
-      return { Producto: p.Producto, Presentacion: p.Presentacion, Cantidad: p.Cantidad, Valor_Unitario: p.Valor_Unitario, Valor_Total: p.Valor_Total, Bonificado: '' };
-    });
-    renderOCLines();
-
-    document.getElementById('oc-upload-zone').style.display = 'none';
-    document.getElementById('oc-file-info').style.display = 'block';
-    document.getElementById('oc-file-name').textContent = file.name;
-
-    showToast('✅ ' + oc.productos.length + ' producto(s) cargados desde Excel', '#00897b');
-  } catch (err) {
-    showToast('❌ Error al leer el archivo: ' + err.message, '#e74c3c');
-  }
-}
-
-function clearOCFile() {
-  document.getElementById('oc-upload-zone').style.display = 'block';
-  document.getElementById('oc-file-info').style.display = 'none';
-  document.getElementById('oc-file').value = '';
-}
-
 // ── New OC Modal ──
 function openNewOC() {
   editOrden = null;
@@ -766,8 +618,9 @@ function openNewOC() {
   document.getElementById('btn-save-oc').textContent = '✓ Registrar orden';
   document.getElementById('oc-edit-single').style.display = 'none';
   document.getElementById('oc-multi-lines').style.display = 'block';
-  document.getElementById('oc-upload-section').style.display = 'block';
-  clearOCFile();
+  // La carga desde Excel se retiró; ocultar la zona si quedó HTML viejo en caché.
+  var _ocUp = document.getElementById('oc-upload-section');
+  if (_ocUp) _ocUp.style.display = 'none';
 
   ocLineas = [{ Producto: '', Presentacion: '', Cantidad: '', Valor_Unitario: '', Valor_Total: '', Bonificado: '' }];
   renderOCLines();
@@ -856,7 +709,8 @@ function openEditOC(row) {
   _applyAprobacionLockOC(r);
 
   document.getElementById('oc-multi-lines').style.display = 'none';
-  document.getElementById('oc-upload-section').style.display = 'none';
+  var _ocUpE = document.getElementById('oc-upload-section');
+  if (_ocUpE) _ocUpE.style.display = 'none';
   document.getElementById('oc-edit-single').style.display = 'block';
   document.getElementById('oc-edit-producto').value = r.Producto || '';
   document.getElementById('oc-edit-presentacion').value = r.Presentacion || '';

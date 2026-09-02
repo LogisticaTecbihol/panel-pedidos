@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="description" content="Órdenes de Compra — Sistema de Gestión Logística">
 <meta name="theme-color" content="#1a5276">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛒</text></svg>">
@@ -138,32 +138,11 @@
     <div class="mhdr" style="background:linear-gradient(135deg,#00695c,#00897b)">
       <div style="flex:1">
         <h2 id="oc-modal-title">🛒 Nueva Orden de Compra</h2>
-        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Carga desde Excel o completa manualmente</div>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Completa los datos y agrega las líneas de producto</div>
       </div>
       <button class="btn-close" onclick="closeOCModal()">✕</button>
     </div>
     <div class="mbody" style="flex:1;overflow-y:auto">
-      <!-- Excel upload zone (only in new mode) -->
-      <div id="oc-upload-section">
-        <div id="oc-upload-zone" ondragover="event.preventDefault();this.style.borderColor='#00897b';this.style.background='#e0f2f1'" ondragleave="this.style.borderColor='#cbd5e0';this.style.background='#f7fafc'" ondrop="event.preventDefault();this.style.borderColor='#cbd5e0';this.style.background='#f7fafc';handleOCDrop(event)" onclick="document.getElementById('oc-file').click()" style="border:2px dashed #cbd5e0;border-radius:10px;padding:20px;text-align:center;margin-bottom:16px;cursor:pointer;background:#f7fafc;transition:all 0.2s">
-          <div style="font-size:2rem;margin-bottom:8px">📂</div>
-          <div style="font-size:0.88rem;font-weight:700;color:#2d3748">Cargar desde archivo Excel</div>
-          <div style="font-size:0.78rem;color:#718096;margin-top:4px">Arrastra un archivo aquí o haz clic para seleccionar · .xlsx</div>
-          <input type="file" id="oc-file" accept=".xlsx,.xls" style="display:none" onchange="handleOCFile(this)">
-        </div>
-        <div id="oc-file-info" style="display:none;background:#e0f2f1;border:1px solid #80cbc4;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.82rem;color:#004d40">
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <span>📄 <strong id="oc-file-name"></strong> — datos cargados</span>
-            <button onclick="clearOCFile()" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-weight:700;font-size:0.9rem">✕</button>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <div style="flex:1;height:1px;background:#e2e8f0"></div>
-          <span style="font-size:0.78rem;color:#a0aec0;font-weight:600">o completa manualmente</span>
-          <div style="flex:1;height:1px;background:#e2e8f0"></div>
-        </div>
-      </div>
-
       <!-- Header fields -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
         <div>
@@ -342,13 +321,12 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="js/shared.js?v=20260902c"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/pdf-remision.js?v=20260902c"></script>
-<script src="js/ordenes.js?v=20260902c"></script>
+<script src="js/ordenes.js?v=20260902d"></script>
 </body>
 </html>
