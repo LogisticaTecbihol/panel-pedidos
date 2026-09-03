@@ -100,6 +100,13 @@ var PLAZOS_POR_NIT = {};
 var PLAZOS_POR_NOMBRE = {};
 var PLAZOS_LISTA = [];
 
+// ── Clientes que aparecen en Pedidos ──
+// Conjuntos de NIT normalizado / nombre normalizado presentes en el módulo
+// de Pedidos (con o sin plazo de pago). Sirve para la columna "¿Tiene
+// pedidos?" y su filtro.
+var PEDIDOS_POR_NIT = {};
+var PEDIDOS_POR_NOMBRE = {};
+
 function _normNombre(n) {
   return (n == null ? '' : String(n)).toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -132,17 +139,22 @@ function _cmpPlazo(a, b) {
 function _indexPlazosPedidos(pedidos) {
   PLAZOS_POR_NIT = {};
   PLAZOS_POR_NOMBRE = {};
+  PEDIDOS_POR_NIT = {};
+  PEDIDOS_POR_NOMBRE = {};
   var todos = {};
   (pedidos || []).forEach(function(p) {
+    var nk = _normalizeId(p.NIT);
+    var nombre = _normNombre(p.Cliente);
+    if (nk) PEDIDOS_POR_NIT[nk] = true;
+    if (nombre) PEDIDOS_POR_NOMBRE[nombre] = true;
+
     var lbl = _normalizePlazo(p.Plazo_Pago);
     if (!lbl) return;
     todos[lbl] = true;
-    var nk = _normalizeId(p.NIT);
     if (nk) {
       if (!PLAZOS_POR_NIT[nk]) PLAZOS_POR_NIT[nk] = {};
       PLAZOS_POR_NIT[nk][lbl] = true;
     }
-    var nombre = _normNombre(p.Cliente);
     if (nombre) {
       if (!PLAZOS_POR_NOMBRE[nombre]) PLAZOS_POR_NOMBRE[nombre] = {};
       PLAZOS_POR_NOMBRE[nombre][lbl] = true;
@@ -167,6 +179,26 @@ function _plazosDeGrupo(g) {
     _plazosParaRecord(r).forEach(function(k) { set[k] = true; });
   });
   return Object.keys(set).sort(_cmpPlazo);
+}
+
+// ¿Este registro de cliente aparece en algún pedido? Cruce por NIT y, si
+// ese NIT no está en pedidos, por nombre (mismo criterio que los plazos).
+function _tienePedidosRecord(c) {
+  var nk = _normalizeId(c.Identificacion);
+  if (nk && PEDIDOS_POR_NIT[nk]) return true;
+  var nombre = _normNombre(c.Cliente);
+  if (nombre && PEDIDOS_POR_NOMBRE[nombre]) return true;
+  return false;
+}
+
+function _grupoTienePedidos(g) {
+  return g.records.some(_tienePedidosRecord);
+}
+
+function _pedidosBadge(tiene) {
+  return tiene
+    ? '<span class="est-badge ped-si">Sí</span>'
+    : '<span class="est-badge ped-no">No</span>';
 }
 
 function _plazosChips(list) {
@@ -262,6 +294,7 @@ function getFiltered() {
   var muni = document.getElementById('f-muni').value;
   var est = document.getElementById('f-estado').value;
   var plazo = document.getElementById('f-plazo').value;
+  var fped = document.getElementById('f-ped').value;
   var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
   return clientesData.filter(function(c) {
     if (emp && c.Nombre_Empresa !== emp) return false;
@@ -269,6 +302,8 @@ function getFiltered() {
     if (muni && c.Municipio !== muni) return false;
     if (est && _estadoNorm(c.Estado) !== est) return false;
     if (plazo && _plazosParaRecord(c).indexOf(plazo) < 0) return false;
+    if (fped === 'con' && !_tienePedidosRecord(c)) return false;
+    if (fped === 'sin' && _tienePedidosRecord(c)) return false;
     if (txt) {
       var haystack = [c.Cliente, c.Identificacion, c.Correo_Electronico, c.Telefono, c.Municipio, c.Departamento]
         .join(' ').toLowerCase();
@@ -284,6 +319,7 @@ function clearFilters() {
   document.getElementById('f-muni').value = '';
   document.getElementById('f-estado').value = '';
   document.getElementById('f-plazo').value = '';
+  document.getElementById('f-ped').value = '';
   document.getElementById('f-nuevo').value = '';
   document.getElementById('f-txt').value = '';
   _updateMuniFilter();
@@ -322,6 +358,12 @@ function renderTable() {
   }
   if (document.getElementById('f-nuevo').value === '1') {
     filtered = filtered.filter(_grupoEsNuevo);
+  }
+  var fPed = document.getElementById('f-ped').value;
+  if (fPed === 'con') {
+    filtered = filtered.filter(_grupoTienePedidos);
+  } else if (fPed === 'sin') {
+    filtered = filtered.filter(function(g) { return !_grupoTienePedidos(g); });
   }
   currentGroups = filtered;
 
@@ -388,6 +430,7 @@ function renderTable() {
 
     var ge = _grupoEstado(g);
     var plazosHtml = _plazosChips(_plazosDeGrupo(g));
+    var pedidosHtml = _pedidosBadge(_grupoTienePedidos(g));
 
     var actionHtml = '';
     if (canEd) {
@@ -413,6 +456,7 @@ function renderTable() {
       '<td>' + muniHtml + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(correo) + '</td>' +
       '<td>' + _estadoBadge(ge.estado, ge.mixto) + '</td>' +
+      '<td style="text-align:center">' + pedidosHtml + '</td>' +
       '<td>' + plazosHtml + '</td>' +
       actionHtml +
       '</tr>';
@@ -435,6 +479,7 @@ document.getElementById('f-depto').addEventListener('change', function() { _upda
 document.getElementById('f-muni').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-estado').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-plazo').addEventListener('change', function() { currentPage = 1; renderTable(); });
+document.getElementById('f-ped').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-nuevo').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-txt').addEventListener('input', debounce(function() { currentPage = 1; renderTable(); }, 300));
 
@@ -475,6 +520,11 @@ function openGroupDetail(groupIdx) {
     '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">Estado</span>' +
     _estadoBadge(_geDet.estado, _geDet.mixto) +
     (_grupoEsNuevo(g) ? ' <span class="nuevo-badge">🆕 Nuevo</span> <span style="color:#a0aec0;font-size:0.78rem">— alta desde un pedido, pendiente de completar</span>' : '') +
+    '</div>';
+
+  html += '<div style="margin-bottom:' + (isMulti ? '16' : '10') + 'px">' +
+    '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">¿Tiene pedidos?</span>' +
+    _pedidosBadge(_grupoTienePedidos(g)) +
     '</div>';
 
   var _plzDet = _plazosDeGrupo(g);
@@ -902,7 +952,7 @@ function exportExcel() {
   var filtered = getFiltered();
   if (!filtered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var rows = [['Empresa', 'Cliente', 'Nuevo', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Plazos Pago (pedidos)', 'Lista Precio', 'Estado']];
+  var rows = [['Empresa', 'Cliente', 'Nuevo', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Plazos Pago (pedidos)', 'Tiene pedidos', 'Lista Precio', 'Estado']];
   filtered.forEach(function(c) {
     rows.push([
       getSigla(c.Nombre_Empresa),
@@ -919,6 +969,7 @@ function exportExcel() {
       c.Cupo_Credito || '',
       c.Plazo_Pago || '',
       _plazosParaRecord(c).join(', '),
+      _tienePedidosRecord(c) ? 'Sí' : 'No',
       c.Lista_Precio || '',
       _estadoNorm(c.Estado)
     ]);

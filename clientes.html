@@ -23,6 +23,8 @@
 .est-mix { outline: 1px dashed #e65100; outline-offset: 1px; }
 .plazo-chip { display: inline-block; padding: 2px 8px; margin: 1px 2px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; background: #e8eef5; color: #1a5276; white-space: nowrap; }
 .nuevo-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.73rem; font-weight: 700; background: #fef3cd; color: #b7791f; white-space: nowrap; }
+.ped-si { background: #c6f6d5; color: #276749; }
+.ped-no { background: #edf2f7; color: #a0aec0; }
 </style>
 </head>
 <body data-modulo="clientes">
@@ -92,6 +94,7 @@
     <div class="fg"><label>Municipio</label><select id="f-muni"><option value="">Todos</option></select></div>
     <div class="fg"><label>Estado</label><select id="f-estado"><option value="">Todos</option><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Bloqueado por cartera">Bloqueado por cartera</option></select></div>
     <div class="fg"><label>Plazo de pago (pedidos)</label><select id="f-plazo"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Pedidos</label><select id="f-ped"><option value="">Todos</option><option value="con">Con pedidos</option><option value="sin">Sin pedidos</option></select></div>
     <div class="fg"><label>Nuevos</label><select id="f-nuevo"><option value="">Todos</option><option value="1">Solo nuevos</option></select></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="Cliente, NIT, correo…" style="width:220px"></div>
     <button onclick="clearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
@@ -122,6 +125,7 @@
             <th>Municipio</th>
             <th>Correo</th>
             <th>Estado</th>
+            <th style="text-align:center">¿Tiene<br>pedidos?</th>
             <th>Plazos de pago<br><span style="font-weight:400;font-size:0.72rem;color:#718096">(según pedidos)</span></th>
             <th style="width:140px" class="auth-edit-only">Acción</th>
           </tr>
@@ -334,6 +338,6 @@
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/colombia-geo.js"></script>
-<script src="js/clientes.js?v=20260902b"></script>
+<script src="js/clientes.js?v=20260903a"></script>
 </body>
 </html>
