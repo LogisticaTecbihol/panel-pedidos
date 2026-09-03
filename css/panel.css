@@ -195,6 +195,13 @@ tbody tr:hover { background: #f0f8ff; }
 tbody tr.row-modificada > td { background: #fffbeb; }
 tbody tr.row-modificada > td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 tbody tr.row-modificada:hover > td { background: #fef3c7; }
+
+/* ── Pedidos bloqueados por cartera ── */
+tbody tr.row-bloqueada-cartera > td { background: #fef2f2; }
+tbody tr.row-bloqueada-cartera > td:first-child { box-shadow: inset 4px 0 0 #dc2626; }
+tbody tr.row-bloqueada-cartera:hover > td { background: #fee2e2; }
+/* Si además está modificado, la marca de cartera manda en la barra lateral */
+tbody tr.row-bloqueada-cartera.row-modificada > td:first-child { box-shadow: inset 4px 0 0 #dc2626; }
 .mod-badge {
   display: inline-block; margin-left: 6px;
   background: #f59e0b; color: white;

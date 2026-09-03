@@ -578,6 +578,9 @@ var editIdx = null;
 var editKey = null;
 var editWorkingLines = [];
 var detailWorkingLines = [];
+// True mientras el modal de detalle muestra un pedido "Bloqueado por cartera":
+// se veta el registro de entregas de producto.
+var _detailBloqueadoCartera = false;
 // Snapshot de existencias para el modal de detalle (empresa origen del stock)
 var existSnapshot = null;
 
@@ -1284,7 +1287,11 @@ function renderTable() {
     var idx = c._idx;
     var rowKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
     var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
-    var trClass = modPend ? ' class="row-modificada"' : '';
+    var bloqCartera = est2 === 'Bloqueado por cartera';
+    var _trCls = [];
+    if (modPend) _trCls.push('row-modificada');
+    if (bloqCartera) _trCls.push('row-bloqueada-cartera');
+    var trClass = _trCls.length ? ' class="' + _trCls.join(' ') + '"' : '';
     var modBadge = '';
     if (modPend) {
       var tipo = c._ModTipo || 'ambos';
@@ -1398,6 +1405,16 @@ async function openDetail(idx) {
   document.getElementById('md-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('md', c.Nombre_Empresa);
   document.getElementById('md-estado2').value = derivedEstado2(lines);
+
+  // Pedido bloqueado por cartera: se avisa en un banner y NO se permite
+  // registrar entrega de producto (se ocultan la barra de entrega y los
+  // selectores de asignación; el guardado de entregas queda vetado).
+  _detailBloqueadoCartera = derivedEstado2(lines) === 'Bloqueado por cartera';
+  var _bqBanner = document.getElementById('md-bloqueo-cartera');
+  if (_bqBanner) _bqBanner.style.display = _detailBloqueadoCartera ? 'block' : 'none';
+  var _bqDelBar = document.getElementById('md-delivery-bar');
+  if (_bqDelBar) _bqDelBar.style.display = _detailBloqueadoCartera ? 'none' : '';
+
   document.getElementById('m-total').textContent = fmtMoney(c.Total_Orden);
   var obsText = c.Observaciones || lines.reduce(function(a, l) { return a || l.Observaciones; }, '') || '';
   document.getElementById('m-observaciones').value = obsText ? String(obsText).trim() : '';
@@ -1809,6 +1826,14 @@ function renderAsignacionCell(i, l, empresaPedido) {
   // permite asignar más stock. Se muestra un aviso en lugar del
   // selector. Se sigue reservando un contenedor de chips vacío para
   // que refreshAsignacionCell/renderAsignacionChips no fallen.
+  // Pedido bloqueado por cartera: no se permite asignar stock / registrar entrega.
+  if (_detailBloqueadoCartera) {
+    return '<div style="font-size:0.72rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;padding:4px 8px;border-radius:4px;font-weight:700">' +
+             '🚫 Bloqueado por cartera — no se puede registrar entrega' +
+           '</div>' +
+           '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
+  }
+
   var pedida = Number(l.Cantidad) || 0;
   var yaEntregada = Number(l.Cant_Entregada) || 0;
   var pendienteBase = Math.max(0, pedida - yaEntregada);
@@ -2034,6 +2059,10 @@ function _asignadoEnSesion(empresa, producto, excludeLineIdx) {
 function addAsignacion(i) {
   var dl = detailWorkingLines[i];
   if (!dl) return;
+  if (_detailBloqueadoCartera) {
+    showToast('🚫 Pedido bloqueado por cartera: no se puede registrar entrega de producto', '#e74c3c');
+    return;
+  }
   var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
   var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
   if (!sel || !inp) return;
@@ -2194,6 +2223,14 @@ async function guardarTodo() {
       else solicitudesCompra.push(item);
     });
   });
+
+  // Veto de entregas cuando el pedido está bloqueado por cartera. El resto
+  // de cambios del encabezado (incluido cambiar el Estado para liberarlo) sí
+  // se guardan.
+  if (_detailBloqueadoCartera && (entregas.length > 0 || solicitudesCompra.length > 0)) {
+    showToast('🚫 Pedido bloqueado por cartera: no se puede registrar entrega de producto ni solicitudes de compra', '#e74c3c');
+    return;
+  }
 
   var remGenerada = '';
   if (entregas.length > 0 && !rem) {
