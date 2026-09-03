@@ -27,6 +27,77 @@ function _bestId(records) {
   return withDv || without;
 }
 
+// ── Normalización de identificación (NIT) ──
+// Formatea "900946020 2" / "900.946.020-2" / "9009460202" -> "900946020-2".
+// Reglas (alineadas con la función SQL nit_normalizado):
+//   · El DV es el dígito final tras un separador (espacio, punto o guion),
+//     o el 10.º dígito de un NIT de empresa (10 dígitos que empieza en 8/9).
+//   · Es NIT si Tipo_Identificacion = 'NIT', o si el tipo está vacío y la
+//     base tiene 9 dígitos y empieza en 8/9. Las cédulas no se tocan.
+//   · Si no hay DV en el dato, NO se calcula: se muestra el número tal cual.
+
+// Dígito de verificación del NIT — algoritmo oficial DIAN (módulo 11).
+function _calcDvNit(base) {
+  if (!/^\d{4,15}$/.test(base)) return null;
+  var pesos = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
+  var suma = 0;
+  var d = base.split('').reverse();
+  for (var i = 0; i < d.length; i++) suma += parseInt(d[i], 10) * pesos[i];
+  var r = suma % 11;
+  return r < 2 ? r : 11 - r;
+}
+
+// Devuelve { text, warn, expected } para un valor de identificación.
+function _fmtIdent(raw, tipo) {
+  var s = (raw == null ? '' : String(raw)).trim();
+  if (!s) return { text: '', warn: false };
+
+  var digitos = s.replace(/\D/g, '');
+  if (!digitos) return { text: s, warn: false };
+
+  // Parte con DV separado al final: "<algo> <sep> <1 dígito>".
+  var sep = /^(.*)[\s.\-](\d)\s*$/.exec(s);
+  var work = sep ? sep[1].replace(/\D/g, '') : digitos;
+  var base, dv = null;
+  if (work.length === 10 && /^[89]/.test(work)) {
+    // NIT de empresa con el DV pegado: manda el 10.º dígito y se
+    // descarta cualquier dígito extra tras el separador.
+    base = work.slice(0, 9);
+    dv = work.slice(9);
+  } else if (sep) {
+    base = work;
+    dv = sep[2];
+  } else {
+    base = work;
+  }
+
+  var t = (tipo || '').trim().toUpperCase();
+  var esNit = t === 'NIT' || (t === '' && base.length === 9 && /^[89]/.test(base));
+  if (!esNit) return { text: s, warn: false };          // cédula u otro: sin tocar
+  if (dv == null) return { text: base, warn: false };   // NIT sin DV: no se calcula
+
+  var esperado = _calcDvNit(base);
+  return { text: base + '-' + dv, warn: esperado != null && String(esperado) !== dv, expected: esperado };
+}
+
+// Celda de identificación ya escapada, con aviso si el DV no cuadra.
+function _identCellHtml(raw, tipo) {
+  var info = _fmtIdent(raw, tipo);
+  if (!info.text) return '<span style="color:#cbd5e0">—</span>';
+  var esc = escHtml(info.text);
+  if (info.warn) {
+    return '<span class="nit-dv-bad" title="DV esperado: ' + info.expected + '">' + esc + ' ⚠️</span>';
+  }
+  return esc;
+}
+
+// Tipo de identificación conocido del grupo (mismo NIT).
+function _grupoTipoId(g) {
+  var t = '';
+  g.records.forEach(function(r) { if (!t && r.Tipo_Identificacion) t = r.Tipo_Identificacion; });
+  return t;
+}
+
 // ── Estado del cliente ──
 // Valores válidos: 'Activo' (por defecto), 'Inactivo', 'Bloqueado por cartera'.
 var _EST_RANK = { 'Bloqueado por cartera': 0, 'Inactivo': 1, 'Activo': 2 };
@@ -450,7 +521,7 @@ function renderTable() {
       '<td>' + empresaHtml + '</td>' +
       '<td style="font-weight:600">' + escHtml(first.Cliente || '') + multiTag + '</td>' +
       '<td>' + (_grupoEsNuevo(g) ? '<span class="nuevo-badge">🆕 Nuevo</span>' : '<span style="color:#cbd5e0">—</span>') + '</td>' +
-      '<td>' + escHtml(_bestId(g.records)) + '</td>' +
+      '<td>' + _identCellHtml(_bestId(g.records), _grupoTipoId(g)) + '</td>' +
       '<td>' + escHtml(first.Tipo_Identificacion || '') + '</td>' +
       '<td>' + escHtml(tel) + '</td>' +
       '<td>' + muniHtml + '</td>' +
@@ -502,7 +573,7 @@ function openGroupDetail(groupIdx) {
   var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin-bottom:' + (isMulti ? '20' : '0') + 'px">';
   var commonFields = [
     ['Cliente', first.Cliente],
-    ['Identificación', _bestId(g.records)],
+    ['Identificación', _identCellHtml(_bestId(g.records), tipoId), true],
     ['Tipo ID', tipoId],
     ['Teléfono', tel],
     ['Correo', correo]
@@ -510,7 +581,7 @@ function openGroupDetail(groupIdx) {
   commonFields.forEach(function(f) {
     html += '<div>' +
       '<div style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-bottom:2px">' + f[0] + '</div>' +
-      '<div style="font-size:0.88rem;color:#2d3748;font-weight:500">' + escHtml(f[1] || '—') + '</div>' +
+      '<div style="font-size:0.88rem;color:#2d3748;font-weight:500">' + (f[2] ? f[1] : escHtml(f[1] || '—')) + '</div>' +
       '</div>';
   });
   html += '</div>';
@@ -779,7 +850,8 @@ function openDeleteCliente(id) {
   if (!c) return;
   deleteId = id;
   document.getElementById('del-msg').textContent = '¿Eliminar este cliente?';
-  var detail = getSigla(c.Nombre_Empresa) + ' · ' + (c.Cliente || '') + ' · ' + (c.Identificacion || '—');
+  var idFmt = _fmtIdent(c.Identificacion, c.Tipo_Identificacion).text || '—';
+  var detail = getSigla(c.Nombre_Empresa) + ' · ' + (c.Cliente || '') + ' · ' + idFmt;
   document.getElementById('del-detail').textContent = detail;
   document.getElementById('delete-overlay').style.display = 'flex';
 }
@@ -959,7 +1031,7 @@ function exportExcel() {
       c.Cliente || '',
       _esNuevoRecord(c) ? 'Sí' : '',
       c.Tipo_Identificacion || '',
-      c.Identificacion || '',
+      _fmtIdent(c.Identificacion, c.Tipo_Identificacion).text || (c.Identificacion || ''),
       c.Telefono || '',
       c.Correo_Electronico || '',
       c.Direccion || '',
