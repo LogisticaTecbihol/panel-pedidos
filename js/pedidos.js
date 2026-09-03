@@ -987,6 +987,30 @@ async function toggleBloqueoCartera(idx) {
     });
     if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al actualizar');
     showToast(bloquear ? '🔒 Pedido bloqueado por cartera' : '🔓 Pedido liberado de cartera');
+
+    // Aviso: ofrecer bloquear también al cliente (NO es automático).
+    // Solo al bloquear, no al liberar.
+    if (bloquear && AUTH.canToggleBloqueoCartera()) {
+      var quiere = confirm(
+        'El pedido quedó bloqueado por cartera.\n\n' +
+        '¿Bloquear también al CLIENTE "' + (c.Cliente || '—') + '"' +
+        (c.NIT ? ' (NIT ' + c.NIT + ')' : '') + ' en el módulo Clientes?\n\n' +
+        'Esto le impedirá crear pedidos NUEVOS hasta que Cartera lo libere. ' +
+        'Los pedidos que ya tiene no se tocan.'
+      );
+      if (quiere) {
+        try {
+          var rc = await apiPost({ action: 'bloquearClientePorNit', nit: c.NIT || '', cliente: c.Cliente || '' });
+          if (!rc || rc.ok === false) throw new Error((rc && rc.error) || 'Error');
+          if ((rc.updated || 0) > 0) showToast('🔒 Cliente bloqueado por cartera en el módulo Clientes');
+          else if ((rc.found || 0) > 0) showToast('El cliente ya estaba bloqueado por cartera', '#e67e22');
+          else showToast('⚠️ No se encontró el cliente por NIT/nombre en el módulo Clientes; bloquéalo manualmente allí', '#e67e22');
+        } catch (e2) {
+          showToast('⚠️ Pedido bloqueado, pero no se pudo bloquear el cliente: ' + (e2.message || e2), '#e67e22');
+        }
+      }
+    }
+
     await loadFromAPI();
   } catch (err) {
     showToast('❌ ' + (err.message || err), '#e74c3c');

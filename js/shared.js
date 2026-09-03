@@ -465,6 +465,17 @@ async function _apiPostCore(body) {
       return res.data || { ok: true };
     }
 
+    // Bloquear al cliente (ClientesUnicos.Estado) por NIT — opcional, lo
+    // ofrece el panel de Pedidos tras bloquear un pedido por cartera.
+    if (action === 'bloquearClientePorNit') {
+      var res = await _sb.rpc('bloquear_cliente_por_nit', {
+        p_nit: body.nit || '',
+        p_cliente: body.cliente || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+
     // ── INGRESOS ──
 
     if (action === 'agregarIngreso') {
