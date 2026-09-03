@@ -32,6 +32,80 @@ function getSiglaClass(n) { var s = getSigla(n); return SIGLA_CLASSES.indexOf(s)
 function _esEmpresaHolding(nombre) {
   return EMPRESAS_HOLDING.some(function(e) { return e.value === (nombre || '').trim() || e.sigla === (nombre || '').trim(); });
 }
+
+// ── Categorías de producto por proveedor ──
+// Se usa en Reportes (Valorización) y en el Dashboard (ventas por categoría).
+// La detección es por nombre exacto normalizado (mayúsculas, espacios simples).
+var CARVAL_PRODUCTS_RAW = [
+  'AMETRINA 80WG X KILO',
+  'CERTUS 70 WS X 100 GR CV', 'CERTUS 70 WS X500G (THIAMETOXAN)', 'CERTUS 70 WS X 500G (THIAMETOXAN)',
+  'CERTUS 70 WS X 500 G (THIAMETOXAN)', 'CERTUS 70 WS X 50 GR', 'CERTUS70 WS X 50 GR',
+  'CONTRA 200 SC X 200 CC', 'CONTRA 200 SC X LITRO',
+  'CUFIGA 80 WP X 500 GR CV',
+  'DIRVO 60% WG X 20 GR CV', 'DIRVO 60% WG X KILO ( METSULFURON) CV',
+  'FICLORAM LITRO', 'FICLORAM SL X GALON', 'FICLORAM X 20 L', 'FICLORAM X BIDON 20 LITROS', 'FICLORAM X LITRO',
+  'FIPRID 75 SC 100ML CV', 'FIPRID X 500 ML',
+  'FOSTAL 80 WP X 500 GR CV',
+  'GLYFOSATO X 50G',
+  'GRADUS 43 SC X LITRO CV', 'GRADUS 43 X 500 ML CV',
+  'HEXAZINONA 300 GR', 'HEXAZINONA 75 X KILO',
+  'LAMBDA CIHALOTRINA X 100 ML', 'LAMBDA CIHALOTRINA X 500 ML', 'LAMBDA CIHALOTRINA X LITRO',
+  'LAMBDA CIHALOTRINAX 100ML', 'LAMBDA CIHALOTRINAX 500ML', 'LAMBDA CIHALOTRINAX LITRO',
+  'RUDOWN 747 X 1KG', 'RUDOWN X50GR',
+  'SAGUM 25 SC X 500 ML CV', 'SAGUM X LITRO CV',
+  'TABUS 50 WG X 40 GR CV',
+  'TRIP CROP X 250 CC', 'TRIP CROP X LITRO'
+];
+var ABAGO_PRODUCTS_RAW = [
+  'MALOLITA X KILO', 'MALOLITA X 25 KILOS',
+  'CREOLINA X 20 LITROS', 'CREOLINA X 250 ML', 'CREOLINA X GALON', 'CREOLINA X 500 ML', 'CREOLINA X LITRO',
+  'FUNBAC X LITRO', 'FUNBAC X GALON', 'FUNBAC X BIDON 20 LITROS',
+  'ACI SI X 250 ML', 'ACI SI X LITRO', 'ACI SI X GALON', 'ACI SI X BIDON 20 LITROS',
+  'SABIAGRA X 250 ML', 'SABIAGRA X LITRO', 'SABIAGRA X GALON', 'SABIAGRA X BIDON 20 LITROS',
+  'NITRO-TECH X 250 ML', 'NITRO-TECH X LITRO', 'NITRO-TECH X GALON', 'NITRO-TECH X BIDON 20 LITROS',
+  'MOSKAKILL X 250 ML', 'MOSKAKILL X 500 ML', 'MOSKAKILL X LITRO', 'MOSKAKILL X GALON', 'MOSKAKILL X BIDON 20 LITROS',
+  'NUL X KILO', 'NUL X 25 KILOS',
+  'COMBI K X KILO', 'COMBI K X 25 KILOS'
+];
+var SHARDA_PRODUCTS_RAW = [
+  'SHAZUGAMYCIN 2% SL', 'SHAZUGAMYCIN 2 % SL', 'SHAZUGAMYCIN 2% SL 200 LT', 'SHAZUGAMYCIN 2 % SL 200 LT',
+  'SHAZUGAMYCIN 2% SL X LITRO', 'SHAZUGAMYCIN 2 % SL X LITRO', 'SHAZUGAMYCIN 2% SL X 200 LT', 'SHAZUGAMYCIN 2 % SL X 200 LT',
+  'SHARCYALOTRINA 5 % EC', 'SHARCYALOTRINA 5% EC',
+  'SHARDIZOL 250 EC X LITRO', 'SHARDIZOL 250 EC LITRO'
+];
+var DISNEY_PRODUCTS_RAW = [
+  'OXICLORURO DE COBRE', 'OXICLORURO DE COBRE X KILO', 'OXICLORURO DE COBRE X 500 GR', 'OXICLORURO DE COBRE X 250 GR'
+];
+
+function _prodNormSet(arr) {
+  var s = {};
+  arr.forEach(function(p) { s[p.replace(/\s+/g, ' ').trim().toUpperCase()] = true; });
+  return s;
+}
+var _carvalNormSet = _prodNormSet(CARVAL_PRODUCTS_RAW);
+var _abagoNormSet  = _prodNormSet(ABAGO_PRODUCTS_RAW);
+var _shardaNormSet = _prodNormSet(SHARDA_PRODUCTS_RAW);
+var _disneyNormSet = _prodNormSet(DISNEY_PRODUCTS_RAW);
+function _prodKey(name) { return String(name || '').replace(/\s+/g, ' ').trim().toUpperCase(); }
+function isCarvalProduct(name) { return !!_carvalNormSet[_prodKey(name)]; }
+function isAbagoProduct(name)  { return !!_abagoNormSet[_prodKey(name)]; }
+function isShardaProduct(name) { return !!_shardaNormSet[_prodKey(name)]; }
+function isDisneyProduct(name) { return !!_disneyNormSet[_prodKey(name)]; }
+
+function _getCategoria(producto) {
+  if (isCarvalProduct(producto)) return 'Proveedor Carval';
+  if (isAbagoProduct(producto)) return 'Proveedor Abago';
+  if (isShardaProduct(producto)) return 'Proveedor Sharda';
+  if (isDisneyProduct(producto)) return 'Proveedor Disney C.';
+  return 'Producción propia';
+}
+function _getCategoriaColor(cat) {
+  if (cat === 'Proveedor Carval') return { bg: '#fef9e7', color: '#7d6608' };
+  if (cat === 'Proveedor Abago') return { bg: '#eafaf1', color: '#1e8449' };
+  if (cat === 'Proveedor Sharda') return { bg: '#f4ecf7', color: '#6c3483' };
+  if (cat === 'Proveedor Disney C.') return { bg: '#fbeee6', color: '#a04000' };
+  return { bg: '#eaf2f8', color: '#1a5276' };
+}
 async function generarRemisionConsecutivo(empresa, tipo) {
   var res = await _sb.rpc('generar_remision', { p_empresa_nombre: empresa, p_tipo: tipo });
   if (res.error) throw new Error('Error generando remisión: ' + res.error.message);

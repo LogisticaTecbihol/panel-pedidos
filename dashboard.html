@@ -105,6 +105,34 @@
   .dash-filters input[type=date]:focus { border-color: #1a5276; }
 
   .dash-ts { font-size: 0.76rem; color: #718096; text-align: right; margin-top: -14px; margin-bottom: 14px; }
+
+  /* ── RANGE PRESETS ── */
+  .dash-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dash-presets .preset {
+    background: #f0f4f8; border: 1px solid #cbd5e0; color: #4a5568;
+    padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    font-size: 0.78rem; font-weight: 600; font-family: inherit; transition: all 0.15s;
+  }
+  .dash-presets .preset:hover { border-color: #1a5276; color: #1a5276; }
+  .dash-presets .preset.active { background: #1a5276; border-color: #1a5276; color: white; }
+
+  /* ── RANGE CHIP (encima de los KPI) ── */
+  .dash-range-chip {
+    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px;
+    background: #eaf2f8; color: #1a5276; border: 1px solid #d3e3f1;
+    padding: 6px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700;
+  }
+  .dash-range-chip .emp { color: #8e44ad; }
+
+  /* ── KPI DELTA (comparativo vs periodo anterior) ── */
+  .kpi .kpi-delta { font-size: 0.76rem; font-weight: 700; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+  .kpi .kpi-delta.up   { color: #27ae60; }
+  .kpi .kpi-delta.down { color: #e74c3c; }
+  .kpi .kpi-delta.flat { color: #a0aec0; }
+
+  /* ── CHART CANVAS ── */
+  .chart-wrap { position: relative; width: 100%; height: 260px; }
+  .chart-wrap.tall { height: 300px; }
 </style>
 </head>
 <body>
@@ -168,12 +196,53 @@
     <div class="fg"><label>Desde</label><input type="date" id="df-desde" title="Fecha del pedido — desde" style="width:150px"></div>
     <div class="fg"><label>Hasta</label><input type="date" id="df-hasta" title="Fecha del pedido — hasta" style="width:150px"></div>
     <button onclick="clearDashFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar</button>
+    <div class="fg" style="flex-basis:100%">
+      <label>Rango rápido</label>
+      <div class="dash-presets" id="df-presets">
+        <button class="preset" data-preset="mes">Este mes</button>
+        <button class="preset" data-preset="mes-1">Mes pasado</button>
+        <button class="preset" data-preset="30">Últimos 30</button>
+        <button class="preset" data-preset="90">Últimos 90</button>
+        <button class="preset" data-preset="anio">Este año</button>
+        <button class="preset" data-preset="todo">Todo</button>
+      </div>
+    </div>
   </div>
 
   <div class="dash-ts" id="dash-ts"></div>
 
+  <!-- Rango + empresa activos -->
+  <div id="dash-range-chip"></div>
+
   <!-- KPI ROW 1: Main numbers -->
   <div class="kpi-grid" id="kpi-main"></div>
+
+  <!-- KPI ROW 2: Pesos / comercial -->
+  <div class="kpi-grid" id="kpi-money"></div>
+
+  <!-- ROW: Tendencias -->
+  <div class="dash-row">
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>📈 Pedidos por mes</h4><div class="sub">órdenes y $ pedido</div></div>
+      <div class="dash-card-body"><div class="chart-wrap"><canvas id="cv-pedidos-mes"></canvas></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🚚 Entregas por mes</h4><div class="sub" id="entmes-sub"></div></div>
+      <div class="dash-card-body"><div class="chart-wrap"><canvas id="cv-entregas-mes"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- ROW: Ventas por categoría + departamento -->
+  <div class="dash-row">
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🏷️ Ventas por proveedor / categoría</h4><div class="sub" id="cat-sub"></div></div>
+      <div class="dash-card-body" id="chart-categorias"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🗺️ Ventas por departamento</h4><div class="sub">top 10 · $ pedido</div></div>
+      <div class="dash-card-body" id="chart-departamentos"></div>
+    </div>
+  </div>
 
   <!-- ROW: Tiempos de entrega -->
   <div class="dash-row">
@@ -230,7 +299,10 @@
   <div class="dash-row">
     <div class="dash-card">
       <div class="dash-card-head"><h4>🔄 Devoluciones</h4><div class="sub" id="dev-sub"></div></div>
-      <div class="dash-card-body" id="chart-devoluciones"></div>
+      <div class="dash-card-body">
+        <div class="chart-wrap" style="height:170px;margin-bottom:14px"><canvas id="cv-dev-mes"></canvas></div>
+        <div id="chart-devoluciones"></div>
+      </div>
     </div>
     <div class="dash-card">
       <div class="dash-card-head"><h4>💼 Top 10 comerciales por valor</h4><div class="sub" id="com-sub"></div></div>
@@ -256,15 +328,79 @@
     </div>
   </div>
 
+  <!-- ROW: Inventario físico -->
+  <div class="dash-row">
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🎯 Exactitud de inventario</h4><div class="sub" id="exac-sub"></div></div>
+      <div class="dash-card-body" id="chart-exactitud"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>📉 Top productos con descuadre</h4><div class="sub">último conteo físico</div></div>
+      <div class="dash-card-body" style="padding:0">
+        <table class="mini-table" id="tbl-descuadre">
+          <thead><tr><th>Producto</th><th>Empresa</th><th style="text-align:right">Físico</th><th style="text-align:right">Sistema</th><th style="text-align:right">Dif.</th></tr></thead>
+          <tbody id="tb-descuadre"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW: Cobertura de inventario -->
+  <div class="dash-row">
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>⏳ Cobertura de inventario</h4><div class="sub" id="cob-sub"></div></div>
+      <div class="dash-card-body" style="padding:0">
+        <table class="mini-table" id="tbl-cobertura">
+          <thead><tr><th>Producto</th><th style="text-align:right">Stock</th><th style="text-align:right">Salida/día</th><th style="text-align:right">Cobertura</th></tr></thead>
+          <tbody id="tb-cobertura"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🚨 Alertas de stock</h4><div class="sub" id="alertas-sub"></div></div>
+      <div class="dash-card-body" id="chart-alertas-stock"></div>
+    </div>
+  </div>
+
+  <!-- ROW: Compras + Otros módulos -->
+  <div class="dash-row">
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🛒 Órdenes de compra</h4><div class="sub" id="oc-sub"></div></div>
+      <div class="dash-card-body" id="chart-oc"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🔁 Cambios · 🧪 Muestras · 🏭 Salidas a producción</h4></div>
+      <div class="dash-card-body" id="chart-otros-modulos"></div>
+    </div>
+  </div>
+
+  <!-- ROW: Calidad de datos + Clientes nuevos -->
+  <div class="dash-row">
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🧹 Calidad de datos</h4><div class="sub">para revisar / corregir</div></div>
+      <div class="dash-card-body" id="chart-calidad"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>🆕 Clientes nuevos del período</h4><div class="sub" id="clinuevos-sub"></div></div>
+      <div class="dash-card-body" style="padding:0">
+        <table class="mini-table" id="tbl-clinuevos">
+          <thead><tr><th>Cliente</th><th>Alta</th><th style="text-align:right">Órdenes</th><th style="text-align:right">$ Pedido</th></tr></thead>
+          <tbody id="tb-clinuevos"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260902f"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script src="js/shared.js?v=20260904a"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260901c"></script>
-<script src="js/dashboard.js?v=20260831d"></script>
+<script src="js/dashboard.js?v=20260904a"></script>
 </body>
 </html>
