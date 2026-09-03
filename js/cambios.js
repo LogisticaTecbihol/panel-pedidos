@@ -1180,7 +1180,7 @@ function exportarCamSolicitudPDF(opts) {
     return false;
   }
 
-  var y = headerH + 5;
+  var y = headerH + 8;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   doc.setFontSize(8);
   var totalW = pw - 28;

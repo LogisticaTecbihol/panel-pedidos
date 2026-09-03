@@ -5237,7 +5237,7 @@ function generarPedidoPDF(data) {
       doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 10.5, { align: 'right' });
     }
 
-    var y = 18.5;
+    var y = 21;
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFontSize(7.5);
 
