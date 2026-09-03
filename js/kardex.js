@@ -2603,6 +2603,7 @@ function _groupByParcelarCategory(items) {
 // Regla ("ambos"): el nombre trae "100 ML"/"100ML" O algún movimiento del
 // producto lo registra en presentación de 100 ml/cc. Si el nombre marca
 // gramos/kilo nunca cuenta como 100 ml (aunque un registro suelto diga cc).
+// Los productos del proveedor Carval quedan excluidos de esta sección.
 var _pres100mlSet = {};
 
 function _rebuild100mlIndex() {
@@ -2617,6 +2618,7 @@ function _rebuild100mlIndex() {
 }
 
 function _es100ml(producto) {
+  if (_esCarval(producto)) return false;
   var n = String(producto || '').toUpperCase();
   if (/\b100\s*(GR|GRS|G|KG|KGS|KILO|KILOS)\b/.test(n)) return false;
   if (/(^|[^0-9])100\s*ML\b/.test(n)) return true;
