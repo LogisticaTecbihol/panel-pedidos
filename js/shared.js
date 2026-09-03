@@ -179,6 +179,23 @@ function _filterGerenteIaso(data, empresaCols) {
   });
 }
 
+// Trae TODAS las filas de una tabla, paginando de a 1000 (PostgREST/Supabase
+// corta ahí sin avisar). `build` (opcional) recibe el query builder para
+// añadirle filtros. Ordena por `id` para que la paginación sea estable.
+async function _fetchAllRows(table, cols, build) {
+  var all = [], from = 0, size = 1000;
+  while (true) {
+    var q = _sb.from(table).select(cols).order('id').range(from, from + size - 1);
+    if (build) q = build(q);
+    var res = await q;
+    if (res.error) return { error: res.error };
+    all = all.concat(res.data || []);
+    if (!res.data || res.data.length < size) break;
+    from += size;
+  }
+  return { data: all };
+}
+
 // ── Capa de compatibilidad: apiGet ──
 // opts.columns: string de columnas para select (default '*')
 async function apiGet(action, opts) {
@@ -202,37 +219,37 @@ async function apiGet(action, opts) {
       return { ok: true, consecutivos: res.data };
     }
     if (action === 'getIngresos') {
-      var qIng = _sb.from('Ingresos').select(cols).order('id');
       // Solo los ingresos ligados a una salida a producción (para la página
       // de Reenvases): usa el índice parcial idx_ingresos_reenvase_ref.
-      if (opts && opts.reenvaseRefOnly) qIng = qIng.neq('Reenvase_Ref', '');
-      var res = await qIng;
+      var res = await _fetchAllRows('Ingresos', cols, function(q) {
+        return (opts && opts.reenvaseRefOnly) ? q.neq('Reenvase_Ref', '') : q;
+      });
       if (res.error) return { ok: false, error: res.error.message };
       var ingData = _filterGerenteIaso(res.data, ['Empresa_Origen', 'Empresa_Destino']);
       return { ok: true, ingresos: _addRow(ingData) };
     }
     if (action === 'getDevoluciones') {
-      var res = await _sb.from('Devoluciones').select(cols).order('id');
+      var res = await _fetchAllRows('Devoluciones', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, devoluciones: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getCambios') {
-      var res = await _sb.from('CambiosMercancia').select(cols).order('id');
+      var res = await _fetchAllRows('CambiosMercancia', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, cambios: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getInventario') {
-      var res = await _sb.from('Inventario').select(cols).order('id');
+      var res = await _fetchAllRows('Inventario', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, inventario: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getOrdenesCompra') {
-      var res = await _sb.from('OrdenesCompra').select(cols).order('id');
+      var res = await _fetchAllRows('OrdenesCompra', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ordenes: _addRow(_filterGerenteIaso(res.data, ['Empresa_Origen', 'Empresa_Destino'])) };
     }
     if (action === 'getEntregasPedido') {
-      var res = await _sb.from('EntregasPedido').select(cols).order('id');
+      var res = await _fetchAllRows('EntregasPedido', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, entregas: _addRow(res.data) };
     }
@@ -285,33 +302,34 @@ async function apiGet(action, opts) {
       };
     }
     if (action === 'getMuestras') {
-      var res = await _sb.from('SolicitudMuestras').select(cols).order('id');
+      var res = await _fetchAllRows('SolicitudMuestras', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, muestras: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getReenvases') {
-      var qRe = _sb.from('Reenvases').select(cols).order('id');
-      // Trae solo una salida concreta (por su remisión) — para el flujo de
-      // "registrar retorno" desde el módulo de Ingresos.
-      if (opts && opts.remisionEq) qRe = qRe.eq('Remision', opts.remisionEq);
-      // Solo salidas no cerradas — para el selector de retornos en Ingresos.
-      if (opts && opts.abiertasOnly) qRe = qRe.neq('Estado', 'Cerrada');
-      var res = await qRe;
+      var res = await _fetchAllRows('Reenvases', cols, function(q) {
+        // Trae solo una salida concreta (por su remisión) — para el flujo de
+        // "registrar retorno" desde el módulo de Ingresos.
+        if (opts && opts.remisionEq) q = q.eq('Remision', opts.remisionEq);
+        // Solo salidas no cerradas — para el selector de retornos en Ingresos.
+        if (opts && opts.abiertasOnly) q = q.neq('Estado', 'Cerrada');
+        return q;
+      });
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, reenvases: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getKardexAjustes') {
-      var res = await _sb.from('KardexAjustes').select(cols).order('id');
+      var res = await _fetchAllRows('KardexAjustes', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ajustes: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getKardexNC') {
-      var res = await _sb.from('KardexNC').select(cols).order('id');
+      var res = await _fetchAllRows('KardexNC', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, ajustesNC: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
     if (action === 'getRemisionesAnuladas') {
-      var res = await _sb.from('RemisionesAnuladas').select(cols).order('id');
+      var res = await _fetchAllRows('RemisionesAnuladas', cols);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, remisionesAnuladas: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
