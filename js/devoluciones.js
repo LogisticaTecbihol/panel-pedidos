@@ -104,6 +104,7 @@ async function loadDevoluciones() {
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
+    if (typeof applyDeepLinkFilters === 'function') applyDeepLinkFilters();
     setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
     document.getElementById('hdr-status').textContent = '☁️ Supabase · ' + devoluciones.length + ' registros';
   } catch (err) {

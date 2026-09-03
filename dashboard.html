@@ -88,6 +88,10 @@
   }
   .mini-table td { padding: 7px 12px; border-bottom: 1px solid #edf2f7; }
   .mini-table tr:hover { background: #f7fafc; }
+  .mini-table tr[data-href] { cursor: pointer; }
+  .mini-table tr[data-href]:hover { background: #eaf2f8; }
+  .kpi[data-href] { cursor: pointer; }
+  .kpi[data-href]:hover { box-shadow: 0 4px 16px rgba(26,82,118,0.18); }
   .mini-table .money { text-align: right; font-variant-numeric: tabular-nums; }
 
   /* ── EMPRESA COLORS ── */
@@ -403,10 +407,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
-<script src="js/shared.js?v=20260904d"></script>
+<script src="js/shared.js?v=20260904e"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260901c"></script>
-<script src="js/dashboard.js?v=20260904c"></script>
+<script src="js/dashboard.js?v=20260904e"></script>
 </body>
 </html>

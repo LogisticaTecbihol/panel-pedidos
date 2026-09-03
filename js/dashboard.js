@@ -647,34 +647,49 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
 
   var p = prev || null;
 
+  var empQS = fEmp ? ('&empresa=' + encodeURIComponent(dGetSigla(fEmp))) : '';
+  var p = prev || null;
+
   var html = '';
   html += kpiCard('', totalOrdenes.toLocaleString('es-CO'), 'Total ordenes', abiertas + ' abiertas · ' + lineas.toLocaleString('es-CO') + ' lineas',
-    p && dDelta(totalOrdenes, p.ordenes, true));
+    p && dDelta(totalOrdenes, p.ordenes, true), 'pedidos.html' + (empQS ? '?' + empQS.slice(1) : ''));
   html += kpiCard('teal', tasaEntrega + '%', 'Tasa de entrega (a hoy)', udsEntregadas.toLocaleString('es-CO') + ' / ' + udsPedidas.toLocaleString('es-CO') + ' uds acumuladas',
     p && dDelta(tasaEntrega, p.tasaEntrega, true));
   html += kpiCard('green', avgDelivery + ' dias', 'Tiempo prom. entrega', deliveryDays.length + ' ordenes entregadas',
     p && dDelta(avgDelivery, p.avgDelivery, false));
   html += kpiCard('orange', avgDelay + ' dias', 'Antiguedad prom. de pendientes', delayDays.length + ' ordenes esperando');
-  html += kpiCard('red', devPendientes.toString(), 'Devoluciones pendientes', dev.length + ' total devoluciones');
-  html += kpiCard('purple', stk.disponible ? stk.productos.toLocaleString('es-CO') : '—', 'Productos en stock', stockSub);
+  html += kpiCard('red', devPendientes.toString(), 'Devoluciones pendientes', dev.length + ' total devoluciones',
+    null, 'devoluciones.html');
+  html += kpiCard('purple', stk.disponible ? stk.productos.toLocaleString('es-CO') : '—', 'Productos en stock', stockSub,
+    null, 'kardex.html');
 
   var ocOrds = dOrdenesCompraAgrupadas(oc);
   var ocAbiertas = ocOrds.filter(function(o) { return (o.estado || '') === 'Abierta'; }).length;
-  html += kpiCard('', ocAbiertas.toString(), 'OC abiertas', ocOrds.length + ' ordenes de compra total');
+  html += kpiCard('', ocAbiertas.toString(), 'OC abiertas', ocOrds.length + ' ordenes de compra total',
+    null, 'ordenes.html');
 
   document.getElementById('kpi-main').innerHTML = html;
 }
 
-function kpiCard(cls, val, lbl, sub, delta) {
+function kpiCard(cls, val, lbl, sub, delta, href) {
   var d = delta
     ? '<div class="kpi-delta ' + delta.cls + '">' + delta.arrow + ' ' + delta.txt +
       ' <span style="color:#a0aec0;font-weight:600">vs prev.</span></div>'
     : '';
-  return '<div class="kpi ' + cls + '">' +
+  var attrs = href
+    ? ' data-href="' + escHtml(href) + '" onclick="dGoto(this)" role="link" tabindex="0" style="cursor:pointer"'
+    : '';
+  return '<div class="kpi ' + cls + '"' + attrs + '>' +
     '<div class="kpi-val">' + val + '</div>' +
     '<div class="kpi-lbl">' + lbl + '</div>' +
     (sub ? '<div class="kpi-sub">' + sub + '</div>' : '') + d +
   '</div>';
+}
+
+// Navega a un módulo desde una tarjeta/fila del dashboard.
+function dGoto(el) {
+  var href = el && el.getAttribute('data-href');
+  if (href) location.href = href;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -831,7 +846,7 @@ function buildTopProductos(ped) {
 
   tbody.innerHTML = arr.map(function(r) {
     var avance = r.pedido > 0 ? Math.round(((r.pedido - r.pendiente) / r.pedido) * 100) : 0;
-    return '<tr>' +
+    return '<tr data-href="pedidos.html?prod=' + encodeURIComponent(r.producto) + '" onclick="dGoto(this)">' +
       '<td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.producto) + '</td>' +
       '<td class="money" style="color:#e74c3c;font-weight:700">' + r.pendiente.toLocaleString('es-CO') + '</td>' +
       '<td class="money">' + r.pedido.toLocaleString('es-CO') + '</td>' +
@@ -867,7 +882,7 @@ function buildTopClientes(orders) {
       var color = EMP_COLORS[s] || '#718096';
       return '<span class="sigla-badge" style="background:' + color + '20;color:' + color + '">' + escHtml(s) + '</span>';
     }).join(' ');
-    return '<tr>' +
+    return '<tr data-href="clientes.html?buscar=' + encodeURIComponent(r.cliente) + '" onclick="dGoto(this)">' +
       '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
       '<td class="money" style="font-weight:700;color:#2980b9">' + r.uds.toLocaleString('es-CO') + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
@@ -977,7 +992,7 @@ function buildTopComerciales(orders) {
   tbody.innerHTML = arr.map(function(r) {
     var pct = r.vPed > 0 ? Math.round((r.vEnt / r.vPed) * 100) : 0;
     var penColor = pct >= 75 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#e74c3c';
-    return '<tr>' +
+    return '<tr data-href="pedidos.html?buscar=' + encodeURIComponent(r.comercial) + '" onclick="dGoto(this)">' +
       '<td style="font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.comercial) + '">' + escHtml(r.comercial) + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
       '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.vPed) + '</td>' +
@@ -1196,7 +1211,7 @@ function buildTopDemora(orders) {
     var avance = r.pedido > 0 ? Math.round(((r.pedido - r.pendiente) / r.pedido) * 100) : 0;
     var color = r.dias > 60 ? '#e74c3c' : r.dias > 30 ? '#e67e22' : '#2980b9';
     var empColor = EMP_COLORS[r.empresa] || '#718096';
-    return '<tr>' +
+    return '<tr data-href="pedidos.html?buscar=' + encodeURIComponent(r.consecutivo) + '&empresa=' + encodeURIComponent(r.empresa) + '" onclick="dGoto(this)">' +
       '<td style="font-weight:600"><span class="sigla-badge" style="background:' + empColor + '20;color:' + empColor + ';font-size:0.68rem">' + escHtml(r.empresa) + '</span> ' + escHtml(r.consecutivo) + '</td>' +
       '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + color + '">' + r.dias + '</td>' +
@@ -1428,7 +1443,7 @@ function buildTopDescuadre(fEmp) {
   }
   tbody.innerHTML = rows.map(function(c) {
     var dif = Number(c.Diferencia) || 0;
-    return '<tr>' +
+    return '<tr data-href="inventario.html?buscar=' + encodeURIComponent(c.Producto || '') + '" onclick="dGoto(this)">' +
       '<td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(c.Producto || '') + '">' + escHtml(c.Producto || '') + '</td>' +
       '<td>' + escHtml(dGetSigla(c.Empresa)) + '</td>' +
       '<td class="money">' + (Number(c.Cantidad_Fisica) || 0).toLocaleString('es-CO') + '</td>' +
@@ -1725,7 +1740,7 @@ function buildClientesNuevos(fEmp, fDesde, fHasta) {
     return;
   }
   tbody.innerHTML = rows.slice(0, 12).map(function(r) {
-    return '<tr>' +
+    return '<tr data-href="clientes.html?buscar=' + encodeURIComponent(r.cliente) + '" onclick="dGoto(this)">' +
       '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.cliente) + '">' + escHtml(r.cliente) + '</td>' +
       '<td>' + (r.alta ? fmtDate(r.alta) : '—') + '</td>' +
       '<td class="money">' + r.ord + '</td>' +

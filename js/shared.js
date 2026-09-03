@@ -196,6 +196,55 @@ async function _fetchAllRows(table, cols, build) {
   return { data: all };
 }
 
+// Deep-links desde el Dashboard: si la URL trae ?buscar= / ?prod= / ?empresa= /
+// ?estado=, rellena los filtros de la página y limpia la URL. Los ids de filtro
+// no son homogéneos entre módulos, así que se prueban varios alias. Cada página
+// ignora los parámetros para inputs que no tenga. Llamar al final de la carga,
+// con la tabla ya pintada y los filtros poblados.
+function applyDeepLinkFilters() {
+  var p;
+  try { p = new URLSearchParams(location.search); } catch (e) { return; }
+  if (!p.get('buscar') && !p.get('prod') && !p.get('empresa') && !p.get('estado')) return;
+
+  function fire(el) {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function firstEl(ids) {
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (el) return el;
+    }
+    return null;
+  }
+  function setPlain(ids, val) {
+    if (val == null || val === '') return;
+    var el = firstEl(ids);
+    if (!el) return;
+    el.value = val;
+    fire(el);
+  }
+
+  var empresa = p.get('empresa');
+  if (empresa) {
+    var fe = firstEl(['f-emp', 'f-empresa', 'f-emp-dest']);
+    if (fe && fe.options) {
+      var target = empresa;
+      for (var i = 0; i < fe.options.length; i++) {
+        var v = fe.options[i].value;
+        if (v === empresa || getSigla(v) === empresa) { target = v; break; }
+      }
+      fe.value = target;
+      fire(fe);
+    }
+  }
+  setPlain(['f-prod'], p.get('prod'));
+  setPlain(['f-est2', 'f-estado', 'f-est'], p.get('estado'));
+  setPlain(['f-txt'], p.get('buscar'));
+
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+}
+
 // ── Capa de compatibilidad: apiGet ──
 // opts.columns: string de columnas para select (default '*')
 async function apiGet(action, opts) {
