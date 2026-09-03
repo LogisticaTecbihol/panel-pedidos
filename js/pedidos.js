@@ -1104,13 +1104,17 @@ function populateFilters() {
   }
 }
 
-// Ámbito de la vista de órdenes: 'activos' (Recibido/Parcial + Estado 2 Abierto) o 'historico' (el resto, solo consulta)
+// Ámbito de la vista de órdenes: 'activos' (Recibido/Parcial + Estado 2 Abierto o
+// Bloqueado por cartera) o 'historico' (el resto, solo consulta)
 var pedidoScope = 'activos';
 
 function esPedidoActivo(c) {
   var st = c._cStatus || 'Recibido';
   var e2 = c._cEstado2 || 'Abierto';
-  return e2 === 'Abierto' && (st === 'Recibido' || st === 'Parcial');
+  // Los pedidos frenados por cartera siguen siendo gestión activa: se quedan en
+  // "Activos" hasta que Cartera los libere o se cierren.
+  var enGestion = e2 === 'Abierto' || e2 === 'Bloqueado por cartera';
+  return enGestion && (st === 'Recibido' || st === 'Parcial');
 }
 
 function filtered() {
@@ -1240,8 +1244,9 @@ function renderTable() {
   var sRec = 0, sPar = 0, sEnt = 0;
   consecs.forEach(function(c) {
     var st = c._cStatus || 'Recibido', e2 = c._cEstado2 || 'Abierto';
-    if (st === 'Recibido' && e2 === 'Abierto') sRec++;
-    else if (st === 'Parcial' && e2 === 'Abierto') sPar++;
+    var enGestion = e2 === 'Abierto' || e2 === 'Bloqueado por cartera';
+    if (st === 'Recibido' && enGestion) sRec++;
+    else if (st === 'Parcial' && enGestion) sPar++;
     if (st === 'Entregado' || ((st === 'Recibido' || st === 'Parcial') && e2 === 'Cerrado')) sEnt++;
   });
   document.getElementById('s-rec').textContent = sRec;
