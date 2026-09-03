@@ -5202,42 +5202,43 @@ function generarPedidoPDF(data) {
   // (igual que en las remisiones). Devuelve el Y donde termina la rejilla.
   function drawPageTop() {
     doc.setFillColor(255, 255, 255);
-    doc.rect(0, 0, pw, 13.5, 'F');
+    doc.rect(0, 0, pw, 15.5, 'F');
     doc.setDrawColor(primary[0], primary[1], primary[2]);
     doc.setLineWidth(1.2);
-    doc.line(0, 13.5, pw, 13.5);
+    doc.line(0, 15.5, pw, 15.5);
 
     var logoP = _pdfHeaderLogoFor(data.empresa);
     var titleXP = 14;
     if (logoP) {
       try {
-        doc.addImage(logoP.data, 'PNG', 6, 1.5, 12, 12);
-        titleXP = 21;
+        var lbP = (typeof _pdfLogoBox === 'function') ? _pdfLogoBox(logoP, 20, 11) : { w: 11, h: 11 };
+        doc.addImage(logoP.data, 'PNG', 6, 2, lbP.w, lbP.h);
+        titleXP = 6 + lbP.w + 3;
       } catch (e) {}
     }
 
     doc.setTextColor(primary[0], primary[1], primary[2]);
     doc.setFontSize(11.5);
     doc.setFont(undefined, 'bold');
-    doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 6.3);
+    doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 6.8);
     doc.setFontSize(6.8);
-    doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 6.3, { align: 'right' });
+    doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 6.8, { align: 'right' });
 
     doc.setFontSize(7);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     var empresaFit = doc.splitTextToSize(String(data.empresa || ''), (pw - 60) - titleXP);
-    doc.text(empresaFit[0] + (empresaFit.length > 1 ? '…' : ''), titleXP, 10.5);
+    doc.text(empresaFit[0] + (empresaFit.length > 1 ? '…' : ''), titleXP, 11.4);
 
     if (data.archivo) {
       doc.setFontSize(5);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(grayText[0], grayText[1], grayText[2]);
       var archivoFit = doc.splitTextToSize(String(data.archivo), 44);
-      doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 10.5, { align: 'right' });
+      doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 11.4, { align: 'right' });
     }
 
-    var y = 21;
+    var y = 23;
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFontSize(7.5);
 

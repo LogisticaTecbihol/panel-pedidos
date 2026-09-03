@@ -26,6 +26,15 @@ function _pdfHeaderLogoFor(empresa) {
   return _pdfLogos[String(sigla).toUpperCase()] || null;
 }
 
+// Dimensiones {w,h} para dibujar un logo dentro de un recuadro maxW×maxH
+// conservando su proporción (los logos anchos tipo RESO no se aplastan).
+function _pdfLogoBox(logo, maxW, maxH) {
+  var w = (logo && logo.w) || 1;
+  var h = (logo && logo.h) || 1;
+  var s = Math.min(maxW / w, maxH / h);
+  return { w: w * s, h: h * s };
+}
+
 // ── Tamaño de página de TODOS los PDF del panel ──
 // Media carta horizontal (apaisada): 8.5" × 5.5" = 215.9 × 139.7 mm.
 // Todo generador que cree un documento nuevo debe usar _nuevoPdfDoc()
@@ -200,8 +209,9 @@ function _drawRemisionCopy(doc, data, palette) {
     var titleX = 14;
     if (logo) {
       try {
-        doc.addImage(logo.data, 'PNG', 6, 2, 13, 13);
-        titleX = 22;
+        var lb = _pdfLogoBox(logo, 22, 12);
+        doc.addImage(logo.data, 'PNG', 6, 2, lb.w, lb.h);
+        titleX = 6 + lb.w + 3;
       } catch (e) {}
     }
 

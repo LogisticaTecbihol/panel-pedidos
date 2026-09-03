@@ -1126,8 +1126,9 @@ function exportarCamSolicitudPDF(opts) {
   var titleX = 14;
   if (logo) {
     try {
-      doc.addImage(logo.data, 'PNG', 6, 2, 13, 13);
-      titleX = 22;
+      var lb = (typeof _pdfLogoBox === 'function') ? _pdfLogoBox(logo, 22, 12) : { w: 13, h: 13 };
+      doc.addImage(logo.data, 'PNG', 6, 2, lb.w, lb.h);
+      titleX = 6 + lb.w + 3;
     } catch (e) {}
   }
 
