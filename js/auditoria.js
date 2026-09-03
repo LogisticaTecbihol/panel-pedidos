@@ -38,7 +38,7 @@ async function loadAudit() {
     applyFilters();
 
     loadZone.style.display = 'none';
-    main.style.display = '';
+    main.style.display = 'block';
     setSyncStatus('ok', 'Conectado a la nube. ' + auditData.length + ' registros cargados.');
   } catch (err) {
     setSyncStatus('error', 'Error: ' + err.message);
