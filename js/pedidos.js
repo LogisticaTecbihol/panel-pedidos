@@ -5167,6 +5167,7 @@ function exportarPedidoDesdeModal(opts) {
 function generarPedidoPDF(data) {
   var doc = data._doc || _nuevoPdfDoc();
   if (data._doc) doc.addPage();
+  var startPage = doc.internal.getNumberOfPages();
   var pw = doc.internal.pageSize.getWidth();
   var ph = doc.internal.pageSize.getHeight();
 
@@ -5368,11 +5369,25 @@ function generarPedidoPDF(data) {
   doc.setFont(undefined, 'bold');
   doc.text('Total: ' + fmtMoney(data.total), pw - 16, finalY + 2, { align: 'right' });
 
-  finalY += 10;
-  doc.setFontSize(5.5);
-  doc.setTextColor(grayText[0], grayText[1], grayText[2]);
-  doc.setFont(undefined, 'normal');
-  doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, finalY);
+  // Pie de página con numeración (por sección, igual que las remisiones).
+  var endPage = doc.internal.getNumberOfPages();
+  var totalPg = endPage - startPage + 1;
+  var genStamp = new Date().toLocaleString('es-CO');
+  for (var pp = startPage; pp <= endPage; pp++) {
+    doc.setPage(pp);
+    doc.setFontSize(5.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(grayText[0], grayText[1], grayText[2]);
+    doc.text('Generado: ' + genStamp, 14, ph - 3.5);
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(primary[0], primary[1], primary[2]);
+    doc.text('PEDIDO #' + String(data.consecutivo || ''), pw / 2, ph - 3.5, { align: 'center' });
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(5.5);
+    doc.setTextColor(grayText[0], grayText[1], grayText[2]);
+    doc.text('Pagina ' + (pp - startPage + 1) + ' de ' + totalPg, pw - 14, ph - 3.5, { align: 'right' });
+  }
 
   var sigla = getSigla(data.empresa) || 'Pedido';
   var fileName = 'Pedido_' + sigla + '_' + (data.consecutivo || 'nuevo') + '.pdf';
