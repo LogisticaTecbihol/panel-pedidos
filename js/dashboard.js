@@ -657,7 +657,10 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
   html += kpiCard('orange', avgDelay + ' dias', 'Antiguedad prom. de pendientes', delayDays.length + ' ordenes esperando');
   html += kpiCard('red', devPendientes.toString(), 'Devoluciones pendientes', dev.length + ' total devoluciones');
   html += kpiCard('purple', stk.disponible ? stk.productos.toLocaleString('es-CO') : '—', 'Productos en stock', stockSub);
-  html += kpiCard('', oc.filter(function(o) { return (o.Estado || '') === 'Abierta'; }).length.toString(), 'OC abiertas', oc.length + ' ordenes de compra total');
+
+  var ocOrds = dOrdenesCompraAgrupadas(oc);
+  var ocAbiertas = ocOrds.filter(function(o) { return (o.estado || '') === 'Abierta'; }).length;
+  html += kpiCard('', ocAbiertas.toString(), 'OC abiertas', ocOrds.length + ' ordenes de compra total');
 
   document.getElementById('kpi-main').innerHTML = html;
 }
@@ -1042,6 +1045,7 @@ function buildInventario(ped, fEmp) {
 // ── 9. Resumen Modulos ──
 function buildResumenModulos(orders, dev, ing, oc, mue, ree, cam, fEmp) {
   var stk = dStockTotals(fEmp);
+  var _ocOrds = dOrdenesCompraAgrupadas(oc);
 
   var modules = [
     { icon: '📋', name: 'Pedidos', count: orders.length, detail: orders.reduce(function(s, o) { return s + o.lines.length; }, 0) + ' lineas' },
@@ -1049,7 +1053,7 @@ function buildResumenModulos(orders, dev, ing, oc, mue, ree, cam, fEmp) {
     { icon: '🔁', name: 'Cambios', count: cam.length, detail: cam.filter(function(c) { return (c.Estado || '') !== 'Cerrado'; }).length + ' sin cerrar' },
     { icon: '📥', name: 'Ingresos', count: ing.length, detail: ing.reduce(function(s, i) { return s + (Number(i.Cantidad) || 0); }, 0).toLocaleString('es-CO') + ' uds' },
     { icon: '📦', name: 'Inventario', count: stk.disponible ? stk.productos : '—', detail: stk.disponible ? stk.uds.toLocaleString('es-CO') + ' uds en stock' : 'sin snapshot' },
-    { icon: '🛒', name: 'Ordenes Compra', count: oc.length, detail: oc.filter(function(o) { return o.Estado === 'Abierta'; }).length + ' abiertas' },
+    { icon: '🛒', name: 'Ordenes Compra', count: _ocOrds.length, detail: _ocOrds.filter(function(o) { return o.estado === 'Abierta'; }).length + ' abiertas' },
     { icon: '🧪', name: 'Muestras', count: mue.length, detail: mue.filter(function(m) { return (m.Estado || '') === 'Pendiente'; }).length + ' pendientes' },
     { icon: '🏭', name: 'Salidas prod.', count: ree.length, detail: ree.reduce(function(s, r) { return s + (Number(r.Cantidad) || 0); }, 0).toLocaleString('es-CO') + ' uds' },
   ];
@@ -1546,19 +1550,28 @@ function buildAlertasStock(ped, ent, fEmp) {
   el.innerHTML = html;
 }
 
+// Agrupa las líneas de OrdenesCompra en órdenes: 1 por (origen, destino,
+// consecutivo). Lo usan la KPI "OC abiertas", el Resumen de módulos y la
+// tarjeta de OC — todos cuentan órdenes, no líneas.
+function dOrdenesCompraAgrupadas(oc) {
+  var map = {};
+  oc.forEach(function(o) {
+    var key = (o.Empresa_Origen || '') + '|' + (o.Empresa_Destino || '') + '|' + (o.Consecutivo || o.id || '');
+    var m = map[key] || (map[key] = {
+      estado: o.Estado, aprob: o.Estado_Aprobacion, valor: 0,
+      creado: o.creado_en, aprobFecha: o.Fecha_Aprobacion, tipo: o.Tipo
+    });
+    m.valor += Number(o.Valor_Total) || (Number(o.Total_Orden) || 0);
+  });
+  return Object.keys(map).map(function(k) { return map[k]; });
+}
+
 // ── Órdenes de compra ──
 function buildOrdenesCompra(oc) {
   var el = document.getElementById('chart-oc');
   var subEl = document.getElementById('oc-sub');
 
-  // 1 fila por (empresa origen+destino, consecutivo) para no contar líneas.
-  var ordMap = {};
-  oc.forEach(function(o) {
-    var key = (o.Empresa_Origen || '') + '|' + (o.Empresa_Destino || '') + '|' + (o.Consecutivo || o.id);
-    var m = ordMap[key] || (ordMap[key] = { estado: o.Estado, aprob: o.Estado_Aprobacion, valor: 0, creado: o.creado_en, aprobFecha: o.Fecha_Aprobacion, tipo: o.Tipo });
-    m.valor += Number(o.Valor_Total) || (Number(o.Total_Orden) || 0);
-  });
-  var ords = Object.keys(ordMap).map(function(k) { return ordMap[k]; });
+  var ords = dOrdenesCompraAgrupadas(oc);
 
   var abiertas = ords.filter(function(o) { return (o.estado || '') === 'Abierta'; });
   var porAprobar = ords.filter(function(o) { return (o.aprob || '') === 'Por aprobar'; });
