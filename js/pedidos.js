@@ -5176,47 +5176,47 @@ function generarPedidoPDF(data) {
   var grayText = [113, 128, 150];
 
   doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, pw, 20, 'F');
+  doc.rect(0, 0, pw, 13.5, 'F');
   doc.setDrawColor(primary[0], primary[1], primary[2]);
   doc.setLineWidth(1.2);
-  doc.line(0, 20, pw, 20);
+  doc.line(0, 13.5, pw, 13.5);
 
   var logoP = _pdfHeaderLogoFor(data.empresa);
   var titleXP = 14;
   if (logoP) {
     try {
-      doc.addImage(logoP.data, 'PNG', 6, 3, 16, 16);
-      titleXP = 26;
+      doc.addImage(logoP.data, 'PNG', 6, 1.5, 12, 12);
+      titleXP = 21;
     } catch (e) {}
   }
 
   doc.setTextColor(primary[0], primary[1], primary[2]);
-  doc.setFontSize(13);
+  doc.setFontSize(11.5);
   doc.setFont(undefined, 'bold');
-  doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 9);
-  doc.setFontSize(7.5);
-  doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 9, { align: 'right' });
+  doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 6.3);
+  doc.setFontSize(6.8);
+  doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 6.3, { align: 'right' });
 
-  doc.setFontSize(8);
+  doc.setFontSize(7);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   var empresaText = String(data.empresa || '');
-  var empresaMaxW = (pw - 14) - titleXP;
+  var empresaMaxW = (pw - 60) - titleXP;
   var empresaFit = doc.splitTextToSize(empresaText, empresaMaxW);
   var empresaOneLine = empresaFit[0] + (empresaFit.length > 1 ? '…' : '');
-  doc.text(empresaOneLine, titleXP, 15);
+  doc.text(empresaOneLine, titleXP, 10.5);
 
   if (data.archivo) {
-    doc.setFontSize(5.5);
+    doc.setFontSize(5);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(grayText[0], grayText[1], grayText[2]);
     var archivoText = String(data.archivo);
-    var archivoMaxW = pw - 14 - titleXP;
+    var archivoMaxW = 44;
     var archivoFit = doc.splitTextToSize(archivoText, archivoMaxW);
-    doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 18, { align: 'right' });
+    doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 10.5, { align: 'right' });
   }
 
-  var y = 24;
+  var y = 18.5;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   doc.setFontSize(7.5);
 

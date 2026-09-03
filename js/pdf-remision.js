@@ -166,7 +166,7 @@ function _drawRemisionCopy(doc, data, palette) {
   var grayText = [113, 128, 150];
 
   var headerInfo = _pdfRemisionHeaderInfoFor(data.empresa);
-  var headerH = headerInfo ? 33 : 18;
+  var headerH = headerInfo ? 23.5 : 12.5;
   var refLabel = (data.ref_label != null) ? data.ref_label : 'Pedido';
   var docTitle = data.doc_title || 'REMISION';
   var docNumber = (data.doc_number != null && data.doc_number !== '') ? String(data.doc_number) : (data.remision ? String(data.remision) : '');
@@ -200,45 +200,45 @@ function _drawRemisionCopy(doc, data, palette) {
     var titleX = 14;
     if (logo) {
       try {
-        doc.addImage(logo.data, 'PNG', 6, 3, 16, 16);
-        titleX = 26;
+        doc.addImage(logo.data, 'PNG', 6, 2, 13, 13);
+        titleX = 22;
       } catch (e) {}
     }
 
-    doc.setFontSize(13);
+    doc.setFontSize(11.5);
     doc.setFont(undefined, 'bold');
     if (docNumber) {
       doc.setTextColor(accent[0], accent[1], accent[2]);
       var titlePart = docTitle + '  N° ';
-      doc.text(titlePart, titleX, 9);
+      doc.text(titlePart, titleX, 6.3);
       var titlePartW = doc.getTextWidth(titlePart);
       doc.setTextColor(200, 30, 30);
-      doc.text(docNumber, titleX + titlePartW, 9);
+      doc.text(docNumber, titleX + titlePartW, 6.3);
     } else {
       doc.setTextColor(accent[0], accent[1], accent[2]);
-      doc.text(docTitle, titleX, 9);
+      doc.text(docTitle, titleX, 6.3);
     }
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.text(String(data.empresa || ''), titleX, 15);
-    doc.setFontSize(7.5);
+    doc.text(String(data.empresa || ''), titleX, 10.3);
+    doc.setFontSize(6.8);
     doc.setTextColor(accent[0], accent[1], accent[2]);
     doc.setFont(undefined, 'bold');
     if (refLabel && data.consecutivo) {
-      doc.text(refLabel + ' #' + String(data.consecutivo), pw - 14, 9, { align: 'right' });
+      doc.text(refLabel + ' #' + String(data.consecutivo), pw - 14, 6.3, { align: 'right' });
     }
     if (data.fecha_entrega) {
-      doc.text(dateLabel + ': ' + String(data.fecha_entrega), pw - 14, 15, { align: 'right' });
+      doc.text(dateLabel + ': ' + String(data.fecha_entrega), pw - 14, 10.3, { align: 'right' });
     }
     doc.setFont(undefined, 'normal');
 
     if (headerInfo) {
-      doc.setFontSize(5.5);
+      doc.setFontSize(4.7);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(120, 132, 150);
-      var infoStartY = 19;
-      var infoLineH = 2.7;
+      var infoStartY = 12.9;
+      var infoLineH = 2.05;
       headerInfo.forEach(function(line, i) {
         var bold = i === 0;
         if (bold) doc.setFont(undefined, 'bold');
@@ -247,7 +247,7 @@ function _drawRemisionCopy(doc, data, palette) {
       });
     }
 
-    var y = headerH + 7;
+    var y = headerH + 5.5;
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFontSize(8);
 
