@@ -384,6 +384,7 @@ async function loadClientes() {
     document.getElementById('main').style.display = 'block';
     populateFilters();
     renderTable();
+    if (typeof applyDeepLinkFilters === 'function') applyDeepLinkFilters();
     setSyncStatus('ok', 'Conectado a la nube. Los cambios se guardan automáticamente.');
   } catch (err) {
     document.getElementById('load-error').textContent = err.message;
