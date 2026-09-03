@@ -340,6 +340,11 @@ function _drawRemisionCopy(doc, data, palette) {
     ? { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 60 }, 2: { halign: 'center', cellWidth: 32 }, 3: { halign: 'center', cellWidth: 28 }, 4: { cellWidth: 52 } }
     : { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 82 }, 2: { halign: 'center', cellWidth: 40 }, 3: { halign: 'center', cellWidth: 32 }, 4: { halign: 'center', cellWidth: 18 } };
 
+  // Con firmas reservamos ~28 mm al pie de CADA página: así la tabla nunca
+  // invade la zona de firmas y la última página siempre lleva al menos una
+  // fila de producto encima del bloque de firmas (nunca firmas "solas").
+  var bottomReserve = data.hide_signatures ? 11 : 28;
+
   doc.autoTable({
     startY: pageTopY,
     head: [['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada', lastColHeader]],
@@ -348,7 +353,7 @@ function _drawRemisionCopy(doc, data, palette) {
     headStyles: { fillColor: accent, fontSize: 7, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.2 },
     bodyStyles: { fontSize: 7, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: colStyles,
-    margin: { top: pageTopY, left: 14, right: 14, bottom: 11 },
+    margin: { top: pageTopY, left: 14, right: 14, bottom: bottomReserve },
     styles: { cellPadding: 1.2, lineColor: [90, 90, 90], lineWidth: 0.3 },
     tableLineColor: [60, 60, 60],
     tableLineWidth: 0.5,
@@ -359,22 +364,23 @@ function _drawRemisionCopy(doc, data, palette) {
 
   if (data.hide_signatures) return;
 
-  var finalY = doc.lastAutoTable.finalY + 5;
-  var sigTop = finalY + 6;
-  var minSigTop = ph - 30;
-  if (sigTop < minSigTop) sigTop = minSigTop;
-  if (sigTop > ph - 21) {
+  // Firmas: pegadas a la tabla, pero nunca más arriba de ph-24 (en documentos
+  // cortos bajan al pie). La reserva de arriba garantiza que quepan.
+  var sigTop = Math.max(doc.lastAutoTable.finalY + 4, ph - 24);
+  // Salvaguarda: si aún no cabe el bloque de firmas, pásalo a una página
+  // nueva que REPITE encabezado + datos del cliente (nunca firmas solas).
+  if (sigTop + 17 > ph - 3) {
     doc.addPage();
     var newTop = drawPageTop();
-    sigTop = Math.max(newTop + 6, ph - 30);
+    sigTop = Math.max(newTop + 4, ph - 24);
   }
 
   var sigGap = 5;
   var sigCount = 4;
   var sigW = (pw - 28 - sigGap * (sigCount - 1)) / sigCount;
-  var lineY = sigTop + 9;
-  var labelY = lineY + 3;
-  var subY = labelY + 2.8;
+  var lineY = sigTop + 7;
+  var labelY = lineY + 2.8;
+  var subY = labelY + 2.6;
   var cols = [
     { x: 14, label: 'Emitido por', sub: 'Nombre y firma' },
     { x: 14 + (sigW + sigGap), label: 'Despachado / Conductor', sub: 'Nombre y firma' },
@@ -398,7 +404,7 @@ function _drawRemisionCopy(doc, data, palette) {
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   });
   var recCol = cols[cols.length - 1];
-  var fechaRecY = subY + 4;
+  var fechaRecY = subY + 3.6;
   var fechaLabelX = recCol.x + 2;
   var fechaLineX1 = fechaLabelX + 24;
   var fechaLineX2 = recCol.x + sigW - 2;
