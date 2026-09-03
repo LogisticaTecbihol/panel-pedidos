@@ -82,7 +82,7 @@ function updateStats() {
   var admins = 0, editors = 0, readers = 0;
   usrList.forEach(function(u) {
     if (u.rol === 'admin') admins++;
-    else if (u.rol === 'editor' || u.rol === 'contabilidad' || u.rol === 'gerente_iaso') editors++;
+    else if (u.rol === 'editor' || u.rol === 'contabilidad' || u.rol === 'gerente_iaso' || u.rol === 'cartera') editors++;
     else readers++;
   });
   document.getElementById('s-total').textContent = total;
@@ -106,6 +106,7 @@ function renderUsuariosTable() {
     editor: '<span style="background:#27ae60;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Editor</span>',
     contabilidad: '<span style="background:#8e44ad;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Contabilidad</span>',
     gerente_iaso: '<span style="background:#1a5276;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Gerente IASO</span>',
+    cartera: '<span style="background:#e65100;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Cartera</span>',
     lector: '<span style="background:#f39c12;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Lector</span>'
   };
 

@@ -254,6 +254,19 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'despachador';
   }
 
+  // Rol 'cartera': CRUD de Clientes, solo lectura de Pedidos, todas las empresas.
+  function isCartera() {
+    return _profile && _profile.rol === 'cartera';
+  }
+
+  // Quién puede poner/quitar el estado "Bloqueado por cartera"
+  // (Pedidos.Estado_2 y ClientesUnicos.Estado). El backend lo hace cumplir
+  // con dos triggers + la RPC set_bloqueo_cartera_pedido.
+  function canToggleBloqueoCartera() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'cartera';
+  }
+
   function canUploadAdjuntos() {
     if (!_profile) return false;
     return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial' || _profile.rol === 'despachador' || _profile.rol === 'remisionador';
@@ -281,7 +294,7 @@ var AUTH = (function() {
 
   function hasCompany(nombre) {
     if (!_profile) return false;
-    if (_profile.rol === 'admin') return true;
+    if (_profile.rol === 'admin' || _profile.rol === 'cartera') return true;
     var n = (nombre || '').trim();
     for (var i = 0; i < _companies.length; i++) {
       if (_companies[i].nombre === n || _companies[i].sigla === n) return true;
@@ -355,6 +368,8 @@ var AUTH = (function() {
     isComercial: isComercial,
     isGerenteIaso: isGerenteIaso,
     isDespachador: isDespachador,
+    isCartera: isCartera,
+    canToggleBloqueoCartera: canToggleBloqueoCartera,
     canUploadAdjuntos: canUploadAdjuntos,
     hasCompany: hasCompany,
     getCompanies: getCompanies,

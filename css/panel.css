@@ -638,6 +638,7 @@ thead th:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' \2195'; c
 .auth-role-despachador { background: rgba(230,126,34,0.35); color: #fdebd0; }
 .auth-role-contabilidad { background: rgba(142,68,173,0.35); color: #e8daef; }
 .auth-role-gerente_iaso { background: rgba(26,82,118,0.45); color: #d6eaf8; }
+.auth-role-cartera { background: rgba(230,81,0,0.45); color: #ffe0b2; }
 .btn-logout {
   background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3);
   padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 0.78rem;

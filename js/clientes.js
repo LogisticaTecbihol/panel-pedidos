@@ -159,6 +159,32 @@ function _estadoNorm(e) {
   return _EST_RANK[e] !== undefined ? e : 'Activo';
 }
 
+// "Bloqueado por cartera" solo lo pueden poner/quitar admin, editor y el rol
+// cartera (el backend lo hace cumplir con un trigger en ClientesUnicos).
+// Para el resto de roles con escritura (contabilidad, gerente_iaso, remisionador)
+// se quita la opción; si el cliente ya está bloqueado se deshabilita el <select>.
+function _gateEstadoClienteSelect(actual) {
+  var sel = document.getElementById('ed-estado');
+  if (!sel) return;
+  var puede = (typeof AUTH !== 'undefined' && AUTH.canToggleBloqueoCartera)
+    ? AUTH.canToggleBloqueoCartera() : true;
+  var opt = sel.querySelector('option[value="Bloqueado por cartera"]');
+  var hint = document.getElementById('ed-estado-hint');
+  if (puede) {
+    if (opt) { opt.hidden = false; opt.disabled = false; }
+    sel.disabled = false;
+    return;
+  }
+  if (actual === 'Bloqueado por cartera') {
+    if (opt) { opt.hidden = false; opt.disabled = false; }
+    sel.disabled = true;
+    if (hint) hint.textContent = 'Solo Cartera o Administración pueden cambiar este estado.';
+  } else {
+    if (opt) { opt.hidden = true; opt.disabled = true; }
+    sel.disabled = false;
+  }
+}
+
 // Estado unificado de un grupo (mismo NIT). Si difieren, devuelve el más
 // restrictivo y marca mixto:true.
 function _grupoEstado(g) {
@@ -337,6 +363,13 @@ async function loadClientes() {
   document.getElementById('main').style.display = 'none';
   try {
     await _authReady;
+    // El rol 'cartera' tiene escritura en Clientes pero NO está en AUTH.canEdit(),
+    // así que _renderAuthUI() ocultó los controles .auth-edit-only. Se re-muestran.
+    if (typeof AUTH !== 'undefined' && AUTH.isCartera && AUTH.isCartera()) {
+      document.querySelectorAll('.auth-edit-only').forEach(function(el) {
+        el.style.display = el.dataset.display || '';
+      });
+    }
     var _r = await Promise.all([
       apiGet('getClientesAll'),
       apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Plazo_Pago' })
@@ -506,8 +539,10 @@ function renderTable() {
 
   document.getElementById('row-ct').textContent = '(' + filtered.length + ' clientes)';
 
-  var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
-  var canDel = (typeof AUTH !== 'undefined' && AUTH.canDelete) ? AUTH.canDelete() : false;
+  var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit)
+    ? (AUTH.canEdit() || (AUTH.isCartera && AUTH.isCartera())) : true;
+  var canDel = (typeof AUTH !== 'undefined' && AUTH.canDelete)
+    ? (AUTH.canDelete() || (AUTH.isCartera && AUTH.isCartera())) : false;
   var tbody = document.getElementById('t-body');
 
   tbody.innerHTML = pageGroups.map(function(g, i) {
@@ -785,6 +820,7 @@ function _clearForm() {
   document.getElementById('ed-lista-precio').value = '';
   document.getElementById('ed-estado').value = 'Activo';
   document.getElementById('ed-estado-hint').textContent = '';
+  _gateEstadoClienteSelect('Activo');
 }
 
 function openNuevoCliente() {
@@ -822,6 +858,7 @@ function openEditCliente(id) {
   document.getElementById('ed-estado-hint').textContent = _sibs.length > 1
     ? 'El estado se aplica a los ' + _sibs.length + ' registros de este NIT.'
     : '';
+  _gateEstadoClienteSelect(_estadoNorm(c.Estado));
   document.getElementById('edit-overlay').style.display = 'flex';
 }
 

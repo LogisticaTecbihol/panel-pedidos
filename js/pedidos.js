@@ -949,6 +949,50 @@ function derivedEstado2(lines) {
   return 'Abierto';
 }
 
+// El estado "Bloqueado por cartera" se gestiona SOLO con el botón 🔒/🔓 (que
+// llama a la RPC set_bloqueo_cartera_pedido). En los <select> de Estado 2 de los
+// modales se quita como opción seleccionable; si el pedido ya está bloqueado el
+// <select> se deshabilita (la opción sigue en el DOM para que .value sea correcto
+// al guardar otros campos).
+function _gateEstado2Select(sel, actual) {
+  if (!sel) return;
+  var opt = sel.querySelector('option[value="Bloqueado por cartera"]');
+  if (actual === 'Bloqueado por cartera') {
+    if (opt) { opt.hidden = false; opt.disabled = false; }
+    sel.disabled = true;
+    sel.title = 'El bloqueo por cartera se gestiona con el botón 🔒/🔓 de la lista de pedidos';
+  } else {
+    if (opt) { opt.hidden = true; opt.disabled = true; }
+    sel.disabled = false;
+    sel.title = '';
+  }
+}
+
+// Bloquear / liberar un pedido por cartera (botón de la columna Acción).
+async function toggleBloqueoCartera(idx) {
+  var c = consecs[idx];
+  if (!c) return;
+  var bloqueado = (c._cEstado2 || 'Abierto') === 'Bloqueado por cartera';
+  var bloquear = !bloqueado;
+  var msg = bloquear
+    ? '¿Marcar el pedido #' + c.Consecutivo + ' (' + (c.Cliente || '') + ') como BLOQUEADO por cartera?\n\nMientras esté bloqueado no se podrá registrar entrega de producto.'
+    : '¿LIBERAR el pedido #' + c.Consecutivo + ' (' + (c.Cliente || '') + ') del bloqueo por cartera?\n\nQuedará en estado "Abierto".';
+  if (!confirm(msg)) return;
+  try {
+    var r = await apiPost({
+      action: 'setBloqueoCartera',
+      empresa: c.Nombre_Empresa,
+      consecutivo: c.Consecutivo,
+      bloquear: bloquear
+    });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al actualizar');
+    showToast(bloquear ? '🔒 Pedido bloqueado por cartera' : '🔓 Pedido liberado de cartera');
+    await loadFromAPI();
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
+  }
+}
+
 function derivedPct(lines) {
   var totPed = lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
   var totEnt = lines.reduce(function(s, l) { return s + (Number(l.Cant_Entregada)||0); }, 0);
@@ -1344,6 +1388,11 @@ function renderTable() {
         '</button>' +
         (AUTH.canEdit() && pedidoScope === 'activos' ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' : '') +
         (AUTH.canDelete() && pedidoScope === 'activos' ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
+        (AUTH.canToggleBloqueoCartera() && (pedidoScope === 'activos' || bloqCartera) && est2 !== 'Anulado'
+          ? '<button onclick="toggleBloqueoCartera(' + idx + ')" title="' + (bloqCartera ? 'Liberar el pedido del bloqueo por cartera' : 'Bloquear el pedido por cartera') + '" '
+            + 'style="border:1px solid ' + (bloqCartera ? '#16a34a' : '#dc2626') + ';background:' + (bloqCartera ? '#f0fdf4' : '#fef2f2') + ';color:' + (bloqCartera ? '#15803d' : '#b91c1c') + ';border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.78rem;font-weight:700;white-space:nowrap">'
+            + (bloqCartera ? '🔓 Liberar' : '🔒 Cartera') + '</button>'
+          : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -1405,6 +1454,7 @@ async function openDetail(idx) {
   document.getElementById('md-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('md', c.Nombre_Empresa);
   document.getElementById('md-estado2').value = derivedEstado2(lines);
+  _gateEstado2Select(document.getElementById('md-estado2'), derivedEstado2(lines));
 
   // Pedido bloqueado por cartera: se avisa en un banner y NO se permite
   // registrar entrega de producto (se ocultan la barra de entrega y los
@@ -1429,6 +1479,9 @@ async function openDetail(idx) {
   var _chkPR = document.getElementById('m-remision-auto'); if (_chkPR) _chkPR.checked = true;
   document.getElementById('btn-confirmar').disabled = false;
   document.getElementById('btn-confirmar').textContent = '✓ Guardar cambios y enviar';
+  // El rol 'cartera' es de solo lectura sobre Pedidos: no puede guardar.
+  document.getElementById('btn-confirmar').style.display =
+    (AUTH.isCartera && AUTH.isCartera()) ? 'none' : '';
 
   detailWorkingLines = lines.map(function(l) {
     var copy = Object.assign({}, l);
@@ -2767,6 +2820,7 @@ async function openEdit(idx) {
   document.getElementById('ed-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('ed', c.Nombre_Empresa);
   document.getElementById('ed-estado2').value = derivedEstado2(getLinesFor(c));
+  _gateEstado2Select(document.getElementById('ed-estado2'), derivedEstado2(getLinesFor(c)));
   document.getElementById('btn-saveEdit').disabled = false;
   document.getElementById('btn-saveEdit').textContent = '✓ Aplicar cambios';
 

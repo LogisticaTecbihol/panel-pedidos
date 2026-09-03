@@ -453,6 +453,18 @@ async function _apiPostCore(body) {
       return res.data;
     }
 
+    // Bloquear / liberar un pedido por cartera. La RPC valida el rol
+    // (admin/editor/cartera) y setea Estado_2 en todas las líneas.
+    if (action === 'setBloqueoCartera') {
+      var res = await _sb.rpc('set_bloqueo_cartera_pedido', {
+        p_empresa: body.empresa || '',
+        p_consecutivo: String(body.consecutivo || ''),
+        p_bloquear: !!body.bloquear
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+
     // ── INGRESOS ──
 
     if (action === 'agregarIngreso') {
