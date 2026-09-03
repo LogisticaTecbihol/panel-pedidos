@@ -1213,17 +1213,30 @@ function dMesLbl(m) {
 function dEsMes(v) { return /^\d{4}-\d{2}$/.test(String(v || '').slice(0, 7)); }
 
 // Lista de barras horizontales reutilizable. rows: [{label, value, valueTxt, color, barTxt}]
-function dHbarList(rows, maxVal) {
+// opts.stack = true → etiqueta y valor sobre la barra (labels largos: productos,
+// departamentos). Por defecto etiqueta en línea (labels cortos: siglas, estados).
+function dHbarList(rows, maxVal, opts) {
+  opts = opts || {};
   if (!rows.length) return '<div style="color:#a0aec0;text-align:center;padding:20px">Sin datos en el período</div>';
   var mx = maxVal || Math.max.apply(null, rows.map(function(r) { return r.value; })) || 1;
+
   var h = '<div class="hbar-chart">';
   rows.forEach(function(r) {
     var pct = Math.max(3, r.value / mx * 100);
-    h += '<div class="hbar-row">' +
-      '<div class="hbar-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</div>' +
-      '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + (r.color || '#718096') + '">' + (r.barTxt || '') + '</div></div>' +
-      '<div class="hbar-value">' + (r.valueTxt != null ? r.valueTxt : Number(r.value).toLocaleString('es-CO')) + '</div>' +
-    '</div>';
+    var valTxt = (r.valueTxt != null ? r.valueTxt : Number(r.value).toLocaleString('es-CO'));
+    if (opts.stack) {
+      h += '<div class="hbar-srow">' +
+        '<div class="hbar-shead"><span class="hbar-slabel" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</span>' +
+        '<span class="hbar-sval">' + valTxt + '</span></div>' +
+        '<div class="hbar-track" style="height:18px"><div class="hbar-fill" style="width:' + pct + '%;background:' + (r.color || '#718096') + ';min-width:0">' + (r.barTxt || '') + '</div></div>' +
+      '</div>';
+    } else {
+      h += '<div class="hbar-row">' +
+        '<div class="hbar-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</div>' +
+        '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + (r.color || '#718096') + '">' + (r.barTxt || '') + '</div></div>' +
+        '<div class="hbar-value">' + valTxt + '</div>' +
+      '</div>';
+    }
   });
   return h + '</div>';
 }
@@ -1313,7 +1326,7 @@ function buildVentasPorCategoria(ped) {
   }).sort(function(a, b) { return b.value - a.value; });
   var subEl = document.getElementById('cat-sub');
   if (subEl) subEl.textContent = 'total ' + dMoneyM(total);
-  document.getElementById('chart-categorias').innerHTML = dHbarList(rows);
+  document.getElementById('chart-categorias').innerHTML = dHbarList(rows, null, { stack: true });
 }
 
 // ── Ventas por departamento ──
@@ -1327,7 +1340,7 @@ function buildVentasPorDepartamento(ped) {
   var rows = Object.keys(map).map(function(dep) {
     return { label: dep, value: map[dep], valueTxt: dMoneyM(map[dep]), color: '#2980b9' };
   }).sort(function(a, b) { return b.value - a.value; }).slice(0, 10);
-  document.getElementById('chart-departamentos').innerHTML = dHbarList(rows);
+  document.getElementById('chart-departamentos').innerHTML = dHbarList(rows, null, { stack: true });
 }
 
 // ── Exactitud de inventario (último conteo físico por empresa) ──
@@ -1525,11 +1538,11 @@ function buildAlertasStock(ped, ent, fEmp) {
   html += '<div style="font-size:0.78rem;font-weight:700;color:#e74c3c;margin-bottom:6px">🔴 Agotados con pedidos pendientes</div>';
   html += dHbarList(agotados.slice(0, 6).map(function(r) {
     return { label: r.prod, value: r.pend, valueTxt: Math.round(r.pend).toLocaleString('es-CO') + ' pend', color: '#e74c3c' };
-  }));
+  }), null, { stack: true });
   html += '<div style="font-size:0.78rem;font-weight:700;color:#e67e22;margin:14px 0 6px">🟠 Con stock y sin salidas en el período</div>';
   html += dHbarList(sinRotacion.slice(0, 6).map(function(r) {
     return { label: r.prod, value: r.stock, valueTxt: Math.round(r.stock).toLocaleString('es-CO') + ' uds', color: '#e67e22' };
-  }));
+  }), null, { stack: true });
   el.innerHTML = html;
 }
 
