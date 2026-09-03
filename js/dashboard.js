@@ -877,7 +877,7 @@ function _ensureCliNitMap() {
     _nitVariants(d).forEach(function(k) { if (!_cliNitMap[k]) _cliNitMap[k] = entry; });
   });
 }
-// { key, nombre } para agrupar un pedido por cliente único.
+// { key, nombre, nd, fromMaster } para agrupar un pedido por cliente único.
 function dClienteKey(nit, nombrePedido) {
   _ensureCliNitMap();
   var d = _nitDigits(nit);
@@ -886,11 +886,35 @@ function dClienteKey(nit, nombrePedido) {
     var vs = _nitVariants(d);
     for (var i = 0; i < vs.length; i++) {
       var hit = _cliNitMap[vs[i]];
-      if (hit) return { key: 'id:' + hit.ident, nombre: hit.nombre || nm || hit.ident };
+      if (hit) return { key: 'id:' + hit.ident, nombre: hit.nombre || nm || hit.ident, nd: hit.ident, fromMaster: true };
     }
-    return { key: 'id:' + d, nombre: nm || d };   // sin match en el maestro
+    return { key: 'id:' + d, nombre: nm || d, nd: d, fromMaster: false };   // sin match en el maestro
   }
-  return { key: 'nom:' + nm.toLowerCase(), nombre: nm || '—' };
+  return { key: 'nom:' + nm.toLowerCase(), nombre: nm || '—', nd: '', fromMaster: false };
+}
+
+// 2ª pasada: funde grupos cuyo NIT es idéntico salvo UN dígito extra al final
+// (caso típico: un pedido trae el NIT sin dígito de verificación y otro con él).
+// NO fusiona NITs de igual longitud que difieren en algún dígito — eso es un
+// error de captura y debe verse como dos filas.
+function _mergeDvGroups(map) {
+  var gs = Object.keys(map).map(function(k) { return map[k]; })
+    .filter(function(g) { return g.nd && g.nd.length >= 8; })
+    .sort(function(a, b) { return a.nd.length - b.nd.length; });
+  gs.forEach(function(base) {
+    if (base._merged) return;
+    gs.forEach(function(other) {
+      if (other === base || other._merged) return;
+      if (other.nd.length === base.nd.length + 1 && other.nd.slice(0, -1) === base.nd) {
+        base.uds += other.uds; base.valor += other.valor; base.ordenes += other.ordenes;
+        Object.keys(other.empresas).forEach(function(s) { base.empresas[s] = true; });
+        if (!base.fromMaster && other.fromMaster) base.cliente = other.cliente;
+        base.fromMaster = base.fromMaster || other.fromMaster;
+        other._merged = true;
+        delete map[other.key];
+      }
+    });
+  });
 }
 
 // ── 5. Top Clientes (consolidado por identificación; ranking por valor $) ──
@@ -899,12 +923,15 @@ function buildTopClientes(orders) {
   orders.forEach(function(o) {
     var r = dClienteKey(o.nit, o.cliente);
     if (!r.nombre || r.nombre === '—') return;
-    var m = map[r.key] || (map[r.key] = { cliente: r.nombre, uds: 0, valor: 0, ordenes: 0, empresas: {} });
+    var m = map[r.key] || (map[r.key] = { key: r.key, cliente: r.nombre, uds: 0, valor: 0, ordenes: 0, empresas: {}, nd: r.nd, fromMaster: r.fromMaster });
     m.uds += o.cantPedida;
     m.valor += o.valorPedido;
     m.ordenes++;
     m.empresas[o.sigla] = true;
+    if (!m.fromMaster && r.fromMaster) { m.cliente = r.nombre; m.fromMaster = true; }
   });
+
+  _mergeDvGroups(map);
 
   var arr = Object.keys(map).map(function(k) { return map[k]; });
   // Ranking por valor $; el volumen en uds queda como columna de contexto.
