@@ -568,15 +568,17 @@ function renderRangeChip(fEmp, fDesde, fHasta) {
   el.innerHTML = '<span class="dash-range-chip">📅 ' + escHtml(rango) + empTxt + '</span>';
 }
 
+// Orden "completa" = todas sus líneas entregadas/facturadas (o entregadas por
+// el proveedor). Las anuladas no cuentan ni en numerador ni en denominador.
+function dOrdenCompleta(o) {
+  if (o.estado2 === 'Anulado') return false;
+  return o.status === 'Entregado' || o.status === 'Facturado' || o.estado2 === 'Entregado por proveedor';
+}
+
 // ── Comparativo vs período anterior ──
 // Cifras "de volumen" del período (aditivas) — se comparan con la ventana previa.
 function dKpiSnapshot(orders, ped, dev, oc) {
-  var udsEnt = 0, udsPed = 0, valPed = 0, valEnt = 0, valPen = 0;
-  ped.forEach(function(p) {
-    if ((p.Estado_2 || 'Abierto').trim() === 'Anulado') return;
-    udsEnt += Number(p.Cant_Entregada) || 0;
-    udsPed += Number(p.Cantidad) || 0;
-  });
+  var valPed = 0, valEnt = 0, valPen = 0;
   var deliveryDays = [];
   orders.forEach(function(o) {
     valPed += o.valorPedido; valEnt += o.valorEntregado; valPen += o.valorPendiente;
@@ -585,10 +587,11 @@ function dKpiSnapshot(orders, ped, dev, oc) {
       if (!isNaN(dd) && dd >= 0) deliveryDays.push(dd);
     }
   });
+  var ordNoAnul = orders.filter(function(o) { return o.estado2 !== 'Anulado'; });
   return {
     ordenes: orders.length,
     lineas: ped.length,
-    tasaEntrega: udsPed > 0 ? Math.round(udsEnt / udsPed * 100) : 0,
+    tasaEntrega: ordNoAnul.length ? Math.round(ordNoAnul.filter(dOrdenCompleta).length / ordNoAnul.length * 100) : 0,
     avgDelivery: deliveryDays.length ? Math.round(deliveryDays.reduce(function(s, v) { return s + v; }, 0) / deliveryDays.length) : 0,
     devoluciones: dev.length,
     valorPedido: valPed,
@@ -616,14 +619,11 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
   var abiertas = orders.filter(function(o) { return o.estado2 === 'Abierto'; }).length;
   var lineas = ped.length;
 
-  // Tasa de entrega: uds entregadas / pedidas sobre líneas no anuladas.
-  var udsEntregadas = 0, udsPedidas = 0;
-  ped.forEach(function(p) {
-    if ((p.Estado_2 || 'Abierto').trim() === 'Anulado') return;
-    udsEntregadas += Number(p.Cant_Entregada) || 0;
-    udsPedidas += Number(p.Cantidad) || 0;
-  });
-  var tasaEntrega = udsPedidas > 0 ? Math.round((udsEntregadas / udsPedidas) * 100) : 0;
+  // Tasa de entrega = % de órdenes 100% despachadas (todas sus líneas
+  // entregadas/facturadas). Denominador: órdenes no anuladas del período.
+  var ordNoAnul = orders.filter(function(o) { return o.estado2 !== 'Anulado'; });
+  var ordCompletas = ordNoAnul.filter(dOrdenCompleta).length;
+  var tasaEntrega = ordNoAnul.length ? Math.round(ordCompletas / ordNoAnul.length * 100) : 0;
 
   // Tiempos por orden.
   var deliveryDays = [], delayDays = [];
@@ -648,15 +648,13 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
     ? (stk.uds.toLocaleString('es-CO') + ' uds disponibles' + (stk.negativos ? ' · ⚠️ ' + stk.negativos + ' con saldo negativo' : ''))
     : 'sin snapshot';
 
-  var p = prev || null;
-
   var empQS = fEmp ? ('&empresa=' + encodeURIComponent(dGetSigla(fEmp))) : '';
   var p = prev || null;
 
   var html = '';
   html += kpiCard('', totalOrdenes.toLocaleString('es-CO'), 'Total ordenes', abiertas + ' abiertas · ' + lineas.toLocaleString('es-CO') + ' lineas',
     p && dDelta(totalOrdenes, p.ordenes, true), 'pedidos.html' + (empQS ? '?' + empQS.slice(1) : ''));
-  html += kpiCard('teal', tasaEntrega + '%', 'Tasa de entrega (a hoy)', udsEntregadas.toLocaleString('es-CO') + ' / ' + udsPedidas.toLocaleString('es-CO') + ' uds acumuladas',
+  html += kpiCard('teal', tasaEntrega + '%', 'Tasa de entrega', ordCompletas.toLocaleString('es-CO') + ' / ' + ordNoAnul.length.toLocaleString('es-CO') + ' ordenes completas (a hoy)',
     p && dDelta(tasaEntrega, p.tasaEntrega, true));
   html += kpiCard('green', avgDelivery + ' dias', 'Tiempo prom. entrega', deliveryDays.length + ' ordenes entregadas',
     p && dDelta(avgDelivery, p.avgDelivery, false));
