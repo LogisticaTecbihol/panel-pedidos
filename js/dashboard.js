@@ -345,7 +345,8 @@ async function loadDashboard() {
     dCambios = results[7].cambios || [];
     dConteos = results[8].conteos || [];
     dClientes = results[9].clientes || [];
-    _cliNitMap = null;   // se reconstruye con el nuevo maestro de clientes
+    _cliNitMap = null;              // se reconstruye con el nuevo maestro
+    _allOrdersCache.emp = undefined; // idem con los nuevos pedidos
 
     // Snapshot de existencias — mismo cálculo que Kardex / Inventario / Reportes.
     try {
@@ -492,7 +493,7 @@ function buildDashboard() {
   var kpiPrev = null, prevSlice = null;
   if (prevR) {
     prevSlice = dSlice(fEmp, prevR.desde, prevR.hasta);
-    kpiPrev = dKpiSnapshot(prevSlice.orders, prevSlice.ped, prevSlice.dev, prevSlice.oc);
+    kpiPrev = dKpiSnapshot(prevSlice.orders, prevSlice.ped, prevSlice.dev, fEmp, prevR.desde, prevR.hasta);
   }
 
   var rangoTxt = (fDesde || fHasta)
@@ -501,13 +502,13 @@ function buildDashboard() {
   document.getElementById('dash-ts').textContent = 'Actualizado: ' + new Date().toLocaleString('es-CO') + rangoTxt;
   renderRangeChip(fEmp, fDesde, fHasta);
 
-  buildKPIs(cur.orders, cur.ped, cur.dev, cur.oc, fEmp, kpiPrev);
+  buildKPIs(cur.orders, cur.ped, cur.dev, cur.oc, fEmp, kpiPrev, fDesde, fHasta);
   buildKPIsMoney(cur.orders, cur.ped, cur.dev, fEmp, fDesde, fHasta, kpiPrev);
   buildPedidosPorMes(fEmp);
   buildEntregasPorMes(fEmp);
   buildVentasPorCategoria(cur.ped);
   buildVentasPorDepartamento(cur.ped);
-  buildTiempos(cur.orders);
+  buildTiempos(cur.orders, fEmp, fDesde, fHasta);
   buildTopDemora(cur.orders);
   buildEntregas(cur.orders);
   buildEmpresas(cur.orders);
@@ -574,24 +575,49 @@ function dOrdenCompleta(o) {
   return o.status === 'Entregado' || o.status === 'Facturado' || o.estado2 === 'Entregado por proveedor';
 }
 
+// Todas las órdenes (empresa filtrada, cualquier fecha) — memo por carga+empresa.
+var _allOrdersCache = { emp: undefined, orders: null };
+function dAllOrders(fEmp) {
+  var key = fEmp || '';
+  if (_allOrdersCache.emp !== key) {
+    _allOrdersCache.emp = key;
+    _allOrdersCache.orders = dBuildOrders(dPedidos.filter(function(p) { return !fEmp || p.Nombre_Empresa === fEmp; }));
+  }
+  return _allOrdersCache.orders;
+}
+
+// Tiempo medio pedido→última entrega, coherente con el período: mide las
+// órdenes cuya ÚLTIMA entrega cae dentro del rango (entregadas en el período),
+// sin importar cuándo se pidieron. Evita el sesgo de "solo las ya entregadas
+// de los pedidos del mes" (que descarta las que aún tardarán).
+function dLeadTimeMedio(fEmp, desde, hasta) {
+  var days = [];
+  dAllOrders(fEmp).forEach(function(o) {
+    if (!o.fechaUltEntrega || !o.fechaPedido || o.cantEntregada <= 0) return;
+    if (!_fechaEnRango(String(o.fechaUltEntrega).slice(0, 10), desde, hasta)) return;
+    var dd = Math.round((new Date(o.fechaUltEntrega) - new Date(o.fechaPedido)) / 86400000);
+    if (!isNaN(dd) && dd >= 0) days.push(dd);
+  });
+  return {
+    avg: days.length ? Math.round(days.reduce(function(s, v) { return s + v; }, 0) / days.length) : 0,
+    n: days.length,
+    days: days
+  };
+}
+
 // ── Comparativo vs período anterior ──
 // Cifras "de volumen" del período (aditivas) — se comparan con la ventana previa.
-function dKpiSnapshot(orders, ped, dev, oc) {
+function dKpiSnapshot(orders, ped, dev, fEmp, desde, hasta) {
   var valPed = 0, valEnt = 0, valPen = 0;
-  var deliveryDays = [];
   orders.forEach(function(o) {
     valPed += o.valorPedido; valEnt += o.valorEntregado; valPen += o.valorPendiente;
-    if (o.fechaUltEntrega && o.fechaPedido && o.cantEntregada > 0) {
-      var dd = Math.round((new Date(o.fechaUltEntrega) - new Date(o.fechaPedido)) / 86400000);
-      if (!isNaN(dd) && dd >= 0) deliveryDays.push(dd);
-    }
   });
   var ordNoAnul = orders.filter(function(o) { return o.estado2 !== 'Anulado'; });
   return {
     ordenes: orders.length,
     lineas: ped.length,
     tasaEntrega: ordNoAnul.length ? Math.round(ordNoAnul.filter(dOrdenCompleta).length / ordNoAnul.length * 100) : 0,
-    avgDelivery: deliveryDays.length ? Math.round(deliveryDays.reduce(function(s, v) { return s + v; }, 0) / deliveryDays.length) : 0,
+    avgDelivery: dLeadTimeMedio(fEmp, desde, hasta).avg,
     devoluciones: dev.length,
     valorPedido: valPed,
     valorEntregado: valEnt,
@@ -610,7 +636,7 @@ function dDelta(cur, prev, moreIsGood) {
 }
 
 // ── 1. KPI Cards ──
-function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
+function buildKPIs(orders, ped, dev, oc, fEmp, prev, fDesde, fHasta) {
   var today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -624,13 +650,13 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
   var ordCompletas = ordNoAnul.filter(dOrdenCompleta).length;
   var tasaEntrega = ordNoAnul.length ? Math.round(ordCompletas / ordNoAnul.length * 100) : 0;
 
-  // Tiempos por orden.
-  var deliveryDays = [], delayDays = [];
+  // Tiempo prom. entrega: órdenes ENTREGADAS en el período (por fecha de última
+  // entrega), no las pedidas en el período. Antigüedad de pendientes: sobre las
+  // órdenes del período que siguen abiertas, medida a hoy.
+  var lead = dLeadTimeMedio(fEmp, fDesde, fHasta);
+  var avgDelivery = lead.avg;
+  var delayDays = [];
   orders.forEach(function(o) {
-    if (o.fechaUltEntrega && o.fechaPedido && o.cantEntregada > 0) {
-      var dd = Math.round((new Date(o.fechaUltEntrega) - new Date(o.fechaPedido)) / 86400000);
-      if (!isNaN(dd) && dd >= 0) deliveryDays.push(dd);
-    }
     if (o.estado2 === 'Abierto' && o.esPendiente && o.fechaPedido) {
       var dd2 = Math.round((today - new Date(o.fechaPedido)) / 86400000);
       if (!isNaN(dd2) && dd2 >= 0) delayDays.push(dd2);
@@ -638,7 +664,6 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
   });
 
   var devPendientes = dev.filter(function(d) { return (d.Estado || '') === 'Pendiente'; }).length;
-  var avgDelivery = deliveryDays.length ? Math.round(deliveryDays.reduce(function(s, v) { return s + v; }, 0) / deliveryDays.length) : 0;
   var avgDelay = delayDays.length ? Math.round(delayDays.reduce(function(s, v) { return s + v; }, 0) / delayDays.length) : 0;
 
   var stk = dStockTotals(fEmp);
@@ -655,9 +680,9 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev) {
     p && dDelta(totalOrdenes, p.ordenes, true), 'pedidos.html' + (empQS ? '?' + empQS.slice(1) : ''));
   html += kpiCard('teal', tasaEntrega + '%', 'Tasa de entrega', ordCompletas.toLocaleString('es-CO') + ' / ' + ordNoAnul.length.toLocaleString('es-CO') + ' ordenes completas (a hoy)',
     p && dDelta(tasaEntrega, p.tasaEntrega, true));
-  html += kpiCard('green', avgDelivery + ' dias', 'Tiempo prom. entrega', deliveryDays.length + ' ordenes entregadas',
+  html += kpiCard('green', avgDelivery + ' dias', 'Tiempo prom. entrega', lead.n + ' ordenes entregadas en el período',
     p && dDelta(avgDelivery, p.avgDelivery, false));
-  html += kpiCard('orange', avgDelay + ' dias', 'Antiguedad prom. de pendientes', delayDays.length + ' ordenes esperando');
+  html += kpiCard('orange', avgDelay + ' dias', 'Antiguedad prom. de pendientes', delayDays.length + ' ordenes del período aun abiertas');
   html += kpiCard('red', devPendientes.toString(), 'Devoluciones pendientes', dev.length + ' total devoluciones',
     null, 'devoluciones.html');
   html += kpiCard('purple', stk.disponible ? stk.productos.toLocaleString('es-CO') : '—', 'Productos en stock', stockSub,
@@ -696,7 +721,7 @@ function dGoto(el) {
 // KPI ROW 2 — Pesos / comercial
 // ══════════════════════════════════════════════════════════════
 function buildKPIsMoney(orders, ped, dev, fEmp, fDesde, fHasta, prev) {
-  var cur = dKpiSnapshot(orders, ped, dev, []);
+  var cur = dKpiSnapshot(orders, ped, dev, fEmp, fDesde, fHasta);
   var p = prev || null;
 
   // Ticket promedio por orden.
@@ -1161,21 +1186,16 @@ function buildResumenModulos(orders, dev, ing, oc, mue, ree, cam, fEmp) {
 }
 
 // ── Tiempos de entrega ──
-function buildTiempos(orders) {
+function buildTiempos(orders, fEmp, fDesde, fHasta) {
   var today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  var deliveryVals = [];
+  // Entregadas: órdenes cuya última entrega cae en el período (dLeadTimeMedio).
+  // Pendientes: órdenes del período aún abiertas, envejecidas a hoy.
+  var deliveryVals = dLeadTimeMedio(fEmp, fDesde, fHasta).days;
   var pendingVals = [];
 
   orders.forEach(function(o) {
-    if (o.fechaUltEntrega && o.fechaPedido && o.cantEntregada > 0) {
-      var dE = new Date(o.fechaUltEntrega), dP = new Date(o.fechaPedido);
-      if (!isNaN(dE) && !isNaN(dP)) {
-        var days = Math.round((dE - dP) / 86400000);
-        if (days >= 0) deliveryVals.push(days);
-      }
-    }
     if (o.estado2 === 'Abierto' && o.esPendiente && o.fechaPedido) {
       var dP2 = new Date(o.fechaPedido);
       if (!isNaN(dP2)) {
