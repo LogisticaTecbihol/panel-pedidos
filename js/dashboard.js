@@ -855,25 +855,27 @@ function buildTopProductos(ped) {
   }).join('');
 }
 
-// ── 5. Top Clientes por Volumen ──
+// ── 5. Top Clientes (por valor $ y por volumen uds) ──
 function buildTopClientes(orders) {
   var map = {};
   orders.forEach(function(o) {
     var cli = o.cliente;
     if (!cli || cli === '—') return;
-    if (!map[cli]) map[cli] = { cliente: cli, uds: 0, ordenes: 0, empresas: {} };
+    if (!map[cli]) map[cli] = { cliente: cli, uds: 0, valor: 0, ordenes: 0, empresas: {} };
     map[cli].uds += o.cantPedida;
+    map[cli].valor += o.valorPedido;
     map[cli].ordenes++;
     map[cli].empresas[o.sigla] = true;
   });
 
   var arr = Object.values(map);
-  arr.sort(function(a, b) { return b.uds - a.uds; });
+  // Ranking por valor $; el volumen en uds queda como columna de contexto.
+  arr.sort(function(a, b) { return b.valor - a.valor; });
   arr = arr.slice(0, 10);
 
   var tbody = document.getElementById('tb-clientes');
   if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
     return;
   }
 
@@ -883,8 +885,9 @@ function buildTopClientes(orders) {
       return '<span class="sigla-badge" style="background:' + color + '20;color:' + color + '">' + escHtml(s) + '</span>';
     }).join(' ');
     return '<tr data-href="clientes.html?buscar=' + encodeURIComponent(r.cliente) + '" onclick="dGoto(this)">' +
-      '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
-      '<td class="money" style="font-weight:700;color:#2980b9">' + r.uds.toLocaleString('es-CO') + '</td>' +
+      '<td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
+      '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.valor) + '</td>' +
+      '<td class="money">' + r.uds.toLocaleString('es-CO') + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
       '<td>' + empTags + '</td>' +
     '</tr>';
