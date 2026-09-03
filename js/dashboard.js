@@ -240,6 +240,7 @@ function dBuildOrders(ped) {
         sigla: dGetSigla(p.Nombre_Empresa),
         consecutivo: p.Consecutivo || '—',
         cliente: (p.Cliente || '—').trim(),
+        nit: (p.NIT || '').trim(),
         comercial: (p.Comercial || '').trim(),
         fechaPedido: p.Fecha_Pedido || '',
         fechaUltEntrega: p.Fecha_Ult_Entrega || '',
@@ -252,6 +253,7 @@ function dBuildOrders(ped) {
       o.fechaUltEntrega = p.Fecha_Ult_Entrega;
     }
     if (p.Comercial && !o.comercial) o.comercial = (p.Comercial || '').trim();
+    if (p.NIT && !o.nit) o.nit = (p.NIT || '').trim();
   });
 
   return Object.keys(map).map(function(k) {
@@ -343,6 +345,7 @@ async function loadDashboard() {
     dCambios = results[7].cambios || [];
     dConteos = results[8].conteos || [];
     dClientes = results[9].clientes || [];
+    _cliNitMap = null;   // se reconstruye con el nuevo maestro de clientes
 
     // Snapshot de existencias — mismo cálculo que Kardex / Inventario / Reportes.
     try {
@@ -855,20 +858,55 @@ function buildTopProductos(ped) {
   }).join('');
 }
 
-// ── 5. Top Clientes (por valor $ y por volumen uds) ──
+// ── Resolución de cliente por identificación (NIT/cédula) ──
+// Consolida por dígitos de la identificación y trae el nombre canónico de
+// ClientesUnicos. Tolera el dígito de verificación (NIT de 10 díg ↔ base de 9).
+function _nitDigits(s) { return String(s || '').replace(/\D/g, ''); }
+function _nitVariants(d) {
+  if (!d) return [];
+  return d.length === 10 ? [d, d.slice(0, 9)] : [d];
+}
+var _cliNitMap = null;   // dígitos → { ident, nombre } — se arma 1 vez por carga
+function _ensureCliNitMap() {
+  if (_cliNitMap) return;
+  _cliNitMap = {};
+  (dClientes || []).forEach(function(c) {
+    var d = _nitDigits(c.Identificacion);
+    if (!d) return;
+    var entry = { ident: d, nombre: (c.Cliente || '').trim() };
+    _nitVariants(d).forEach(function(k) { if (!_cliNitMap[k]) _cliNitMap[k] = entry; });
+  });
+}
+// { key, nombre } para agrupar un pedido por cliente único.
+function dClienteKey(nit, nombrePedido) {
+  _ensureCliNitMap();
+  var d = _nitDigits(nit);
+  var nm = (nombrePedido || '').trim();
+  if (d) {
+    var vs = _nitVariants(d);
+    for (var i = 0; i < vs.length; i++) {
+      var hit = _cliNitMap[vs[i]];
+      if (hit) return { key: 'id:' + hit.ident, nombre: hit.nombre || nm || hit.ident };
+    }
+    return { key: 'id:' + d, nombre: nm || d };   // sin match en el maestro
+  }
+  return { key: 'nom:' + nm.toLowerCase(), nombre: nm || '—' };
+}
+
+// ── 5. Top Clientes (consolidado por identificación; ranking por valor $) ──
 function buildTopClientes(orders) {
   var map = {};
   orders.forEach(function(o) {
-    var cli = o.cliente;
-    if (!cli || cli === '—') return;
-    if (!map[cli]) map[cli] = { cliente: cli, uds: 0, valor: 0, ordenes: 0, empresas: {} };
-    map[cli].uds += o.cantPedida;
-    map[cli].valor += o.valorPedido;
-    map[cli].ordenes++;
-    map[cli].empresas[o.sigla] = true;
+    var r = dClienteKey(o.nit, o.cliente);
+    if (!r.nombre || r.nombre === '—') return;
+    var m = map[r.key] || (map[r.key] = { cliente: r.nombre, uds: 0, valor: 0, ordenes: 0, empresas: {} });
+    m.uds += o.cantPedida;
+    m.valor += o.valorPedido;
+    m.ordenes++;
+    m.empresas[o.sigla] = true;
   });
 
-  var arr = Object.values(map);
+  var arr = Object.keys(map).map(function(k) { return map[k]; });
   // Ranking por valor $; el volumen en uds queda como columna de contexto.
   arr.sort(function(a, b) { return b.valor - a.valor; });
   arr = arr.slice(0, 10);
