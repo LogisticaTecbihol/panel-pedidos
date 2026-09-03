@@ -1105,8 +1105,7 @@ function exportarCamSolicitudPDF(opts) {
   if (!ctx) return;
   var head = ctx.head;
 
-  var jsPDF = window.jspdf.jsPDF;
-  var doc = opts._doc || new jsPDF();
+  var doc = opts._doc || _nuevoPdfDoc();
   if (opts._doc) doc.addPage();
   var pw = doc.internal.pageSize.getWidth();
   var palette = _pdfPaletteFor(head.Empresa);
@@ -1114,7 +1113,7 @@ function exportarCamSolicitudPDF(opts) {
   var darkText = [45, 55, 72];
   var grayText = [113, 128, 150];
   var headerInfo = (typeof _pdfRemisionHeaderInfoFor === 'function') ? _pdfRemisionHeaderInfoFor(head.Empresa) : null;
-  var headerH = headerInfo ? 48 : 30;
+  var headerH = headerInfo ? 33 : 18;
   var logo = _pdfHeaderLogoFor(head.Empresa);
 
   // Header
@@ -1127,32 +1126,32 @@ function exportarCamSolicitudPDF(opts) {
   var titleX = 14;
   if (logo) {
     try {
-      doc.addImage(logo.data, 'PNG', 5, 4, 22, 22);
-      titleX = 34;
+      doc.addImage(logo.data, 'PNG', 6, 3, 16, 16);
+      titleX = 26;
     } catch (e) {}
   }
 
   doc.setTextColor(accent[0], accent[1], accent[2]);
-  doc.setFontSize(15);
+  doc.setFontSize(12);
   doc.setFont(undefined, 'bold');
-  doc.text('SOLICITUD DE CAMBIO DE MERCANCIA  N° ' + String(head.Consecutivo || ''), titleX, 13);
-  doc.setFontSize(10);
+  doc.text('SOLICITUD DE CAMBIO DE MERCANCIA  N° ' + String(head.Consecutivo || ''), titleX, 9);
+  doc.setFontSize(8);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.text(String(head.Empresa || ''), titleX, 21);
-  doc.setFontSize(9);
+  doc.text(String(head.Empresa || ''), titleX, 15);
+  doc.setFontSize(7.5);
   doc.setTextColor(accent[0], accent[1], accent[2]);
   doc.setFont(undefined, 'bold');
   if (head.Fecha_Solicitud) {
-    doc.text('Fecha solicitud: ' + String(head.Fecha_Solicitud), pw - 14, 21, { align: 'right' });
+    doc.text('Fecha solicitud: ' + String(head.Fecha_Solicitud), pw - 14, 15, { align: 'right' });
   }
   doc.setFont(undefined, 'normal');
 
   if (headerInfo) {
-    doc.setFontSize(7);
+    doc.setFontSize(5.5);
     doc.setTextColor(120, 132, 150);
-    var infoStartY = 30;
-    var infoLineH = 3.4;
+    var infoStartY = 19;
+    var infoLineH = 2.7;
     headerInfo.forEach(function(line, i) {
       var bold = i === 0;
       if (bold) doc.setFont(undefined, 'bold');
@@ -1175,20 +1174,26 @@ function exportarCamSolicitudPDF(opts) {
     ['Estado', head.Estado || 'Pendiente']
   ];
 
-  var y = headerH + 10;
+  var ph = doc.internal.pageSize.getHeight();
+  function _camSalto(need) {
+    if (y + need > ph - 4) { doc.addPage(); y = 14; return true; }
+    return false;
+  }
+
+  var y = headerH + 6;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   var totalW = pw - 28;
   var leftBlockW = totalW * 0.58;
-  var leftValX = 14 + 34;
+  var leftValX = 14 + 30;
   var rightLabelX = 14 + leftBlockW + 4;
-  var rightValX = rightLabelX + 34;
+  var rightValX = rightLabelX + 30;
   var leftValMaxW = (14 + leftBlockW) - leftValX - 4;
   var rightValMaxW = pw - 14 - rightValX;
   var maxF = Math.max(left.length, right.length);
   var infoTop = y - 5;
   var midX = 14 + leftBlockW;
-  var rowGap = 9;
+  var rowGap = 4.2;
   for (var fi = 0; fi < maxF; fi++) {
     var rowH = 0;
     if (fi < left.length) {
@@ -1200,7 +1205,7 @@ function exportarCamSolicitudPDF(opts) {
       var lVal = String(left[fi][1] || '');
       var lLines = lVal ? doc.splitTextToSize(lVal, leftValMaxW) : [''];
       doc.text(lLines, leftValX, y);
-      rowH = Math.max(rowH, (lLines.length - 1) * 4);
+      rowH = Math.max(rowH, (lLines.length - 1) * 3);
     }
     if (fi < right.length) {
       doc.setFont(undefined, 'bold');
@@ -1211,115 +1216,118 @@ function exportarCamSolicitudPDF(opts) {
       var rVal = String(right[fi][1] || '');
       var rLines = rVal ? doc.splitTextToSize(rVal, rightValMaxW) : [''];
       doc.text(rLines, rightValX, y);
-      rowH = Math.max(rowH, (rLines.length - 1) * 4);
+      rowH = Math.max(rowH, (rLines.length - 1) * 3);
     }
     y += rowGap + rowH;
     if (fi < maxF - 1) {
       doc.setDrawColor(200, 210, 220);
       doc.setLineWidth(0.2);
-      doc.line(14, y - 4, pw - 14, y - 4);
+      doc.line(14, y - 3, pw - 14, y - 3);
     }
   }
-  var infoBottom = y - 4;
+  var infoBottom = y - 3;
   doc.setDrawColor(140, 155, 175);
   doc.setLineWidth(0.4);
   doc.rect(14, infoTop, pw - 28, infoBottom - infoTop);
   doc.setLineWidth(0.2);
   doc.setDrawColor(200, 210, 220);
   doc.line(midX, infoTop, midX, infoBottom);
-  y += 4;
+  y += 3;
 
   // Mercancía a Cambiar
   if (ctx.cambiar.length) {
-    doc.setFontSize(10);
+    _camSalto(16);
+    doc.setFontSize(8.5);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(192, 57, 43);
-    doc.text('Mercancia a cambiar (devuelve el cliente)', 14, y + 4);
-    y += 6;
+    doc.text('Mercancia a cambiar (devuelve el cliente)', 14, y + 3);
+    y += 4.5;
     doc.autoTable({
       startY: y,
-      head: [['#', 'Producto', 'Cantidad', 'Lote / Vencimiento', 'Razon del cambio']],
+      head: [['#', 'Producto', 'Cant.', 'Lote / Vencimiento', 'Razon del cambio']],
       body: ctx.cambiar.map(function(l, i) {
         return [ i + 1, String(l.Producto || ''), Number(l.Cantidad) || 0, String(l.Lote_Vencimiento || ''), String(l.Razon_Cambio || '') ];
       }),
       theme: 'grid',
-      headStyles: { fillColor: [192, 57, 43], fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
-      bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
-      columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 2: { halign: 'right', cellWidth: 22 } },
-      margin: { left: 14, right: 14 },
-      styles: { cellPadding: 3 },
+      headStyles: { fillColor: [192, 57, 43], fontSize: 7, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
+      bodyStyles: { fontSize: 7, lineColor: [90, 90, 90], lineWidth: 0.3 },
+      columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 2: { halign: 'right', cellWidth: 18 } },
+      margin: { left: 14, right: 14, bottom: 10 },
+      styles: { cellPadding: 1.3 },
       tableLineColor: [60, 60, 60],
       tableLineWidth: 0.5
     });
-    y = doc.lastAutoTable.finalY + 6;
+    y = doc.lastAutoTable.finalY + 4;
   }
 
   // Mercancía a Entregar
   if (ctx.entregar.length) {
-    doc.setFontSize(10);
+    _camSalto(16);
+    doc.setFontSize(8.5);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(39, 174, 96);
-    doc.text('Mercancia a entregar (nueva para el cliente)', 14, y + 4);
-    y += 6;
+    doc.text('Mercancia a entregar (nueva para el cliente)', 14, y + 3);
+    y += 4.5;
     doc.autoTable({
       startY: y,
-      head: [['#', 'Producto', 'Cantidad', 'Lote / Vencimiento', 'Fecha del cambio']],
+      head: [['#', 'Producto', 'Cant.', 'Lote / Vencimiento', 'Fecha del cambio']],
       body: ctx.entregar.map(function(l, i) {
         return [ i + 1, String(l.Producto || ''), Number(l.Cantidad) || 0, String(l.Lote_Vencimiento || ''), String(l.Fecha_Cambio || '') ];
       }),
       theme: 'grid',
-      headStyles: { fillColor: [39, 174, 96], fontSize: 8, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
-      bodyStyles: { fontSize: 8, lineColor: [90, 90, 90], lineWidth: 0.3 },
-      columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 2: { halign: 'right', cellWidth: 22 } },
-      margin: { left: 14, right: 14 },
-      styles: { cellPadding: 3 },
+      headStyles: { fillColor: [39, 174, 96], fontSize: 7, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35 },
+      bodyStyles: { fontSize: 7, lineColor: [90, 90, 90], lineWidth: 0.3 },
+      columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 2: { halign: 'right', cellWidth: 18 } },
+      margin: { left: 14, right: 14, bottom: 10 },
+      styles: { cellPadding: 1.3 },
       tableLineColor: [60, 60, 60],
       tableLineWidth: 0.5
     });
-    y = doc.lastAutoTable.finalY + 6;
+    y = doc.lastAutoTable.finalY + 4;
   }
 
   // Valores
   var vc = Number(head.Valor_Cliente) || 0;
   var ve = Number(head.Valor_Empresa) || 0;
   if (vc || ve) {
+    _camSalto(14);
     doc.setFillColor(247, 250, 252);
-    doc.roundedRect(14, y, pw - 28, 14, 2, 2, 'F');
+    doc.roundedRect(14, y, pw - 28, 11, 2, 2, 'F');
     doc.setDrawColor(200, 210, 220);
-    doc.roundedRect(14, y, pw - 28, 14, 2, 2, 'S');
-    doc.setFontSize(9);
+    doc.roundedRect(14, y, pw - 28, 11, 2, 2, 'S');
+    doc.setFontSize(7.5);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.text('Valor a favor del cliente: ' + fmtMoney(vc), 18, y + 9);
-    doc.text('Valor a favor de la empresa: ' + fmtMoney(ve), pw - 18, y + 9, { align: 'right' });
-    y += 18;
+    doc.text('Valor a favor del cliente: ' + fmtMoney(vc), 18, y + 7);
+    doc.text('Valor a favor de la empresa: ' + fmtMoney(ve), pw - 18, y + 7, { align: 'right' });
+    y += 14;
   }
 
   // Observaciones
   if (head.Observaciones) {
-    var obsMaxW = pw - 28 - 40;
+    doc.setFontSize(7.5);
+    var obsMaxW = pw - 28 - 34;
     var obsLines = doc.splitTextToSize(String(head.Observaciones), obsMaxW);
-    var obsH = Math.max(14, obsLines.length * 4 + 8);
+    var obsH = Math.max(9, obsLines.length * 3 + 3.5);
+    _camSalto(obsH + 1);
     doc.setFillColor(254, 249, 231);
     doc.roundedRect(14, y, pw - 28, obsH, 2, 2, 'F');
     doc.setFont(undefined, 'bold');
     doc.setTextColor(125, 102, 8);
-    doc.setFontSize(9);
-    doc.text('Observaciones:', 18, y + 5);
+    doc.text('Observaciones:', 18, y + 4.5);
     doc.setFont(undefined, 'normal');
-    doc.text(obsLines, 54, y + 5);
-    y += obsH + 4;
+    doc.text(obsLines, 48, y + 4.5);
+    y += obsH + 2;
   }
 
   // Footer generado
-  var ph = doc.internal.pageSize.getHeight();
-  doc.setFontSize(7);
+  doc.setFontSize(5.5);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(grayText[0], grayText[1], grayText[2]);
-  doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, ph - 5);
+  doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, ph - 3.5);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(accent[0], accent[1], accent[2]);
-  doc.text('OP-PDC-FO11', pw / 2, ph - 5, { align: 'center' });
+  doc.text('OP-PDC-FO11', pw / 2, ph - 3.5, { align: 'center' });
 
   var sigla = (typeof getSigla === 'function' ? getSigla(head.Empresa) : '') || 'Cambio';
   var fileName = 'Solicitud_Cambio_' + sigla + '_' + (head.Consecutivo || 'nuevo') + '.pdf';

@@ -26,6 +26,16 @@ function _pdfHeaderLogoFor(empresa) {
   return _pdfLogos[String(sigla).toUpperCase()] || null;
 }
 
+// ── Tamaño de página de TODOS los PDF del panel ──
+// Media carta horizontal (apaisada): 8.5" × 5.5" = 215.9 × 139.7 mm.
+// Todo generador que cree un documento nuevo debe usar _nuevoPdfDoc()
+// en vez de `new jsPDF()`.
+var PDF_MEDIA_CARTA = [215.9, 139.7];
+function _nuevoPdfDoc() {
+  var jsPDF = window.jspdf.jsPDF;
+  return new jsPDF({ unit: 'mm', orientation: 'landscape', format: [215.9, 139.7] });
+}
+
 var _pdfRemisionHeaderInfo = {
   IASO: [
     'INSUMOS AGROPECUARIOS SOSTENIBLES S.A.S',
@@ -84,28 +94,27 @@ function _drawRemisionCopyFooter(doc, label, palette, pageIdx, pageCount, genSta
   var grayText = [113, 128, 150];
 
   if (genStamp) {
-    doc.setFontSize(7);
+    doc.setFontSize(6);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(grayText[0], grayText[1], grayText[2]);
-    doc.text('Generado: ' + genStamp, 14, ph - 5);
+    doc.text('Generado: ' + genStamp, 14, ph - 3.5);
   }
 
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(accent[0], accent[1], accent[2]);
-  doc.text(String(label), pw / 2, ph - 5, { align: 'center' });
+  doc.text(String(label), pw / 2, ph - 3.5, { align: 'center' });
 
   if (pageIdx && pageCount) {
-    doc.setFontSize(7.5);
+    doc.setFontSize(6.5);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(grayText[0], grayText[1], grayText[2]);
-    doc.text('Pagina ' + pageIdx + ' de ' + pageCount, pw - 14, ph - 5, { align: 'right' });
+    doc.text('Pagina ' + pageIdx + ' de ' + pageCount, pw - 14, ph - 3.5, { align: 'right' });
   }
 }
 
 function generarRemisionPDF(data) {
-  var jsPDF = window.jspdf.jsPDF;
-  var doc = data._doc || new jsPDF();
+  var doc = data._doc || _nuevoPdfDoc();
   if (data._doc) doc.addPage();
   var palette = _pdfPaletteFor(data.empresa);
   var copias = data.copies || ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD', 'CLIENTE', 'COPIA - LOGISTICA'];
@@ -157,7 +166,7 @@ function _drawRemisionCopy(doc, data, palette) {
   var grayText = [113, 128, 150];
 
   var headerInfo = _pdfRemisionHeaderInfoFor(data.empresa);
-  var headerH = headerInfo ? 48 : 30;
+  var headerH = headerInfo ? 33 : 18;
   var refLabel = (data.ref_label != null) ? data.ref_label : 'Pedido';
   var docTitle = data.doc_title || 'REMISION';
   var docNumber = (data.doc_number != null && data.doc_number !== '') ? String(data.doc_number) : (data.remision ? String(data.remision) : '');
@@ -191,45 +200,45 @@ function _drawRemisionCopy(doc, data, palette) {
     var titleX = 14;
     if (logo) {
       try {
-        doc.addImage(logo.data, 'PNG', 5, 4, 22, 22);
-        titleX = 34;
+        doc.addImage(logo.data, 'PNG', 6, 3, 16, 16);
+        titleX = 26;
       } catch (e) {}
     }
 
-    doc.setFontSize(16);
+    doc.setFontSize(13);
     doc.setFont(undefined, 'bold');
     if (docNumber) {
       doc.setTextColor(accent[0], accent[1], accent[2]);
       var titlePart = docTitle + '  N° ';
-      doc.text(titlePart, titleX, 13);
+      doc.text(titlePart, titleX, 9);
       var titlePartW = doc.getTextWidth(titlePart);
       doc.setTextColor(200, 30, 30);
-      doc.text(docNumber, titleX + titlePartW, 13);
+      doc.text(docNumber, titleX + titlePartW, 9);
     } else {
       doc.setTextColor(accent[0], accent[1], accent[2]);
-      doc.text(docTitle, titleX, 13);
+      doc.text(docTitle, titleX, 9);
     }
-    doc.setFontSize(10);
+    doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.text(String(data.empresa || ''), titleX, 21);
-    doc.setFontSize(9);
+    doc.text(String(data.empresa || ''), titleX, 15);
+    doc.setFontSize(7.5);
     doc.setTextColor(accent[0], accent[1], accent[2]);
     doc.setFont(undefined, 'bold');
     if (refLabel && data.consecutivo) {
-      doc.text(refLabel + ' #' + String(data.consecutivo), pw - 14, 13, { align: 'right' });
+      doc.text(refLabel + ' #' + String(data.consecutivo), pw - 14, 9, { align: 'right' });
     }
     if (data.fecha_entrega) {
-      doc.text(dateLabel + ': ' + String(data.fecha_entrega), pw - 14, 21, { align: 'right' });
+      doc.text(dateLabel + ': ' + String(data.fecha_entrega), pw - 14, 15, { align: 'right' });
     }
     doc.setFont(undefined, 'normal');
 
     if (headerInfo) {
-      doc.setFontSize(7);
+      doc.setFontSize(5.5);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(120, 132, 150);
-      var infoStartY = 30;
-      var infoLineH = 3.4;
+      var infoStartY = 19;
+      var infoLineH = 2.7;
       headerInfo.forEach(function(line, i) {
         var bold = i === 0;
         if (bold) doc.setFont(undefined, 'bold');
@@ -238,21 +247,21 @@ function _drawRemisionCopy(doc, data, palette) {
       });
     }
 
-    var y = headerH + 10;
+    var y = headerH + 7;
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFontSize(9);
+    doc.setFontSize(8);
 
     var totalW = pw - 28;
     var leftBlockW = totalW * 0.58;
-    var leftValX = 14 + 34;
+    var leftValX = 14 + 26;
     var rightLabelX = 14 + leftBlockW + 4;
-    var rightValX = rightLabelX + 34;
+    var rightValX = rightLabelX + 26;
     var leftValMaxW = (14 + leftBlockW) - leftValX - 4;
     var rightValMaxW = pw - 14 - rightValX;
     var maxF = Math.max(left.length, right.length);
     var infoTop = y - 5;
     var midX = 14 + leftBlockW;
-    var rowGap = 6;
+    var rowGap = 4;
     for (var fi = 0; fi < maxF; fi++) {
       var rowH = 0;
       if (fi < left.length) {
@@ -264,7 +273,7 @@ function _drawRemisionCopy(doc, data, palette) {
         var lVal = String(left[fi][1] || '');
         var lLines = lVal ? doc.splitTextToSize(lVal, leftValMaxW) : [''];
         doc.text(lLines, leftValX, y);
-        rowH = Math.max(rowH, (lLines.length - 1) * 3.5);
+        rowH = Math.max(rowH, (lLines.length - 1) * 3);
       }
       if (fi < right.length) {
         doc.setFont(undefined, 'bold');
@@ -275,16 +284,16 @@ function _drawRemisionCopy(doc, data, palette) {
         var rVal = String(right[fi][1] || '');
         var rLines = rVal ? doc.splitTextToSize(rVal, rightValMaxW) : [''];
         doc.text(rLines, rightValX, y);
-        rowH = Math.max(rowH, (rLines.length - 1) * 3.5);
+        rowH = Math.max(rowH, (rLines.length - 1) * 3);
       }
       y += rowGap + rowH;
       if (fi < maxF - 1) {
         doc.setDrawColor(200, 210, 220);
         doc.setLineWidth(0.2);
-        doc.line(14, y - 3, pw - 14, y - 3);
+        doc.line(14, y - 2.6, pw - 14, y - 2.6);
       }
     }
-    var infoBottom = y - 4;
+    var infoBottom = y - 3;
     doc.setDrawColor(140, 155, 175);
     doc.setLineWidth(0.4);
     doc.rect(14, infoTop, pw - 28, infoBottom - infoTop);
@@ -292,7 +301,7 @@ function _drawRemisionCopy(doc, data, palette) {
     doc.setDrawColor(200, 210, 220);
     doc.line(midX, infoTop, midX, infoBottom);
 
-    y += 6;
+    y += 4;
     return y;
   }
 
@@ -336,11 +345,11 @@ function _drawRemisionCopy(doc, data, palette) {
     head: [['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada', lastColHeader]],
     body: tableBody,
     theme: 'grid',
-    headStyles: { fillColor: accent, fontSize: 7.5, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.5 },
-    bodyStyles: { fontSize: 7.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    headStyles: { fillColor: accent, fontSize: 7, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.2 },
+    bodyStyles: { fontSize: 7, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: colStyles,
-    margin: { top: pageTopY, left: 14, right: 14, bottom: 15 },
-    styles: { cellPadding: 1.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    margin: { top: pageTopY, left: 14, right: 14, bottom: 11 },
+    styles: { cellPadding: 1.2, lineColor: [90, 90, 90], lineWidth: 0.3 },
     tableLineColor: [60, 60, 60],
     tableLineWidth: 0.5,
     didDrawPage: function(hookData) {
@@ -350,22 +359,22 @@ function _drawRemisionCopy(doc, data, palette) {
 
   if (data.hide_signatures) return;
 
-  var finalY = doc.lastAutoTable.finalY + 10;
-  var sigTop = finalY + 22;
-  var minSigTop = ph - 60;
+  var finalY = doc.lastAutoTable.finalY + 5;
+  var sigTop = finalY + 6;
+  var minSigTop = ph - 30;
   if (sigTop < minSigTop) sigTop = minSigTop;
-  if (sigTop > ph - 42) {
+  if (sigTop > ph - 21) {
     doc.addPage();
     var newTop = drawPageTop();
-    sigTop = Math.max(newTop + 8, ph - 60);
+    sigTop = Math.max(newTop + 6, ph - 30);
   }
 
   var sigGap = 5;
   var sigCount = 4;
   var sigW = (pw - 28 - sigGap * (sigCount - 1)) / sigCount;
-  var lineY = sigTop + 18;
-  var labelY = lineY + 5;
-  var subY = labelY + 5;
+  var lineY = sigTop + 9;
+  var labelY = lineY + 3;
+  var subY = labelY + 2.8;
   var cols = [
     { x: 14, label: 'Emitido por', sub: 'Nombre y firma' },
     { x: 14 + (sigW + sigGap), label: 'Despachado / Conductor', sub: 'Nombre y firma' },
@@ -374,26 +383,26 @@ function _drawRemisionCopy(doc, data, palette) {
   ];
   doc.setDrawColor(darkText[0], darkText[1], darkText[2]);
   doc.setLineWidth(0.3);
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   cols.forEach(function(c) {
     doc.line(c.x, lineY, c.x + sigW, lineY);
     doc.setFont(undefined, 'bold');
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
     doc.text(c.label, c.x + sigW / 2, labelY, { align: 'center' });
     doc.setFont(undefined, 'normal');
-    doc.setFontSize(6.5);
+    doc.setFontSize(6);
     doc.setTextColor(grayText[0], grayText[1], grayText[2]);
     doc.text(c.sub, c.x + sigW / 2, subY, { align: 'center' });
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   });
   var recCol = cols[cols.length - 1];
-  var fechaRecY = subY + 6;
+  var fechaRecY = subY + 4;
   var fechaLabelX = recCol.x + 2;
-  var fechaLineX1 = fechaLabelX + 26;
+  var fechaLineX1 = fechaLabelX + 24;
   var fechaLineX2 = recCol.x + sigW - 2;
-  doc.setFontSize(7);
+  doc.setFontSize(6.5);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   doc.text('Fecha de entrega:', fechaLabelX, fechaRecY);
@@ -443,8 +452,7 @@ function _ocProductosParaPDF(ocs) {
 // info de origen/destino/fecha/ref pedido/estado. Sin firmas.
 function generarSolicitudOCPDF(ocs) {
   if (!ocs || !ocs.length) return;
-  var jsPDF = window.jspdf.jsPDF;
-  var doc = new jsPDF();
+  var doc = _nuevoPdfDoc();
   var hdr = ocs[0];
   var palette = _pdfPaletteFor(hdr.Empresa_Destino);
   var siglaOrig = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Origen) : '') || hdr.Empresa_Origen || '';
@@ -554,8 +562,7 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
     }
     return;
   }
-  var jsPDF = window.jspdf.jsPDF;
-  var doc = opts._doc || new jsPDF();
+  var doc = opts._doc || _nuevoPdfDoc();
   if (opts._doc) doc.addPage();
   var siglaOrig = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Origen) : '') || hdr.Empresa_Origen || '';
   var siglaDest = (typeof getSigla === 'function' ? getSigla(hdr.Empresa_Destino) : '') || hdr.Empresa_Destino || '';

@@ -5165,8 +5165,7 @@ function exportarPedidoDesdeModal(opts) {
 // en js/pdf-remision.js — compartidos con muestras y otros módulos.
 
 function generarPedidoPDF(data) {
-  var jsPDF = window.jspdf.jsPDF;
-  var doc = data._doc || new jsPDF();
+  var doc = data._doc || _nuevoPdfDoc();
   if (data._doc) doc.addPage();
   var pw = doc.internal.pageSize.getWidth();
 
@@ -5177,49 +5176,49 @@ function generarPedidoPDF(data) {
   var grayText = [113, 128, 150];
 
   doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, pw, 30, 'F');
+  doc.rect(0, 0, pw, 20, 'F');
   doc.setDrawColor(primary[0], primary[1], primary[2]);
   doc.setLineWidth(1.2);
-  doc.line(0, 30, pw, 30);
+  doc.line(0, 20, pw, 20);
 
   var logoP = _pdfHeaderLogoFor(data.empresa);
   var titleXP = 14;
   if (logoP) {
     try {
-      doc.addImage(logoP.data, 'PNG', 5, 4, 22, 22);
-      titleXP = 34;
+      doc.addImage(logoP.data, 'PNG', 6, 3, 16, 16);
+      titleXP = 26;
     } catch (e) {}
   }
 
   doc.setTextColor(primary[0], primary[1], primary[2]);
-  doc.setFontSize(16);
+  doc.setFontSize(13);
   doc.setFont(undefined, 'bold');
-  doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 13);
-  doc.setFontSize(9);
-  doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 13, { align: 'right' });
+  doc.text('PEDIDO #' + String(data.consecutivo || ''), titleXP, 9);
+  doc.setFontSize(7.5);
+  doc.text('Fecha: ' + String(data.fecha || ''), pw - 14, 9, { align: 'right' });
 
-  doc.setFontSize(10);
+  doc.setFontSize(8);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   var empresaText = String(data.empresa || '');
   var empresaMaxW = (pw - 14) - titleXP;
   var empresaFit = doc.splitTextToSize(empresaText, empresaMaxW);
   var empresaOneLine = empresaFit[0] + (empresaFit.length > 1 ? '…' : '');
-  doc.text(empresaOneLine, titleXP, 21);
+  doc.text(empresaOneLine, titleXP, 15);
 
   if (data.archivo) {
-    doc.setFontSize(6.5);
+    doc.setFontSize(5.5);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(grayText[0], grayText[1], grayText[2]);
     var archivoText = String(data.archivo);
     var archivoMaxW = pw - 14 - titleXP;
     var archivoFit = doc.splitTextToSize(archivoText, archivoMaxW);
-    doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 26, { align: 'right' });
+    doc.text(archivoFit[0] + (archivoFit.length > 1 ? '…' : ''), pw - 14, 18, { align: 'right' });
   }
 
-  var y = 40;
+  var y = 24;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.setFontSize(9);
+  doc.setFontSize(7.5);
 
   var left = [
     ['Cliente', data.cliente],
@@ -5242,16 +5241,16 @@ function generarPedidoPDF(data) {
   if (data.bodega_facturacion) right.splice(4, 0, ['Bodega Fact.', data.bodega_facturacion]);
 
   var totalW = pw - 28;
-  var leftBlockW = totalW * 0.58;
-  var leftValX = 14 + 34;
+  var leftBlockW = totalW * 0.55;
+  var leftValX = 14 + 28;
   var rightLabelX = 14 + leftBlockW + 4;
-  var rightValX = rightLabelX + 34;
+  var rightValX = rightLabelX + 30;
   var leftValMaxW = (14 + leftBlockW) - leftValX - 4;
   var rightValMaxW = pw - 14 - rightValX;
   var maxF = Math.max(left.length, right.length);
-  var infoTop = y - 5;
+  var infoTop = y - 4.5;
   var midX = 14 + leftBlockW;
-  var rowGap = 6;
+  var rowGap = 3.6;
   for (var fi = 0; fi < maxF; fi++) {
     var rowH = 0;
     if (fi < left.length) {
@@ -5263,7 +5262,7 @@ function generarPedidoPDF(data) {
       doc.setTextColor(left[fi][1] ? darkText[0] : grayText[0], left[fi][1] ? darkText[1] : grayText[1], left[fi][1] ? darkText[2] : grayText[2]);
       var lLines = doc.splitTextToSize(lVal, leftValMaxW);
       doc.text(lLines, leftValX, y);
-      rowH = Math.max(rowH, (lLines.length - 1) * 3.5);
+      rowH = Math.max(rowH, (lLines.length - 1) * 3);
     }
     if (fi < right.length) {
       doc.setFont(undefined, 'bold');
@@ -5274,16 +5273,16 @@ function generarPedidoPDF(data) {
       doc.setTextColor(right[fi][1] ? darkText[0] : grayText[0], right[fi][1] ? darkText[1] : grayText[1], right[fi][1] ? darkText[2] : grayText[2]);
       var rLines = doc.splitTextToSize(rVal, rightValMaxW);
       doc.text(rLines, rightValX, y);
-      rowH = Math.max(rowH, (rLines.length - 1) * 3.5);
+      rowH = Math.max(rowH, (rLines.length - 1) * 3);
     }
     y += rowGap + rowH;
     if (fi < maxF - 1) {
       doc.setDrawColor(200, 210, 220);
       doc.setLineWidth(0.2);
-      doc.line(14, y - 3, pw - 14, y - 3);
+      doc.line(14, y - 2.6, pw - 14, y - 2.6);
     }
   }
-  var infoBottom = y - 4;
+  var infoBottom = y - 3;
   doc.setDrawColor(140, 155, 175);
   doc.setLineWidth(0.4);
   doc.rect(14, infoTop, pw - 28, infoBottom - infoTop);
@@ -5292,22 +5291,23 @@ function generarPedidoPDF(data) {
   doc.line(midX, infoTop, midX, infoBottom);
 
   if (data.observaciones) {
-    y += 3;
+    y += 2.5;
     doc.setFont(undefined, 'normal');
-    var obsMaxW = pw - 28 - 48;
+    doc.setFontSize(7);
+    var obsMaxW = pw - 28 - 40;
     var obsLines = doc.splitTextToSize(String(data.observaciones), obsMaxW);
-    var obsH = Math.max(14, obsLines.length * 4 + 8);
+    var obsH = Math.max(9, obsLines.length * 3.1 + 4);
     doc.setFillColor(254, 249, 231);
     doc.roundedRect(14, y - 4, pw - 28, obsH, 2, 2, 'F');
     doc.setFont(undefined, 'bold');
     doc.setTextColor(125, 102, 8);
-    doc.text('Observaciones:', 18, y + 1);
+    doc.text('Observaciones:', 18, y);
     doc.setFont(undefined, 'normal');
-    doc.text(obsLines, 62, y + 1);
+    doc.text(obsLines, 54, y);
     y += obsH;
   }
 
-  y += 4;
+  y += 2;
   doc.setTextColor(darkText[0], darkText[1], darkText[2]);
 
   var tableBody = (data.productos || []).map(function(p, i) {
@@ -5330,32 +5330,32 @@ function generarPedidoPDF(data) {
     head: [['#', 'Producto', 'Presentación', 'Cantidad', 'Val. Unitario', 'Val. Total', 'Bonif.']],
     body: tableBody,
     theme: 'grid',
-    headStyles: { fillColor: primary, fontSize: 7.5, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.5 },
-    bodyStyles: { fontSize: 7.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    headStyles: { fillColor: primary, fontSize: 7, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.2 },
+    bodyStyles: { fontSize: 7, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
-      1: { cellWidth: 55 },
+      1: { cellWidth: 58 },
       3: { halign: 'right', cellWidth: 18 },
       4: { halign: 'right', cellWidth: 26 },
       5: { halign: 'right', cellWidth: 26 },
       6: { halign: 'center', cellWidth: 14 }
     },
-    margin: { left: 14, right: 14 },
-    styles: { cellPadding: 1.5, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    margin: { left: 14, right: 14, bottom: 10 },
+    styles: { cellPadding: 1.2, lineColor: [90, 90, 90], lineWidth: 0.3 },
     tableLineColor: [60, 60, 60],
     tableLineWidth: 0.5
   });
 
-  var finalY = doc.lastAutoTable.finalY + 10;
+  var finalY = doc.lastAutoTable.finalY + 7;
   doc.setFillColor(totalFill[0], totalFill[1], totalFill[2]);
-  doc.roundedRect(pw - 82, finalY - 5, 68, 14, 3, 3, 'F');
-  doc.setFontSize(11);
+  doc.roundedRect(pw - 82, finalY - 5, 68, 12, 2.5, 2.5, 'F');
+  doc.setFontSize(9.5);
   doc.setTextColor(primary[0], primary[1], primary[2]);
   doc.setFont(undefined, 'bold');
-  doc.text('Total: ' + fmtMoney(data.total), pw - 16, finalY + 4, { align: 'right' });
+  doc.text('Total: ' + fmtMoney(data.total), pw - 16, finalY + 3, { align: 'right' });
 
-  finalY += 20;
-  doc.setFontSize(7);
+  finalY += 14;
+  doc.setFontSize(5.5);
   doc.setTextColor(grayText[0], grayText[1], grayText[2]);
   doc.setFont(undefined, 'normal');
   doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, finalY);
