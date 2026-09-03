@@ -709,13 +709,10 @@ function buildKPIsMoney(orders, ped, dev, fEmp, fDesde, fHasta, prev) {
   var valBloq = 0;
   orders.forEach(function(o) { if (o.estado2 === 'Bloqueado por cartera') valBloq += o.valorPedido; });
 
-  // Concentración: % del $ pedido en el top-5 de clientes del período.
-  var porCliente = {};
-  orders.forEach(function(o) {
-    if (!o.cliente || o.cliente === '—') return;
-    porCliente[o.cliente] = (porCliente[o.cliente] || 0) + o.valorPedido;
-  });
-  var vals = Object.keys(porCliente).map(function(k) { return porCliente[k]; }).sort(function(a, b) { return b - a; });
+  // Concentración: % del $ pedido en el top-5 de clientes del período
+  // (consolidados por identificación, mismo criterio que "Top clientes").
+  var vals = dClientesConsolidados(orders).map(function(c) { return c.valor; })
+    .sort(function(a, b) { return b - a; });
   var top5 = vals.slice(0, 5).reduce(function(s, v) { return s + v; }, 0);
   var totCli = vals.reduce(function(s, v) { return s + v; }, 0);
   var conc = totCli > 0 ? Math.round(top5 / totCli * 100) : 0;
@@ -870,10 +867,18 @@ var _cliNitMap = null;   // dígitos → { ident, nombre } — se arma 1 vez por
 function _ensureCliNitMap() {
   if (_cliNitMap) return;
   _cliNitMap = {};
+  var seen = {};
+  (dClientes || []).forEach(function(c) {
+    var d = _nitDigits(c.Identificacion);
+    if (d) seen[d] = 1;
+  });
   (dClientes || []).forEach(function(c) {
     var d = _nitDigits(c.Identificacion);
     if (!d) return;
-    var entry = { ident: d, nombre: (c.Cliente || '').trim() };
+    // Si el maestro tiene el NIT con y sin dígito de verificación (901737428 y
+    // 9017374281), la identificación canónica es la base de 9 dígitos.
+    var ident = (d.length === 10 && seen[d.slice(0, 9)]) ? d.slice(0, 9) : d;
+    var entry = { ident: ident, nombre: (c.Cliente || '').trim() };
     _nitVariants(d).forEach(function(k) { if (!_cliNitMap[k]) _cliNitMap[k] = entry; });
   });
 }
@@ -917,8 +922,10 @@ function _mergeDvGroups(map) {
   });
 }
 
-// ── 5. Top Clientes (consolidado por identificación; ranking por valor $) ──
-function buildTopClientes(orders) {
+// Agrupa órdenes por cliente único: consolida por identificación (dClienteKey)
+// + fusiona el dígito de verificación (_mergeDvGroups). Usado por "Top clientes"
+// y por la concentración top-5 de buildKPIsMoney.
+function dClientesConsolidados(orders) {
   var map = {};
   orders.forEach(function(o) {
     var r = dClienteKey(o.nit, o.cliente);
@@ -930,10 +937,13 @@ function buildTopClientes(orders) {
     m.empresas[o.sigla] = true;
     if (!m.fromMaster && r.fromMaster) { m.cliente = r.nombre; m.fromMaster = true; }
   });
-
   _mergeDvGroups(map);
+  return Object.keys(map).map(function(k) { return map[k]; });
+}
 
-  var arr = Object.keys(map).map(function(k) { return map[k]; });
+// ── 5. Top Clientes (consolidado por identificación; ranking por valor $) ──
+function buildTopClientes(orders) {
+  var arr = dClientesConsolidados(orders);
   // Ranking por valor $; el volumen en uds queda como columna de contexto.
   arr.sort(function(a, b) { return b.valor - a.valor; });
   arr = arr.slice(0, 10);
@@ -1776,28 +1786,38 @@ function buildClientesNuevos(fEmp, fDesde, fHasta) {
   var tbody = document.getElementById('tb-clinuevos');
   var subEl = document.getElementById('clinuevos-sub');
 
-  var nuevos = dClientes.filter(function(c) {
-    if (!c.Cliente_Nuevo) return false;
-    if (fEmp && c.Nombre_Empresa && c.Nombre_Empresa !== fEmp) return false;
+  // Clientes marcados nuevos con alta en el rango, dedup por identificación
+  // (ClientesUnicos tiene filas repetidas para el mismo NIT).
+  var nuevos = {};
+  dClientes.forEach(function(c) {
+    if (!c.Cliente_Nuevo) return;
+    if (fEmp && c.Nombre_Empresa && c.Nombre_Empresa !== fEmp) return;
     var f = String(c.creado_en || '').slice(0, 10);
-    return _fechaEnRango(f, fDesde, fHasta);
+    if (!_fechaEnRango(f, fDesde, fHasta)) return;
+    var r = dClienteKey(c.Identificacion, c.Cliente);
+    var n = nuevos[r.key];
+    if (!n) nuevos[r.key] = { key: r.key, cliente: r.nombre, alta: f, fromMaster: r.fromMaster };
+    else {
+      if (f && (!n.alta || f < n.alta)) n.alta = f;
+      if (r.fromMaster && !n.fromMaster) { n.cliente = r.nombre; n.fromMaster = true; }
+    }
   });
 
-  // Aporte en $: cruzar por nombre de cliente contra los pedidos del período.
-  var pedByCli = {};
+  // Aporte en $: cruzar por identificación contra los pedidos del período.
+  var pedByKey = {};
   dPedidos.forEach(function(p) {
     if (fEmp && p.Nombre_Empresa !== fEmp) return;
     if (!_fechaEnRango(p.Fecha_Pedido, fDesde, fHasta)) return;
-    var k = dNorm(p.Cliente);
-    if (!k) return;
-    var e = pedByCli[k] || (pedByCli[k] = { valor: 0, ord: {} });
+    var k = dClienteKey(p.NIT, p.Cliente).key;
+    var e = pedByKey[k] || (pedByKey[k] = { valor: 0, ord: {} });
     e.valor += Number(p.Valor_Total) || 0;
     e.ord[dKeyOf(p.Nombre_Empresa, p.Consecutivo, p.Cliente)] = 1;
   });
 
-  var rows = nuevos.map(function(c) {
-    var e = pedByCli[dNorm(c.Cliente)] || { valor: 0, ord: {} };
-    return { cliente: c.Cliente || '—', alta: String(c.creado_en || '').slice(0, 10), ord: Object.keys(e.ord).length, valor: e.valor };
+  var rows = Object.keys(nuevos).map(function(k) {
+    var n = nuevos[k];
+    var e = pedByKey[k] || { valor: 0, ord: {} };
+    return { cliente: n.cliente || '—', alta: n.alta || '', ord: Object.keys(e.ord).length, valor: e.valor };
   }).sort(function(a, b) { return b.valor - a.valor; });
 
   var totVal = rows.reduce(function(s, r) { return s + r.valor; }, 0);
