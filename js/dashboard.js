@@ -474,8 +474,7 @@ function dSlice(fEmp, desde, hasta) {
     mue: dMuestras.filter(function(m) { return (!fEmp || m.Empresa === fEmp) && r(m.Fecha_Solicitud); }),
     ree: dReenvases.filter(function(x) { return (!fEmp || x.Empresa === fEmp) && r(x.Fecha); }),
     ing: dIngresos.filter(function(i) { return (!fEmp || i.Empresa_Origen === fEmp || i.Empresa_Destino === fEmp) && r(i.Fecha); }),
-    cam: dCambios.filter(function(c) { return (!fEmp || c.Empresa === fEmp) && r(c.Fecha_Solicitud); }),
-    ent: dEntregas.filter(function(e) { return (!fEmp || e.empresa_pedido === fEmp) && r(e.fecha); })
+    cam: dCambios.filter(function(c) { return (!fEmp || c.Empresa === fEmp) && r(c.Fecha_Solicitud); })
   };
 }
 
@@ -520,8 +519,8 @@ function buildDashboard() {
   buildResumenModulos(cur.orders, cur.dev, cur.ing, cur.oc, cur.mue, cur.ree, cur.cam, fEmp);
   buildExactitudInventario(fEmp);
   buildTopDescuadre(fEmp);
-  buildCobertura(cur.ent, fEmp, fDesde, fHasta);
-  buildAlertasStock(cur.ped, cur.ent, fEmp);
+  buildCobertura(fEmp);
+  buildAlertasStock(fEmp);
   buildOrdenesCompra(cur.oc);
   buildOtrosModulos(cur.cam, cur.mue, cur.ree);
   buildCalidadDatos(cur.ped, fEmp);
@@ -1542,8 +1541,30 @@ function dStockPorProducto(fEmp) {
   return out;
 }
 
-// ── Cobertura de inventario (días) ──
-function buildCobertura(ent, fEmp, fDesde, fHasta) {
+// Cobertura y alertas de stock son indicadores "a hoy" (el snapshot de Kardex
+// siempre es a hoy). Por eso el movimiento se mide en una ventana móvil fija de
+// 90 días desde hoy — NO con el rango del filtro (mezclarlos hacía que un
+// producto que ingresó en septiembre saliera como "sin rotación en agosto").
+var DASH_MOV_VENTANA = 90;
+function _movVentanaDesde() {
+  return _isoDate(new Date(Date.now() - DASH_MOV_VENTANA * 86400000));
+}
+
+// Última fecha de movimiento de Kardex por producto y tipo ('Entrada'|'Salida'),
+// sobre la empresa filtrada. Usa dExist.kxMovimientos (misma base que el saldo).
+function _ultimoMovPorProducto(fEmp, tipo) {
+  var out = {};
+  ((dExist && dExist.kxMovimientos) || []).forEach(function(m) {
+    if (m.tipo !== tipo) return;
+    if (fEmp && m.empresa !== fEmp) return;
+    var k = dNormProd(m.producto), f = String(m.fecha || '').slice(0, 10);
+    if (k && f && (!out[k] || f > out[k])) out[k] = f;
+  });
+  return out;
+}
+
+// ── Cobertura de inventario (días) — consumo de los últimos 90 días, a hoy ──
+function buildCobertura(fEmp) {
   var tbody = document.getElementById('tb-cobertura');
   var subEl = document.getElementById('cob-sub');
   if (!dExist) {
@@ -1551,40 +1572,39 @@ function buildCobertura(ent, fEmp, fDesde, fHasta) {
     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:20px">Sin snapshot de existencias</td></tr>';
     return;
   }
-  // Días del período de consumo: rango acotado; o desde→hoy; o desde la primera
-  // entrega hasta hoy si el rango está totalmente abierto.
-  var dias = 0;
-  var hoyMs = Date.now();
-  if (fDesde && fHasta) {
-    dias = Math.round((new Date(fHasta + 'T00:00:00') - new Date(fDesde + 'T00:00:00')) / 86400000) + 1;
-  } else if (fDesde) {
-    dias = Math.round((hoyMs - new Date(fDesde + 'T00:00:00')) / 86400000) + 1;
-  } else {
-    var fechas = ent.map(function(e) { return String(e.fecha || '').slice(0, 10); }).filter(Boolean).sort();
-    if (fechas.length) dias = Math.round((hoyMs - new Date(fechas[0] + 'T00:00:00')) / 86400000) + 1;
-  }
-  if (dias < 1) dias = 0;
-  var salidaPorProd = {};
-  ent.forEach(function(e) {
-    var k = dNormProd(e.producto);
+  var desde = _movVentanaDesde();
+  // Consumo = salidas de Kardex por Pedidos (demanda real de cliente) en la ventana.
+  var salidaPorProd = {}, minF = null;
+  ((dExist && dExist.kxMovimientos) || []).forEach(function(m) {
+    if (m.tipo !== 'Salida' || m.modulo !== 'Pedidos') return;
+    if (fEmp && m.empresa !== fEmp) return;
+    var f = String(m.fecha || '').slice(0, 10);
+    if (!f || f < desde) return;
+    var k = dNormProd(m.producto);
     if (!k) return;
-    salidaPorProd[k] = (salidaPorProd[k] || 0) + (Number(e.cantidad) || 0);
+    salidaPorProd[k] = (salidaPorProd[k] || 0) + (Number(m.cantidad) || 0);
+    if (!minF || f < minF) minF = f;
   });
+  // Días efectivos: desde la primera salida dentro de la ventana hasta hoy
+  // (EntregasPedido arranca en ago-2026, así que puede ser < 90).
+  var dias = minF ? Math.round((Date.now() - new Date(minF + 'T00:00:00')) / 86400000) + 1 : 0;
+  dias = Math.max(0, Math.min(dias, DASH_MOV_VENTANA));
+
   var stock = dStockPorProducto(fEmp);
   var rows = [];
   Object.keys(salidaPorProd).forEach(function(k) {
     var sal = salidaPorProd[k];
     if (!dias || sal <= 0) return;
-    var rate = sal / dias;              // uds/día
     var st = stock[k] || 0;
     if (st <= 0) return;
+    var rate = sal / dias;
     rows.push({ prod: k, stock: st, rate: rate, cob: st / rate });
   });
   rows.sort(function(a, b) { return a.cob - b.cob; });
   rows = rows.slice(0, 10);
-  if (subEl) subEl.textContent = dias ? ('consumo de ' + dias + ' días · menor cobertura primero') : 'sin salidas en el período';
+  if (subEl) subEl.textContent = dias ? ('consumo últimos ' + dias + ' días · a hoy (no depende del rango)') : 'sin salidas recientes';
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:20px">Sin datos de salidas en el período</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:20px">Sin datos de salidas recientes</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(function(r) {
@@ -1598,8 +1618,8 @@ function buildCobertura(ent, fEmp, fDesde, fHasta) {
   }).join('');
 }
 
-// ── Alertas de stock: agotados y sin rotación ──
-function buildAlertasStock(ped, ent, fEmp) {
+// ── Alertas de stock (a hoy) — agotados con pendiente + stock estancado ──
+function buildAlertasStock(fEmp) {
   var el = document.getElementById('chart-alertas-stock');
   var subEl = document.getElementById('alertas-sub');
   if (!dExist) {
@@ -1607,35 +1627,42 @@ function buildAlertasStock(ped, ent, fEmp) {
     el.innerHTML = '<div style="color:#a0aec0;text-align:center;padding:20px">Sin snapshot de existencias</div>';
     return;
   }
+  var desde = _movVentanaDesde();
   var stock = dStockPorProducto(fEmp);
-  var salida = {};
-  ent.forEach(function(e) { var k = dNormProd(e.producto); if (k) salida[k] = (salida[k] || 0) + (Number(e.cantidad) || 0); });
+  var ultSalida = _ultimoMovPorProducto(fEmp, 'Salida');
+  var ultIngreso = _ultimoMovPorProducto(fEmp, 'Entrada');
+
+  // Pendientes a hoy: TODAS las líneas abiertas con pendiente (no solo del rango).
   var pendPorProd = {};
-  ped.forEach(function(p) {
+  dPedidos.forEach(function(p) {
+    if (fEmp && p.Nombre_Empresa !== fEmp) return;
     if (!dLineaPendiente(p)) return;
     var k = dNormProd(p.Producto);
     if (k) pendPorProd[k] = (pendPorProd[k] || 0) + (Number(p.Cant_Pendiente) || 0);
   });
 
-  var agotados = [], sinRotacion = [];
+  var agotados = [], estancados = [];
   Object.keys(pendPorProd).forEach(function(k) {
     if ((stock[k] || 0) <= 0) agotados.push({ prod: k, pend: pendPorProd[k] });
   });
   Object.keys(stock).forEach(function(k) {
-    if ((stock[k] || 0) > 0 && !(salida[k] > 0)) sinRotacion.push({ prod: k, stock: stock[k] });
+    if ((stock[k] || 0) <= 0) return;
+    var salioReciente = ultSalida[k] && ultSalida[k] >= desde;
+    var entroReciente = ultIngreso[k] && ultIngreso[k] >= desde;   // stock "nuevo": no es estancado
+    if (!salioReciente && !entroReciente) estancados.push({ prod: k, stock: stock[k], ult: ultSalida[k] || null });
   });
   agotados.sort(function(a, b) { return b.pend - a.pend; });
-  sinRotacion.sort(function(a, b) { return b.stock - a.stock; });
+  estancados.sort(function(a, b) { return b.stock - a.stock; });
 
-  if (subEl) subEl.textContent = agotados.length + ' agotados con pendiente · ' + sinRotacion.length + ' sin rotación';
+  if (subEl) subEl.textContent = agotados.length + ' agotados con pendiente · ' + estancados.length + ' estancados · a hoy';
 
   var html = '';
   html += '<div style="font-size:0.78rem;font-weight:700;color:#e74c3c;margin-bottom:6px">🔴 Agotados con pedidos pendientes</div>';
   html += dHbarList(agotados.slice(0, 6).map(function(r) {
     return { label: r.prod, value: r.pend, valueTxt: Math.round(r.pend).toLocaleString('es-CO') + ' pend', color: '#e74c3c' };
   }), null, { stack: true });
-  html += '<div style="font-size:0.78rem;font-weight:700;color:#e67e22;margin:14px 0 6px">🟠 Con stock y sin salidas en el período</div>';
-  html += dHbarList(sinRotacion.slice(0, 6).map(function(r) {
+  html += '<div style="font-size:0.78rem;font-weight:700;color:#e67e22;margin:14px 0 6px">🟠 Con stock y sin movimiento en ' + DASH_MOV_VENTANA + ' días</div>';
+  html += dHbarList(estancados.slice(0, 6).map(function(r) {
     return { label: r.prod, value: r.stock, valueTxt: Math.round(r.stock).toLocaleString('es-CO') + ' uds', color: '#e67e22' };
   }), null, { stack: true });
   el.innerHTML = html;
