@@ -98,6 +98,58 @@ function _grupoTipoId(g) {
   return t;
 }
 
+// ── Normalización de teléfono (plan de numeración Colombia) ──
+// Celular: 10 dígitos, empieza en 3          -> "3XX XXX XXXX"
+// Fijo (desde 2022): 10 dígitos, empieza 60  -> "60X XXX XXXX"
+// Fijo viejo de 7 dígitos: se deja tal cual (solo se limpian espacios).
+// Se quitan el indicativo +57 / 57 / 0 de larga distancia.
+// Lo que no encaja se muestra igual pero con aviso (warn:true).
+
+function _fmtTelUno(s) {
+  s = (s || '').trim();
+  if (!s) return { text: '', warn: false };
+  var d = s.replace(/\D/g, '');
+  if (d.length === 12 && d.slice(0, 2) === '57') d = d.slice(2);
+  else if (d.length === 13 && d.slice(0, 3) === '057') d = d.slice(3);
+  else if (d.length === 11 && d.charAt(0) === '0') d = d.slice(1);
+
+  if (d.length === 10 && (d.charAt(0) === '3' || d.slice(0, 2) === '60')) {
+    return { text: d.slice(0, 3) + ' ' + d.slice(3, 6) + ' ' + d.slice(6), warn: false };
+  }
+  if (/^\d{7}$/.test(d) && /^[\d\s.\-]+$/.test(s)) {
+    return { text: d, warn: false };            // fijo viejo: sin agrupar
+  }
+  return { text: s.replace(/\s+/g, ' '), warn: true };
+}
+
+// Devuelve { text, warn }. Soporta varios números en un mismo campo
+// (separados por "/", ",", ";" o salto de línea); elimina repetidos.
+function _fmtTelefono(raw) {
+  var s = (raw == null ? '' : String(raw)).trim();
+  if (!s || s === '0') return { text: '', warn: false };
+
+  var partes = s.split(/\s*[\/,;]\s*|\s*[\r\n]+\s*/).map(function(x) { return x.trim(); }).filter(Boolean);
+  if (partes.length <= 1) return _fmtTelUno(s);
+
+  var vistos = {}, out = [], warn = false;
+  partes.forEach(function(p) {
+    var r = _fmtTelUno(p);
+    if (r.warn) warn = true;
+    if (r.text && !vistos[r.text]) { vistos[r.text] = true; out.push(r.text); }
+  });
+  return { text: out.join(' / '), warn: warn };
+}
+
+// Celda de teléfono ya escapada; '' si está vacío.
+function _telCellHtml(raw) {
+  var info = _fmtTelefono(raw);
+  if (!info.text) return '';
+  var esc = escHtml(info.text);
+  return info.warn
+    ? '<span class="tel-warn" title="No parece un teléfono colombiano">' + esc + ' ⚠️</span>'
+    : esc;
+}
+
 // ── Estado del cliente ──
 // Valores válidos: 'Activo' (por defecto), 'Inactivo', 'Bloqueado por cartera'.
 var _EST_RANK = { 'Bloqueado por cartera': 0, 'Inactivo': 1, 'Activo': 2 };
@@ -523,7 +575,7 @@ function renderTable() {
       '<td>' + (_grupoEsNuevo(g) ? '<span class="nuevo-badge">🆕 Nuevo</span>' : '<span style="color:#cbd5e0">—</span>') + '</td>' +
       '<td>' + _identCellHtml(_bestId(g.records), _grupoTipoId(g)) + '</td>' +
       '<td>' + escHtml(first.Tipo_Identificacion || '') + '</td>' +
-      '<td>' + escHtml(tel) + '</td>' +
+      '<td>' + _telCellHtml(tel) + '</td>' +
       '<td>' + muniHtml + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(correo) + '</td>' +
       '<td>' + _estadoBadge(ge.estado, ge.mixto) + '</td>' +
@@ -575,7 +627,7 @@ function openGroupDetail(groupIdx) {
     ['Cliente', first.Cliente],
     ['Identificación', _identCellHtml(_bestId(g.records), tipoId), true],
     ['Tipo ID', tipoId],
-    ['Teléfono', tel],
+    ['Teléfono', _telCellHtml(tel) || '—', true],
     ['Correo', correo]
   ];
   commonFields.forEach(function(f) {
@@ -634,10 +686,10 @@ function openGroupDetail(groupIdx) {
         ['Cupo Crédito', r.Cupo_Credito],
         ['Plazo Pago', r.Plazo_Pago],
         ['Lista Precio', r.Lista_Precio],
-        ['Teléfono', r.Telefono]
+        ['Teléfono', _telCellHtml(r.Telefono) || '—', true]
       ];
       sedeFields.forEach(function(f) {
-        html += '<div><span style="color:#a0aec0;font-size:0.72rem;font-weight:600">' + f[0] + ':</span> ' + escHtml(f[1] || '—') + '</div>';
+        html += '<div><span style="color:#a0aec0;font-size:0.72rem;font-weight:600">' + f[0] + ':</span> ' + (f[2] ? f[1] : escHtml(f[1] || '—')) + '</div>';
       });
       html += '</div>' + _auditoriaHtml(r, true) + '</div>';
     });
@@ -1032,7 +1084,7 @@ function exportExcel() {
       _esNuevoRecord(c) ? 'Sí' : '',
       c.Tipo_Identificacion || '',
       _fmtIdent(c.Identificacion, c.Tipo_Identificacion).text || (c.Identificacion || ''),
-      c.Telefono || '',
+      _fmtTelefono(c.Telefono).text || (c.Telefono || ''),
       c.Correo_Electronico || '',
       c.Direccion || '',
       c.Direccion_Envio || '',
