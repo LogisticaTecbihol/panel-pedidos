@@ -153,6 +153,14 @@
       <label>Empresa</label>
       <select id="pp-f-empresa"><option value="">— Todas —</option></select>
     </div>
+    <div class="fg">
+      <label>Bodega</label>
+      <select id="pp-f-bodega">
+        <option value="">— Todas —</option>
+        <option value="Productos Buenos">Productos Buenos</option>
+        <option value="Producto No Conforme">Producto No Conforme</option>
+      </select>
+    </div>
     <div class="fg"><label>Desde</label><input type="date" id="pp-f-desde"></div>
     <div class="fg"><label>Hasta</label><input type="date" id="pp-f-hasta"></div>
     <button onclick="clearPpFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
@@ -919,6 +927,6 @@
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/pdf-remision.js?v=20260903u"></script>
-<script src="js/kardex.js?v=20260904b"></script>
+<script src="js/kardex.js?v=20260904c"></script>
 </body>
 </html>

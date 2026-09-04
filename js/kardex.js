@@ -828,6 +828,7 @@ function populatePpFilters() {
   if (!ppFiltersAttached) {
     document.getElementById('pp-f-prod').addEventListener('change', calcularKardexProducto);
     document.getElementById('pp-f-empresa').addEventListener('change', calcularKardexProducto);
+    document.getElementById('pp-f-bodega').addEventListener('change', calcularKardexProducto);
     document.getElementById('pp-f-desde').addEventListener('change', calcularKardexProducto);
     document.getElementById('pp-f-hasta').addEventListener('change', calcularKardexProducto);
     ppFiltersAttached = true;
@@ -838,6 +839,7 @@ function populatePpFilters() {
 function clearPpFilters() {
   document.getElementById('pp-f-prod').value = '';
   document.getElementById('pp-f-empresa').value = '';
+  document.getElementById('pp-f-bodega').value = '';
   document.getElementById('pp-f-desde').value = '';
   document.getElementById('pp-f-hasta').value = '';
   calcularKardexProducto();
@@ -847,6 +849,7 @@ function calcularKardexProducto() {
   pkCurrentPage = 1;
   var fProd = document.getElementById('pp-f-prod').value;
   var fEmp = document.getElementById('pp-f-empresa').value;
+  var fBodega = document.getElementById('pp-f-bodega').value;
   var fDesde = document.getElementById('pp-f-desde').value;
   var fHasta = document.getElementById('pp-f-hasta').value;
 
@@ -890,6 +893,7 @@ function calcularKardexProducto() {
   pkFiltered = origenBueno.concat(origenNC).filter(function(m) {
     if (m.producto !== fProd) return false;
     if (fEmp && m.empresa !== fEmp) return false;
+    if (fBodega && m.bodega !== fBodega) return false;
     var desde = fDesde || KX_FECHA_CORTE;
     if (m.fecha < desde) return false;
     if (fHasta && m.fecha > fHasta) return false;
