@@ -796,9 +796,20 @@ async function saveEntregas() {
           entregas: entregasPdf, return_doc: true, copies: ['COPIA - CONTABILIDAD']
         });
         if (_crEnt && _crEnt.doc) {
+          // Paquete completo: se agrega la página de la Solicitud (todas
+          // las líneas de este consecutivo) igual que hace el botón manual
+          // "Enviar Remisión", para que contabilidad reciba el mismo
+          // respaldo que en Pedidos (pedido + remisión).
+          var _consecEnt = (muHeadRow && muHeadRow.Consecutivo) || '';
+          var _rowsEnt = (allMuestras || []).filter(function(x) {
+            return x.Consecutivo === _consecEnt && _consecEnt && (x.Empresa || '') === muViewEmpresa;
+          });
+          if (!_rowsEnt.length && muHeadRow) _rowsEnt = [muHeadRow];
+          var _solDataEnt = muHeadRow ? _dataMuestraSolicitud({ consec: _consecEnt, rows: _rowsEnt }, muHeadRow) : null;
+          if (_solDataEnt) generarRemisionPDF(Object.assign({}, _solDataEnt, { return_doc: true, _doc: _crEnt.doc }));
           await NOTIF.enviarPDFContabilidad(_crEnt.doc, {
             modulo: 'muestras', referencia: ((muHeadRow && muHeadRow.Consecutivo) || '') + ' · Rem ' + remision,
-            titulo: 'Remisión muestras #' + remision, docLabel: 'Remisión',
+            titulo: 'Paquete Muestras #' + ((muHeadRow && muHeadRow.Consecutivo) || '') + ' — Rem ' + remision, docLabel: 'Paquete',
             contabIds: pendingContabEntregas.contabIds, contabNames: pendingContabEntregas.contabNames
           });
         }
@@ -1430,12 +1441,34 @@ async function saveMuestra() {
       if (_pendingContabMu && _pendingContabMu.contabIds && _pendingContabMu.contabIds.length && result.remision && typeof NOTIF !== 'undefined') {
         try {
           var _empMu = document.getElementById('mu-empresa').value || '';
+          var _consecMuEdit = document.getElementById('mu-consecutivo').value.trim();
           var _entMu = [{ producto: producto, presentacion: presentacion, cantidad: cantEntregada || cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' }];
-          var _cr = generarRemisionPDF({ empresa: _empMu, consecutivo: document.getElementById('mu-consecutivo').value.trim(), ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: document.getElementById('mu-responsable').value.trim(), municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), entregas: _entMu, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+          var _cr = generarRemisionPDF({ empresa: _empMu, consecutivo: _consecMuEdit, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: document.getElementById('mu-responsable').value.trim(), municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), entregas: _entMu, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
           if (_cr && _cr.doc) {
+            // Paquete completo: además de la remisión, se agrega la página
+            // de la Solicitud (todas las líneas de este consecutivo) para
+            // que contabilidad reciba el mismo respaldo que en Pedidos.
+            var _headMuEdit = {
+              Empresa: _empMu, Solicitante: document.getElementById('mu-solicitante').value.trim(),
+              Responsable: document.getElementById('mu-responsable').value.trim(),
+              Autoriza: document.getElementById('mu-autoriza').value.trim(),
+              Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
+              Municipio: document.getElementById('mu-municipio').value.trim(),
+              Departamento: document.getElementById('mu-departamento').value.trim(),
+              Fecha_Aplicacion: document.getElementById('mu-fecha-aplicacion').value,
+              Fecha_Seguimiento: document.getElementById('mu-fecha-seguimiento').value,
+              Objetivo: document.getElementById('mu-objetivo').value.trim(),
+              Fecha_Solicitud: document.getElementById('mu-fecha-solicitud').value
+            };
+            var _rowsMuEdit = (allMuestras || []).filter(function(x) {
+              return x.Consecutivo === _consecMuEdit && _consecMuEdit && (x.Empresa || '') === _empMu && x.id !== muEditId;
+            });
+            _rowsMuEdit.push({ Producto: producto, Presentacion: presentacion, Cantidad: cantidad });
+            var _solDataMuEdit = _dataMuestraSolicitud({ consec: _consecMuEdit, rows: _rowsMuEdit }, _headMuEdit);
+            if (_solDataMuEdit) generarRemisionPDF(Object.assign({}, _solDataMuEdit, { return_doc: true, _doc: _cr.doc }));
             await NOTIF.enviarPDFContabilidad(_cr.doc, {
               modulo: 'muestras', referencia: (document.getElementById('mu-consecutivo').value.trim()||'') + ' · Rem ' + result.remision,
-              titulo: 'Remisión muestras #' + result.remision, docLabel: 'Remisión',
+              titulo: 'Paquete Muestras #' + _consecMuEdit + ' — Rem ' + result.remision, docLabel: 'Paquete',
               contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
             });
           }
@@ -1523,9 +1556,28 @@ async function saveMuestra() {
         });
         var _crN = generarRemisionPDF({ empresa: empresa, consecutivo: consecutivo, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: responsable, municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), entregas: _entMuN, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
         if (_crN && _crN.doc) {
+          // Paquete completo: se agrega la página de la Solicitud con
+          // todas las líneas recién creadas, igual que hace el botón
+          // manual "Enviar Remisión".
+          var _headMuNew = {
+            Empresa: empresa, Solicitante: document.getElementById('mu-solicitante').value.trim(),
+            Responsable: responsable, Autoriza: document.getElementById('mu-autoriza').value.trim(),
+            Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
+            Municipio: document.getElementById('mu-municipio').value.trim(),
+            Departamento: document.getElementById('mu-departamento').value.trim(),
+            Fecha_Aplicacion: document.getElementById('mu-fecha-aplicacion').value,
+            Fecha_Seguimiento: document.getElementById('mu-fecha-seguimiento').value,
+            Objetivo: document.getElementById('mu-objetivo').value.trim(),
+            Fecha_Solicitud: fechaSol
+          };
+          var _rowsMuNew = productosValidos.map(function(p) {
+            return { Producto: p.producto, Presentacion: p.presentacion, Cantidad: p.cantidad };
+          });
+          var _solDataMuNew = _dataMuestraSolicitud({ consec: consecutivo, rows: _rowsMuNew }, _headMuNew);
+          if (_solDataMuNew) generarRemisionPDF(Object.assign({}, _solDataMuNew, { return_doc: true, _doc: _crN.doc }));
           await NOTIF.enviarPDFContabilidad(_crN.doc, {
             modulo: 'muestras', referencia: (consecutivo||'') + ' · Rem ' + result.remision,
-            titulo: 'Remisión muestras #' + result.remision, docLabel: 'Remisión',
+            titulo: 'Paquete Muestras #' + consecutivo + ' — Rem ' + result.remision, docLabel: 'Paquete',
             contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
           });
         }
