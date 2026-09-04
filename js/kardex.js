@@ -12,6 +12,12 @@ var kxRemAnuladas = [];
 var _remAnuladasSet = {};
 var kxMovimientos = [];
 var kxFiltered = [];
+var KX_FECHA_CORTE = '2026-07-01';
+
+// Kardex por Producto (todas las empresas)
+var pkFiltered = [];
+var pkCurrentPage = 1;
+var ppFiltersAttached = false;
 
 // NC State
 var ncAjustes = [];
@@ -52,6 +58,7 @@ async function loadKardex() {
   var kxExtras = ['CHIA ABAGO'];
   var kxAll = true;
   populateEmpresaSelect('f-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('pp-f-empresa', '— Todas —', kxExtras, kxAll);
   populateEmpresaSelect('nc-f-empresa', '— Seleccionar —', kxExtras, kxAll);
   populateEmpresaSelect('nc-empresa', '— Seleccionar —', kxExtras, kxAll);
   populateEmpresaSelect('ncsi-empresa', '— Seleccionar —', kxExtras, kxAll);
@@ -136,6 +143,8 @@ async function loadKardex() {
     buildMovimientos();
     populateKxFilters();
     calcularKardex();
+    populatePpFilters();
+    if (activeTab === 'prodkx') calcularKardexProducto();
 
     buildNCMovimientos();
     populateNCFilters();
@@ -604,8 +613,8 @@ function calcularKardex() {
   document.getElementById('kx-no-filter').style.display = 'none';
   document.getElementById('kx-table-wrap').style.display = 'block';
 
-  // Filter movements (corte desde 2026-07-01)
-  var fechaCorte = '2026-07-01';
+  // Filter movements (corte desde KX_FECHA_CORTE)
+  var fechaCorte = KX_FECHA_CORTE;
   kxFiltered = kxMovimientos.filter(function(m) {
     if (m.empresa !== fEmp) return false;
     if (fProd && m.producto !== fProd) return false;
@@ -792,6 +801,217 @@ function exportKardexExcel() {
   var filename = 'Kardex_' + getSiglaKx(fEmp) + '_' + (fProd || '').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30) + '_' + today() + '.xlsx';
   XLSX.writeFile(wb, filename);
   showToast('Excel exportado: ' + kxFiltered.length + ' movimientos');
+}
+
+// ══════════════════════════════════════════
+// ── KARDEX POR PRODUCTO (todas las empresas) ──
+// ══════════════════════════════════════════
+
+function populateProductFilterGlobal() {
+  var productos = {};
+  kxMovimientos.forEach(function(m) {
+    if (m.producto) productos[m.producto] = true;
+  });
+  var sorted = Object.keys(productos).sort();
+  var fp = document.getElementById('pp-f-prod');
+  var current = fp.value;
+  fp.innerHTML = '<option value="">— Seleccionar —</option>' + sorted.map(function(p) {
+    return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>';
+  }).join('');
+  if (current && sorted.indexOf(current) >= 0) fp.value = current;
+}
+
+function populatePpFilters() {
+  if (!ppFiltersAttached) {
+    document.getElementById('pp-f-prod').addEventListener('change', calcularKardexProducto);
+    document.getElementById('pp-f-empresa').addEventListener('change', calcularKardexProducto);
+    document.getElementById('pp-f-desde').addEventListener('change', calcularKardexProducto);
+    document.getElementById('pp-f-hasta').addEventListener('change', calcularKardexProducto);
+    ppFiltersAttached = true;
+  }
+  populateProductFilterGlobal();
+}
+
+function clearPpFilters() {
+  document.getElementById('pp-f-prod').value = '';
+  document.getElementById('pp-f-empresa').value = '';
+  document.getElementById('pp-f-desde').value = '';
+  document.getElementById('pp-f-hasta').value = '';
+  calcularKardexProducto();
+}
+
+function calcularKardexProducto() {
+  pkCurrentPage = 1;
+  var fProd = document.getElementById('pp-f-prod').value;
+  var fEmp = document.getElementById('pp-f-empresa').value;
+  var fDesde = document.getElementById('pp-f-desde').value;
+  var fHasta = document.getElementById('pp-f-hasta').value;
+
+  if (!fProd) {
+    document.getElementById('pp-no-filter').style.display = 'block';
+    document.getElementById('pp-table-wrap').style.display = 'none';
+    document.getElementById('pp-s-saldo-ini').textContent = '0';
+    document.getElementById('pp-s-entradas').textContent = '0';
+    document.getElementById('pp-s-salidas').textContent = '0';
+    document.getElementById('pp-s-saldo-act').textContent = '0';
+    document.getElementById('row-ct-pp').textContent = '';
+    document.getElementById('pp-titulo').textContent = 'Movimientos por Producto';
+    return;
+  }
+
+  document.getElementById('pp-no-filter').style.display = 'none';
+  document.getElementById('pp-table-wrap').style.display = 'block';
+  document.getElementById('pp-titulo').textContent = 'Movimientos de "' + fProd + '"';
+
+  pkFiltered = kxMovimientos.filter(function(m) {
+    if (m.producto !== fProd) return false;
+    if (fEmp && m.empresa !== fEmp) return false;
+    var desde = fDesde || KX_FECHA_CORTE;
+    if (m.fecha < desde) return false;
+    if (fHasta && m.fecha > fHasta) return false;
+    return true;
+  });
+
+  pkFiltered.sort(function(a, b) {
+    var da = a.fecha || '';
+    var db = b.fecha || '';
+    if (da !== db) return da < db ? -1 : 1;
+    var pa = a.modulo === 'Saldo Inicial' ? 0 : 1;
+    var pb = b.modulo === 'Saldo Inicial' ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    var ea = a.tipo === 'Entrada' ? 0 : 1;
+    var eb = b.tipo === 'Entrada' ? 0 : 1;
+    return ea - eb;
+  });
+
+  // Calculate running balance and stats (per empresa)
+  var saldoIni = 0;
+  var totalEntradas = 0;
+  var totalSalidas = 0;
+  var saldosPorEmpresa = {};
+
+  pkFiltered.forEach(function(m) {
+    if (!saldosPorEmpresa[m.empresa]) saldosPorEmpresa[m.empresa] = 0;
+    if (m.tipo === 'Entrada') {
+      saldosPorEmpresa[m.empresa] += m.cantidad;
+      if (m.modulo === 'Saldo Inicial') {
+        saldoIni += m.cantidad;
+      } else {
+        totalEntradas += m.cantidad;
+      }
+    } else {
+      saldosPorEmpresa[m.empresa] -= m.cantidad;
+      totalSalidas += m.cantidad;
+    }
+    m._saldo = saldosPorEmpresa[m.empresa];
+  });
+
+  var saldoTotal = 0;
+  Object.keys(saldosPorEmpresa).forEach(function(k) { saldoTotal += saldosPorEmpresa[k]; });
+
+  document.getElementById('pp-s-saldo-ini').textContent = _fmtNum.format(saldoIni);
+  document.getElementById('pp-s-entradas').textContent = _fmtNum.format(totalEntradas);
+  document.getElementById('pp-s-salidas').textContent = _fmtNum.format(totalSalidas);
+  document.getElementById('pp-s-saldo-act').textContent = _fmtNum.format(saldoTotal);
+
+  renderKardexProductoTable();
+}
+
+function pkGoToPage(p) { pkCurrentPage = p; renderKardexProductoTable(); }
+
+function renderKardexProductoTable() {
+  var cols = ['#', 'Fecha', 'Tipo', 'Módulo', 'Empresa', 'N° Remisión', 'Referencia', 'Entrada', 'Salida', 'Saldo', ''];
+  var colSpan = cols.length;
+  document.getElementById('t-head-pp').innerHTML = cols.map(function(c) {
+    return '<th>' + c + '</th>';
+  }).join('');
+
+  document.getElementById('row-ct-pp').textContent = '(' + pkFiltered.length + ' movimientos)';
+
+  var tbody = document.getElementById('t-body-pp');
+  if (!pkFiltered.length) {
+    tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay movimientos con los filtros seleccionados.</div></td></tr>';
+    _renderKxPagination(0, 1, 'pp-pagination', 'pkGoToPage');
+    return;
+  }
+
+  var totalPages = Math.ceil(pkFiltered.length / kxPageSize) || 1;
+  if (pkCurrentPage > totalPages) pkCurrentPage = totalPages;
+  var startIdx = (pkCurrentPage - 1) * kxPageSize;
+  var pageRows = pkFiltered.slice(startIdx, startIdx + kxPageSize);
+
+  var MOD_COLORS = {
+    'Pedidos': '#2980b9',
+    'Ingresos': '#27ae60',
+    'Devoluciones': '#e67e22',
+    'Órdenes de Compra': '#8e44ad',
+    'Muestras': '#f39c12',
+    'Producción': '#d35400',
+    'Traslado': '#16a085',
+    'Saldo Inicial': '#1a5276',
+    'Ajuste': '#0e6655',
+    'Bodega NC': '#e67e22'
+  };
+
+  tbody.innerHTML = pageRows.map(function(m, i) {
+    var gi = startIdx + i;
+    var modColor = MOD_COLORS[m.modulo] || '#718096';
+    var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#27ae60;font-weight:700">+' + _fmtNum.format(m.cantidad) + '</span>' : '';
+    var salidaStr = m.tipo === 'Salida' ? '<span style="color:#e74c3c;font-weight:700">−' + _fmtNum.format(m.cantidad) + '</span>' : '';
+    var saldoColor = m._saldo < 0 ? '#e74c3c' : '#2c3e50';
+    var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + gi + ',\'pk\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + gi + ',\'pk\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
+
+    return '<tr' + (m.modulo === 'Saldo Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (gi + 1) + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
+      '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#27ae60' : '#e74c3c') + '">' + escHtml(m.tipo) + '</span></td>' +
+      '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + escHtml(m.modulo) + '</span></td>' +
+      '<td style="font-size:0.78rem;font-weight:600;white-space:nowrap" title="' + escHtml(m.empresa || '') + '">' + escHtml(getSiglaKx(m.empresa) || m.empresa || '—') + '</td>' +
+      '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + escHtml(m.remision || '—') + pdfBtns + '</td>' +
+      '<td style="font-size:0.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(m.referencia || '') + '">' + escHtml(m.referencia || '—') + '</td>' +
+      '<td style="text-align:right">' + entradaStr + '</td>' +
+      '<td style="text-align:right">' + salidaStr + '</td>' +
+      '<td style="text-align:right;font-weight:800;color:' + saldoColor + '">' + _fmtNum.format(m._saldo) + '</td>' +
+      '<td>' + deleteBtn + '</td>' +
+    '</tr>';
+  }).join('');
+
+  _renderKxPagination(pkFiltered.length, pkCurrentPage, 'pp-pagination', 'pkGoToPage');
+}
+
+function exportKardexProductoExcel() {
+  if (!pkFiltered.length) { showToast('No hay datos para exportar. Selecciona un producto.', '#e74c3c'); return; }
+
+  var fProd = document.getElementById('pp-f-prod').value;
+
+  var data = pkFiltered.map(function(m, i) {
+    return {
+      '#': i + 1,
+      'Fecha': m.fecha || '',
+      'Tipo': m.tipo,
+      'Módulo': m.modulo,
+      'Empresa': m.empresa || '',
+      'N° Remisión': m.remision || '',
+      'Referencia': m.referencia || '',
+      'Producto': m.producto,
+      'Presentación': m.presentacion,
+      'Entrada': m.tipo === 'Entrada' ? m.cantidad : '',
+      'Salida': m.tipo === 'Salida' ? m.cantidad : '',
+      'Saldo': m._saldo
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    { wch: 5 }, { wch: 12 }, { wch: 8 }, { wch: 18 }, { wch: 15 }, { wch: 15 },
+    { wch: 35 }, { wch: 30 }, { wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 10 }
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Kardex Producto');
+  var filename = 'Kardex_Producto_' + (fProd || '').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30) + '_' + today() + '.xlsx';
+  XLSX.writeFile(wb, filename);
+  showToast('Excel exportado: ' + pkFiltered.length + ' movimientos');
 }
 
 // ── Autocomplete helpers ──
@@ -1426,6 +1646,7 @@ function switchKardexTab(tab) {
   activeTab = tab;
   var tabs = [
     { id: 'tab-kardex', panel: 'panel-kardex', color: '#0e6655', key: 'kardex' },
+    { id: 'tab-prodkx', panel: 'panel-prodkx', color: '#16a085', key: 'prodkx' },
     { id: 'tab-nc', panel: 'panel-nc', color: '#e67e22', key: 'nc' },
     { id: 'tab-exist', panel: 'panel-exist', color: '#1a5276', key: 'exist' },
     { id: 'tab-kxnc', panel: 'panel-kxnc', color: '#c0392b', key: 'kxnc' },
@@ -1468,6 +1689,7 @@ function switchKardexTab(tab) {
     _ncProcessed = true;
   }
 
+  if (tab === 'prodkx') calcularKardexProducto();
   if (tab === 'exist') calcularExistencias();
   if (tab === 'exnc') calcularExistenciasNC();
   if (tab === 'comp') calcularComparativo();
@@ -3764,7 +3986,7 @@ function exportCompExcel() {
 // ══════════════════════════════════════════
 
 function _buildRemisionKardexData(idx, source) {
-  var movimientos = source === 'nc' ? ncFiltered : source === 'kxnc' ? kxncFiltered : kxFiltered;
+  var movimientos = source === 'nc' ? ncFiltered : source === 'kxnc' ? kxncFiltered : source === 'pk' ? pkFiltered : kxFiltered;
   var allMovimientos = source === 'nc' ? ncMovimientos : source === 'kxnc' ? ncMovimientos : kxMovimientos;
   var m = movimientos[idx];
   if (!m || !m.remision) { showToast('Este movimiento no tiene remisión', '#e74c3c'); return null; }

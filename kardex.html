@@ -69,6 +69,7 @@
   <!-- TABS -->
   <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid #e2e8f0;flex-wrap:wrap">
     <button id="tab-kardex" onclick="switchKardexTab('kardex')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#0e6655;color:white;border-radius:8px 8px 0 0;transition:all 0.2s">📋 Kardex General</button>
+    <button id="tab-prodkx" onclick="switchKardexTab('prodkx')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">🔎 Movimientos por Producto</button>
     <button id="tab-nc" onclick="switchKardexTab('nc')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">⚠️ Bodega No Conforme</button>
     <button id="tab-exist" onclick="switchKardexTab('exist')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📊 Existencias por Empresa</button>
     <button id="tab-kxnc" onclick="switchKardexTab('kxnc')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;cursor:pointer;background:#f7fafc;color:#718096;border-radius:8px 8px 0 0;transition:all 0.2s">📋 Kardex NC</button>
@@ -130,6 +131,58 @@
   </div>
 
   </div><!-- /panel-kardex -->
+
+  <!-- ═══ TAB: MOVIMIENTOS POR PRODUCTO ═══ -->
+  <div id="panel-prodkx" style="display:none">
+
+  <div class="stats">
+    <div class="sc" style="border-color:#0e6655"><div class="num" id="pp-s-saldo-ini">0</div><div class="lbl">Saldo Inicial</div></div>
+    <div class="sc" style="border-color:#27ae60"><div class="num" id="pp-s-entradas" style="color:#27ae60">0</div><div class="lbl">Total Entradas</div></div>
+    <div class="sc" style="border-color:#e74c3c"><div class="num" id="pp-s-salidas" style="color:#e74c3c">0</div><div class="lbl">Total Salidas</div></div>
+    <div class="sc" style="border-color:#2c3e50"><div class="num" id="pp-s-saldo-act" style="font-weight:800">0</div><div class="lbl">Saldo Actual (Holding)</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg">
+      <label>Producto</label>
+      <select id="pp-f-prod">
+        <option value="">— Seleccionar —</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Empresa</label>
+      <select id="pp-f-empresa"><option value="">— Todas —</option></select>
+    </div>
+    <div class="fg"><label>Desde</label><input type="date" id="pp-f-desde"></div>
+    <div class="fg"><label>Hasta</label><input type="date" id="pp-f-hasta"></div>
+    <button onclick="clearPpFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3><span id="pp-titulo">Movimientos por Producto</span> <span id="row-ct-pp" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-dl" onclick="exportKardexProductoExcel()">📥 Exportar Excel</button>
+        <button class="btn-dl" onclick="loadKardex()">🔄 Actualizar datos</button>
+      </div>
+    </div>
+    <div id="pp-no-filter" style="text-align:center;padding:48px 24px;color:#718096">
+      <div style="font-size:2.5rem;margin-bottom:12px">🔎</div>
+      <div style="font-size:1rem;font-weight:700;color:#2d3748;margin-bottom:8px">Selecciona un producto</div>
+      <div style="font-size:0.88rem">Verás todos sus movimientos en todas las empresas, en una sola línea de tiempo. Útil para rastrear descuadres entre el inventario físico y el sistema.</div>
+    </div>
+    <div id="pp-table-wrap" style="overflow-x:auto;display:none">
+      <table>
+        <thead>
+          <tr id="t-head-pp"></tr>
+        </thead>
+        <tbody id="t-body-pp"></tbody>
+      </table>
+      <div class="pagination" id="pp-pagination"></div>
+    </div>
+  </div>
+
+  </div><!-- /panel-prodkx -->
 
   <!-- ═══ TAB: BODEGA NO CONFORME ═══ -->
   <div id="panel-nc" style="display:none">
@@ -866,6 +919,6 @@
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/pdf-remision.js?v=20260903u"></script>
-<script src="js/kardex.js?v=20260903b"></script>
+<script src="js/kardex.js?v=20260904a"></script>
 </body>
 </html>
