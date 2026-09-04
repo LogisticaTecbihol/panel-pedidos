@@ -482,7 +482,9 @@ function renderMuTable() {
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
         aprBtns +
         (AUTH.canEdit() && !soloLectura ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
-        (AUTH.canDelete() && !soloLectura ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
+        // 'comercial' solo ve sus propias solicitudes (RLS), así que puede borrarlas;
+        // el backend igual lo restringe a responsable_id / creado_por = auth.uid().
+        ((AUTH.canDelete() || AUTH.isComercial()) && !soloLectura ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 }
