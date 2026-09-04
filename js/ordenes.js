@@ -80,7 +80,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,Bonificado,creado_por' });
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,Bonificado,creado_por,num_factura_destino,fecha_factura_destino,num_factura_origen,fecha_factura_origen' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {
@@ -90,6 +90,8 @@ async function loadOrdenes() {
 
     populateOCFilters();
     renderOCTable();
+    var panelFac = document.getElementById('panel-oc-facturacion');
+    if (panelFac && panelFac.style.display !== 'none') buildFacturacionOC();
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
@@ -1084,6 +1086,243 @@ async function _notifyCreadorAprobacionOC(row, estado, motivo) {
       mensaje: mensaje
     });
   } catch (e) { /* silencioso */ }
+}
+
+// ── Tabs ──
+function switchOrdenTab(tab) {
+  ['lista', 'facturacion'].forEach(function(t) {
+    var btn = document.getElementById('tab-oc-' + t);
+    if (btn) btn.style.background = t === tab ? '#00695c' : '#718096';
+  });
+  var statsEl = document.querySelector('.stats');
+  if (statsEl) statsEl.style.display = tab === 'lista' ? 'flex' : 'none';
+  var filtersEl = document.querySelector('.filters');
+  if (filtersEl) filtersEl.style.display = tab === 'lista' ? 'flex' : 'none';
+  var panelLista = document.getElementById('panel-oc-lista');
+  if (panelLista) panelLista.style.display = tab === 'lista' ? 'block' : 'none';
+  var panelFac = document.getElementById('panel-oc-facturacion');
+  if (panelFac) panelFac.style.display = tab === 'facturacion' ? 'block' : 'none';
+  if (tab === 'facturacion') buildFacturacionOC();
+}
+
+// ── Facturación por remisión ──
+// Cada línea de OrdenesCompra puede tener remisión Destino (entrada) y
+// remisión Origen (salida); cada una se factura por separado. Esta vista
+// agrupa las líneas por remisión única (varias líneas pueden compartir
+// remisión) para no reingresar la misma factura varias veces.
+var facturacionOCData = [];
+var facturacionOCFiltered = [];
+var facFiltersAttached = false;
+var sortLevelsFacOC = [];
+var SORT_COLS_FAC_OC = [
+  { id:'tipo',          label:'Tipo',           fn: function(d) { return d.tipo; } },
+  { id:'empresa',       label:'Empresa',        fn: function(d) { return (getSiglaOC(d.empresa)||'').toLowerCase(); } },
+  { id:'remision',      label:'Remisión',       fn: function(d) { return (d.remision||'').toLowerCase(); } },
+  { id:'consecutivo',   label:'N° OC',          fn: function(d) { return (d.consecutivo||'').toLowerCase(); } },
+  { id:'fecha',         label:'Fecha',          fn: function(d) { return d.fecha || ''; } },
+  { id:'num_factura',   label:'N° Factura',     fn: function(d) { return (d.num_factura||'').toLowerCase(); } },
+  { id:'fecha_factura', label:'Fecha Factura',  fn: function(d) { return d.fecha_factura || ''; } },
+];
+
+function toggleSortFacOC(id, e) {
+  var shift = e && e.shiftKey;
+  var idx = sortLevelsFacOC.findIndex(function(l) { return l.id === id; });
+  if (shift) { if (idx >= 0) sortLevelsFacOC.splice(idx, 1); }
+  else if (idx >= 0) { if (sortLevelsFacOC[idx].dir === 'asc') sortLevelsFacOC[idx].dir = 'desc'; else sortLevelsFacOC.splice(idx, 1); }
+  else { sortLevelsFacOC.push({ id: id, dir: 'asc' }); }
+  renderFacturacionOC();
+}
+
+function clearSortFacOC() { sortLevelsFacOC = []; renderFacturacionOC(); }
+
+function applySortFacOC(rows) {
+  if (!sortLevelsFacOC.length) return rows;
+  return [].concat(rows).sort(function(a, b) {
+    for (var si = 0; si < sortLevelsFacOC.length; si++) {
+      var lvl = sortLevelsFacOC[si];
+      var col = null;
+      for (var ci = 0; ci < SORT_COLS_FAC_OC.length; ci++) { if (SORT_COLS_FAC_OC[ci].id === lvl.id) { col = SORT_COLS_FAC_OC[ci]; break; } }
+      if (!col) continue;
+      var va = col.fn(a), vb = col.fn(b);
+      var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+      if (cmp !== 0) return lvl.dir === 'asc' ? cmp : -cmp;
+    }
+    return 0;
+  });
+}
+
+function renderFacOCHeader() {
+  var cols = [{ label:'#', id:null, style:'width:30px' }];
+  SORT_COLS_FAC_OC.forEach(function(c) { cols.push({ label: c.label, id: c.id, style: c.style || '' }); });
+  document.getElementById('fac-oc-thead').innerHTML = cols.map(function(col) {
+    if (!col.id) return '<th' + (col.style ? ' style="' + col.style + '"' : '') + '>' + col.label + '</th>';
+    var lvlIdx = sortLevelsFacOC.findIndex(function(l) { return l.id === col.id; });
+    var active = lvlIdx >= 0;
+    var lvl = active ? sortLevelsFacOC[lvlIdx] : null;
+    var dirCls = active ? (lvl.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    var badge = sortLevelsFacOC.length > 1 && active ? '<span class="sort-badge">' + (lvlIdx+1) + '</span>' : '';
+    return '<th class="sortable ' + dirCls + '"' + (col.style ? ' style="' + col.style + '"' : '') + ' onclick="toggleSortFacOC(\'' + col.id + '\',event)">' + col.label + badge + '<span class="sort-icon"></span></th>';
+  }).join('');
+  var btn = document.getElementById('btn-clear-sort-fac-oc');
+  if (btn) btn.style.display = sortLevelsFacOC.length ? 'inline-block' : 'none';
+}
+
+function buildFacturacionOC() {
+  var map = {};
+  ordenes.forEach(function(r) {
+    var remD = String(r.Remision || '').trim();
+    if (remD) {
+      var kd = 'destino|' + remD;
+      if (!map[kd]) map[kd] = {
+        tipo: 'destino', empresa: r.Empresa_Destino || '', remision: remD,
+        consecutivo: r.Consecutivo || '', fecha: r.Fecha || '',
+        num_factura: r.num_factura_destino || '', fecha_factura: r.fecha_factura_destino || ''
+      };
+    }
+    var remO = String(r.Remision_Origen || '').trim();
+    if (remO) {
+      var ko = 'origen|' + remO;
+      if (!map[ko]) map[ko] = {
+        tipo: 'origen', empresa: r.Empresa_Origen || '', remision: remO,
+        consecutivo: r.Consecutivo || '', fecha: r.Fecha || '',
+        num_factura: r.num_factura_origen || '', fecha_factura: r.fecha_factura_origen || ''
+      };
+    }
+  });
+  facturacionOCData = Object.keys(map).sort(function(a, b) {
+    return (map[b].fecha||'').localeCompare(map[a].fecha||'') || a.localeCompare(b);
+  }).map(function(k) { return map[k]; });
+
+  if (!facFiltersAttached) {
+    var handler = function() { renderFacturacionOC(); };
+    var tipoSel = document.getElementById('fac-f-tipo');
+    if (tipoSel) tipoSel.addEventListener('change', handler);
+    var empSel = document.getElementById('fac-f-empresa');
+    if (empSel) empSel.addEventListener('change', handler);
+    var buscarEl = document.getElementById('fac-f-buscar');
+    if (buscarEl) buscarEl.addEventListener('input', debounce(handler, 300));
+    facFiltersAttached = true;
+  }
+
+  var selEmp = document.getElementById('fac-f-empresa');
+  var prev = selEmp.value;
+  var emps = {};
+  facturacionOCData.forEach(function(d) { if (d.empresa) emps[d.empresa] = 1; });
+  selEmp.innerHTML = '<option value="">— Todas —</option>' +
+    Object.keys(emps).sort().map(function(e) {
+      var sig = getSiglaOC(e) || e;
+      return '<option value="' + escapeAttr(e) + '">' + escapeAttr(sig) + '</option>';
+    }).join('');
+  selEmp.value = prev || '';
+
+  renderFacturacionOC();
+}
+
+function renderFacturacionOC() {
+  renderFacOCHeader();
+  var tipoEl = document.getElementById('fac-f-tipo');
+  var empEl = document.getElementById('fac-f-empresa');
+  var buscarEl = document.getElementById('fac-f-buscar');
+  var tipo = tipoEl ? tipoEl.value : '';
+  var empresa = empEl ? empEl.value : '';
+  var buscar = (buscarEl ? buscarEl.value : '').toLowerCase().trim();
+
+  var total = facturacionOCData.length;
+  var filtered = facturacionOCData.filter(function(d) {
+    if (tipo && d.tipo !== tipo) return false;
+    if (empresa && d.empresa !== empresa) return false;
+    if (buscar) {
+      var txt = (d.remision + ' ' + d.consecutivo + ' ' + d.num_factura + ' ' + d.empresa).toLowerCase();
+      if (txt.indexOf(buscar) < 0) return false;
+    }
+    return true;
+  });
+  facturacionOCFiltered = applySortFacOC(filtered);
+
+  var countEl = document.getElementById('fac-oc-count');
+  if (countEl) {
+    countEl.textContent = (tipo || empresa || buscar)
+      ? '(' + facturacionOCFiltered.length + ' de ' + total + ' remisiones)'
+      : '(' + facturacionOCFiltered.length + ' remisiones)';
+  }
+
+  var tbody = document.getElementById('fac-oc-body');
+  if (!facturacionOCFiltered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:#718096">No hay remisiones de OC con los filtros seleccionados.</td></tr>';
+    return;
+  }
+
+  var canEdit = AUTH.canEdit();
+  tbody.innerHTML = facturacionOCFiltered.map(function(d, i) {
+    var sig = getSiglaOC(d.empresa) || d.empresa;
+    var tipoBadge = d.tipo === 'destino'
+      ? '<span class="badge b-ent" title="Remisión Destino (entrada)">Destino</span>'
+      : '<span class="badge b-par" title="Remisión Origen (salida)">Origen</span>';
+    var nf = escHtml(d.num_factura || '');
+    var ff = d.fecha_factura || '';
+    var facIcon = (nf && ff) ? ' <span style="color:#3730a3;font-weight:700" title="Facturado">✓</span>' : '';
+    var remEsc = escapeAttr(d.remision);
+    var numFacCell = canEdit
+      ? '<input type="text" value="' + nf + '" placeholder="—" data-tipo="' + d.tipo + '" data-rem="' + remEsc + '" class="fac-oc-num" onchange="onFacturaOCChange(this)" style="width:110px;font-size:0.78rem;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px">' + facIcon
+      : '<span style="font-size:0.78rem">' + (nf || '—') + '</span>' + facIcon;
+    var fechaFacCell = canEdit
+      ? '<input type="date" value="' + ff + '" data-tipo="' + d.tipo + '" data-rem="' + remEsc + '" class="fac-oc-fecha" onchange="onFacturaOCChange(this)" style="width:135px;font-size:0.78rem;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px">'
+      : '<span style="font-size:0.78rem">' + fmtDate(ff) + '</span>';
+    return '<tr>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
+      '<td>' + tipoBadge + '</td>' +
+      '<td title="' + escapeAttr(d.empresa) + '"><span class="sigla-badge ' + getSiglaClassOC(d.empresa) + '">' + escHtml(sig) + '</span></td>' +
+      '<td style="font-size:0.82rem">' + escHtml(d.remision) + '</td>' +
+      '<td style="font-size:0.82rem">' + escHtml(d.consecutivo || '—') + '</td>' +
+      '<td style="font-size:0.82rem;white-space:nowrap">' + fmtDate(d.fecha) + '</td>' +
+      '<td style="white-space:nowrap">' + numFacCell + '</td>' +
+      '<td style="white-space:nowrap">' + fechaFacCell + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+async function onFacturaOCChange(el) {
+  var rem = el.dataset.rem;
+  var tipo = el.dataset.tipo;
+  if (!rem || !tipo) return;
+  var sel = '[data-tipo="' + tipo + '"][data-rem="' + CSS.escape(rem) + '"]';
+  var numEl = document.querySelector('.fac-oc-num' + sel);
+  var fechaEl = document.querySelector('.fac-oc-fecha' + sel);
+  var nf = numEl ? numEl.value.trim() : '';
+  var ff = fechaEl ? fechaEl.value.trim() : '';
+
+  var upd = tipo === 'destino'
+    ? { num_factura_destino: nf, fecha_factura_destino: ff }
+    : { num_factura_origen: nf, fecha_factura_origen: ff };
+  var col = tipo === 'destino' ? 'Remision' : 'Remision_Origen';
+
+  try {
+    var res = await _sb.from('OrdenesCompra').update(upd).eq(col, rem);
+    if (res.error) throw res.error;
+
+    ordenes.forEach(function(r) {
+      if ((r[col] || '') === rem) {
+        if (tipo === 'destino') { r.num_factura_destino = nf; r.fecha_factura_destino = ff; }
+        else { r.num_factura_origen = nf; r.fecha_factura_origen = ff; }
+      }
+    });
+    var d = facturacionOCFiltered.find(function(x) { return x.tipo === tipo && x.remision === rem; });
+    if (d) { d.num_factura = nf; d.fecha_factura = ff; }
+
+    var facIcon = el.closest('tr').querySelector('span[title="Facturado"]');
+    if (nf && ff) {
+      if (!facIcon) {
+        var numTd = numEl.parentElement;
+        numTd.insertAdjacentHTML('beforeend', ' <span style="color:#3730a3;font-weight:700" title="Facturado">✓</span>');
+      }
+    } else if (facIcon) {
+      facIcon.remove();
+    }
+
+    showToast('Factura actualizada: ' + rem, '#27ae60');
+  } catch (e) {
+    showToast('Error al guardar factura: ' + (e.message || e), '#e74c3c');
+  }
 }
 
 // ── Auto-load ──
