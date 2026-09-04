@@ -1103,14 +1103,27 @@ async function _apiPostCore(body) {
       var remOrigenOC = (body.Remision_Origen !== undefined) ? (body.Remision_Origen || '').trim() : undefined;
       var empDestOC = (body.Empresa_Destino || '').trim();
       var empOrigOC = (body.Empresa_Origen || '').trim();
+      var consecOC = (body.Consecutivo || '').trim();
       var generatedRemOC = {};
+      // Una orden de compra puede tener varias líneas (una fila por producto)
+      // que comparten Empresa_Destino+Empresa_Origen+Consecutivo. Al legalizar
+      // la primera línea deben reutilizarse las remisiones ya asignadas a sus
+      // hermanas (si las hay) en vez de generar una nueva por cada línea.
+      var hermanasOC = [];
+      if (body._legalizar && empDestOC && consecOC) {
+        var qHerm = await _sb.from('OrdenesCompra').select('id, Remision, Remision_Origen')
+          .eq('Empresa_Destino', empDestOC).eq('Empresa_Origen', empOrigOC).eq('Consecutivo', consecOC);
+        if (!qHerm.error) hermanasOC = (qHerm.data || []).filter(function(h) { return h.id !== body.row; });
+      }
       if (body._legalizar && empDestOC) {
         if (remOC !== undefined && !remOC) {
-          remOC = await _genRem(empDestOC, 'ENTRADA');
+          var remHermDest = hermanasOC.map(function(h) { return (h.Remision || '').trim(); }).find(function(v) { return v; });
+          remOC = remHermDest || await _genRem(empDestOC, 'ENTRADA');
           generatedRemOC.remision_destino = remOC;
         }
         if (remOrigenOC !== undefined && !remOrigenOC && empOrigOC && empOrigOC !== empDestOC) {
-          remOrigenOC = await _genRem(empOrigOC, 'SALIDA');
+          var remHermOrig = hermanasOC.map(function(h) { return (h.Remision_Origen || '').trim(); }).find(function(v) { return v; });
+          remOrigenOC = remHermOrig || await _genRem(empOrigOC, 'SALIDA');
           generatedRemOC.remision_origen = remOrigenOC;
         }
       }
@@ -1119,6 +1132,16 @@ async function _apiPostCore(body) {
       upd.modificado_por = _uid();
       var res = await _sb.from('OrdenesCompra').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
+      // Propaga la remisión (y el cierre) al resto de líneas de la misma orden
+      // para que toda la OC quede legalizada de una sola vez.
+      if (body._legalizar && hermanasOC.length && (remOC || remOrigenOC)) {
+        var updHerm = { Estado: 'Cerrada', modificado_por: upd.modificado_por };
+        if (remOC) updHerm.Remision = remOC;
+        if (remOrigenOC) updHerm.Remision_Origen = remOrigenOC;
+        await _sb.from('OrdenesCompra').update(updHerm)
+          .eq('Empresa_Destino', empDestOC).eq('Empresa_Origen', empOrigOC).eq('Consecutivo', consecOC)
+          .neq('id', body.row);
+      }
       return Object.assign({ ok: true, updated: 1 }, generatedRemOC);
     }
 
