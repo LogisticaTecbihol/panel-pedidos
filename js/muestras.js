@@ -648,7 +648,7 @@ async function viewMuestra(id) {
     var _remMu = (r.Remision || '').trim();
     var _cMu = consec || '';
     var _btnSol = document.querySelector('#view-mu-overlay button[onclick*="exportarMuestraSolicitudPDF"]');
-    var _btnRem = document.querySelector('#view-mu-overlay button[onclick*="exportarMuestraRemisionPDF"]');
+    var _btnRem = document.getElementById('btn-mu-send-remision');
     if (_btnSol) {
       if (_cMu) NOTIF.verificarBtn(_btnSol, 'muestras', _cMu);
       else { _btnSol.disabled = false; _btnSol.style.opacity = ''; _btnSol.style.cursor = ''; _btnSol.textContent = '📨 Enviar Solicitud'; }
@@ -681,6 +681,13 @@ async function saveEntregas() {
   if (tieneAsignaciones && !fechaDespacho) {
     showToast('Selecciona la fecha de despacho', '#e74c3c');
     return;
+  }
+
+  var pendingContabEntregas = null;
+  if (entregas.length > 0 && !remision && typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var confEntregas = await NOTIF.confirmarEnvioContabilidad(muViewEmpresa, 'muestras');
+    if (!confEntregas.confirmed) return;
+    pendingContabEntregas = confEntregas;
   }
 
   var remGenerada = '';
@@ -768,6 +775,34 @@ async function saveEntregas() {
         });
         if (!resNew.ok) throw new Error(resNew.error || 'Error al agregar nuevas líneas');
       }
+    }
+
+    if (pendingContabEntregas && pendingContabEntregas.contabIds && pendingContabEntregas.contabIds.length && remGenerada && typeof NOTIF !== 'undefined') {
+      try {
+        var muHeadRow = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+        var entregasPdf = Object.keys(entregasPorLinea).map(function(idx) {
+          var wl = muViewWorkingLines[idx];
+          return {
+            producto: wl.Producto || '', presentacion: wl.Presentacion || '',
+            cantidad: entregasPorLinea[idx], valor_unitario: 0, valor_total: 0, bonificado: 'No'
+          };
+        });
+        var _crEnt = generarRemisionPDF({
+          empresa: muViewEmpresa, consecutivo: (muHeadRow && muHeadRow.Consecutivo) || '',
+          ref_label: 'Solicitud de muestras', fecha_entrega: fechaDespacho || '',
+          remision: remision, cliente: (muHeadRow && muHeadRow.Solicitante) || '',
+          comercial: (muHeadRow && muHeadRow.Responsable) || '',
+          municipio: (muHeadRow && muHeadRow.Municipio) || '', departamento: (muHeadRow && muHeadRow.Departamento) || '',
+          entregas: entregasPdf, return_doc: true, copies: ['COPIA - CONTABILIDAD']
+        });
+        if (_crEnt && _crEnt.doc) {
+          await NOTIF.enviarPDFContabilidad(_crEnt.doc, {
+            modulo: 'muestras', referencia: ((muHeadRow && muHeadRow.Consecutivo) || '') + ' · Rem ' + remision,
+            titulo: 'Remisión muestras #' + remision, docLabel: 'Remisión',
+            contabIds: pendingContabEntregas.contabIds, contabNames: pendingContabEntregas.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
     }
 
     closeViewMu();

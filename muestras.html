@@ -377,7 +377,7 @@
       <button class="btn-cancel" onclick="exportarMuestraSolicitudPDF()" style="background:#8e44ad;color:white;border-color:#8e44ad">📄 Exportar Solicitud PDF</button>
       <button class="btn-cancel" onclick="exportarMuestraSolicitudPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f" title="Enviar la solicitud a otro usuario del panel">📨 Enviar Solicitud</button>
       <button class="btn-cancel" onclick="exportarMuestraRemisionPDF()" style="background:#27ae60;color:white;border-color:#27ae60">📄 Exportar Remisión PDF</button>
-      <button class="btn-cancel" onclick="exportarMuestraRemisionPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f;display:none" title="Enviar remisión a otro usuario del panel">📨 Enviar Remisión</button>
+      <button class="btn-cancel auth-edit-only" id="btn-mu-send-remision" onclick="exportarMuestraRemisionPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f;display:none" title="Enviar remisión a otro usuario del panel">📨 Enviar Remisión</button>
       <button class="btn-cancel" onclick="closeViewMu()">Cerrar</button>
     </div>
   </div>
@@ -422,6 +422,6 @@
 <script src="js/pdf-remision.js?v=20260903u"></script>
 <script src="js/existencias.js?v=20260901c"></script>
 <script src="js/asignacion-inventario.js"></script>
-<script src="js/muestras.js?v=20260904a"></script>
+<script src="js/muestras.js?v=20260904b"></script>
 </body>
 </html>
