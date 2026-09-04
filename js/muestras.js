@@ -759,7 +759,7 @@ async function saveEntregas() {
       if (head2) {
         var resNew = await apiPost({
           action: 'agregarMuestra',
-          Empresa: head2.Empresa, Consecutivo: head2.Consecutivo,
+          Empresa: head2.Empresa, Consecutivo: head2.Consecutivo, _reuse_consecutivo: true,
           Fecha_Solicitud: head2.Fecha_Solicitud, Fecha_Despacho: fechaDespacho || head2.Fecha_Despacho,
           Responsable: head2.Responsable, Departamento: head2.Departamento, Municipio: head2.Municipio,
           Tipo_Cultivo: head2.Tipo_Cultivo, Fecha_Aplicacion: head2.Fecha_Aplicacion,
@@ -945,14 +945,11 @@ function _muestraContext() {
 }
 
 function _muestraEntregas(rows, useRequested) {
+  // useRequested=true (Solicitud): lista lo pedido, incluso si aún no se
+  // entregó nada. useRequested=false (Remisión): solo lo realmente
+  // despachado — una línea sin entrega no debe figurar en la remisión.
   var out = rows.map(function(x) {
-    var cant;
-    if (useRequested) {
-      cant = Number(x.Cantidad) || 0;
-    } else {
-      var cantEnt = Number(x.Cant_Entregada) || 0;
-      cant = cantEnt > 0 ? cantEnt : (Number(x.Cantidad) || 0);
-    }
+    var cant = useRequested ? (Number(x.Cantidad) || 0) : (Number(x.Cant_Entregada) || 0);
     return {
       producto: x.Producto || '',
       presentacion: x.Presentacion || '',
@@ -961,7 +958,7 @@ function _muestraEntregas(rows, useRequested) {
       valor_total: 0,
       bonificado: 'Sí'
     };
-  }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
+  }).filter(function(p) { return useRequested ? ((p.cantidad || 0) > 0 || p.producto) : (p.cantidad || 0) > 0; });
   return out;
 }
 
@@ -1171,6 +1168,8 @@ async function openNewMuestra() {
   document.getElementById('mu-solicitante').value = '';
   document.getElementById('mu-autoriza').value = '';
   document.getElementById('mu-estado').value = 'Pendiente';
+  var _optDespNew = document.querySelector('#mu-estado option[value="Despachada"]');
+  if (_optDespNew) { _optDespNew.disabled = true; _optDespNew.title = 'Requiere aprobación previa'; }
   document.getElementById('mu-objetivo').value = '';
   document.getElementById('mu-observaciones').value = '';
 
@@ -1224,6 +1223,18 @@ async function editMuestra(id) {
   document.getElementById('mu-solicitante').value = r.Solicitante || '';
   document.getElementById('mu-autoriza').value = r.Autoriza || '';
   document.getElementById('mu-estado').value = r.Estado || 'Pendiente';
+  var aprEstadoEdit = r.Estado_Aprobacion || 'Por aprobar';
+  var _optDespEdit = document.querySelector('#mu-estado option[value="Despachada"]');
+  var _cantEntEdit = document.getElementById('mu-edit-cant-entregada');
+  if (aprEstadoEdit !== 'Aprobada') {
+    if (_optDespEdit) { _optDespEdit.disabled = true; _optDespEdit.title = 'Requiere aprobación previa'; }
+    _cantEntEdit.disabled = true;
+    _cantEntEdit.title = 'Requiere aprobación de un administrador antes de despacharse';
+  } else {
+    if (_optDespEdit) { _optDespEdit.disabled = false; _optDespEdit.title = ''; }
+    _cantEntEdit.disabled = false;
+    _cantEntEdit.title = '';
+  }
   document.getElementById('mu-objetivo').value = r.Objetivo || '';
   document.getElementById('mu-observaciones').value = r.Observaciones || '';
 
@@ -1364,6 +1375,12 @@ async function saveMuestra() {
 
     var muEditRow = allMuestras ? allMuestras.filter(function(x) { return x.id === muEditId; })[0] : null;
 
+    var aprEstadoSave = (muEditRow && muEditRow.Estado_Aprobacion) || 'Por aprobar';
+    if (estado === 'Despachada' && aprEstadoSave !== 'Aprobada') {
+      showToast('🔒 Esta solicitud requiere aprobación de un administrador antes de poder despacharse.', '#e74c3c');
+      return;
+    }
+
     // Si cambian el consecutivo, no dejar que choque con otra solicitud
     // de la misma empresa (se valida contra datos frescos, no la lista
     // en memoria que puede estar vieja).
@@ -1451,6 +1468,10 @@ async function saveMuestra() {
   if (!fechaSol) { showToast('Selecciona la fecha de solicitud', '#e74c3c'); return; }
   if (!AUTH.isAdmin() && fechaSol < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!responsable) { showToast('Ingresa el responsable', '#e74c3c'); return; }
+  if (document.getElementById('mu-estado').value === 'Despachada') {
+    showToast('🔒 Una solicitud nueva no puede crearse ya despachada: primero se registra y aprueba, luego se despacha.', '#e74c3c');
+    return;
+  }
 
   var productosValidos = muLines.filter(function(p) { return p.producto && p.cantidad > 0; });
   if (!productosValidos.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }

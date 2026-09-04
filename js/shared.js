@@ -1161,9 +1161,13 @@ async function _apiPostCore(body) {
       }
       // El consecutivo lo asigna la base (generar_consecutivo_muestra),
       // no el navegador: así no se repite aunque la lista en memoria del
-      // cliente esté vieja o dos personas creen a la vez.
+      // cliente esté vieja o dos personas creen a la vez. Excepción:
+      // cuando se agrega una línea nueva a una solicitud YA EXISTENTE
+      // (_reuse_consecutivo), se conserva el consecutivo que ya tiene esa
+      // solicitud en vez de pedir uno nuevo (si no, la línea nueva queda
+      // separada en un consecutivo distinto, partiendo la solicitud en dos).
       var consecMu = (body.Consecutivo || '').trim();
-      if ((body.Empresa || '').trim()) {
+      if (!body._reuse_consecutivo && (body.Empresa || '').trim()) {
         var _cm = await _sb.rpc('generar_consecutivo_muestra', { p_empresa_nombre: body.Empresa });
         if (_cm.error) return { ok: false, error: 'No se pudo asignar el consecutivo: ' + _cm.error.message };
         if (_cm.data != null && String(_cm.data).trim()) consecMu = String(_cm.data).trim();
