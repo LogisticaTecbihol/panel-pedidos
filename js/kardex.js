@@ -143,8 +143,6 @@ async function loadKardex() {
     buildMovimientos();
     populateKxFilters();
     calcularKardex();
-    populatePpFilters();
-    if (activeTab === 'prodkx') calcularKardexProducto();
 
     buildNCMovimientos();
     populateNCFilters();
@@ -153,6 +151,8 @@ async function loadKardex() {
     calcularKardexNC();
     _ncProcessed = true;
 
+    populatePpFilters();
+    if (activeTab === 'prodkx') calcularKardexProducto();
     if (activeTab === 'exist') calcularExistencias();
     if (activeTab === 'exnc' && _ncProcessed) calcularExistenciasNC();
     if (activeTab === 'comp' && _ncProcessed) calcularComparativo();
@@ -812,6 +812,9 @@ function populateProductFilterGlobal() {
   kxMovimientos.forEach(function(m) {
     if (m.producto) productos[m.producto] = true;
   });
+  ncMovimientos.forEach(function(m) {
+    if (m.producto) productos[m.producto] = true;
+  });
   var sorted = Object.keys(productos).sort();
   var fp = document.getElementById('pp-f-prod');
   var current = fp.value;
@@ -863,7 +866,28 @@ function calcularKardexProducto() {
   document.getElementById('pp-table-wrap').style.display = 'block';
   document.getElementById('pp-titulo').textContent = 'Movimientos de "' + fProd + '"';
 
-  pkFiltered = kxMovimientos.filter(function(m) {
+  // Une el ledger de Productos Buenos (kxMovimientos) con el de Bodega No
+  // Conforme (ncMovimientos), etiquetando cada movimiento con su bodega —
+  // así se ve el producto completo, sin importar en cuál de las dos bodegas
+  // ni en qué empresa quedó registrado.
+  var origenBueno = kxMovimientos.map(function(m) {
+    return {
+      fecha: m.fecha, tipo: m.tipo, modulo: m.modulo, motivo: null,
+      remision: m.remision, referencia: m.referencia, empresa: m.empresa,
+      producto: m.producto, presentacion: m.presentacion, cantidad: m.cantidad,
+      _ajusteId: m._ajusteId, bodega: 'Productos Buenos', _src: 'kx'
+    };
+  });
+  var origenNC = ncMovimientos.map(function(m) {
+    return {
+      fecha: m.fecha, tipo: m.tipo, modulo: NC_MOTIVO_LABELS[m.motivo] || m.motivo || 'NC', motivo: m.motivo,
+      remision: m.remision, referencia: m.referencia, empresa: m.empresa,
+      producto: m.producto, presentacion: m.presentacion, cantidad: m.cantidad,
+      _ajusteId: m._ajusteId, bodega: 'Producto No Conforme', _src: 'nc'
+    };
+  });
+
+  pkFiltered = origenBueno.concat(origenNC).filter(function(m) {
     if (m.producto !== fProd) return false;
     if (fEmp && m.empresa !== fEmp) return false;
     var desde = fDesde || KX_FECHA_CORTE;
@@ -884,30 +908,32 @@ function calcularKardexProducto() {
     return ea - eb;
   });
 
-  // Calculate running balance and stats (per empresa)
+  // Calculate running balance and stats (por empresa + bodega — son dos
+  // pozos de stock físicamente distintos, no se pueden sumar en un solo saldo)
   var saldoIni = 0;
   var totalEntradas = 0;
   var totalSalidas = 0;
-  var saldosPorEmpresa = {};
+  var saldosPorEmpresaBodega = {};
 
   pkFiltered.forEach(function(m) {
-    if (!saldosPorEmpresa[m.empresa]) saldosPorEmpresa[m.empresa] = 0;
+    var key = m.empresa + '||' + m.bodega;
+    if (!saldosPorEmpresaBodega[key]) saldosPorEmpresaBodega[key] = 0;
     if (m.tipo === 'Entrada') {
-      saldosPorEmpresa[m.empresa] += m.cantidad;
+      saldosPorEmpresaBodega[key] += m.cantidad;
       if (m.modulo === 'Saldo Inicial') {
         saldoIni += m.cantidad;
       } else {
         totalEntradas += m.cantidad;
       }
     } else {
-      saldosPorEmpresa[m.empresa] -= m.cantidad;
+      saldosPorEmpresaBodega[key] -= m.cantidad;
       totalSalidas += m.cantidad;
     }
-    m._saldo = saldosPorEmpresa[m.empresa];
+    m._saldo = saldosPorEmpresaBodega[key];
   });
 
   var saldoTotal = 0;
-  Object.keys(saldosPorEmpresa).forEach(function(k) { saldoTotal += saldosPorEmpresa[k]; });
+  Object.keys(saldosPorEmpresaBodega).forEach(function(k) { saldoTotal += saldosPorEmpresaBodega[k]; });
 
   document.getElementById('pp-s-saldo-ini').textContent = _fmtNum.format(saldoIni);
   document.getElementById('pp-s-entradas').textContent = _fmtNum.format(totalEntradas);
@@ -920,7 +946,7 @@ function calcularKardexProducto() {
 function pkGoToPage(p) { pkCurrentPage = p; renderKardexProductoTable(); }
 
 function renderKardexProductoTable() {
-  var cols = ['#', 'Fecha', 'Tipo', 'Módulo', 'Empresa', 'N° Remisión', 'Referencia', 'Entrada', 'Salida', 'Saldo', ''];
+  var cols = ['#', 'Fecha', 'Tipo', 'Bodega', 'Módulo', 'Empresa', 'N° Remisión', 'Referencia', 'Entrada', 'Salida', 'Saldo', ''];
   var colSpan = cols.length;
   document.getElementById('t-head-pp').innerHTML = cols.map(function(c) {
     return '<th>' + c + '</th>';
@@ -955,17 +981,24 @@ function renderKardexProductoTable() {
 
   tbody.innerHTML = pageRows.map(function(m, i) {
     var gi = startIdx + i;
-    var modColor = MOD_COLORS[m.modulo] || '#718096';
+    var esNC = m._src === 'nc';
+    var modColor = esNC ? (NC_MOTIVO_COLORS[m.motivo] || '#e67e22') : (MOD_COLORS[m.modulo] || '#718096');
+    var bodegaColor = esNC ? '#e67e22' : '#0e6655';
+    var bodegaShort = esNC ? 'No Conforme' : 'Bueno';
     var entradaStr = m.tipo === 'Entrada' ? '<span style="color:#27ae60;font-weight:700">+' + _fmtNum.format(m.cantidad) + '</span>' : '';
     var salidaStr = m.tipo === 'Salida' ? '<span style="color:#e74c3c;font-weight:700">−' + _fmtNum.format(m.cantidad) + '</span>' : '';
     var saldoColor = m._saldo < 0 ? '#e74c3c' : '#2c3e50';
-    var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteKx(' + m._ajusteId + ',\'' + (m.modulo || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
-    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + gi + ',\'pk\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + gi + ',\'pk\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
+    var deleteFn = esNC ? 'openDeleteNC' : 'openDeleteKx';
+    var deleteArg = esNC ? m.tipo : m.modulo;
+    var deleteBtn = m._ajusteId && AUTH.canDelete() ? '<button class="btn-del" onclick="' + deleteFn + '(' + m._ajusteId + ',\'' + (deleteArg || '').replace(/'/g, "\\'") + '\',' + m.cantidad + ')" title="Eliminar ajuste" style="font-size:0.72rem;padding:3px 8px">🗑️</button>' : '';
+    var pdfSource = esNC ? 'pknc' : 'pk';
+    var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + gi + ',\'' + pdfSource + '\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + gi + ',\'' + pdfSource + '\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
 
     return '<tr' + (m.modulo === 'Saldo Inicial' ? ' style="background:#f0f9ff"' : '') + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (gi + 1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(m.fecha) + '</td>' +
       '<td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;color:white;background:' + (m.tipo === 'Entrada' ? '#27ae60' : '#e74c3c') + '">' + escHtml(m.tipo) + '</span></td>' +
+      '<td><span style="background:' + bodegaColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700" title="' + escHtml(m.bodega) + '">' + bodegaShort + '</span></td>' +
       '<td><span style="background:' + modColor + ';color:white;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700">' + escHtml(m.modulo) + '</span></td>' +
       '<td style="font-size:0.78rem;font-weight:600;white-space:nowrap" title="' + escHtml(m.empresa || '') + '">' + escHtml(getSiglaKx(m.empresa) || m.empresa || '—') + '</td>' +
       '<td style="font-size:0.8rem;font-weight:600;white-space:nowrap">' + escHtml(m.remision || '—') + pdfBtns + '</td>' +
@@ -990,6 +1023,7 @@ function exportKardexProductoExcel() {
       '#': i + 1,
       'Fecha': m.fecha || '',
       'Tipo': m.tipo,
+      'Bodega': m.bodega,
       'Módulo': m.modulo,
       'Empresa': m.empresa || '',
       'N° Remisión': m.remision || '',
@@ -1004,7 +1038,7 @@ function exportKardexProductoExcel() {
 
   var ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
-    { wch: 5 }, { wch: 12 }, { wch: 8 }, { wch: 18 }, { wch: 15 }, { wch: 15 },
+    { wch: 5 }, { wch: 12 }, { wch: 8 }, { wch: 16 }, { wch: 18 }, { wch: 15 }, { wch: 15 },
     { wch: 35 }, { wch: 30 }, { wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 10 }
   ];
   var wb = XLSX.utils.book_new();
@@ -3986,8 +4020,8 @@ function exportCompExcel() {
 // ══════════════════════════════════════════
 
 function _buildRemisionKardexData(idx, source) {
-  var movimientos = source === 'nc' ? ncFiltered : source === 'kxnc' ? kxncFiltered : source === 'pk' ? pkFiltered : kxFiltered;
-  var allMovimientos = source === 'nc' ? ncMovimientos : source === 'kxnc' ? ncMovimientos : kxMovimientos;
+  var movimientos = source === 'nc' ? ncFiltered : source === 'kxnc' ? kxncFiltered : (source === 'pk' || source === 'pknc') ? pkFiltered : kxFiltered;
+  var allMovimientos = (source === 'nc' || source === 'kxnc' || source === 'pknc') ? ncMovimientos : kxMovimientos;
   var m = movimientos[idx];
   if (!m || !m.remision) { showToast('Este movimiento no tiene remisión', '#e74c3c'); return null; }
 
@@ -4007,7 +4041,7 @@ function _buildRemisionKardexData(idx, source) {
 
   var tipoLabel = m.tipo === 'Entrada' ? 'ENTRADA' : 'SALIDA';
   var moduloLabel;
-  if (source === 'nc' || source === 'kxnc') {
+  if (source === 'nc' || source === 'kxnc' || source === 'pknc') {
     moduloLabel = NC_MOTIVO_LABELS[m.motivo] || m.motivo || '';
   } else {
     moduloLabel = m.modulo || '';
