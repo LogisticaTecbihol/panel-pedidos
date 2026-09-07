@@ -432,7 +432,7 @@ function renderDevTable() {
 
   tbody.innerHTML = pageRows.map(function(r, ri) {
     var i = startIdx + ri;
-    var keyEsc = (r._key || '').replace(/'/g, "\\'");
+    var keyEsc = escHtml(r._key || '').replace(/&#39;/g, "\\'");
     var estado = r._estado || 'Pendiente';
     var esTramitada = estado === 'Tramitada';
     var estadoBadge = esTramitada
@@ -462,15 +462,15 @@ function renderDevTable() {
       checkboxTd +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
-      '<td title="' + (r.Empresa||'') + '"><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + getSiglaDev(r.Empresa) + '</span></td>' +
-      '<td style="text-align:center;font-weight:600;font-size:0.78rem" title="' + (r._consecutivos||[]).join(', ') + '">' + ((r._consecutivos||[]).length ? (r._consecutivos.length > 3 ? r._consecutivos.slice(0,3).join(', ') + ' +' + (r._consecutivos.length-3) : r._consecutivos.join(', ')) : '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (function(){ var fs={}; (r._lines||[r]).forEach(function(l){ if(l.Num_Factura) fs[l.Num_Factura]=1; }); var k=Object.keys(fs); return k.length ? k.join(', ') : '—'; })() + '</td>' +
-      '<td style="font-weight:600;font-size:0.82rem">' + (r.Cliente||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Vendedor||'—') + '</td>' +
+      '<td title="' + escHtml(r.Empresa||'') + '"><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + escHtml(getSiglaDev(r.Empresa)) + '</span></td>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem" title="' + escHtml((r._consecutivos||[]).join(', ')) + '">' + escHtml((r._consecutivos||[]).length ? (r._consecutivos.length > 3 ? r._consecutivos.slice(0,3).join(', ') + ' +' + (r._consecutivos.length-3) : r._consecutivos.join(', ')) : '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml((function(){ var fs={}; (r._lines||[r]).forEach(function(l){ if(l.Num_Factura) fs[l.Num_Factura]=1; }); var k=Object.keys(fs); return k.length ? k.join(', ') : '—'; })()) + '</td>' +
+      '<td style="font-weight:600;font-size:0.82rem">' + escHtml(r.Cliente||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Vendedor||'—') + '</td>' +
       '<td style="text-align:center"><span style="background:#edf2f7;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.8rem">' + (r._nProds||0) + '</span></td>' +
       '<td style="text-align:center;font-weight:600">' + (r._totalCant||0) + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(r._totalValor) + '</td>' +
-      '<td style="font-size:0.76rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (function(){ var ms={}; (r._lines||[r]).forEach(function(l){ if(l.Motivo) ms[l.Motivo]=1; }); return Object.keys(ms).join(' · '); })() + '">' + (function(){ var ms={}; (r._lines||[r]).forEach(function(l){ if(l.Motivo) ms[l.Motivo]=1; }); var k=Object.keys(ms); return k.length ? k.join(' · ') : '—'; })() + '</td>' +
+      '<td style="font-size:0.76rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml((function(){ var ms={}; (r._lines||[r]).forEach(function(l){ if(l.Motivo) ms[l.Motivo]=1; }); return Object.keys(ms).join(' · '); })()) + '">' + escHtml((function(){ var ms={}; (r._lines||[r]).forEach(function(l){ if(l.Motivo) ms[l.Motivo]=1; }); var k=Object.keys(ms); return k.length ? k.join(' · ') : '—'; })()) + '</td>' +
       '<td style="text-align:center">' + estadoBadge + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-edit" onclick="viewDevDetail(\'' + keyEsc + '\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
@@ -500,7 +500,11 @@ function viewDevDetail(key) {
 
   function devField(label, val) {
     return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">' + label + '</span><br>' +
-      '<span style="font-size:0.85rem;color:#2d3748">' + (val || '—') + '</span></div>';
+      '<span style="font-size:0.85rem;color:#2d3748">' + escHtml(val || '—') + '</span></div>';
+  }
+  // devFieldHtml: cuando el valor YA es HTML de confianza (badges), no escapar.
+  function devFieldHtml(label, htmlVal) {
+    return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">' + label + '</span><br>' + htmlVal + '</div>';
   }
 
   var estadoLabel = allTramitada
@@ -519,7 +523,7 @@ function viewDevDetail(key) {
     devField('Departamento', r.Departamento) +
     devField('Teléfono', r.Telefono) +
     devField('Motivo', motivoList.length ? motivoList.join(' · ') : '—') +
-    devField('Estado', estadoLabel) +
+    devFieldHtml('Estado', estadoLabel) +
     '</div>' +
     (function() {
       var hasIngreso = r.Remision_Ingreso || r.Remision;
@@ -544,7 +548,7 @@ function viewDevDetail(key) {
 
   if (r.Observaciones) {
     html += '<div style="margin-bottom:14px"><div style="font-weight:700;font-size:0.78rem;color:#4a5568;text-transform:uppercase;margin-bottom:4px">Observaciones</div>' +
-      '<div style="font-size:0.85rem;color:#2d3748;background:#f7fafc;padding:10px 14px;border-radius:6px">' + (r.Observaciones || '') + '</div></div>';
+      '<div style="font-size:0.85rem;color:#2d3748;background:#f7fafc;padding:10px 14px;border-radius:6px">' + escHtml(r.Observaciones || '') + '</div></div>';
   }
 
   html += '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">' +
@@ -561,12 +565,12 @@ function viewDevDetail(key) {
   lines.forEach(function(x) {
     totalValor += Number(x.Valor_Total) || 0;
     html += '<tr>' +
-      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + (x.Consecutivo || '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (x.Num_Factura || '—') + '</td>' +
-      '<td style="font-weight:600">' + (x.Producto || '—') + '</td>' +
-      '<td>' + (x.Presentacion || '—') + '</td>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + escHtml(x.Consecutivo || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(x.Num_Factura || '—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(x.Producto || '—') + '</td>' +
+      '<td>' + escHtml(x.Presentacion || '—') + '</td>' +
       '<td style="text-align:right">' + (x.Cantidad || 0) + '</td>' +
-      '<td style="text-align:right">' + (x.Cant_Entregada || '—') + '</td>' +
+      '<td style="text-align:right">' + escHtml(x.Cant_Entregada || '—') + '</td>' +
       '<td style="text-align:right">' + fmtMoney(x.Valor_Unitario) + '</td>' +
       '<td style="text-align:right;font-weight:700">' + fmtMoney(x.Valor_Total) + '</td>' +
       '<td style="white-space:nowrap">' +
@@ -583,9 +587,9 @@ function viewDevDetail(key) {
   html += _auditoriaHtml(lines, false);
 
   document.getElementById('view-dev-meta').innerHTML =
-    '<span>📋 Consec: ' + (consecList.length ? consecList.join(', ') : '—') + '</span>' +
+    '<span>📋 Consec: ' + escHtml(consecList.length ? consecList.join(', ') : '—') + '</span>' +
     '<span>📅 ' + fmtDate(r.Fecha) + '</span>' +
-    '<span>👤 ' + (r.Cliente || '—') + '</span>';
+    '<span>👤 ' + escHtml(r.Cliente || '—') + '</span>';
 
   document.getElementById('view-dev-body').innerHTML = html;
   document.getElementById('view-dev-overlay').classList.add('show');
@@ -833,8 +837,8 @@ function openDeleteDevGroup(key) {
   deleteDevGroupIds = lines.map(function(l) { return l.__row || l.id; });
   document.getElementById('del-dev-msg').textContent = '¿Eliminar esta devolución completa?';
   document.getElementById('del-dev-detail').innerHTML =
-    'Cliente: <strong>' + (r.Cliente||'—') + '</strong> · Fecha: <strong>' + fmtDate(r.Fecha) + '</strong><br>' +
-    'Consec(s): <strong>' + (consecListD.length ? consecListD.join(', ') : '—') + '</strong> · Vendedor: <strong>' + (r.Vendedor||'—') + '</strong><br>' +
+    'Cliente: <strong>' + escHtml(r.Cliente||'—') + '</strong> · Fecha: <strong>' + fmtDate(r.Fecha) + '</strong><br>' +
+    'Consec(s): <strong>' + escHtml(consecListD.length ? consecListD.join(', ') : '—') + '</strong> · Vendedor: <strong>' + escHtml(r.Vendedor||'—') + '</strong><br>' +
     'Productos: ' + lines.length + ' · Valor: ' + fmtMoney(lines.reduce(function(s,l){return s+(Number(l.Valor_Total)||0);},0)) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminarán ' + lines.length + ' registro(s) de la base de datos.</span>';
   document.getElementById('btn-del-dev-confirm').disabled = false;
@@ -1236,7 +1240,7 @@ function openDeleteDev(idx, row) {
   if (!r) r = {};
   document.getElementById('del-dev-msg').textContent = '¿Eliminar esta línea de producto?';
   document.getElementById('del-dev-detail').innerHTML =
-    'Cliente: <strong>' + (r.Cliente||'—') + '</strong> · Producto: <strong>' + (r.Producto||'—') + '</strong><br>' +
+    'Cliente: <strong>' + escHtml(r.Cliente||'—') + '</strong> · Producto: <strong>' + escHtml(r.Producto||'—') + '</strong><br>' +
     'Valor: ' + fmtMoney(r.Valor_Total) + ' · ' + fmtDate(r.Fecha) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará esta línea de la base de datos.</span>';
   document.getElementById('btn-del-dev-confirm').disabled = false;
@@ -1508,9 +1512,9 @@ function openTramitarDev(key) {
   var consecSetT = {}; lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSetT[l.Consecutivo] = 1; });
   var consecListT = Object.keys(consecSetT).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
   document.getElementById('tramitar-dev-meta').innerHTML =
-    '<span>📋 Consec: ' + (consecListT.length ? consecListT.join(', ') : '—') + '</span>' +
-    '<span>👤 ' + (r.Cliente || '—') + '</span>' +
-    '<span>' + getSiglaDev(r.Empresa) + '</span>';
+    '<span>📋 Consec: ' + escHtml(consecListT.length ? consecListT.join(', ') : '—') + '</span>' +
+    '<span>👤 ' + escHtml(r.Cliente || '—') + '</span>' +
+    '<span>' + escHtml(getSiglaDev(r.Empresa)) + '</span>';
 
   // ¿La devolución ya está tramitada y solo le falta un lado de la remisión?
   var _hasInDev = !!(r.Remision_Ingreso || r.Remision);
@@ -1596,9 +1600,9 @@ function renderTramitarTable() {
   tramitarDevLines.forEach(function(l, i) {
     html += '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
-      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + (l.Consecutivo || '—') + '</td>' +
-      '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
-      '<td>' + (l.Presentacion || '—') + '</td>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + escHtml(l.Consecutivo || '—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(l.Producto || '—') + '</td>' +
+      '<td>' + escHtml(l.Presentacion || '—') + '</td>' +
       '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
       '<td><input class="ef tramitar-cant" data-line="' + i + '" type="number" min="0" max="' + (l.Cantidad||9999) + '" value="' + (l.Cant_Entregada || '') + '" placeholder="0" style="width:100px;text-align:right"></td>' +
       '<td></td>' +
@@ -2115,7 +2119,7 @@ function renderProdTable() {
       '<td style="font-size:0.76rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(empresasList) + '">' + escHtml(empresasList) + '</td>' +
       '<td style="text-align:center;font-weight:600">' + clienteCount + '</td>' +
       '<td style="font-size:0.76rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(motivoPrincipal) + '">' + escHtml(motivoPrincipal) + '</td>' +
-      '<td><button class="btn-edit" onclick="openProdDetail(\'' + row.producto.replace(/'/g, "\\'").replace(/"/g, '&quot;') + '\')" title="Ver detalle" style="background:#1a5276;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button></td>' +
+      '<td><button class="btn-edit" onclick="openProdDetail(\'' + escHtml(row.producto).replace(/&#39;/g, "\\'") + '\')" title="Ver detalle" style="background:#1a5276;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button></td>' +
     '</tr>';
   }).join('');
 
@@ -2158,8 +2162,8 @@ function openProdDetail(producto) {
         : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700">Pendiente</span>';
       html += '<tr>' +
         '<td style="white-space:nowrap">' + fmtDate(d.Fecha) + '</td>' +
-        '<td><span class="sigla-badge ' + getSiglaClassDev(d.Empresa) + '">' + getSiglaDev(d.Empresa) + '</span></td>' +
-        '<td style="text-align:center;font-weight:600">' + (d.Consecutivo || '—') + '</td>' +
+        '<td><span class="sigla-badge ' + getSiglaClassDev(d.Empresa) + '">' + escHtml(getSiglaDev(d.Empresa)) + '</span></td>' +
+        '<td style="text-align:center;font-weight:600">' + escHtml(d.Consecutivo || '—') + '</td>' +
         '<td style="font-weight:600">' + escHtml(d.Cliente || '—') + '</td>' +
         '<td style="font-size:0.76rem;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(d.Motivo || '') + '">' + escHtml(d.Motivo || '—') + '</td>' +
         '<td style="text-align:right">' + (Number(d.Cantidad) || 0) + '</td>' +
@@ -2185,11 +2189,11 @@ function openProdDetail(producto) {
         ? '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700">Cerrado</span>'
         : estado === 'Completado'
           ? '<span style="background:#cce5ff;color:#004085;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700">Completado</span>'
-          : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700">' + estado + '</span>';
+          : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700">' + escHtml(estado) + '</span>';
       html += '<tr>' +
         '<td style="white-space:nowrap">' + fmtDate(c.Fecha_Solicitud || c.Fecha) + '</td>' +
-        '<td><span class="sigla-badge ' + getSiglaClassDev(c.Empresa) + '">' + getSiglaDev(c.Empresa) + '</span></td>' +
-        '<td style="text-align:center;font-weight:600">' + (c.Consecutivo || '—') + '</td>' +
+        '<td><span class="sigla-badge ' + getSiglaClassDev(c.Empresa) + '">' + escHtml(getSiglaDev(c.Empresa)) + '</span></td>' +
+        '<td style="text-align:center;font-weight:600">' + escHtml(c.Consecutivo || '—') + '</td>' +
         '<td style="font-weight:600">' + escHtml(c.Cliente || '—') + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#8e44ad">' + (Number(c.Cantidad) || 0) + '</td>' +
         '<td style="font-size:0.76rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(c.Razon || '') + '">' + escHtml(c.Razon || '—') + '</td>' +
@@ -2298,8 +2302,8 @@ function openBulkTramitarDev() {
     return '<div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin-bottom:10px">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
         '<div style="display:flex;align-items:center;gap:10px">' +
-          '<span class="sigla-badge ' + g.empresaClass + '">' + g.empresaSigla + '</span>' +
-          '<span style="font-weight:700;font-size:0.9rem;color:#2d3748">' + g.cliente + '</span>' +
+          '<span class="sigla-badge ' + g.empresaClass + '">' + escHtml(g.empresaSigla) + '</span>' +
+          '<span style="font-weight:700;font-size:0.9rem;color:#2d3748">' + escHtml(g.cliente) + '</span>' +
           '<span style="font-size:0.78rem;color:#718096">📅 ' + fmtDate(g.fecha) + '</span>' +
         '</div>' +
         '<div style="display:flex;gap:8px;align-items:center">' +
@@ -2310,7 +2314,7 @@ function openBulkTramitarDev() {
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
         '<span style="font-size:0.76rem;color:#718096;font-weight:600">Consecutivos:</span>' +
         g.consecutivos.map(function(c) {
-          return '<span style="background:#e2e8f0;padding:2px 8px;border-radius:6px;font-size:0.78rem;font-weight:600;color:#2d3748">' + c + '</span>';
+          return '<span style="background:#e2e8f0;padding:2px 8px;border-radius:6px;font-size:0.78rem;font-weight:600;color:#2d3748">' + escHtml(c) + '</span>';
         }).join('') +
         '<span style="font-size:0.76rem;color:#718096;margin-left:8px">Cant. total: <strong>' + g.totalCant + '</strong></span>' +
       '</div>' +
@@ -2341,10 +2345,10 @@ function bulkTramitarNext() {
   var linesHtml = bulkTramitarData.allLines.map(function(l, i) {
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i + 1) + '</td>' +
-      '<td style="font-weight:600;font-size:0.78rem;text-align:center">' + l.Consecutivo + '</td>' +
-      '<td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (l.Cliente || '').replace(/"/g,'&quot;') + '">' + l.Cliente + '</td>' +
-      '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (l.Presentacion || '—') + '</td>' +
+      '<td style="font-weight:600;font-size:0.78rem;text-align:center">' + escHtml(l.Consecutivo) + '</td>' +
+      '<td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(l.Cliente || '') + '">' + escHtml(l.Cliente) + '</td>' +
+      '<td style="font-weight:600">' + escHtml(l.Producto || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(l.Presentacion || '—') + '</td>' +
       '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
       '<td><input class="ef bulk-cant-dev" data-idx="' + i + '" type="number" min="0" max="' + (l.Cantidad || 9999) + '" value="' + (Number(l.Cant_Entregada) || Number(l.Cantidad) || 0) + '" style="width:100px;text-align:right"></td>' +
     '</tr>';
@@ -2648,17 +2652,17 @@ function renderDevDetalle() {
       ? '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Tramitada</span>'
       : '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>';
     return '<tr>' +
-      '<td><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + getSiglaDev(r.Empresa) + '</span></td>' +
-      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.Cliente||'') + '">' + (r.Cliente||'—') + '</td>' +
-      '<td style="text-align:center;font-weight:700">' + (r.Consecutivo||'') + '</td>' +
+      '<td><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + escHtml(getSiglaDev(r.Empresa)) + '</span></td>' +
+      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.Cliente||'') + '">' + escHtml(r.Cliente||'—') + '</td>' +
+      '<td style="text-align:center;font-weight:700">' + escHtml(r.Consecutivo||'') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Num_Factura||'—') + '</td>' +
-      '<td style="font-weight:600">' + (r.Producto||'—') + '</td>' +
-      '<td>' + (r.Presentacion||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Num_Factura||'—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(r.Producto||'—') + '</td>' +
+      '<td>' + escHtml(r.Presentacion||'—') + '</td>' +
       '<td class="money">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
       '<td class="money" style="color:#e67e22;font-weight:600">' + (Number(r.Cant_Entregada)||0).toLocaleString('es-CO') + '</td>' +
       '<td class="money" style="font-weight:700">' + fmtMoney(r.Valor_Total) + '</td>' +
-      '<td style="font-size:0.76rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.Motivo||'') + '">' + (r.Motivo||'—') + '</td>' +
+      '<td style="font-size:0.76rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.Motivo||'') + '">' + escHtml(r.Motivo||'—') + '</td>' +
       '<td style="text-align:center">' + estadoBadge + '</td>' +
     '</tr>';
   }).join('');

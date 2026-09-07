@@ -297,7 +297,7 @@ function renderCamTable() {
   }
 
   tbody.innerHTML = grouped.map(function(r, i) {
-    var keyEsc = (r._key||'').replace(/'/g, "\\'");
+    var keyEsc = escHtml(r._key||'').replace(/&#39;/g, "\\'");
     var esPend = r._estado === 'Pendiente';
     var esCerrado = r._estado === 'Cerrado';
     var esParcial = r._estado === 'Parcial';
@@ -312,11 +312,11 @@ function renderCamTable() {
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">'+(i+1)+'</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">'+fmtDate(r.Fecha_Solicitud)+'</td>' +
-      '<td title="'+(r.Empresa||'')+'"><span class="sigla-badge '+getSiglaClassCam(r.Empresa)+'">'+getSiglaCam(r.Empresa)+'</span></td>' +
-      '<td style="text-align:center;font-weight:600">'+(r.Consecutivo||'—')+'</td>' +
-      '<td style="font-weight:600;font-size:0.82rem">'+(r.Cliente||'—')+'</td>' +
-      '<td style="font-size:0.78rem">'+(r.NIT||'—')+'</td>' +
-      '<td style="font-size:0.78rem">'+(r.Num_Factura||'—')+'</td>' +
+      '<td title="'+escHtml(r.Empresa||'')+'"><span class="sigla-badge '+getSiglaClassCam(r.Empresa)+'">'+escHtml(getSiglaCam(r.Empresa))+'</span></td>' +
+      '<td style="text-align:center;font-weight:600">'+escHtml(r.Consecutivo||'—')+'</td>' +
+      '<td style="font-weight:600;font-size:0.82rem">'+escHtml(r.Cliente||'—')+'</td>' +
+      '<td style="font-size:0.78rem">'+escHtml(r.NIT||'—')+'</td>' +
+      '<td style="font-size:0.78rem">'+escHtml(r.Num_Factura||'—')+'</td>' +
       '<td style="text-align:center"><span style="background:#fde8e8;color:#c0392b;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.8rem">'+(r._nCambiar||0)+'</span></td>' +
       '<td style="text-align:center"><span style="background:#e8f8f0;color:#27ae60;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.8rem">'+(r._nEntregar||0)+'</span></td>' +
       '<td style="text-align:center">'+estadoBadge+'</td>' +
@@ -350,7 +350,11 @@ function viewCamDetail(key) {
   if (!lines.length) return;
   var r = lines[0];
   function cf(label, val) {
-    return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">'+label+'</span><br><span style="font-size:0.85rem;color:#2d3748">'+(val||'—')+'</span></div>';
+    return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">'+label+'</span><br><span style="font-size:0.85rem;color:#2d3748">'+escHtml(val||'—')+'</span></div>';
+  }
+  // cfHtml: cuando el valor YA es HTML de confianza (badges), no escapar.
+  function cfHtml(label, htmlVal) {
+    return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">'+label+'</span><br>'+htmlVal+'</div>';
   }
   var estadoLabel = r.Estado === 'Cerrado'
     ? '<span style="background:#d1ecf1;color:#0c5460;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Cerrado</span>'
@@ -371,7 +375,7 @@ function viewCamDetail(key) {
     cf('Correo', r.Correo) +
     cf('N° Factura', r.Num_Factura) +
     cf('Fecha Compra', r.Fecha_Compra ? fmtDate(r.Fecha_Compra) : '—') +
-    cf('Estado', estadoLabel) +
+    cfHtml('Estado', estadoLabel) +
     '</div>' +
     (function() {
       var hasIngreso = r.Remision_Ingreso;
@@ -406,7 +410,7 @@ function viewCamDetail(key) {
     html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#fdf2f2">' +
       '<th>Producto</th><th style="text-align:right">Cantidad</th><th>Lote / Vencimiento</th><th>Razón</th></tr></thead><tbody>';
     linesCambiar.forEach(function(x) {
-      html += '<tr><td style="font-weight:600">'+(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td><td>'+(x.Lote_Vencimiento||'—')+'</td><td>'+(x.Razon_Cambio||'—')+'</td></tr>';
+      html += '<tr><td style="font-weight:600">'+escHtml(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td><td>'+escHtml(x.Lote_Vencimiento||'—')+'</td><td>'+escHtml(x.Razon_Cambio||'—')+'</td></tr>';
     });
     html += '</tbody></table></div>';
   }
@@ -416,7 +420,7 @@ function viewCamDetail(key) {
     html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f0faf4">' +
       '<th>Producto</th><th style="text-align:right">Cantidad</th><th>Lote / Vencimiento</th><th>Fecha Cambio</th></tr></thead><tbody>';
     linesEntregar.forEach(function(x) {
-      html += '<tr><td style="font-weight:600">'+(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td><td>'+(x.Lote_Vencimiento||'—')+'</td><td>'+(x.Fecha_Cambio ? fmtDate(x.Fecha_Cambio) : '—')+'</td></tr>';
+      html += '<tr><td style="font-weight:600">'+escHtml(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td><td>'+escHtml(x.Lote_Vencimiento||'—')+'</td><td>'+(x.Fecha_Cambio ? fmtDate(x.Fecha_Cambio) : '—')+'</td></tr>';
     });
     html += '</tbody></table></div>';
   }
@@ -430,7 +434,7 @@ function viewCamDetail(key) {
 
   if (r.Observaciones) {
     html += '<div style="margin-top:14px"><div style="font-weight:700;font-size:0.78rem;color:#4a5568;text-transform:uppercase;margin-bottom:4px">Observaciones</div>' +
-      '<div style="font-size:0.85rem;color:#2d3748;background:#f7fafc;padding:10px 14px;border-radius:6px">'+(r.Observaciones||'')+'</div></div>';
+      '<div style="font-size:0.85rem;color:#2d3748;background:#f7fafc;padding:10px 14px;border-radius:6px">'+escHtml(r.Observaciones||'')+'</div></div>';
   }
 
   html += '<div class="adjuntos-section" id="cam-adjuntos-section">' +
@@ -452,8 +456,8 @@ function viewCamDetail(key) {
   html += _auditoriaHtml(lines, false);
 
   document.getElementById('view-cam-meta').innerHTML =
-    '<span>📋 Consec: '+(r.Consecutivo||'—')+'</span>' +
-    '<span>👤 '+(r.Cliente||'—')+'</span>';
+    '<span>📋 Consec: '+escHtml(r.Consecutivo||'—')+'</span>' +
+    '<span>👤 '+escHtml(r.Cliente||'—')+'</span>';
   document.getElementById('view-cam-body').innerHTML = html;
   document.getElementById('view-cam-overlay').classList.add('show');
 
@@ -755,7 +759,7 @@ function openDeleteCamGroup(key) {
   deleteCamGroupIds = lines.map(function(l) { return l.__row || l.id; });
   document.getElementById('del-cam-msg').textContent = '¿Eliminar este cambio completo?';
   document.getElementById('del-cam-detail').innerHTML =
-    'Cliente: <strong>'+(r.Cliente||'—')+'</strong> · Consec: <strong>'+(r.Consecutivo||'—')+'</strong><br>' +
+    'Cliente: <strong>'+escHtml(r.Cliente||'—')+'</strong> · Consec: <strong>'+escHtml(r.Consecutivo||'—')+'</strong><br>' +
     'Líneas: '+lines.length+'<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminarán '+lines.length+' registro(s).</span>';
   document.getElementById('btn-del-cam-confirm').disabled = false;
@@ -807,9 +811,9 @@ async function openGestionarCam(key) {
                     : 'ambos';
 
   document.getElementById('gestionar-cam-meta').innerHTML =
-    '<span>📋 Consec: '+(r.Consecutivo||'—')+'</span>' +
-    '<span>👤 '+(r.Cliente||'—')+'</span>' +
-    '<span>'+getSiglaCam(r.Empresa)+'</span>';
+    '<span>📋 Consec: '+escHtml(r.Consecutivo||'—')+'</span>' +
+    '<span>👤 '+escHtml(r.Cliente||'—')+'</span>' +
+    '<span>'+escHtml(getSiglaCam(r.Empresa))+'</span>';
 
   document.getElementById('gestionar-cam-remision-ingreso').value = r.Remision_Ingreso || '';
   document.getElementById('gestionar-cam-bodega-ingreso').value = r.Bodega_Ingreso || 'Productos Buenos';
@@ -859,10 +863,10 @@ async function openGestionarCam(key) {
     for (var i = 0; i < gestionarCamWorkingLines.length; i++) {
       var wl = gestionarCamWorkingLines[i];
       tblHTML += '<tr>' +
-        '<td>' + (wl.Producto || '') + '</td>' +
-        '<td>' + (wl.Presentacion || '') + '</td>' +
-        '<td style="text-align:center">' + wl.Cantidad + '</td>' +
-        '<td style="text-align:center">' + wl.Cant_Entregada + '</td>' +
+        '<td>' + escHtml(wl.Producto || '') + '</td>' +
+        '<td>' + escHtml(wl.Presentacion || '') + '</td>' +
+        '<td style="text-align:center">' + escHtml(wl.Cantidad) + '</td>' +
+        '<td style="text-align:center">' + escHtml(wl.Cant_Entregada) + '</td>' +
         '<td class="cam-asig-td" data-i="' + i + '">' + camAsig.renderCell(i, wl) + '</td>' +
         '</tr>';
     }
@@ -1501,7 +1505,7 @@ async function loadCamAdjuntos(empresa, consecutivo, cliente) {
     return '<div class="adjunto-item">' +
       '<div class="adjunto-icon">' + icon + '</div>' +
       '<div class="adjunto-info">' +
-        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-name" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</div>' +
         '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
       '</div>' +
       '<div class="adjunto-actions">' +
