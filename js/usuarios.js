@@ -129,13 +129,13 @@ function renderUsuariosTable() {
       '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
       '<td style="font-weight:600">' + escHtml(u.nombre || '—') + '</td>' +
       '<td style="font-size:0.82rem">' + escHtml(u.email || '—') + '</td>' +
-      '<td>' + (ROL_BADGES[u.rol] || u.rol) + '</td>' +
+      '<td>' + (ROL_BADGES[u.rol] || escHtml(u.rol)) + '</td>' +
       '<td style="max-width:200px">' + empBadges + '</td>' +
       '<td>' + estadoBadge + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-edit" onclick="openEditUser(\'' + u.id + '\')" title="Editar">✏️</button>' +
         (!isSelf ? '<button class="btn-del" onclick="openToggleUser(\'' + u.id + '\',' + (u.activo ? 'true' : 'false') + ')" title="' + (u.activo ? 'Desactivar' : 'Activar') + '">' + (u.activo ? '🔒' : '🔓') + '</button>' : '') +
-        '<button onclick="resetUserPassword(\'' + u.id + '\',\'' + (u.email || '').replace(/'/g, "\\'") + '\')" title="Enviar reset de contraseña" style="background:none;border:1px solid #cbd5e0;border-radius:5px;cursor:pointer;padding:3px 8px;font-size:0.78rem">🔑</button>' +
+        '<button onclick="resetUserPassword(\'' + u.id + '\',\'' + escHtml(u.email || '').replace(/&#39;/g, "\\'") + '\')" title="Enviar reset de contraseña" style="background:none;border:1px solid #cbd5e0;border-radius:5px;cursor:pointer;padding:3px 8px;font-size:0.78rem">🔑</button>' +
       '</div></td>' +
     '</tr>';
   }).join('');

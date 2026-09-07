@@ -328,8 +328,8 @@ function renderOCTable() {
     var trClass = esSol ? ' class="row-sol-pendiente"' : '';
     var solBadge = '';
     if (esSol) {
-      var refEsc = String(r.Ref_Pedido || '').replace(/"/g, '&quot;');
-      solBadge = ' <span class="sol-pend-badge" title="Solicitud de compra pendiente por legalizar. Origen: pedido ' + refEsc + '. Cargar Remisión Destino + Remisión Origen para que el stock entre a ' + (r.Empresa_Destino || '') + ' y se pueda emitir la remisión al cliente.">🛒 SOL. PEDIDO</span>';
+      var refEsc = escHtml(String(r.Ref_Pedido || ''));
+      solBadge = ' <span class="sol-pend-badge" title="Solicitud de compra pendiente por legalizar. Origen: pedido ' + refEsc + '. Cargar Remisión Destino + Remisión Origen para que el stock entre a ' + escHtml(r.Empresa_Destino || '') + ' y se pueda emitir la remisión al cliente.">🛒 SOL. PEDIDO</span>';
     }
     var tieneRems = String(r.Remision || '').trim() || String(r.Remision_Origen || '').trim();
     var btnPdfSol = '<button class="btn-pdf-oc" onclick="exportarSolicitudOC(' + (r.__row||0) + ')" title="Descargar Solicitud de OC (PDF, agrupa todos los productos)">📄</button>';
@@ -347,7 +347,8 @@ function renderOCTable() {
 
     var aprBtns = '';
     if (canApprOC && apr === 'Por aprobar') {
-      var argsAR = "'" + escapeJs(r.Empresa_Destino || '') + "','" + escapeJs(r.Empresa_Origen || '') + "','" + escapeJs(String(r.Consecutivo || '')) + "'";
+      var _ja = function(v) { return escHtml(String(v == null ? '' : v)).replace(/&#39;/g, "\\'"); };
+      var argsAR = "'" + _ja(r.Empresa_Destino) + "','" + _ja(r.Empresa_Origen) + "','" + _ja(r.Consecutivo) + "'";
       aprBtns =
         '<button class="btn-edit" style="background:#27ae60;color:white;border-color:#27ae60" title="Aprobar OC" onclick="approveOC(' + argsAR + ')">✅</button>' +
         '<button class="btn-del" style="background:#e74c3c;color:white;border-color:#e74c3c" title="Rechazar OC" onclick="askRejectOC(' + argsAR + ')">❌</button>';
@@ -356,17 +357,17 @@ function renderOCTable() {
     return '<tr' + trClass + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
-      '<td title="' + (r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassOC(r.Empresa_Destino) + '">' + getSiglaOC(r.Empresa_Destino) + '</span></td>' +
-      '<td title="' + (r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassOC(r.Empresa_Origen) + '">' + getSiglaOC(r.Empresa_Origen) + '</span></td>' +
-      '<td style="font-weight:600;font-size:0.82rem">' + (r.Consecutivo||'—') + solBadge + '</td>' +
-      '<td style="font-weight:700">' + (r.Producto||'—') + '</td>' +
-      '<td>' + (r.Presentacion||'—') + '</td>' +
+      '<td title="' + escHtml(r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassOC(r.Empresa_Destino) + '">' + escHtml(getSiglaOC(r.Empresa_Destino)) + '</span></td>' +
+      '<td title="' + escHtml(r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassOC(r.Empresa_Origen) + '">' + escHtml(getSiglaOC(r.Empresa_Origen)) + '</span></td>' +
+      '<td style="font-weight:600;font-size:0.82rem">' + escHtml(r.Consecutivo||'—') + solBadge + '</td>' +
+      '<td style="font-weight:700">' + escHtml(r.Producto||'—') + '</td>' +
+      '<td>' + escHtml(r.Presentacion||'—') + '</td>' +
       '<td style="text-align:center">' + bonifBadgeOC(r) + '</td>' +
       '<td style="text-align:center;font-weight:700">' + (r.Cantidad||0) + '</td>' +
       '<td style="text-align:right;font-size:0.82rem">' + fmtMoney(r.Valor_Unitario) + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:0.82rem">' + fmtMoney(r.Valor_Total) + '</td>' +
-      '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision || '—') + '</td>' +
-      '<td style="font-size:0.78rem;color:#4a5568">' + (r.Remision_Origen || '—') + '</td>' +
+      '<td style="font-size:0.78rem;color:#4a5568">' + escHtml(r.Remision || '—') + '</td>' +
+      '<td style="font-size:0.78rem;color:#4a5568">' + escHtml(r.Remision_Origen || '—') + '</td>' +
       '<td>' + aprBadge + '</td>' +
       '<td>' + estadoBadge(r.Estado) + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
@@ -928,8 +929,8 @@ function openDeleteOC(idx, row) {
   var r = rows[idx] || {};
   document.getElementById('del-oc-msg').textContent = '¿Eliminar esta línea de la orden?';
   document.getElementById('del-oc-detail').innerHTML =
-    'Producto: <strong>' + (r.Producto||'—') + '</strong> · ' + (r.Cantidad||0) + ' uds<br>' +
-    'OC: ' + (r.Consecutivo||'—') + ' · ' + getSiglaOC(r.Empresa_Destino) + ' ← ' + getSiglaOC(r.Empresa_Origen) + ' · ' + fmtDate(r.Fecha) + '<br><br>' +
+    'Producto: <strong>' + escHtml(r.Producto||'—') + '</strong> · ' + (r.Cantidad||0) + ' uds<br>' +
+    'OC: ' + escHtml(r.Consecutivo||'—') + ' · ' + escHtml(getSiglaOC(r.Empresa_Destino)) + ' ← ' + escHtml(getSiglaOC(r.Empresa_Origen)) + ' · ' + fmtDate(r.Fecha) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará esta línea de la base de datos.</span>';
   document.getElementById('btn-del-oc-confirm').disabled = false;
   document.getElementById('btn-del-oc-confirm').textContent = '🗑️ Sí, eliminar';

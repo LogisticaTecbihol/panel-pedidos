@@ -262,12 +262,12 @@ function renderInvTable() {
     return '<tr>' +
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
-      '<td title="' + (r.Empresa||'') + '"><span class="sigla-badge ' + getSiglaClassInv(r.Empresa) + '">' + getSiglaInv(r.Empresa) + '</span></td>' +
-      '<td style="font-weight:700">' + (r.Producto||'—') + '</td>' +
-      '<td>' + (r.Presentacion||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Unidad_Medida||'—') + '</td>' +
-      '<td style="text-align:center">' + (r.Cantidad_Caja||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Lote||'—') + '</td>' +
+      '<td title="' + escHtml(r.Empresa||'') + '"><span class="sigla-badge ' + getSiglaClassInv(r.Empresa) + '">' + escHtml(getSiglaInv(r.Empresa)) + '</span></td>' +
+      '<td style="font-weight:700">' + escHtml(r.Producto||'—') + '</td>' +
+      '<td>' + escHtml(r.Presentacion||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Unidad_Medida||'—') + '</td>' +
+      '<td style="text-align:center">' + escHtml(r.Cantidad_Caja||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Lote||'—') + '</td>' +
       '<td style="text-align:center;font-weight:700">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
       '<td style="text-align:center;font-size:0.82rem;color:#e67e22;font-weight:600">' + compStr + '</td>' +
       '<td style="text-align:center;font-size:0.82rem;color:' + movColor + ';font-weight:600">' + movStr + '</td>' +
@@ -541,8 +541,8 @@ function openDeleteInv(idx, row) {
   var r = rows[idx] || {};
   document.getElementById('del-inv-msg').textContent = '¿Eliminar este registro de inventario?';
   document.getElementById('del-inv-detail').innerHTML =
-    'Producto: <strong>' + (r.Producto||'—') + '</strong> · ' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + ' uds<br>' +
-    'Lote: ' + (r.Lote||'—') + ' · ' + fmtDate(r.Fecha) + '<br><br>' +
+    'Producto: <strong>' + escHtml(r.Producto||'—') + '</strong> · ' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + ' uds<br>' +
+    'Lote: ' + escHtml(r.Lote||'—') + ' · ' + fmtDate(r.Fecha) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará este registro de la base de datos.</span>';
   document.getElementById('btn-del-inv-confirm').disabled = false;
   document.getElementById('btn-del-inv-confirm').textContent = '🗑️ Sí, eliminar';
@@ -641,10 +641,10 @@ function importInventarioExcel(fileInput) {
       preview.innerHTML = importInvData.map(function(r, i) {
         return '<tr>' +
           '<td style="color:#718096">' + (i+1) + '</td>' +
-          '<td style="font-weight:700">' + r.Producto + '</td>' +
-          '<td>' + (r.Unidad_Medida||'—') + '</td>' +
-          '<td style="text-align:center">' + (r.Cantidad_Caja||'—') + '</td>' +
-          '<td>' + (r.Lote||'—') + '</td>' +
+          '<td style="font-weight:700">' + escHtml(r.Producto) + '</td>' +
+          '<td>' + escHtml(r.Unidad_Medida||'—') + '</td>' +
+          '<td style="text-align:center">' + escHtml(r.Cantidad_Caja||'—') + '</td>' +
+          '<td>' + escHtml(r.Lote||'—') + '</td>' +
           '<td style="text-align:right;font-weight:700">' + r.Cantidad.toLocaleString('es-CO') + '</td>' +
         '</tr>';
       }).join('');

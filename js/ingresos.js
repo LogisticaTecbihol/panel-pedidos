@@ -401,7 +401,7 @@ function renderIngTable() {
     var totalQty = lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
     var origenBadge = g.Origen === 'Devolución'
       ? '<span class="badge b-rec">Devolución</span>'
-      : '<span class="badge b-par">' + (g.Origen||'—') + '</span>';
+      : '<span class="badge b-par">' + escHtml(g.Origen||'—') + '</span>';
     if ((g.Reenvase_Ref || '').trim()) {
       origenBadge += ' <span title="Retorno de salida a producción ' + escHtml(g.Reenvase_Ref) + '" style="background:#eafaf1;color:#1e8449;padding:1px 6px;border-radius:10px;font-size:0.68rem;font-weight:700">↩ producción</span>';
     }
@@ -409,13 +409,13 @@ function renderIngTable() {
       '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(g.Fecha) + '</td>' +
       '<td>' + origenBadge + '</td>' +
-      '<td title="' + (g.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Origen) + '">' + getSiglaIng(g.Empresa_Origen) + '</span></td>' +
-      '<td title="' + (g.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Destino) + '">' + getSiglaIng(g.Empresa_Destino) + '</span></td>' +
+      '<td title="' + escHtml(g.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Origen) + '">' + escHtml(getSiglaIng(g.Empresa_Origen)) + '</span></td>' +
+      '<td title="' + escHtml(g.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Destino) + '">' + escHtml(getSiglaIng(g.Empresa_Destino)) + '</span></td>' +
       '<td style="text-align:center"><span style="background:#e8f4fb;color:#1a5276;padding:2px 9px;border-radius:12px;font-size:0.75rem;font-weight:700">' + lines.length + '</span></td>' +
       '<td style="text-align:center;font-weight:700">' + totalQty.toLocaleString('es-CO') + '</td>' +
-      '<td style="font-size:0.78rem">' + (g.Responsable||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (g.Remision_Origen||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (g.Remision_Destino||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(g.Responsable||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(g.Remision_Origen||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(g.Remision_Destino||'—') + '</td>' +
       '<td><button class="btn-ver" onclick="openIngDetail(' + i + ')">📦 Ver ingreso</button></td>' +
     '</tr>';
   }).join('');
@@ -1129,8 +1129,8 @@ function openDeleteIngFromDetail(lineIdx, row) {
   var r = lines[lineIdx] || {};
   document.getElementById('del-ing-msg').textContent = '¿Eliminar este producto del ingreso?';
   document.getElementById('del-ing-detail').innerHTML =
-    'Producto: <strong>' + (r.Producto||'—') + '</strong> · ' + (r.Cantidad||0) + ' uds<br>' +
-    'Ingreso: ' + (g.Origen||'—') + ' · ' + fmtDate(g.Fecha) + '<br><br>' +
+    'Producto: <strong>' + escHtml(r.Producto||'—') + '</strong> · ' + (r.Cantidad||0) + ' uds<br>' +
+    'Ingreso: ' + escHtml(g.Origen||'—') + ' · ' + fmtDate(g.Fecha) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará este producto del ingreso.</span>';
   document.getElementById('btn-del-ing-confirm').disabled = false;
   document.getElementById('btn-del-ing-confirm').textContent = '🗑️ Sí, eliminar';
@@ -1210,7 +1210,7 @@ async function loadIngAdjuntos() {
     return '<div class="adjunto-item">' +
       '<div class="adjunto-icon">' + icon + '</div>' +
       '<div class="adjunto-info">' +
-        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-name" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</div>' +
         '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
       '</div>' +
       '<div class="adjunto-actions">' +
@@ -1500,18 +1500,18 @@ function renderDetalleIng() {
   tbody.innerHTML = rows.map(function(r) {
     var origenBadge = r.Origen === 'Devolución'
       ? '<span class="badge b-rec">Devolución</span>'
-      : '<span class="badge b-par">' + (r.Origen||'—') + '</span>';
+      : '<span class="badge b-par">' + escHtml(r.Origen||'—') + '</span>';
     return '<tr>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
       '<td>' + origenBadge + '</td>' +
-      '<td title="' + (r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Origen) + '">' + getSiglaIng(r.Empresa_Origen) + '</span></td>' +
-      '<td title="' + (r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Destino) + '">' + getSiglaIng(r.Empresa_Destino) + '</span></td>' +
-      '<td style="font-weight:600">' + (r.Producto||'—') + '</td>' +
-      '<td>' + (r.Presentacion||'—') + '</td>' +
+      '<td title="' + escHtml(r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Origen) + '">' + escHtml(getSiglaIng(r.Empresa_Origen)) + '</span></td>' +
+      '<td title="' + escHtml(r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Destino) + '">' + escHtml(getSiglaIng(r.Empresa_Destino)) + '</span></td>' +
+      '<td style="font-weight:600">' + escHtml(r.Producto||'—') + '</td>' +
+      '<td>' + escHtml(r.Presentacion||'—') + '</td>' +
       '<td class="money" style="font-weight:700">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Responsable||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Remision_Origen||'—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Remision_Destino||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Responsable||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Remision_Origen||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Remision_Destino||'—') + '</td>' +
     '</tr>';
   }).join('');
 }

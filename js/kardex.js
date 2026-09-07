@@ -1328,7 +1328,7 @@ function openDeleteKx(row, modulo, cantidad) {
   deleteKxRow = row;
   document.getElementById('del-kx-msg').textContent = '¿Eliminar este ajuste del Kardex?';
   document.getElementById('del-kx-detail').innerHTML =
-    'Tipo: <strong>' + modulo + '</strong> · Cantidad: ' + _fmtNum.format(Number(cantidad)) + '<br><br>' +
+    'Tipo: <strong>' + escHtml(modulo) + '</strong> · Cantidad: ' + _fmtNum.format(Number(cantidad)) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará este registro de la base de datos.</span>';
   document.getElementById('btn-del-kx-confirm').disabled = false;
   document.getElementById('btn-del-kx-confirm').textContent = '🗑️ Sí, eliminar';
@@ -2449,7 +2449,7 @@ function openDeleteNC(row, tipo, cantidad) {
   deleteNCRow = row;
   document.getElementById('del-nc-msg').textContent = '¿Eliminar este registro de la bodega NC?';
   document.getElementById('del-nc-detail').innerHTML =
-    'Tipo: <strong>' + tipo + '</strong> · Cantidad: ' + _fmtNum.format(Number(cantidad)) + '<br><br>' +
+    'Tipo: <strong>' + escHtml(tipo) + '</strong> · Cantidad: ' + _fmtNum.format(Number(cantidad)) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminará este registro de la base de datos.</span>';
   document.getElementById('btn-del-nc-confirm').disabled = false;
   document.getElementById('btn-del-nc-confirm').textContent = '🗑️ Sí, eliminar';
