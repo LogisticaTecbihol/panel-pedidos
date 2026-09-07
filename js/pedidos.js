@@ -628,7 +628,7 @@ function renderSolicitudesCompraSection(c) {
     return '<div class="sol-item">' +
       '<span class="sol-oc" title="Consecutivo de la OC">' + esc(s.Consecutivo) + '</span>' +
       '<span class="sol-prod">' + esc(s.Producto) + (s.Presentacion ? ' <span style="color:#718096;font-weight:400">· ' + esc(s.Presentacion) + '</span>' : '') + '</span>' +
-      '<span class="sol-cant">' + s.Cantidad + ' ud</span>' +
+      '<span class="sol-cant">' + esc(s.Cantidad) + ' ud</span>' +
       '<span class="sol-origen" title="Empresa origen del traslado">desde ' + esc(getSigla(s.Empresa_Origen) || s.Empresa_Origen) + '</span>' +
       '<span class="sol-estado">' + esc(s.Estado) + '</span>' +
     '</div>';
@@ -640,7 +640,7 @@ function renderSolicitudesCompraSection(c) {
       ' de compra pendiente' + (list.length === 1 ? '' : 's') + ' para este pedido</label>' +
     '<div style="font-size:0.76rem;color:#7d2820;margin-bottom:8px">' +
       'Estas OC deben legalizarse en el módulo <strong>Órdenes de Compra</strong> (cargar Remisión Destino y Origen) ' +
-      'para que el producto entre como existencia en <strong>' + (c.Nombre_Empresa || '') + '</strong> y se pueda emitir la remisión al cliente.' +
+      'para que el producto entre como existencia en <strong>' + escHtml(c.Nombre_Empresa || '') + '</strong> y se pueda emitir la remisión al cliente.' +
     '</div>' +
     '<div class="sol-list">' + items + '</div>';
 }
@@ -1072,7 +1072,7 @@ function filterMuniOptions() {
     var checked = _muniSelected.indexOf(m) >= 0;
     return '<label class="ms-opt' + (checked ? ' selected' : '') + '" data-muni-idx="' + i + '" onclick="_onMuniOptClick(this, event)">' +
       '<input type="checkbox"' + (checked ? ' checked' : '') + '>' +
-      '<span>' + m.replace(/</g, '&lt;') + '</span></label>';
+      '<span>' + escHtml(m) + '</span></label>';
   }).join('');
   opts._muniMatches = matches;
 }
@@ -1114,7 +1114,7 @@ function _renderMuniToggle() {
   var html = '';
   var show = Math.min(_muniSelected.length, 2);
   for (var i = 0; i < show; i++) {
-    html += '<span class="ms-chip">' + _muniSelected[i].replace(/</g, '&lt;') + '<span class="ms-chip-x" onclick="_removeMuniByIdx(' + i + ', event)">&times;</span></span>';
+    html += '<span class="ms-chip">' + escHtml(_muniSelected[i]) + '<span class="ms-chip-x" onclick="_removeMuniByIdx(' + i + ', event)">&times;</span></span>';
   }
   if (_muniSelected.length > 2) {
     html += '<span class="ms-more">+' + (_muniSelected.length - 2) + '</span>';
@@ -1370,8 +1370,8 @@ function renderTable() {
         : tipo === 'cantidad'
           ? 'Se modificó la cantidad pedida — clic para descartar'
           : 'Se modificó cantidad y se agregaron líneas — clic para descartar';
-      var keyAttr = rowKey.replace(/"/g, '&quot;').replace(/'/g, "\\'");
-      var tsAttr = String(c._ModTs).replace(/'/g, "\\'");
+      var keyAttr = escHtml(rowKey).replace(/&#39;/g, "\\'");
+      var tsAttr = escHtml(String(c._ModTs)).replace(/&#39;/g, "\\'");
       modBadge = '<span class="mod-badge" title="' + modTitle + '" onclick="dismissPedidoModificado(\'' + keyAttr + '\', \'' + tsAttr + '\', event)">✏️ ' + modLabel + '</span>';
     }
     var solList = solicitudesCompraPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
@@ -1383,10 +1383,10 @@ function renderTable() {
       solBadge = '<span class="sol-badge" title="' + solTitle + '">🛒 ' + solList.length + '</span>';
     }
     return '<tr' + trClass + '>' +
-      '<td style="color:#718096;font-size:0.78rem">' + (c['N°']||'') + '</td>' +
-      '<td title="' + (c.Nombre_Empresa||'') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + getSigla(c.Nombre_Empresa) + '</span></td>' +
-      '<td style="text-align:center;font-weight:700">' + (c.Consecutivo||'') + modBadge + solBadge + '<span class="adjunto-badge-cell" data-adj-key="' + getSigla(c.Nombre_Empresa) + '_' + c.Consecutivo + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
-      '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (c.Cliente||'') + '">' + (c.Cliente||'—') + '</td>' +
+      '<td style="color:#718096;font-size:0.78rem">' + escHtml(c['N°']||'') + '</td>' +
+      '<td title="' + escHtml(c.Nombre_Empresa||'') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + escHtml(getSigla(c.Nombre_Empresa)) + '</span></td>' +
+      '<td style="text-align:center;font-weight:700">' + escHtml(c.Consecutivo||'') + modBadge + solBadge + '<span class="adjunto-badge-cell" data-adj-key="' + escHtml(getSigla(c.Nombre_Empresa)) + '_' + escHtml(c.Consecutivo) + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
+      '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(c.Cliente||'') + '">' + escHtml(c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
       (function() {
         if (!_mostrarDias(c)) return '<td style="text-align:center;color:#cbd5e0">—</td>';
@@ -1398,15 +1398,15 @@ function renderTable() {
         var title = 'Días hábiles transcurridos desde la fecha del pedido';
         return '<td style="text-align:center"><span title="' + title + '" style="background:' + bg + ';color:' + fg + ';padding:2px 9px;border-radius:12px;font-size:0.78rem;font-weight:700">' + d + ' dh</span></td>';
       })() +
-      '<td style="font-size:0.78rem">' + (c.Comercial||'—') + '</td>' +
-      '<td style="font-size:0.78rem;white-space:nowrap">' + (c.Municipio||'—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(c.Comercial||'—') + '</td>' +
+      '<td style="font-size:0.78rem;white-space:nowrap">' + escHtml(c.Municipio||'—') + '</td>' +
       '<td class="money">' + fmtMoney(c.Total_Orden) + '</td>' +
       '<td style="text-align:center">' +
         (lineCount ? '<span style="background:#e8f4fb;color:#1a5276;padding:2px 9px;border-radius:12px;font-size:0.75rem;font-weight:700">' + lineCount + '</span>' : '<span class="tag-sin">—</span>') +
       '</td>' +
       '<td><div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:' + pct + '%"></div></div><div class="prog-pct">' + pct + '%</div></div></td>' +
-      '<td><span class="badge ' + badge + '">' + est + '</span></td>' +
-      '<td><span class="badge ' + badge2 + '">' + est2 + '</span></td>' +
+      '<td><span class="badge ' + badge + '">' + escHtml(est) + '</span></td>' +
+      '<td><span class="badge ' + badge2 + '">' + escHtml(est2) + '</span></td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-ver ' + (done?'done':'') + '" onclick="openDetail(' + idx + ')">' +
           (lineCount === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
@@ -1550,7 +1550,7 @@ async function openDetail(idx) {
         '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right' + (lockEntregado || lockCant ? ';background:#f7fafc;opacity:0.7' : '') + '"' + (lockEntregado || lockCant ? ' disabled' : '') + (lockEntregado || lockCant ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td><input class="ef md-ent" data-i="' + i + '" type="number" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700;background:#f0fff4" readonly tabindex="-1"></td>' +
         '<td class="money"><span class="pend-tag ' + (pendiente > 0 ? 'pend' : 'ok') + '" id="md-pend-' + i + '">' + pendiente + '</span></td>' +
-        '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + estL + '</span>' + lockBadge +
+        '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + escHtml(estL) + '</span>' + lockBadge +
           '<div class="entregas-wrap" data-i="' + i + '">' + renderEntregasHTML(i, l._entregas || []) + '</div>' +
         '</td>' +
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
@@ -1757,13 +1757,13 @@ function renderEntregasHTML(lineIdx, entregas) {
     var remTxt = e.remision || '';
     var cantTxt = e.cantidad || 0;
     var parts = [];
-    if (cantTxt) parts.push('<strong>' + cantTxt + '</strong> ud');
-    if (remTxt) parts.push('Rem: ' + remTxt.replace(/</g,'&lt;'));
-    if (fechaFmt) parts.push(fechaFmt);
+    if (cantTxt) parts.push('<strong>' + escHtml(cantTxt) + '</strong> ud');
+    if (remTxt) parts.push('Rem: ' + escHtml(remTxt));
+    if (fechaFmt) parts.push(escHtml(fechaFmt));
     var facData = remTxt ? (fmap[remTxt] || {}) : {};
     var nf = facData.num_factura || '';
     var ff = facData.fecha_factura || '';
-    if (nf && ff) parts.push('<span style="color:#3730a3;font-weight:700">Fac: ' + nf.replace(/</g,'&lt;') + '</span>');
+    if (nf && ff) parts.push('<span style="color:#3730a3;font-weight:700">Fac: ' + escHtml(nf) + '</span>');
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:#f7fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0">' +
       '<span style="flex:1">' + parts.join(' · ') + '</span>' +
       '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>' +
@@ -1815,14 +1815,14 @@ function renderFacturaRemisiones() {
     var facturado = nf && ff;
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:' + (facturado ? '#eef2ff' : '#f7fafc') + ';border:1px solid ' + (facturado ? '#c7d2fe' : '#e2e8f0') + ';border-radius:6px;flex-wrap:wrap">' +
       '<div style="flex:1;min-width:200px">' +
-        '<div style="font-weight:700;font-size:0.8rem;color:#1a5276">Rem: ' + rem.replace(/</g,'&lt;') + (fechaFmt ? ' <span style="font-weight:400;color:#718096">· ' + fechaFmt + '</span>' : '') + '</div>' +
-        '<div style="font-size:0.7rem;color:#718096;margin-top:2px">' + prodsText.replace(/</g,'&lt;') + '</div>' +
+        '<div style="font-weight:700;font-size:0.8rem;color:#1a5276">Rem: ' + escHtml(rem) + (fechaFmt ? ' <span style="font-weight:400;color:#718096">· ' + escHtml(fechaFmt) + '</span>' : '') + '</div>' +
+        '<div style="font-size:0.7rem;color:#718096;margin-top:2px">' + escHtml(prodsText) + '</div>' +
       '</div>' +
       '<div style="display:flex;gap:6px;align-items:center">' +
         '<label style="font-size:0.72rem;color:#4a5568;font-weight:600;white-space:nowrap">N° Factura</label>' +
-        '<input type="text" class="fac-rem-num" data-rem="' + rem.replace(/"/g,'&quot;') + '" value="' + nf.replace(/"/g,'&quot;') + '" placeholder="Ej: FAC-001" style="width:120px;font-size:0.78rem;padding:4px 8px;border:1px solid #d1d5db;border-radius:5px" onchange="onFacturaSeccionChange(this)">' +
+        '<input type="text" class="fac-rem-num" data-rem="' + escHtml(rem) + '" value="' + escHtml(nf) + '" placeholder="Ej: FAC-001" style="width:120px;font-size:0.78rem;padding:4px 8px;border:1px solid #d1d5db;border-radius:5px" onchange="onFacturaSeccionChange(this)">' +
         '<label style="font-size:0.72rem;color:#4a5568;font-weight:600;white-space:nowrap">Fecha</label>' +
-        '<input type="date" class="fac-rem-fecha" data-rem="' + rem.replace(/"/g,'&quot;') + '" value="' + ff + '" style="width:140px;font-size:0.78rem;padding:4px 8px;border:1px solid #d1d5db;border-radius:5px" onchange="onFacturaSeccionChange(this)">' +
+        '<input type="date" class="fac-rem-fecha" data-rem="' + escHtml(rem) + '" value="' + escHtml(ff) + '" style="width:140px;font-size:0.78rem;padding:4px 8px;border:1px solid #d1d5db;border-radius:5px" onchange="onFacturaSeccionChange(this)">' +
         (facturado ? '<span style="color:#3730a3;font-weight:700;font-size:1rem" title="Facturado">✓</span>' : '') +
       '</div>' +
     '</div>';
@@ -1944,8 +1944,8 @@ function renderAsignacionCell(i, l, empresaPedido) {
       var etiqueta = (yaSesion > 0)
         ? x.sigla + marca + ' · ' + dispRest + ' disp. (base ' + dispRaw + ')'
         : x.sigla + marca + ' · ' + dispRest + ' disp.';
-      return '<option value="' + x.empresa.replace(/"/g,'&quot;') + '" data-disp="' + dispRaw + '">' +
-        etiqueta + '</option>';
+      return '<option value="' + escHtml(x.empresa) + '" data-disp="' + dispRaw + '">' +
+        escHtml(etiqueta) + '</option>';
     }).join('');
   }
   var selectHTML = opciones
@@ -2210,7 +2210,7 @@ function renderAsignacionChips(i) {
       ? '<span title="Genera SOLO una solicitud de compra (OC de traslado, Estado Abierta). La remisión al cliente NO se emite ahora: primero hay que legalizar la OC en Órdenes para que el stock quede en la empresa del pedido." style="color:#c0392b;font-weight:700">🛒 solicitud de compra (remisión pendiente)</span>'
       : '<span style="color:#27ae60;font-weight:700">✓ mismo origen — genera remisión</span>';
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
-      '<span style="flex:1"><strong>' + a.cantidad + '</strong> ud · ' + sigla + ' · ' + tag + '</span>' +
+      '<span style="flex:1"><strong>' + escHtml(a.cantidad) + '</strong> ud · ' + escHtml(sigla) + ' · ' + tag + '</span>' +
       '<button type="button" onclick="removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
     '</div>';
   }).join('');
@@ -3388,9 +3388,9 @@ async function showUploadPreview(data) {
       }
       return '<tr>' +
         '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
-        '<td style="font-weight:700">' + (p.producto||'—') + normBadge + '</td>' +
-        '<td>' + (p.presentacion||'') + '</td>' +
-        '<td class="money">' + (p.cantidad||0) + '</td>' +
+        '<td style="font-weight:700">' + escHtml(p.producto||'—') + normBadge + '</td>' +
+        '<td>' + escHtml(p.presentacion||'') + '</td>' +
+        '<td class="money">' + escHtml(p.cantidad||0) + '</td>' +
         '<td class="money">' + fmtMoney(p.valor_unitario) + '</td>' +
         '<td class="money">' + fmtMoney(p.valor_total) + '</td>' +
         '<td style="text-align:center">' + (p.bonificado ? '<span style="background:#d5f5e3;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:700">Sí</span>' : '<span style="color:#718096;font-size:0.75rem">No</span>') + '</td>' +
@@ -3508,8 +3508,8 @@ function openDelete(idx) {
   var est = derivedStatus(lines);
   document.getElementById('del-msg').textContent = '¿Eliminar el pedido #' + (c.Consecutivo||'') + ' de ' + getSigla(c.Nombre_Empresa) + '?';
   document.getElementById('del-detail').innerHTML =
-    'Cliente: <strong>' + (c.Cliente||'—') + '</strong><br>' +
-    'Productos: ' + lines.length + ' línea(s) · Estado: ' + est + '<br>' +
+    'Cliente: <strong>' + escHtml(c.Cliente||'—') + '</strong><br>' +
+    'Productos: ' + lines.length + ' línea(s) · Estado: ' + escHtml(est) + '<br>' +
     'Total: ' + fmtMoney(c.Total_Orden) + '<br><br>' +
     '<span style="color:#e74c3c;font-weight:700">Se eliminarán todas las líneas de este pedido de la base de datos.</span>';
   document.getElementById('btn-del-confirm').disabled = false;
@@ -4613,16 +4613,16 @@ function renderDetalle() {
     var badgeEst = norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : norm(est) === 'alistado' ? 'b-alistado' : 'b-ent';
     var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
     return '<tr>' +
-      '<td><span class="sigla-badge ' + getSiglaClass(p.Nombre_Empresa) + '">' + getSigla(p.Nombre_Empresa) + '</span></td>' +
-      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (p.Cliente||'') + '">' + (p.Cliente||'—') + '</td>' +
-      '<td style="text-align:center;font-weight:700">' + (p.Consecutivo||'') + '</td>' +
+      '<td><span class="sigla-badge ' + getSiglaClass(p.Nombre_Empresa) + '">' + escHtml(getSigla(p.Nombre_Empresa)) + '</span></td>' +
+      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(p.Cliente||'') + '">' + escHtml(p.Cliente||'—') + '</td>' +
+      '<td style="text-align:center;font-weight:700">' + escHtml(p.Consecutivo||'') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(p.Fecha_Pedido) + '</td>' +
-      '<td style="font-weight:600">' + (p.Producto||'—') + '</td>' +
-      '<td>' + (p.Presentacion||'—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(p.Producto||'—') + '</td>' +
+      '<td>' + escHtml(p.Presentacion||'—') + '</td>' +
       '<td class="money">' + (Number(p.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
       '<td class="money" style="color:#e74c3c;font-weight:600">' + (Number(p.Cant_Pendiente)||0).toLocaleString('es-CO') + '</td>' +
-      '<td><span class="badge ' + badgeEst + '">' + est + '</span></td>' +
-      '<td><span class="badge ' + badgeEst2 + '">' + est2 + '</span></td>' +
+      '<td><span class="badge ' + badgeEst + '">' + escHtml(est) + '</span></td>' +
+      '<td><span class="badge ' + badgeEst2 + '">' + escHtml(est2) + '</span></td>' +
     '</tr>';
   }).join('');
 }
@@ -4873,9 +4873,9 @@ function exportarRemisionExcelDesdeModal() {
   var html = '<div style="padding:8px 12px;font-size:0.75rem;font-weight:700;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">Seleccionar remision (Excel)</div>';
   remisiones.forEach(function(r, i) {
     var label = (r.remision || '(sin numero)');
-    var meta = (r.fecha ? r.fecha + ' · ' : '') + r.items.length + ' producto' + (r.items.length === 1 ? '' : 's');
+    var meta = (r.fecha ? escHtml(r.fecha) + ' · ' : '') + r.items.length + ' producto' + (r.items.length === 1 ? '' : 's');
     html += '<div data-idx="' + i + '" class="rem-picker-item" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #edf2f7;font-size:0.82rem">' +
-      '<div style="font-weight:700;color:#1a5276">' + label.replace(/</g, '&lt;') + '</div>' +
+      '<div style="font-weight:700;color:#1a5276">' + escHtml(label) + '</div>' +
       '<div style="font-size:0.72rem;color:#718096;margin-top:2px">' + meta + '</div>' +
       '</div>';
   });
@@ -5020,9 +5020,9 @@ function exportarRemisionDesdeModal(ev, opts) {
   var html = '<div style="padding:8px 12px;font-size:0.75rem;font-weight:700;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">Seleccionar remisión</div>';
   remisiones.forEach(function(r, i) {
     var label = (r.remision || '(sin número)');
-    var meta = (r.fecha ? r.fecha + ' · ' : '') + r.items.length + ' producto' + (r.items.length === 1 ? '' : 's');
+    var meta = (r.fecha ? escHtml(r.fecha) + ' · ' : '') + r.items.length + ' producto' + (r.items.length === 1 ? '' : 's');
     html += '<div data-idx="' + i + '" class="rem-picker-item" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #edf2f7;font-size:0.82rem">' +
-      '<div style="font-weight:700;color:#1a5276">' + label.replace(/</g, '&lt;') + '</div>' +
+      '<div style="font-weight:700;color:#1a5276">' + escHtml(label) + '</div>' +
       '<div style="font-size:0.72rem;color:#718096;margin-top:2px">' + meta + '</div>' +
       '</div>';
   });
