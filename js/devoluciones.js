@@ -1575,7 +1575,7 @@ function openTramitarDev(key) {
 
   var _prodHdr = document.getElementById('tramitar-prod-header');
   if (_prodHdr) _prodHdr.textContent = tramitarModoCompletar
-    ? '📦 Productos y cantidades devueltas (ya registradas)'
+    ? '📦 Productos — ajuste la cantidad devuelta si recibió menos de lo solicitado'
     : '📦 Productos — ingrese cantidades devueltas';
   var _btnAddLine = document.getElementById('btn-tramitar-add-line');
   if (_btnAddLine) _btnAddLine.style.display = tramitarModoCompletar ? 'none' : '';
@@ -1600,7 +1600,7 @@ function renderTramitarTable() {
       '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
       '<td>' + (l.Presentacion || '—') + '</td>' +
       '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
-      '<td><input class="ef tramitar-cant" data-line="' + i + '" type="number" min="0" max="' + (l.Cantidad||9999) + '" value="' + (l.Cant_Entregada || '') + '" placeholder="0" style="width:100px;text-align:right' + (tramitarModoCompletar ? ';background:#f0f4f8' : '') + '"' + (tramitarModoCompletar ? ' readonly' : '') + '></td>' +
+      '<td><input class="ef tramitar-cant" data-line="' + i + '" type="number" min="0" max="' + (l.Cantidad||9999) + '" value="' + (l.Cant_Entregada || '') + '" placeholder="0" style="width:100px;text-align:right"></td>' +
       '<td></td>' +
     '</tr>';
   });
@@ -1622,6 +1622,19 @@ function renderTramitarTable() {
   }
 
   tbody.innerHTML = html;
+
+  // La cantidad devuelta nunca puede superar la solicitada (Cantidad).
+  tramitarDevLines.forEach(function(l, i) {
+    var cInp = document.querySelector('.tramitar-cant[data-line="' + i + '"]');
+    if (!cInp) return;
+    cInp.addEventListener('input', function() {
+      var maxC = Number(l.Cantidad) || 0;
+      var v = Number(this.value) || 0;
+      if (v < 0) { v = 0; this.value = '0'; }
+      if (maxC && v > maxC) { v = maxC; this.value = String(maxC); }
+      tramitarDevLines[i].Cant_Entregada = v;
+    });
+  });
 
   tramitarNewLines.forEach(function(l, i) {
     buildTramitarProductSearch(i);
@@ -1784,10 +1797,20 @@ async function saveTramitarDev() {
   if (ingresoEnabled && !fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
   if (salidaEnabled && !fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
 
+  var _cantExcede = null;
   document.querySelectorAll('.tramitar-cant').forEach(function(inp) {
     var i = Number(inp.dataset.line);
-    if (tramitarDevLines[i]) tramitarDevLines[i].Cant_Entregada = Number(inp.value) || 0;
+    if (!tramitarDevLines[i]) return;
+    var v = Number(inp.value) || 0;
+    if (v < 0) v = 0;
+    var maxC = Number(tramitarDevLines[i].Cantidad) || 0;
+    if (maxC && v > maxC) _cantExcede = tramitarDevLines[i].Producto || ('línea ' + (i + 1));
+    tramitarDevLines[i].Cant_Entregada = v;
   });
+  if (_cantExcede) {
+    showToast('La cantidad devuelta no puede superar la solicitada (' + _cantExcede + ')', '#e74c3c');
+    return;
+  }
 
   readTramitarNewLines();
   var validNewLines = tramitarNewLines.filter(function(l) { return l.Producto; });
