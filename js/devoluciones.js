@@ -7,6 +7,10 @@ var devLineas = [];
 var tramitarDevLines = [];
 var tramitarNewLines = [];
 var tramitarDevKey = null;
+// true cuando el modal de tramitar se abre sobre una devolución YA tramitada
+// solo para registrar la remisión que le falta (ingreso o salida). En ese modo
+// el lado ya tramitado queda bloqueado y no se tocan cantidades ni se agregan líneas.
+var tramitarModoCompletar = false;
 var selectedDevKeys = {};
 var devCurrentPage = 1;
 var devPageSize = 25;
@@ -434,9 +438,21 @@ function renderDevTable() {
     var estadoBadge = esTramitada
       ? '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Tramitada</span>'
       : '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>';
-    var tramitarBtn = (!AUTH.canEdit() || devScope === 'tramitadas') ? '' : esTramitada
-      ? '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Ver/editar trámite" style="background:#6c757d;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Editar</button>'
-      : '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Tramitar devolución" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Tramitar</button>';
+    var tramitarBtn;
+    if (!AUTH.canEdit()) {
+      tramitarBtn = '';
+    } else if (devScope === 'tramitadas') {
+      // Solo en la lista de Tramitadas: permitir COMPLETAR la remisión que falta
+      var _hasInT = !!(r.Remision_Ingreso || r.Remision);
+      var _hasOutT = !!r.Remision_Salida;
+      tramitarBtn = (esTramitada && (!_hasInT || !_hasOutT))
+        ? '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Registrar la remisión que falta" style="background:#e67e22;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Completar</button>'
+        : '';
+    } else {
+      tramitarBtn = esTramitada
+        ? '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Ver/editar trámite" style="background:#6c757d;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Editar</button>'
+        : '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Tramitar devolución" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Tramitar</button>';
+    }
     var checkboxTd = !AUTH.canEdit()
       ? '<td></td>'
       : esTramitada
@@ -586,6 +602,13 @@ function viewDevDetail(key) {
   if (sendIn) sendIn.style.display = 'none';
   if (sendOut) sendOut.style.display = 'none';
 
+  // Botón para completar la remisión faltante (solo si ya está tramitada y falta un lado)
+  var btnCompletarDev = document.getElementById('btn-dev-completar');
+  if (btnCompletarDev) {
+    btnCompletarDev.style.display = (AUTH.canEdit() && allTramitada && (!hasIn || !hasOut))
+      ? 'inline-block' : 'none';
+  }
+
   if (typeof NOTIF !== 'undefined' && NOTIF.verificarBtn) {
     var _cDev = r.Consecutivo || '';
     var _remIng = (r.Remision_Ingreso || r.Remision || '').trim();
@@ -612,6 +635,14 @@ function viewDevDetail(key) {
 function closeViewDev() {
   document.getElementById('view-dev-overlay').classList.remove('show');
   devViewingKey = null;
+}
+
+// Abre el modal de tramitar en modo "completar" desde la vista de detalle
+function openCompletarDesdeDetalle() {
+  var key = devViewingKey;
+  if (!key) return;
+  closeViewDev();
+  openTramitarDev(key);
 }
 
 // ── PDF Export (Devoluciones) ──
@@ -1481,12 +1512,28 @@ function openTramitarDev(key) {
     '<span>👤 ' + (r.Cliente || '—') + '</span>' +
     '<span>' + getSiglaDev(r.Empresa) + '</span>';
 
+  // ¿La devolución ya está tramitada y solo le falta un lado de la remisión?
+  var _hasInDev = !!(r.Remision_Ingreso || r.Remision);
+  var _hasOutDev = !!r.Remision_Salida;
+  var _todasTramitadas = lines.every(function(l) { return l.Estado === 'Tramitada'; });
+  tramitarModoCompletar = _todasTramitadas && (!_hasInDev || !_hasOutDev);
+  // Fecha del lado que ya se tramitó (para prellenar el lado que falta con la misma fecha)
+  var _fechaOtroLado = r.Fecha_Salida || r.Fecha_Ingreso || r.Fecha_Devolucion || r.Fecha || '';
+
+  var _titEl = document.getElementById('tramitar-dev-title');
+  if (_titEl) _titEl.textContent = tramitarModoCompletar
+    ? '📝 Completar remisión de la devolución'
+    : '📝 Tramitar Devolución';
+
   document.getElementById('tramitar-remision-ingreso').value = r.Remision_Ingreso || r.Remision || '';
   document.getElementById('tramitar-bodega-ingreso').value = r.Bodega_Ingreso || 'Productos Buenos';
-  document.getElementById('tramitar-fecha-ingreso').value = r.Fecha_Ingreso ? toDateInput(r.Fecha_Ingreso) : (r.Fecha_Devolucion ? toDateInput(r.Fecha_Devolucion) : today());
+  document.getElementById('tramitar-fecha-ingreso').value = r.Fecha_Ingreso ? toDateInput(r.Fecha_Ingreso)
+    : (r.Fecha_Devolucion ? toDateInput(r.Fecha_Devolucion)
+    : ((tramitarModoCompletar && _fechaOtroLado) ? toDateInput(_fechaOtroLado) : today()));
   document.getElementById('tramitar-remision-salida').value = r.Remision_Salida || '';
   document.getElementById('tramitar-bodega-salida').value = r.Bodega_Salida || 'Productos Buenos';
-  document.getElementById('tramitar-fecha-salida').value = r.Fecha_Salida ? toDateInput(r.Fecha_Salida) : today();
+  document.getElementById('tramitar-fecha-salida').value = r.Fecha_Salida ? toDateInput(r.Fecha_Salida)
+    : ((tramitarModoCompletar && _fechaOtroLado) ? toDateInput(_fechaOtroLado) : today());
   var _elTRI = document.getElementById('tramitar-remision-ingreso');
   _elTRI.readOnly = true; _elTRI.style.background = '#f0f4f8'; _elTRI.placeholder = '(Auto al guardar)';
   var _chkTRI = document.getElementById('tramitar-remision-ingreso-auto'); if (_chkTRI) _chkTRI.checked = true;
@@ -1496,13 +1543,49 @@ function openTramitarDev(key) {
 
   var _chkIngEn = document.getElementById('tramitar-ingreso-enabled');
   var _chkSalEn = document.getElementById('tramitar-salida-enabled');
-  if (_chkIngEn) { _chkIngEn.checked = true; toggleTramitarSeccion('ingreso', true); }
-  if (_chkSalEn) { _chkSalEn.checked = true; toggleTramitarSeccion('salida', true); }
+  var _notaIng = document.getElementById('tramitar-ingreso-hecha');
+  var _notaSal = document.getElementById('tramitar-salida-hecha');
+  // Reset a estado editable (el modal se reutiliza entre aperturas)
+  if (_chkIngEn) _chkIngEn.disabled = false;
+  if (_chkSalEn) _chkSalEn.disabled = false;
+  if (_notaIng) _notaIng.style.display = 'none';
+  if (_notaSal) _notaSal.style.display = 'none';
+
+  function _bloquearLadoTramitado(tipo, chk, nota, rem, bodega, fecha) {
+    if (chk) { chk.checked = false; chk.disabled = true; }
+    toggleTramitarSeccion(tipo, false);
+    var _sec = document.getElementById('tramitar-seccion-' + tipo);
+    if (_sec) _sec.style.opacity = '1';
+    if (nota) {
+      nota.style.display = 'block';
+      nota.innerHTML = '✓ Ya tramitada · Remisión <strong>' + escHtml(rem || '—') + '</strong>' +
+        (bodega ? ' · ' + escHtml(bodega) : '') + (fecha ? ' · ' + fmtDate(fecha) : '');
+    }
+  }
+
+  if (tramitarModoCompletar) {
+    if (_hasInDev) _bloquearLadoTramitado('ingreso', _chkIngEn, _notaIng, (r.Remision_Ingreso || r.Remision), r.Bodega_Ingreso, (r.Fecha_Ingreso || r.Fecha_Devolucion));
+    else if (_chkIngEn) { _chkIngEn.checked = true; toggleTramitarSeccion('ingreso', true); }
+    if (_hasOutDev) _bloquearLadoTramitado('salida', _chkSalEn, _notaSal, r.Remision_Salida, r.Bodega_Salida, r.Fecha_Salida);
+    else if (_chkSalEn) { _chkSalEn.checked = true; toggleTramitarSeccion('salida', true); }
+  } else {
+    if (_chkIngEn) { _chkIngEn.checked = true; toggleTramitarSeccion('ingreso', true); }
+    if (_chkSalEn) { _chkSalEn.checked = true; toggleTramitarSeccion('salida', true); }
+  }
+
+  var _prodHdr = document.getElementById('tramitar-prod-header');
+  if (_prodHdr) _prodHdr.textContent = tramitarModoCompletar
+    ? '📦 Productos y cantidades devueltas (ya registradas)'
+    : '📦 Productos — ingrese cantidades devueltas';
+  var _btnAddLine = document.getElementById('btn-tramitar-add-line');
+  if (_btnAddLine) _btnAddLine.style.display = tramitarModoCompletar ? 'none' : '';
 
   renderTramitarTable();
 
   document.getElementById('btn-tramitar-dev').disabled = false;
-  document.getElementById('btn-tramitar-dev').textContent = '✓ Tramitar y enviar';
+  document.getElementById('btn-tramitar-dev').textContent = tramitarModoCompletar
+    ? '✓ Guardar remisión'
+    : '✓ Tramitar y enviar';
   document.getElementById('tramitar-dev-overlay').classList.add('show');
 }
 
@@ -1517,7 +1600,7 @@ function renderTramitarTable() {
       '<td style="font-weight:600">' + (l.Producto || '—') + '</td>' +
       '<td>' + (l.Presentacion || '—') + '</td>' +
       '<td style="text-align:right">' + (l.Cantidad || 0) + '</td>' +
-      '<td><input class="ef tramitar-cant" data-line="' + i + '" type="number" min="0" max="' + (l.Cantidad||9999) + '" value="' + (l.Cant_Entregada || '') + '" placeholder="0" style="width:100px;text-align:right"></td>' +
+      '<td><input class="ef tramitar-cant" data-line="' + i + '" type="number" min="0" max="' + (l.Cantidad||9999) + '" value="' + (l.Cant_Entregada || '') + '" placeholder="0" style="width:100px;text-align:right' + (tramitarModoCompletar ? ';background:#f0f4f8' : '') + '"' + (tramitarModoCompletar ? ' readonly' : '') + '></td>' +
       '<td></td>' +
     '</tr>';
   });
@@ -1660,6 +1743,7 @@ function closeTramitarDev() {
   tramitarDevKey = null;
   tramitarDevLines = [];
   tramitarNewLines = [];
+  tramitarModoCompletar = false;
   closeAllAutocompleteDev();
 }
 
