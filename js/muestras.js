@@ -469,14 +469,14 @@ function renderMuTable() {
 
     return '<tr style="cursor:pointer" onclick="viewMuestra(' + r.id + ')">' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
-      '<td>' + (r.Consecutivo || '—') + '</td>' +
+      '<td>' + escHtml(r.Consecutivo || '—') + '</td>' +
       '<td>' + fmtDate(r.Fecha_Solicitud) + '</td>' +
-      '<td>' + (r.Responsable || '—') + '</td>' +
-      '<td>' + (r.Municipio || '—') + '</td>' +
-      '<td>' + (r.Tipo_Cultivo || '—') + '</td>' +
+      '<td>' + escHtml(r.Responsable || '—') + '</td>' +
+      '<td>' + escHtml(r.Municipio || '—') + '</td>' +
+      '<td>' + escHtml(r.Tipo_Cultivo || '—') + '</td>' +
       '<td class="money">' + (r._nProds || 0) + '</td>' +
-      '<td>' + (r.Remision || '—') + '</td>' +
-      '<td>' + (r.Solicitante || '—') + '</td>' +
+      '<td>' + escHtml(r.Remision || '—') + '</td>' +
+      '<td>' + escHtml(r.Solicitante || '—') + '</td>' +
       '<td>' + aprBadge + '</td>' +
       '<td>' + estadoBadge + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
@@ -484,7 +484,7 @@ function renderMuTable() {
         (AUTH.canEdit() && !soloLectura ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
         // 'comercial' solo ve sus propias solicitudes (RLS), así que puede borrarlas;
         // el backend igual lo restringe a responsable_id / creado_por = auth.uid().
-        ((AUTH.canDelete() || AUTH.isComercial()) && !soloLectura ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)) + '\')">🗑️</button>' : '') +
+        ((AUTH.canDelete() || AUTH.isComercial()) && !soloLectura ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)).replace(/&#39;/g, "\\'") + '\')">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 }
@@ -504,10 +504,10 @@ async function viewMuestra(id) {
   var aprEstado = r.Estado_Aprobacion || 'Por aprobar';
   var aprIcon = aprEstado === 'Aprobada' ? '✅' : (aprEstado === 'Rechazada' ? '❌' : '⏳');
   document.getElementById('view-mu-meta').innerHTML =
-    '<span>📋 Consecutivo: ' + (consec || '—') + '</span>' +
+    '<span>📋 Consecutivo: ' + escHtml(consec || '—') + '</span>' +
     '<span>📅 ' + fmtDate(r.Fecha_Solicitud) + '</span>' +
-    '<span>👤 ' + (r.Responsable || '—') + '</span>' +
-    '<span>' + aprIcon + ' ' + aprEstado + '</span>';
+    '<span>👤 ' + escHtml(r.Responsable || '—') + '</span>' +
+    '<span>' + aprIcon + ' ' + escHtml(aprEstado) + '</span>';
 
   var remVal = (r.Remision || '').replace(/"/g, '&quot;');
   var fDespachoVal = r.Fecha_Despacho ? toDateInput(r.Fecha_Despacho) : '';
@@ -601,7 +601,7 @@ async function viewMuestra(id) {
     muViewWorkingLines.forEach(function(x, i) {
       var cantEnt = x.Cant_Entregada != null && x.Cant_Entregada !== '' ? x.Cant_Entregada : '';
       var inpDis = despachoDisabled ? ' disabled' : '';
-      html += '<tr><td>' + (x.Producto || '—') + '</td><td>' + (x.Presentacion || '—') + '</td><td style="text-align:right">' + (x.Cantidad || 0) + '</td>' +
+      html += '<tr><td>' + escHtml(x.Producto || '—') + '</td><td>' + escHtml(x.Presentacion || '—') + '</td><td style="text-align:right">' + (x.Cantidad || 0) + '</td>' +
         '<td><input type="number" min="0" class="ef mu-view-cant-ent" data-id="' + x.id + '" data-i="' + i + '" value="' + cantEnt + '"' + inpDis + ' style="width:70px;text-align:right;padding:4px 6px;font-size:0.82rem' + (despachoDisabled ? ';background:#f1f5f9;color:#94a3b8' : '') + '"' + (despachoDisabled ? '' : ' readonly tabindex="-1" title="Se calcula desde las asignaciones"') + '></td>' +
         (despachoDisabled ? '' : '<td class="mu-asig-td" data-i="' + i + '" style="min-width:220px">' + muAsig.renderCell(i, x) + '</td>') +
         '<td style="white-space:nowrap">' + (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' : '') +
@@ -837,7 +837,7 @@ async function saveEntregas() {
 }
 
 function field(label, val) {
-  return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">' + label + '</span><br><span style="color:#2d3748">' + (val || '—') + '</span></div>';
+  return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">' + label + '</span><br><span style="color:#2d3748">' + escHtml(val || '—') + '</span></div>';
 }
 
 // escHtml(): definición canónica única en js/shared.js
@@ -1900,17 +1900,17 @@ function renderDetalleMu() {
     var entregada = Number(r.Cant_Entregada) || 0;
     return '<tr style="cursor:pointer" onclick="viewMuestra(' + r.id + ')">' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
-      '<td>' + (r.Consecutivo || '—') + '</td>' +
+      '<td>' + escHtml(r.Consecutivo || '—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha_Solicitud) + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Responsable || '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Solicitante || '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Municipio || '—') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Tipo_Cultivo || '—') + '</td>' +
-      '<td style="font-weight:600">' + (r.Producto || '—') + '</td>' +
-      '<td>' + (r.Presentacion || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Responsable || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Solicitante || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Municipio || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Tipo_Cultivo || '—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(r.Producto || '—') + '</td>' +
+      '<td>' + escHtml(r.Presentacion || '—') + '</td>' +
       '<td class="money" style="font-weight:700">' + cant.toLocaleString('es-CO') + '</td>' +
       '<td class="money">' + entregada.toLocaleString('es-CO') + '</td>' +
-      '<td style="font-size:0.78rem">' + (r.Remision || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Remision || '—') + '</td>' +
       '<td>' + aprBadge + '</td>' +
       '<td>' + estadoBadge + '</td>' +
     '</tr>';
@@ -2006,7 +2006,7 @@ async function loadMuAdjuntos(empresa, consecutivo) {
     return '<div class="adjunto-item">' +
       '<div class="adjunto-icon">' + icon + '</div>' +
       '<div class="adjunto-info">' +
-        '<div class="adjunto-name" title="' + nameEsc + '">' + nameEsc + '</div>' +
+        '<div class="adjunto-name" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</div>' +
         '<div class="adjunto-meta">' + ext.toUpperCase() + (size ? ' · ' + size : '') + '</div>' +
       '</div>' +
       '<div class="adjunto-actions">' +
