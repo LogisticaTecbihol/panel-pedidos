@@ -654,10 +654,7 @@ function renderReTableProductos() {
   }).join('');
 }
 
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// escHtml(): definición canónica única en js/shared.js
 
 // ── Detail Modal ──
 

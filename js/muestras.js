@@ -840,10 +840,7 @@ function field(label, val) {
   return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">' + label + '</span><br><span style="color:#2d3748">' + (val || '—') + '</span></div>';
 }
 
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// escHtml(): definición canónica única en js/shared.js
 
 function closeViewMu() {
   document.getElementById('view-mu-overlay').classList.remove('show');

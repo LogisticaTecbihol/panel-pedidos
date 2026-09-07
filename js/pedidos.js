@@ -3549,7 +3549,7 @@ async function confirmDelete() {
 }
 
 // ── Autocomplete ──
-function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// escHtml(): definición canónica única en js/shared.js
 
 var clientesCache = null;
 var productosCache = null;
