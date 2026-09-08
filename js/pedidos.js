@@ -75,6 +75,11 @@ var SORT_COLS = [
   { id:'consecutivo', label:'Consecutivo',  fn: function(c) { return Number(c.Consecutivo)||0; } },
   { id:'cliente',     label:'Cliente',      fn: function(c) { return (c.Cliente||'').toLowerCase(); } },
   { id:'fecha',       label:'Fecha Pedido', fn: function(c) { return +new Date(c.Fecha_Pedido||0); } },
+  { id:'compromiso',  label:'Compromiso',  fn: function(c) {
+      // Sin compromiso → al fondo en asc (los más urgentes primero).
+      return c.Fecha_Compromiso ? +new Date(c.Fecha_Compromiso) : 8.64e15;
+    }
+  },
   { id:'dias',        label:'Días Háb.',         fn: function(c) {
       // Al ordenar, filas sin indicador van al fondo (valor -1).
       if (!_mostrarDias(c)) return -1;
@@ -121,7 +126,7 @@ function applySort(rows) {
 function renderHeader() {
   var cols = [
     { label:'#', id:null }, { label:'Empresa', id:'empresa' }, { label:'Consecutivo', id:'consecutivo' },
-    { label:'Cliente', id:'cliente' }, { label:'Fecha Pedido', id:'fecha' }, { label:'Días Háb.', id:'dias' }, { label:'Comercial', id:'comercial' },
+    { label:'Cliente', id:'cliente' }, { label:'Fecha Pedido', id:'fecha' }, { label:'Compromiso', id:'compromiso' }, { label:'Días Háb.', id:'dias' }, { label:'Comercial', id:'comercial' },
     { label:'Municipio', id:'municipio' },
     { label:'Total Orden', id:'total' }, { label:'Productos', id:'productos' }, { label:'Avance', id:'avance' },
     { label:'Estado', id:'estado' }, { label:'Estado 2', id:'estado2' }, { label:'Acción', id:null },
@@ -844,7 +849,8 @@ function rebuildConsecs() {
     var k = keyOf(p.Nombre_Empresa, p.Consecutivo, p.Cliente);
     if (!seen[k]) seen[k] = {
       Nombre_Empresa: p.Nombre_Empresa, Consecutivo: p.Consecutivo,
-      Fecha_Pedido: p.Fecha_Pedido, Cliente: p.Cliente, NIT: p.NIT,
+      Fecha_Pedido: p.Fecha_Pedido, Fecha_Compromiso: p.Fecha_Compromiso || '',
+      Cliente: p.Cliente, NIT: p.NIT,
       Sucursal: p.Sucursal,
       Telefono: p.Telefono, Direccion_Envio: p.Direccion_Envio,
       Comercial: p.Comercial, Municipio: p.Municipio, Departamento: p.Departamento,
@@ -878,6 +884,20 @@ function _cacheConsecsDerivados() {
     c._cEstado2 = derivedEstado2(lines);
     c._cPct = derivedPct(lines);
     c._cProds = lines.map(function(l) { return (l.Producto || '').trim(); }).filter(Boolean);
+    // ── OTD / cumplimiento de entrega ──
+    var ult = '';
+    lines.forEach(function(l) {
+      var f = String(l.Fecha_Ult_Entrega || '').slice(0, 10);
+      if (f && f > ult) ult = f;
+    });
+    c._cUltEntrega = ult;
+    c._cCompleta = (c._cStatus === 'Entregado' || c._cStatus === 'Facturado');
+    c._cOtd = _otdClasificar({
+      fechaCompromiso: c.Fecha_Compromiso,
+      fechaUltEntrega: ult,
+      completa: c._cCompleta,
+      estado2: c._cEstado2
+    });
   });
 }
 
@@ -1168,7 +1188,7 @@ function populateFilters() {
   if (fp && prevProd) fp.value = prevProd;
   if (!filtersAttached) {
     function onFilterChange() { currentPage = 1; renderTable(); }
-    ['f-emp','f-com','f-cli','f-est','f-est2','f-prod','f-fec-desde','f-fec-hasta'].forEach(function(id) {
+    ['f-emp','f-com','f-cli','f-est','f-est2','f-otd','f-prod','f-fec-desde','f-fec-hasta'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', onFilterChange);
@@ -1199,6 +1219,8 @@ function filtered() {
   var fc = document.getElementById('f-cli').value;
   var fs = document.getElementById('f-est').value;
   var fs2 = document.getElementById('f-est2').value;
+  var fOtdEl = document.getElementById('f-otd');
+  var fOtd = fOtdEl ? fOtdEl.value : '';
   var fpEl = document.getElementById('f-prod');
   var fp = fpEl ? fpEl.value.trim().toLowerCase() : '';
   var fdEl = document.getElementById('f-fec-desde');
@@ -1230,6 +1252,7 @@ function filtered() {
     var est = c._cStatus || 'Recibido';
     if (fs && norm(est) !== norm(fs)) return false;
     if (fs2) { var e2 = c._cEstado2 || 'Abierto'; if (e2 !== fs2) return false; }
+    if (fOtd && (c._cOtd ? c._cOtd.clase : 'sin_compromiso') !== fOtd) return false;
     if (ft) {
       var hay = [c.Cliente, String(c.Consecutivo), getSigla(c.Nombre_Empresa), c.Comercial].join(' ').toLowerCase();
       if (hay.indexOf(ft) < 0) return false;
@@ -1245,6 +1268,7 @@ function clearFilters() {
   document.getElementById('f-cli').value = '';
   document.getElementById('f-est').value = '';
   document.getElementById('f-est2').value = '';
+  var fOtd = document.getElementById('f-otd'); if (fOtd) fOtd.value = '';
   document.getElementById('f-txt').value = '';
   var fp = document.getElementById('f-prod');   if (fp) fp.value = '';
   var fd = document.getElementById('f-fec-desde'); if (fd) fd.value = '';
@@ -1340,7 +1364,7 @@ function renderTable() {
 
   var tbody = document.getElementById('t-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="14"><div class="empty">No hay órdenes con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15"><div class="empty">No hay órdenes con los filtros seleccionados.</div></td></tr>';
     renderPagination(0);
     return;
   }
@@ -1360,9 +1384,11 @@ function renderTable() {
     var rowKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
     var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
     var bloqCartera = est2 === 'Bloqueado por cartera';
+    var otd = c._cOtd || { clase: 'sin_compromiso', dias: null };
     var _trCls = [];
     if (modPend) _trCls.push('row-modificada');
     if (bloqCartera) _trCls.push('row-bloqueada-cartera');
+    if (otd.clase === 'atrasado') _trCls.push('row-atrasada');
     var trClass = _trCls.length ? ' class="' + _trCls.join(' ') + '"' : '';
     var modBadge = '';
     if (modPend) {
@@ -1391,6 +1417,11 @@ function renderTable() {
       '<td style="text-align:center;font-weight:700">' + escHtml(c.Consecutivo||'') + modBadge + solBadge + '<span class="adjunto-badge-cell" data-adj-key="' + escHtml(getSigla(c.Nombre_Empresa)) + '_' + escHtml(c.Consecutivo) + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
       '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(c.Cliente||'') + '">' + escHtml(c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' +
+        (c.Fecha_Compromiso
+          ? fmtDate(c.Fecha_Compromiso) + (otd.clase !== 'sin_compromiso' ? ' ' + _otdBadgeHtml(otd.clase, otd.dias) : '')
+          : '<span style="color:#cbd5e0">—</span>') +
+      '</td>' +
       (function() {
         if (!_mostrarDias(c)) return '<td style="text-align:center;color:#cbd5e0">—</td>';
         var d = _diasDesdePedido(c.Fecha_Pedido);
@@ -1427,9 +1458,37 @@ function renderTable() {
 
   renderPagination(totalRows);
   updateAdjuntosBadges();
+  _renderOtdBanner();
 
   var detPanel = document.getElementById('panel-detalle');
   if (detPanel && detPanel.style.display !== 'none') renderDetalle();
+}
+
+// ── Aviso de cumplimiento (in-app, computado en cliente) ──
+function _renderOtdBanner() {
+  var el = document.getElementById('otd-banner');
+  if (!el) return;
+  var atrasados = 0, porVencer = 0;
+  consecs.forEach(function(c) {
+    if (!esPedidoActivo(c)) return;
+    var o = c._cOtd || {};
+    if (o.clase === 'atrasado') atrasados++;
+    else if (o.clase === 'en_plazo' && o.dias != null && o.dias <= 2) porVencer++;
+  });
+  if (!atrasados && !porVencer) { el.style.display = 'none'; return; }
+  var parts = [];
+  if (atrasados) parts.push(atrasados + ' pedido' + (atrasados === 1 ? '' : 's') + ' atrasado' + (atrasados === 1 ? '' : 's'));
+  if (porVencer) parts.push(porVencer + ' vence' + (porVencer === 1 ? '' : 'n') + ' en ≤2 días');
+  document.getElementById('otd-banner-text').textContent = parts.join(' · ') + ' (vs fecha de compromiso)';
+  el.style.display = 'flex';
+}
+
+function _verAtrasados() {
+  if (pedidoScope !== 'activos' && typeof switchPedidoTab === 'function') switchPedidoTab('activos');
+  var f = document.getElementById('f-otd');
+  if (f) { f.value = 'atrasado'; currentPage = 1; renderTable(); }
+  var tbl = document.getElementById('t-body');
+  if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Detail Modal ──

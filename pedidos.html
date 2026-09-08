@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#1a5276">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
 <title>Pedidos – Sistema de Gestión Logística</title>
-<link rel="stylesheet" href="css/panel.css">
+<link rel="stylesheet" href="css/panel.css?v=20260908a">
 <style>
 .ac-dropdown{position:fixed;background:white;border:1px solid #cbd5e0;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .ac-item{padding:8px 12px;cursor:pointer;font-size:.84rem;border-bottom:1px solid #f7fafc}
@@ -141,6 +141,12 @@
     <div class="sc total">   <div class="num" id="s-tot">0</div><div class="lbl">Total órdenes</div></div>
   </div>
 
+  <div id="otd-banner" style="display:none;align-items:center;gap:10px;background:#fff4ed;border:1px solid #fed7aa;border-left:4px solid #ea580c;border-radius:8px;padding:10px 16px;margin-bottom:12px;font-size:0.86rem;color:#9a3412;cursor:pointer" onclick="_verAtrasados()" title="Ver los pedidos atrasados">
+    <span style="font-size:1.1rem">⏰</span>
+    <span id="otd-banner-text" style="font-weight:600"></span>
+    <span style="margin-left:auto;font-size:0.8rem;font-weight:700;text-decoration:underline">Ver atrasados →</span>
+  </div>
+
   <div class="filters">
     <div class="fg"><label>Empresa</label><select id="f-emp"><option value="">Todas</option></select></div>
     <div class="fg"><label>Comercial</label><select id="f-com"><option value="">Todos</option></select></div>
@@ -166,6 +172,17 @@
         <option value="Anulado">Anulado</option>
         <option value="Bloqueado por cartera">Bloqueado por cartera</option>
         <option value="Entregado por proveedor">Entregado por proveedor</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Cumplimiento</label>
+      <select id="f-otd" title="Cumplimiento de entrega vs fecha de compromiso">
+        <option value="">Todos</option>
+        <option value="atrasado">🔴 Atrasados (abiertos vencidos)</option>
+        <option value="en_plazo">🕓 En plazo (abiertos)</option>
+        <option value="a_tiempo">🟢 A tiempo (entregados)</option>
+        <option value="tarde">🔴 Tarde (entregados)</option>
+        <option value="sin_compromiso">— Sin compromiso</option>
       </select>
     </div>
     <div class="fg"><label>Producto</label><input type="text" id="f-prod" placeholder="Buscar producto…" list="dl-f-prod" style="width:180px"><datalist id="dl-f-prod"></datalist></div>

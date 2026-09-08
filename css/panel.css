@@ -202,6 +202,13 @@ tbody tr.row-bloqueada-cartera > td:first-child { box-shadow: inset 4px 0 0 #dc2
 tbody tr.row-bloqueada-cartera:hover > td { background: #fee2e2; }
 /* Si además está modificado, la marca de cartera manda en la barra lateral */
 tbody tr.row-bloqueada-cartera.row-modificada > td:first-child { box-shadow: inset 4px 0 0 #dc2626; }
+
+/* ── Pedidos atrasados (abiertos que pasaron su fecha de compromiso) ── */
+tbody tr.row-atrasada > td { background: #fff4ed; }
+tbody tr.row-atrasada > td:first-child { box-shadow: inset 4px 0 0 #ea580c; }
+tbody tr.row-atrasada:hover > td { background: #ffe8d6; }
+/* Bloqueada por cartera manda sobre atrasada en la barra lateral */
+tbody tr.row-bloqueada-cartera.row-atrasada > td:first-child { box-shadow: inset 4px 0 0 #dc2626; }
 .mod-badge {
   display: inline-block; margin-left: 6px;
   background: #f59e0b; color: white;

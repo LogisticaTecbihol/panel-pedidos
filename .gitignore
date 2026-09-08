@@ -16,3 +16,6 @@ skills-lock.json
 node_modules/
 .DS_Store
 Thumbs.db
+
+# ── Arnés de pruebas offline (se regenera; nunca commitear) ──
+_xsstest.html

@@ -204,7 +204,7 @@ async function _fetchAllRows(table, cols, build) {
 function applyDeepLinkFilters() {
   var p;
   try { p = new URLSearchParams(location.search); } catch (e) { return; }
-  if (!p.get('buscar') && !p.get('prod') && !p.get('empresa') && !p.get('estado')) return;
+  if (!p.get('buscar') && !p.get('prod') && !p.get('empresa') && !p.get('estado') && !p.get('otd')) return;
 
   function fire(el) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -240,6 +240,7 @@ function applyDeepLinkFilters() {
   }
   setPlain(['f-prod'], p.get('prod'));
   setPlain(['f-est2', 'f-estado', 'f-est'], p.get('estado'));
+  setPlain(['f-otd'], p.get('otd'));
   setPlain(['f-txt'], p.get('buscar'));
 
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
