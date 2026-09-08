@@ -290,9 +290,11 @@ async function loadReabastecimiento() {
 }
 
 // ── Cálculo de todas las filas de sugerencia ────────────────────
+var reabSnapshotError = false;
 function reabBuildSugerencias() {
   reabRows = [];
-  if (!reabSnapshot || !reabSnapshot.saldos) return;
+  reabSnapshotError = !reabSnapshot || !reabSnapshot.saldos;
+  if (reabSnapshotError) return;
 
   var hoy = _reabHoyIso();
   var hoyMs = new Date(hoy + 'T00:00:00').getTime();
@@ -543,8 +545,12 @@ function reabRenderTable() {
   if (ct) ct.textContent = '(' + rows.length + (rows.length === 1 ? ' producto)' : ' productos)');
 
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:24px">' +
-      'Sin sugerencias de reabastecimiento con los filtros actuales.</td></tr>';
+    var msg = reabSnapshotError
+      ? '⚠️ No se pudo cargar el snapshot de existencias (Kardex). Recarga la página o revisa tu conexión.'
+      : (reabRows.length
+          ? 'Ningún producto necesita reabastecimiento con los filtros actuales. Marca "Incluir productos OK" para ver todos.'
+          : 'Sin datos de existencias todavía.');
+    body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:24px">' + escHtml(msg) + '</td></tr>';
     return;
   }
 
