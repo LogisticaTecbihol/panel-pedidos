@@ -309,7 +309,7 @@ async function loadDashboard() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Producto,Comercial,Valor_Unitario,Valor_Total' }),
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),

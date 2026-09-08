@@ -1778,6 +1778,74 @@ function toDateInput(v) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
+// ── Cumplimiento de entrega / OTD (Fase 1) ──────────────────────────────
+// Toda la lógica de fecha de compromiso vive aquí (una sola definición para
+// pedidos.js / dashboard.js / reportes.js, que hoy ya duplican otras reglas).
+
+// Plazo por defecto al crear un pedido: Fecha_Pedido + N días hábiles (lun-vie,
+// sin festivos — no hay tabla de festivos). Ajustar este número si cambia el SLA.
+var PLAZO_COMPROMISO_DIAS_HABILES = 3;
+
+function _isoDia(v) {
+  var s = String(v || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+
+// Días calendario entre dos fechas ISO (hasta − desde). null si alguna es inválida.
+function _calDias(isoDesde, isoHasta) {
+  var a = _isoDia(isoDesde), b = _isoDia(isoHasta);
+  if (!a || !b) return null;
+  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+}
+
+// Suma n días hábiles (lun-vie) a una fecha ISO. Inverso de _diasDesdePedido.
+function addDiasHabiles(iso, n) {
+  var s = _isoDia(iso);
+  if (!s) return '';
+  var p = s.split('-');
+  var d = new Date(+p[0], +p[1] - 1, +p[2]);
+  var added = 0;
+  while (added < n) {
+    d.setDate(d.getDate() + 1);
+    var dow = d.getDay();
+    if (dow !== 0 && dow !== 6) added++;
+  }
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Clasifica una orden frente a su fecha de compromiso.
+//   o = { fechaCompromiso, fechaUltEntrega, completa (bool), estado2 }
+//   → { clase, dias }
+//     clase: 'sin_compromiso' | 'a_tiempo' | 'tarde' | 'en_plazo' | 'atrasado'
+//     dias : tarde/atrasado → días de atraso (>0); a_tiempo/en_plazo → holgura (>=0); sin_compromiso → null
+function _otdClasificar(o) {
+  o = o || {};
+  var comp = _isoDia(o.fechaCompromiso);
+  if (!comp || o.estado2 === 'Anulado') return { clase: 'sin_compromiso', dias: null };
+  if (o.completa) {
+    var ult = _isoDia(o.fechaUltEntrega);
+    if (!ult) return { clase: 'sin_compromiso', dias: null };
+    var d = _calDias(comp, ult);
+    return d > 0 ? { clase: 'tarde', dias: d } : { clase: 'a_tiempo', dias: -d };
+  }
+  var dh = _calDias(comp, today());
+  return dh > 0 ? { clase: 'atrasado', dias: dh } : { clase: 'en_plazo', dias: -dh };
+}
+
+// Badge de color reutilizable para la clasificación OTD.
+function _otdBadgeHtml(clase, dias) {
+  var map = {
+    a_tiempo: { bg: '#dcfce7', fg: '#166534', txt: 'a tiempo' },
+    en_plazo: { bg: '#e0f2fe', fg: '#075985', txt: (dias === 0 ? 'vence hoy' : 'faltan ' + dias + ' d') },
+    tarde:    { bg: '#fee2e2', fg: '#991b1b', txt: '+' + dias + ' d tarde' },
+    atrasado: { bg: '#fee2e2', fg: '#991b1b', txt: '+' + dias + ' d atraso' }
+  };
+  var m = map[clase];
+  if (!m) return '';
+  return '<span title="Cumplimiento vs fecha de compromiso" style="background:' + m.bg + ';color:' + m.fg +
+    ';padding:2px 8px;border-radius:12px;font-size:0.74rem;font-weight:700;white-space:nowrap">' + m.txt + '</span>';
+}
+
 function norm(s) { return (s||'').toLowerCase().trim(); }
 
 function showToast(msg, color) {
