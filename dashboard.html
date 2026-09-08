@@ -254,6 +254,23 @@
     </div>
   </div>
 
+  <!-- ROW: Cumplimiento de entrega / OTD -->
+  <div class="dash-row">
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>📅 Cumplimiento de entregas</h4><div class="sub" id="cumplimiento-sub"></div></div>
+      <div class="dash-card-body" id="chart-cumplimiento"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-head"><h4>⏰ Pedidos atrasados</h4><div class="sub" id="atrasados-sub"></div></div>
+      <div class="dash-card-body" style="padding:0">
+        <table class="mini-table" id="tbl-atrasados">
+          <thead><tr><th>Pedido</th><th>Cliente</th><th style="text-align:center">Compromiso</th><th style="text-align:right">Atraso</th></tr></thead>
+          <tbody id="tb-atrasados"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- ROW: Tiempos de entrega -->
   <div class="dash-row">
     <div class="dash-card">
@@ -411,6 +428,6 @@
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260901c"></script>
-<script src="js/dashboard.js?v=20260908a"></script>
+<script src="js/dashboard.js?v=20260908b"></script>
 </body>
 </html>

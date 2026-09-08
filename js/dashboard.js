@@ -244,6 +244,7 @@ function dBuildOrders(ped) {
         comercial: (p.Comercial || '').trim(),
         fechaPedido: p.Fecha_Pedido || '',
         fechaUltEntrega: p.Fecha_Ult_Entrega || '',
+        fechaCompromiso: p.Fecha_Compromiso || '',
         lines: []
       };
     }
@@ -284,6 +285,13 @@ function dBuildOrders(ped) {
       o.valorEntregado += vu * (Number(l.Cant_Entregada) || 0);
       if (dLineaPendiente(l)) o.valorPendiente += vu * (Number(l.Cant_Pendiente) || 0);
       if (vu === 0 && cant > 0) o.lineasSinPrecio++;
+    });
+    // ── OTD / cumplimiento de entrega ──
+    o.otd = _otdClasificar({
+      fechaCompromiso: o.fechaCompromiso,
+      fechaUltEntrega: o.fechaUltEntrega,
+      completa: dOrdenCompleta(o),
+      estado2: o.estado2
     });
     return o;
   });
@@ -508,6 +516,7 @@ function buildDashboard() {
   buildEntregasPorMes(fEmp);
   buildVentasPorCategoria(cur.ped);
   buildVentasPorDepartamento(cur.ped);
+  buildCumplimiento(cur.orders, fEmp, fDesde, fHasta);
   buildTiempos(cur.orders, fEmp, fDesde, fHasta);
   buildTopDemora(cur.orders);
   buildEntregas(cur.orders);
@@ -605,6 +614,27 @@ function dLeadTimeMedio(fEmp, desde, hasta) {
   };
 }
 
+// ── OTD / cumplimiento de entrega ──
+// % de órdenes despachadas a tiempo (vs Fecha_Compromiso), sobre las órdenes
+// completas CON compromiso cuya última entrega cae en el período. Los pedidos
+// históricos sin compromiso quedan fuera (numerador y denominador).
+function dOtdStats(fEmp, desde, hasta) {
+  var aTiempo = 0, tarde = 0;
+  dAllOrders(fEmp).forEach(function(o) {
+    var cl = o.otd ? o.otd.clase : '';
+    if (cl !== 'a_tiempo' && cl !== 'tarde') return;
+    if (!_fechaEnRango(String(o.fechaUltEntrega).slice(0, 10), desde, hasta)) return;
+    if (cl === 'a_tiempo') aTiempo++; else tarde++;
+  });
+  var total = aTiempo + tarde;
+  return { aTiempo: aTiempo, tarde: tarde, total: total, pct: total ? Math.round(aTiempo / total * 100) : null };
+}
+
+// Órdenes abiertas ya vencidas frente a su compromiso (a hoy, no del período).
+function dAtrasadosAbiertos(fEmp) {
+  return dAllOrders(fEmp).filter(function(o) { return o.otd && o.otd.clase === 'atrasado'; });
+}
+
 // ── Comparativo vs período anterior ──
 // Cifras "de volumen" del período (aditivas) — se comparan con la ventana previa.
 function dKpiSnapshot(orders, ped, dev, fEmp, desde, hasta) {
@@ -618,6 +648,7 @@ function dKpiSnapshot(orders, ped, dev, fEmp, desde, hasta) {
     lineas: ped.length,
     tasaEntrega: ordNoAnul.length ? Math.round(ordNoAnul.filter(dOrdenCompleta).length / ordNoAnul.length * 100) : 0,
     avgDelivery: dLeadTimeMedio(fEmp, desde, hasta).avg,
+    otdPct: dOtdStats(fEmp, desde, hasta).pct,
     devoluciones: dev.length,
     valorPedido: valPed,
     valorEntregado: valEnt,
@@ -680,6 +711,19 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev, fDesde, fHasta) {
     p && dDelta(totalOrdenes, p.ordenes, true), 'pedidos.html' + (empQS ? '?' + empQS.slice(1) : ''));
   html += kpiCard('teal', tasaEntrega + '%', 'Tasa de entrega', ordCompletas.toLocaleString('es-CO') + ' / ' + ordNoAnul.length.toLocaleString('es-CO') + ' ordenes completas (a hoy)',
     p && dDelta(tasaEntrega, p.tasaEntrega, true));
+
+  // ── Cumplimiento de entrega / OTD ──
+  var otd = dOtdStats(fEmp, fDesde, fHasta);
+  var atrasados = dAtrasadosAbiertos(fEmp);
+  var atrDias = atrasados.length ? Math.round(atrasados.reduce(function(s, o) { return s + (o.otd.dias || 0); }, 0) / atrasados.length) : 0;
+  html += kpiCard('teal', otd.pct == null ? '—' : otd.pct + '%', 'Entregas a tiempo (OTD)',
+    otd.total ? (otd.aTiempo.toLocaleString('es-CO') + ' / ' + otd.total.toLocaleString('es-CO') + ' ordenes completas con compromiso') : 'sin ordenes con compromiso en el período',
+    (p && otd.pct != null && p.otdPct != null) ? dDelta(otd.pct, p.otdPct, true) : null);
+  html += kpiCard('red', atrasados.length.toLocaleString('es-CO'), 'Pedidos atrasados',
+    'ordenes abiertas vencidas vs compromiso (a hoy)', null,
+    'pedidos.html?otd=atrasado' + empQS);
+  html += kpiCard('orange', atrDias + ' dias', 'Dias de atraso prom.', atrasados.length + ' pedidos atrasados');
+
   html += kpiCard('green', avgDelivery + ' dias', 'Tiempo prom. entrega', lead.n + ' ordenes entregadas en el período',
     p && dDelta(avgDelivery, p.avgDelivery, false));
   html += kpiCard('orange', avgDelay + ' dias', 'Antiguedad prom. de pendientes', delayDays.length + ' ordenes del período aun abiertas');
@@ -1311,6 +1355,52 @@ function buildTopDemora(orders) {
       '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + color + '">' + r.dias + '</td>' +
       '<td style="text-align:center"><div class="prog" style="margin:0 auto"><div class="prog-bar"><div class="prog-fill" style="width:' + avance + '%"></div></div><div class="prog-pct">' + avance + '%</div></div></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── Cumplimiento de entrega / OTD ──
+function buildCumplimiento(orders, fEmp, fDesde, fHasta) {
+  var counts = { a_tiempo: 0, tarde: 0, atrasado: 0, en_plazo: 0 };
+  var atrasados = [];
+  dAllOrders(fEmp).forEach(function(o) {
+    var cl = o.otd ? o.otd.clase : '';
+    if (counts[cl] != null) counts[cl]++;
+    if (cl === 'atrasado') atrasados.push(o);
+  });
+  var otd = dOtdStats(fEmp, fDesde, fHasta);
+
+  var el = document.getElementById('chart-cumplimiento');
+  var subEl = document.getElementById('cumplimiento-sub');
+  if (subEl) subEl.textContent = otd.pct == null
+    ? 'sin órdenes completas con compromiso en el período'
+    : ('OTD ' + otd.pct + '% · ' + otd.aTiempo + '/' + otd.total + ' a tiempo en el período');
+  var segData = [
+    { label: 'A tiempo (entregadas)', val: counts.a_tiempo, color: '#27ae60' },
+    { label: 'Tarde (entregadas)',    val: counts.tarde,    color: '#e74c3c' },
+    { label: 'Atrasadas (abiertas)',  val: counts.atrasado, color: '#e67e22' },
+    { label: 'En plazo (abiertas)',   val: counts.en_plazo, color: '#2980b9' }
+  ];
+  var total = segData.reduce(function(s, d) { return s + d.val; }, 0);
+  el.innerHTML = total
+    ? '<div style="font-size:0.72rem;color:#718096;margin-bottom:8px">Estado actual de las órdenes con fecha de compromiso</div>' + renderSegBar(segData, total)
+    : '<div style="color:#a0aec0;text-align:center;padding:20px">Aún no hay pedidos con fecha de compromiso</div>';
+
+  var tbody = document.getElementById('tb-atrasados');
+  var aSub = document.getElementById('atrasados-sub');
+  if (aSub) aSub.textContent = atrasados.length + ' abiertos vencidos';
+  if (!atrasados.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:20px">Ningún pedido atrasado 🎉</td></tr>';
+    return;
+  }
+  var arr = atrasados.slice().sort(function(a, b) { return (b.otd.dias || 0) - (a.otd.dias || 0); }).slice(0, 10);
+  tbody.innerHTML = arr.map(function(o) {
+    var empColor = EMP_COLORS[o.sigla] || '#718096';
+    return '<tr data-href="pedidos.html?otd=atrasado&buscar=' + encodeURIComponent(o.consecutivo) + '&empresa=' + encodeURIComponent(o.sigla) + '" onclick="dGoto(this)">' +
+      '<td style="font-weight:600"><span class="sigla-badge" style="background:' + empColor + '20;color:' + empColor + ';font-size:0.68rem">' + escHtml(o.sigla) + '</span> ' + escHtml(o.consecutivo) + '</td>' +
+      '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(o.cliente) + '</td>' +
+      '<td style="text-align:center;font-size:0.76rem">' + fmtDate(o.fechaCompromiso) + '</td>' +
+      '<td class="money" style="font-weight:700;color:#e74c3c">+' + (o.otd.dias || 0) + ' d</td>' +
     '</tr>';
   }).join('');
 }
