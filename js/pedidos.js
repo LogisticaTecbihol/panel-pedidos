@@ -38,6 +38,9 @@ async function _resolveComercialId(valor) {
 // ── Sorting ──
 var sortLevels = [];
 
+// Nuevo pedido: ¿el usuario tocó manualmente la fecha de compromiso?
+var _nvCompromisoTocado = false;
+
 // Días hábiles (lun-vie) transcurridos desde Fecha_Pedido hasta hoy.
 // null si no hay fecha válida.
 function _diasDesdePedido(f) {
@@ -1464,6 +1467,7 @@ async function openDetail(idx) {
   document.getElementById('md-cliente').value = c.Cliente || '';
   document.getElementById('md-nit').value = c.NIT || '';
   document.getElementById('md-fecha-pedido').value = toDateInput(c.Fecha_Pedido);
+  document.getElementById('md-compromiso').value = toDateInput(c.Fecha_Compromiso) || addDiasHabiles(c.Fecha_Pedido, PLAZO_COMPROMISO_DIAS_HABILES);
   document.getElementById('md-comercial').value = c.Comercial || '';
   document.getElementById('md-municipio').value = c.Municipio || '';
   document.getElementById('md-departamento').value = c.Departamento || '';
@@ -2386,6 +2390,7 @@ async function guardarTodo() {
     Cliente: document.getElementById('md-cliente').value.trim(),
     NIT: document.getElementById('md-nit').value.trim(),
     Fecha_Pedido: document.getElementById('md-fecha-pedido').value || null,
+    Fecha_Compromiso: document.getElementById('md-compromiso').value || null,
     Comercial: document.getElementById('md-comercial').value.trim(),
     Municipio: document.getElementById('md-municipio').value.trim(),
     Departamento: document.getElementById('md-departamento').value.trim(),
@@ -2744,6 +2749,7 @@ async function agregarNuevaLinea() {
 
   var hdr = {
     Cliente: c.Cliente, NIT: c.NIT, Fecha_Pedido: c.Fecha_Pedido,
+    Fecha_Compromiso: c.Fecha_Compromiso || null,
     Comercial: c.Comercial, Municipio: c.Municipio, Departamento: c.Departamento,
     Telefono: c.Telefono, Plazo_Pago: c.Plazo_Pago, Precio_Facturacion: c.Precio_Facturacion,
     Nombre_Empresa: c.Nombre_Empresa, Consecutivo: c.Consecutivo,
@@ -2831,6 +2837,7 @@ async function openEdit(idx) {
   document.getElementById('ed-cliente').value = c.Cliente || '';
   document.getElementById('ed-nit').value = c.NIT || '';
   document.getElementById('ed-fecha').value = toDateInput(c.Fecha_Pedido);
+  document.getElementById('ed-compromiso').value = toDateInput(c.Fecha_Compromiso) || addDiasHabiles(c.Fecha_Pedido, PLAZO_COMPROMISO_DIAS_HABILES);
   document.getElementById('ed-comercial').value = c.Comercial || '';
   document.getElementById('ed-municipio').value = c.Municipio || '';
   document.getElementById('ed-departamento').value = c.Departamento || '';
@@ -3013,6 +3020,7 @@ async function saveEdit() {
     Cliente: document.getElementById('ed-cliente').value.trim(),
     NIT: document.getElementById('ed-nit').value.trim(),
     Fecha_Pedido: document.getElementById('ed-fecha').value || null,
+    Fecha_Compromiso: document.getElementById('ed-compromiso').value || null,
     Comercial: document.getElementById('ed-comercial').value.trim(),
     Municipio: document.getElementById('ed-municipio').value.trim(),
     Departamento: document.getElementById('ed-departamento').value.trim(),
@@ -3360,6 +3368,8 @@ async function showUploadPreview(data) {
   document.getElementById('up-empresa').textContent = data.nombre_empresa || '—';
   document.getElementById('up-consecutivo').textContent = data.consecutivo || '—';
   document.getElementById('up-fecha').textContent = data.fecha_pedido || '—';
+  data.fecha_compromiso = addDiasHabiles(data.fecha_pedido, PLAZO_COMPROMISO_DIAS_HABILES);
+  document.getElementById('up-compromiso').textContent = data.fecha_compromiso || '—';
   document.getElementById('up-cliente').textContent = data.cliente || '—';
   document.getElementById('up-nit').textContent = data.nit || '—';
   document.getElementById('up-comercial').textContent = data.comercial || '—';
@@ -3449,6 +3459,7 @@ async function confirmUpload() {
       nombre_empresa: uploadData.nombre_empresa,
       consecutivo: uploadData.consecutivo,
       fecha_pedido: uploadData.fecha_pedido,
+      fecha_compromiso: uploadData.fecha_compromiso || addDiasHabiles(uploadData.fecha_pedido, PLAZO_COMPROMISO_DIAS_HABILES),
       cliente: uploadData.cliente,
       nit: uploadData.nit,
       telefono: uploadData.telefono,
@@ -3932,6 +3943,16 @@ async function openNuevoPedido() {
     nvFecha.readOnly = false;
     nvFecha.style.background = '';
   }
+  // Fecha de compromiso: default = Fecha_Pedido + N días hábiles; editable.
+  var nvComp = document.getElementById('nv-compromiso');
+  nvComp.value = addDiasHabiles(nvFecha.value, PLAZO_COMPROMISO_DIAS_HABILES);
+  nvComp.min = nvFecha.value;
+  _nvCompromisoTocado = false;
+  nvComp.oninput = function() { _nvCompromisoTocado = true; };
+  nvFecha.oninput = function() {
+    nvComp.min = nvFecha.value;
+    if (!_nvCompromisoTocado) nvComp.value = addDiasHabiles(nvFecha.value, PLAZO_COMPROMISO_DIAS_HABILES);
+  };
   document.getElementById('nv-cliente').value = '';
   document.getElementById('nv-nit').value = '';
   document.getElementById('nv-sucursal').value = '';
@@ -4312,12 +4333,15 @@ async function guardarNuevoPedido() {
   var empresa = document.getElementById('nv-empresa').value;
   var consecutivo = document.getElementById('nv-consecutivo').value.trim();
   var fecha = document.getElementById('nv-fecha').value;
+  var compromiso = document.getElementById('nv-compromiso').value || addDiasHabiles(fecha, PLAZO_COMPROMISO_DIAS_HABILES);
   var cliente = document.getElementById('nv-cliente').value.trim();
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!consecutivo) { showToast('Selecciona un comercial para generar el consecutivo', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha del pedido', '#e74c3c'); return; }
   if (!AUTH.isAdmin() && fecha < today()) { showToast('La fecha del pedido no puede ser anterior a hoy', '#e74c3c'); return; }
+  if (!compromiso) { showToast('Indica la fecha de compromiso', '#e74c3c'); return; }
+  if (compromiso < fecha) { showToast('La fecha de compromiso no puede ser anterior a la del pedido', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
   if (getSigla(empresa) === 'PARCELAR' && !document.getElementById('nv-bodega-facturacion').value) {
     showToast('Selecciona la Bodega de Facturación', '#e74c3c'); return;
@@ -4352,6 +4376,7 @@ async function guardarNuevoPedido() {
       nombre_empresa: empresa,
       consecutivo: consecutivo,
       fecha_pedido: fecha,
+      fecha_compromiso: compromiso,
       cliente: cliente,
       nit: document.getElementById('nv-nit').value.trim(),
       sucursal: document.getElementById('nv-sucursal').value.trim(),

@@ -545,6 +545,7 @@ async function _apiPostCore(body) {
         rows.push({
           Fecha_Procesamiento: now, Nombre_Empresa: body.nombre_empresa || '',
           Consecutivo: body.consecutivo || '', Fecha_Pedido: body.fecha_pedido || '',
+          Fecha_Compromiso: body.fecha_compromiso || '',
           Cliente: body.cliente || '', NIT: body.nit || '', Telefono: body.telefono || '',
           Direccion_Envio: body.direccion_envio || '', Municipio: body.municipio || '',
           Departamento: body.departamento || '', Comercial: body.comercial || '',

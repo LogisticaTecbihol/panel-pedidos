@@ -306,6 +306,7 @@
         <div><label class="ef-label">NIT</label><input class="ef" id="md-nit" type="text"></div>
         <div><label class="ef-label">Sucursal</label><input class="ef" id="md-sucursal" type="text" list="dl-sucursal" placeholder="Seleccionar sucursal"></div>
         <div><label class="ef-label">Fecha Pedido</label><input class="ef" id="md-fecha-pedido" type="date"></div>
+        <div><label class="ef-label">Fecha Compromiso</label><input class="ef" id="md-compromiso" type="date" title="Fecha prometida de entrega al cliente"></div>
         <div><label class="ef-label">Comercial</label><input class="ef" id="md-comercial" type="text"></div>
         <div><label class="ef-label">Municipio</label><input class="ef" id="md-municipio" type="text"></div>
         <div><label class="ef-label">Departamento</label><input class="ef" id="md-departamento" type="text"></div>
@@ -499,6 +500,7 @@
         <div><label class="ef-label">NIT</label><input class="ef" id="ed-nit" type="text"></div>
         <div><label class="ef-label">Sucursal</label><input class="ef" id="ed-sucursal" type="text" list="dl-sucursal" placeholder="Seleccionar sucursal"></div>
         <div><label class="ef-label">Fecha Pedido</label><input class="ef" id="ed-fecha" type="date"></div>
+        <div><label class="ef-label">Fecha Compromiso</label><input class="ef" id="ed-compromiso" type="date" title="Fecha prometida de entrega al cliente"></div>
         <div><label class="ef-label">Comercial</label><input class="ef" id="ed-comercial" type="text"></div>
         <div><label class="ef-label">Municipio</label><input class="ef" id="ed-municipio" type="text"></div>
         <div><label class="ef-label">Departamento</label><input class="ef" id="ed-departamento" type="text"></div>
@@ -596,6 +598,7 @@
         <div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">Empresa</span><br><span id="up-empresa">—</span></div>
         <div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">Consecutivo</span><br><span id="up-consecutivo">—</span></div>
         <div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">Fecha Pedido</span><br><span id="up-fecha">—</span></div>
+        <div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">Fecha Compromiso</span><br><span id="up-compromiso">—</span></div>
         <div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">Cliente</span><br><span id="up-cliente">—</span></div>
         <div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">NIT</span><br><span id="up-nit">—</span></div>
         <div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">Comercial</span><br><span id="up-comercial">—</span></div>
@@ -682,6 +685,10 @@
         <div>
           <label class="ef-label">Fecha Pedido *</label>
           <input class="ef" id="nv-fecha" type="date">
+        </div>
+        <div>
+          <label class="ef-label">Fecha Compromiso *</label>
+          <input class="ef" id="nv-compromiso" type="date" title="Fecha prometida de entrega al cliente — se calcula automáticamente, puedes ajustarla">
         </div>
         <div>
           <label class="ef-label">Cliente *</label>
@@ -850,6 +857,6 @@
 <script src="js/colombia-geo.js?v=20260826a"></script>
 <script src="js/existencias.js?v=20260901c"></script>
 <script src="js/pdf-remision.js?v=20260903u"></script>
-<script src="js/pedidos.js?v=20260907d"></script>
+<script src="js/pedidos.js?v=20260908a"></script>
 </body>
 </html>
