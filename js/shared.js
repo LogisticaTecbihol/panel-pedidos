@@ -1786,7 +1786,7 @@ function toDateInput(v) {
 
 // Plazo por defecto al crear un pedido: Fecha_Pedido + N días hábiles (lun-vie,
 // sin festivos — no hay tabla de festivos). Ajustar este número si cambia el SLA.
-var PLAZO_COMPROMISO_DIAS_HABILES = 3;
+var PLAZO_COMPROMISO_DIAS_HABILES = 8;
 
 function _isoDia(v) {
   var s = String(v || '').slice(0, 10);
