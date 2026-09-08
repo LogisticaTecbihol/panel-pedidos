@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS usuario_modulos (
                'inventario','kardex','muestras','reenvases',
                'lista_precios','reportes','dashboard',
                'muestras_aprobar','ordenes_aprobar',
-               'pedidos_editar_cantidad','notificaciones','clientes','productos'
+               'pedidos_editar_cantidad','notificaciones','clientes',
+               'productos','reabastecimiento'
              )),
   PRIMARY KEY (usuario_id, modulo)
 );

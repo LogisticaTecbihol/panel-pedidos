@@ -21,6 +21,7 @@ var AUTH = (function() {
     { key: 'productos',    label: '📦 Productos' },
     { key: 'reportes',     label: '📈 Reportes' },
     { key: 'dashboard',    label: '📊 Dashboard' },
+    { key: 'reabastecimiento', label: '🔄 Reabastecimiento' },
     { key: 'muestras_aprobar',       label: '✅ Aprobar solicitudes de muestras' },
     { key: 'ordenes_aprobar',        label: '✅ Aprobar órdenes de compra' },
     { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' },
