@@ -9,6 +9,7 @@ var kxAjustes = [];
 var kxCambios = [];
 var kxCatalogo = [];
 var kxRemAnuladas = [];
+var kxApartados = [];
 var _remAnuladasSet = {};
 var kxMovimientos = [];
 var kxFiltered = [];
@@ -91,14 +92,15 @@ async function loadKardex() {
     var corePromises = [
       apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Estado_2,Consecutivo,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido' }).catch(function() { return { ok: true, pedidos: [] }; }),
       apiGet('getIngresos', { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion' }).catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Empresa_Destino,Empresa_Origen,Fecha,Consecutivo,Producto,Presentacion' }).catch(function() { return { ok: true, ordenes: [] }; }),
+      apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Consecutivo,Producto,Presentacion,Tipo,Estado,Ref_Pedido' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Consecutivo,Solicitante,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases', { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Planta,Observaciones' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getDevoluciones', { columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Consecutivo,Motivo,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; })
+      apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
+      apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
     ];
 
     corePromises.push(apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }));
@@ -120,10 +122,11 @@ async function loadKardex() {
     kxCatalogo = results[7].productos || [];
     kxCambios = results[8].cambios || [];
     kxRemAnuladas = results[9].remisionesAnuladas || [];
+    kxApartados = (results[10] && results[10].apartados) || [];
 
-    ncAjustes = results[10].ajustesNC || [];
+    ncAjustes = results[11].ajustesNC || [];
     _ncLoaded = true;
-    var extraIdx = 11;
+    var extraIdx = 12;
 
     [kxPedidos, kxIngresos, kxOrdenes, kxMuestras, kxReenvases, kxDevoluciones, kxAjustes, kxCatalogo, kxCambios, ncAjustes].forEach(function(arr) {
       arr.forEach(function(r) { if (r.Producto) r.Producto = _normProd(r.Producto); });
@@ -2776,18 +2779,34 @@ function calcularExistencias() {
     }
   });
 
+  // ── Capa "apartado" (stock reservado a pedidos sin remisionar) ──
+  // Se pliega por bucket con _empresaExistKey igual que los saldos, para
+  // que la columna "Disp. neto" de PARCELAR caiga en el cubo correcto
+  // (Propio / Carval / Maxi Pasto).
+  var apaMap = (typeof Existencias !== 'undefined' && Existencias.computeApartadoPorEmpresa)
+    ? Existencias.computeApartadoPorEmpresa(kxApartados, kxOrdenes) : {};
+
   var parcelarKeys = _allParcelarKeys();
   existData = Object.keys(saldos).sort().map(function(k) {
     var row = saldos[k];
-    var total = 0;
+    var perApa = apaMap[row.producto] || {};
+    row._apa = {};
+    Object.keys(perApa).forEach(function(empStock) {
+      var b = _empresaExistKey(empStock, row.producto);
+      row._apa[b] = (row._apa[b] || 0) + (perApa[empStock] || 0);
+    });
+    var total = 0, apaTot = 0;
     empresasView.forEach(function(e) {
       if (e.value === PARCELAR_EMPRESA_VAL) {
-        parcelarKeys.forEach(function(pk) { total += (row[pk] || 0); });
+        parcelarKeys.forEach(function(pk) { total += (row[pk] || 0); apaTot += (row._apa[pk] || 0); });
       } else {
         total += (row[e.value] || 0);
+        apaTot += (row._apa[e.value] || 0);
       }
     });
     row._total = total;
+    row._apartadoTotal = apaTot;
+    row._dispNetoTotal = total - apaTot;
     return row;
   });
 
@@ -2877,6 +2896,17 @@ function _existCellVal(row, eValue) {
   return row[eValue] || 0;
 }
 
+// Apartado por bucket (mismo pliegue PARCELAR que _existCellVal).
+function _existApartadoVal(row, eValue) {
+  var apa = row._apa || {};
+  if (eValue === PARCELAR_EMPRESA_VAL) {
+    var s = 0;
+    _allParcelarKeys().forEach(function(pk) { s += (apa[pk] || 0); });
+    return s;
+  }
+  return apa[eValue] || 0;
+}
+
 function _parcelarCategory(producto) {
   if (_esCarval(producto)) return 'carval';
   if (_esGermisemillas(producto)) return 'germisemillas';
@@ -2946,10 +2976,12 @@ function renderExistTable(empresasView) {
     headerCols += '<th style="text-align:right;min-width:90px">' + e.sigla + '</th>';
   });
   if (showTotal) headerCols += '<th style="text-align:right;min-width:90px;background:#edf2f7;font-weight:800">TOTAL</th>';
+  headerCols += '<th style="text-align:right;min-width:90px;background:#fff7ed;color:#b45309;font-weight:800" title="Stock apartado a pedidos sin remisionar">APARTADO</th>';
+  headerCols += '<th style="text-align:right;min-width:90px;background:#f0fdf4;color:#15803d;font-weight:800" title="Disponible neto = existencia física − apartado">DISP. NETO</th>';
   thead.innerHTML = headerCols;
 
   var tbody = document.getElementById('t-body-ex');
-  var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0);
+  var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0) + 2;
   if (!existFiltered.length) {
     tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos con los filtros seleccionados.</div></td></tr>';
     document.getElementById('t-foot-ex').innerHTML = '';
@@ -2971,6 +3003,10 @@ function renderExistTable(empresasView) {
       var totalColor = totalView > 0 ? '#2c3e50' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
       html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#f7fafc;font-size:0.88rem">' + _fmtNum.format(totalView) + '</td>';
     }
+    var apa = row._apartadoTotal || 0;
+    var neto = row._dispNetoTotal != null ? row._dispNetoTotal : ((row._totalView != null ? row._totalView : row._total) - apa);
+    html += '<td style="text-align:right;font-weight:' + (apa ? '700' : '400') + ';color:' + (apa ? '#b45309' : '#cbd5e0') + ';background:#fff7ed;font-size:0.84rem">' + _fmtNum.format(apa) + '</td>';
+    html += '<td style="text-align:right;font-weight:700;color:' + (neto < 0 ? '#e74c3c' : neto > 0 ? '#15803d' : '#cbd5e0') + ';background:#f0fdf4;font-size:0.84rem">' + _fmtNum.format(neto) + '</td>';
     html += '</tr>';
     return html;
   }
@@ -2978,10 +3014,11 @@ function renderExistTable(empresasView) {
   function subtotalRow(items, label) {
     var sums = {};
     empresasView.forEach(function(e) { sums[e.value] = 0; });
-    var gt = 0;
+    var gt = 0, apaGt = 0;
     items.forEach(function(row) {
       empresasView.forEach(function(e) { sums[e.value] += _existCellVal(row, e.value); });
       gt += (row._totalView != null ? row._totalView : row._total);
+      apaGt += (row._apartadoTotal || 0);
     });
     var h = '<tr style="background:#eef2f6">' +
       '<td style="position:sticky;left:0;background:#eef2f6;z-index:1"></td>' +
@@ -2991,6 +3028,8 @@ function renderExistTable(empresasView) {
       h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;color:' + (v > 0 ? '#27ae60' : v < 0 ? '#e74c3c' : '#a0aec0') + '">' + _fmtNum.format(v) + '</td>';
     });
     if (showTotal) h += '<td style="text-align:right;font-weight:800;font-size:0.86rem;background:#e2e8f0">' + _fmtNum.format(gt) + '</td>';
+    h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#fff7ed;color:#b45309">' + _fmtNum.format(apaGt) + '</td>';
+    h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#f0fdf4;color:' + ((gt - apaGt) < 0 ? '#e74c3c' : '#15803d') + '">' + _fmtNum.format(gt - apaGt) + '</td>';
     h += '</tr>';
     return h;
   }
@@ -3030,10 +3069,11 @@ function renderExistTable(empresasView) {
 
   var totales = {};
   empresasView.forEach(function(e) { totales[e.value] = 0; });
-  var granTotal = 0;
+  var granTotal = 0, apaTotales = 0;
   existFiltered.forEach(function(row) {
     empresasView.forEach(function(e) { totales[e.value] += _existCellVal(row, e.value); });
     granTotal += (row._totalView != null ? row._totalView : row._total);
+    apaTotales += (row._apartadoTotal || 0);
   });
 
   var footHtml = '<td style="position:sticky;left:0;background:#f0f4f8;z-index:1"></td>' +
@@ -3044,6 +3084,8 @@ function renderExistTable(empresasView) {
     footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + _fmtNum.format(val) + '</td>';
   });
   if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem">' + _fmtNum.format(granTotal) + '</td>';
+  footHtml += '<td style="text-align:right;font-weight:800;color:#b45309;background:#fff7ed;font-size:0.9rem">' + _fmtNum.format(apaTotales) + '</td>';
+  footHtml += '<td style="text-align:right;font-weight:800;color:' + ((granTotal - apaTotales) < 0 ? '#e74c3c' : '#15803d') + ';background:#f0fdf4;font-size:0.9rem">' + _fmtNum.format(granTotal - apaTotales) + '</td>';
   document.getElementById('t-foot-ex').innerHTML = footHtml;
 }
 
@@ -3065,6 +3107,9 @@ function exportExistExcel() {
     var obj = { '#': num++, 'Producto': row.producto };
     empresasView.forEach(function(e) { obj[e.sigla] = _existCellVal(row, e.value); });
     if (showTotal) obj['TOTAL'] = (row._totalView != null ? row._totalView : row._total);
+    obj['APARTADO'] = row._apartadoTotal || 0;
+    obj['DISP. NETO'] = row._dispNetoTotal != null ? row._dispNetoTotal
+      : ((row._totalView != null ? row._totalView : row._total) - (row._apartadoTotal || 0));
     data.push(obj);
   }
 
@@ -3072,19 +3117,25 @@ function exportExistExcel() {
     var header = { '#': '', 'Producto': label };
     empresasView.forEach(function(e) { header[e.sigla] = ''; });
     if (showTotal) header['TOTAL'] = '';
+    header['APARTADO'] = ''; header['DISP. NETO'] = '';
     data.push(header);
   }
 
   function pushSubtotal(items, label) {
     var obj = { '#': '', 'Producto': label };
-    var gt = 0;
+    var gt = 0, apaGt = 0;
     empresasView.forEach(function(e) {
       var s = 0;
       items.forEach(function(row) { s += _existCellVal(row, e.value); });
       obj[e.sigla] = s;
     });
-    items.forEach(function(row) { gt += (row._totalView != null ? row._totalView : row._total); });
+    items.forEach(function(row) {
+      gt += (row._totalView != null ? row._totalView : row._total);
+      apaGt += (row._apartadoTotal || 0);
+    });
     if (showTotal) obj['TOTAL'] = gt;
+    obj['APARTADO'] = apaGt;
+    obj['DISP. NETO'] = gt - apaGt;
     data.push(obj);
   }
 

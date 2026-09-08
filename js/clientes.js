@@ -260,30 +260,8 @@ function _normNombre(n) {
   return (n == null ? '' : String(n)).toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-// Unifica variantes: "90", "90 días", "90 DIAS", "90 dias" -> "90 días";
-// "Contado" / "CONTADO" -> "Contado".
-function _normalizePlazo(raw) {
-  var s = (raw == null ? '' : String(raw)).replace(/\s+/g, ' ').trim();
-  if (!s) return '';
-  var low = s.toLowerCase();
-  if (low.indexOf('contado') >= 0) return 'Contado';
-  var m = low.match(/(\d+)\s*(?:d[ií]as?)?/);
-  if (m) return m[1] + ' días';
-  return s;
-}
-
-function _plazoOrden(p) {
-  var s = String(p).toLowerCase();
-  if (s.indexOf('contado') >= 0) return 0;
-  var m = s.match(/(\d+)/);
-  return m ? parseInt(m[1], 10) : 9999;
-}
-
-function _cmpPlazo(a, b) {
-  var oa = _plazoOrden(a), ob = _plazoOrden(b);
-  if (oa !== ob) return oa - ob;
-  return String(a).localeCompare(String(b));
-}
+// _normalizePlazo / _plazoOrden / _cmpPlazo son canónicos en js/shared.js
+// (los usa también el ranking de prioridad de apartados en Pedidos).
 
 function _indexPlazosPedidos(pedidos) {
   PLAZOS_POR_NIT = {};

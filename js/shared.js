@@ -303,6 +303,11 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, entregas: _addRow(res.data) };
     }
+    if (action === 'getApartadosPedido') {
+      var res = await _fetchAllRows('apartados_pedido', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, apartados: _addRow(res.data) };
+    }
     if (action === 'getMaestroProductos') {
       var res = await _sb.from('maestro_productos').select('Producto');
       if (res.error) return { ok: false, error: res.error.message, productos: [] };
@@ -614,6 +619,40 @@ async function _apiPostCore(body) {
       var res = await _sb.rpc('bloquear_cliente_por_nit', {
         p_nit: body.nit || '',
         p_cliente: body.cliente || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+
+    // ── APARTADOS DE STOCK (reserva sin remisionar) ──
+    // Crea/amplía apartados de la MISMA empresa del pedido. La RPC valida
+    // rol (admin/editor) y que no exceda lo pedido.
+    if (action === 'crearApartados') {
+      var res = await _sb.rpc('crear_apartados_pedido', { p_items: body.items || [] });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+    // Descomprometer: libera apartados activos de un pedido (total, o por
+    // línea/empresa) y anula las OC de traslado abiertas del pedido.
+    if (action === 'liberarApartadosPedido') {
+      var res = await _sb.rpc('liberar_apartados_pedido', {
+        p_empresa: body.empresa || '',
+        p_consecutivo: String(body.consecutivo || ''),
+        p_pedido_id: (body.pedido_id != null ? body.pedido_id : null),
+        p_empresa_stock: (body.empresa_stock != null ? body.empresa_stock : null),
+        p_motivo: body.motivo || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+    // Consumir un apartado al emitir la remisión real (lo pasa a Consumido
+    // o reduce su cantidad). Best-effort: si no hay apartado devuelve ok.
+    if (action === 'consumirApartados') {
+      var res = await _sb.rpc('consumir_apartados_pedido', {
+        p_pedido_id: body.pedido_id,
+        p_empresa_stock: body.empresa_stock || '',
+        p_cantidad: Number(body.cantidad) || 0,
+        p_remision: body.remision || ''
       });
       if (res.error) return { ok: false, error: res.error.message };
       return res.data || { ok: true };
@@ -1849,6 +1888,74 @@ function _otdBadgeHtml(clase, dias) {
 }
 
 function norm(s) { return (s||'').toLowerCase().trim(); }
+
+// ── Plazo de pago / prioridad de cliente ──────────────────────────
+// Canónico para todo el panel (Pedidos, Clientes, apartados).
+// "90", "90 días", "90 DIAS" -> "90 días" ; "Contado"/"CONTADO" -> "Contado".
+function _normalizePlazo(raw) {
+  var s = (raw == null ? '' : String(raw)).replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  var low = s.toLowerCase();
+  if (low.indexOf('contado') >= 0) return 'Contado';
+  var m = low.match(/(\d+)\s*(?:d[ií]as?)?/);
+  if (m) return m[1] + ' días';
+  return s;
+}
+// Orden numérico del plazo: Contado = 0, "N días" = N, desconocido = 9999.
+function _plazoOrden(p) {
+  var s = String(p == null ? '' : p).toLowerCase();
+  if (s.indexOf('contado') >= 0) return 0;
+  var m = s.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 9999;
+}
+function _cmpPlazo(a, b) {
+  var oa = _plazoOrden(a), ob = _plazoOrden(b);
+  if (oa !== ob) return oa - ob;
+  return String(a).localeCompare(String(b));
+}
+function esContado(plazo) { return _normalizePlazo(plazo) === 'Contado'; }
+
+// Rango de "precio de facturación" para el ranking de liberación de
+// apartados: Público es el más protegido, Mayorista el menos.
+// Vacío / desconocido → 1 (neutro, como Dealer).
+function _precioRank(precio) {
+  var s = String(precio == null ? '' : precio).toLowerCase().trim();
+  if (s.indexOf('mayorista') >= 0) return 0;
+  if (s.indexOf('dealer') >= 0) return 1;
+  if (s.indexOf('bl') >= 0 && s.indexOf('co') >= 0) return 2; // "público" con acento perdido
+  if (s.indexOf('publico') >= 0 || s.indexOf('público') >= 0) return 2;
+  return 1;
+}
+
+// Comparador para ordenar apartados/pedidos que compiten por el mismo
+// stock, con los MEJORES CANDIDATOS A LIBERAR primero. Criterios (el
+// negocio los fijó así): 1) plazo — Crédito antes que Contado (Contado
+// protegido); 2) precio — Mayorista antes que Dealer antes que Público;
+// 3) Fecha_Compromiso más lejana primero (liberar antes); sin fecha → al
+// final. `a`/`b`: objetos con { Plazo_Pago, Precio_Facturacion, Fecha_Compromiso }.
+function cmpPrioridadLiberacion(a, b) {
+  var ca = esContado(a && a.Plazo_Pago) ? 1 : 0;
+  var cb = esContado(b && b.Plazo_Pago) ? 1 : 0;
+  if (ca !== cb) return ca - cb;
+  var pa = _precioRank(a && a.Precio_Facturacion);
+  var pb = _precioRank(b && b.Precio_Facturacion);
+  if (pa !== pb) return pa - pb;
+  var fa = String((a && a.Fecha_Compromiso) || '') || '0000-00-00';
+  var fb = String((b && b.Fecha_Compromiso) || '') || '0000-00-00';
+  if (fa !== fb) return fb < fa ? -1 : 1; // descendente: fecha más lejana primero
+  return 0;
+}
+
+// ¿Esta OC de traslado sigue "viva" como solicitud de compra pendiente?
+// Mismo predicado que js/pedidos.js:_buildSolicitudesMap.
+function esSolicitudCompraViva(oc) {
+  if (!oc) return false;
+  if (String(oc.Tipo || '').toLowerCase() !== 'traslado') return false;
+  if (String(oc.Remision || '').trim()) return false;
+  var est = String(oc.Estado || '').toLowerCase();
+  if (est === 'anulada' || est === 'cerrada') return false;
+  return true;
+}
 
 function showToast(msg, color) {
   var t = document.getElementById('toast');

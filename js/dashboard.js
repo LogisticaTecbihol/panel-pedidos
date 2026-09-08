@@ -1169,10 +1169,24 @@ function buildInventario(ped, fEmp) {
   var totalStock = stk.uds;
   var totalPend = Object.keys(pendByEmp).reduce(function(s, k) { return s + pendByEmp[k]; }, 0);
 
+  // Apartado: parte del comprometido que YA tiene stock reservado sin
+  // remisionar (apartados_pedido + OC de traslado abiertas). NO se vuelve
+  // a restar del stock — ya está dentro de "Comprometido".
+  var empSet = {};
+  empresas.forEach(function(e) { empSet[e.value] = true; });
+  var totalApartado = 0;
+  var apaMap = (dExist && dExist.apartadoPorEmpresa) || {};
+  Object.keys(apaMap).forEach(function(prod) {
+    Object.keys(apaMap[prod]).forEach(function(emp) {
+      if (empSet[emp]) totalApartado += (Number(apaMap[prod][emp]) || 0);
+    });
+  });
+
   var html = '<div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">';
-  html += '<div style="flex:1;min-width:120px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Stock total</div><div style="font-size:1.4rem;font-weight:800;color:#2980b9">' + totalStock.toLocaleString('es-CO') + '</div></div>';
-  html += '<div style="flex:1;min-width:120px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Comprometido</div><div style="font-size:1.4rem;font-weight:800;color:#e67e22">' + totalPend.toLocaleString('es-CO') + '</div></div>';
-  html += '<div style="flex:1;min-width:120px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Disponible</div><div style="font-size:1.4rem;font-weight:800;color:' + ((totalStock - totalPend) >= 0 ? '#27ae60' : '#e74c3c') + '">' + (totalStock - totalPend).toLocaleString('es-CO') + '</div></div>';
+  html += '<div style="flex:1;min-width:110px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Stock total</div><div style="font-size:1.4rem;font-weight:800;color:#2980b9">' + totalStock.toLocaleString('es-CO') + '</div></div>';
+  html += '<div style="flex:1;min-width:110px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Comprometido</div><div style="font-size:1.4rem;font-weight:800;color:#e67e22">' + totalPend.toLocaleString('es-CO') + '</div></div>';
+  html += '<div style="flex:1;min-width:110px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600" title="Stock apartado a pedidos sin remisionar (parte del comprometido)">Apartado 🔒</div><div style="font-size:1.4rem;font-weight:800;color:#b45309">' + totalApartado.toLocaleString('es-CO') + '</div></div>';
+  html += '<div style="flex:1;min-width:110px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Disponible</div><div style="font-size:1.4rem;font-weight:800;color:' + ((totalStock - totalPend) >= 0 ? '#27ae60' : '#e74c3c') + '">' + (totalStock - totalPend).toLocaleString('es-CO') + '</div></div>';
   html += '</div>';
 
   if (stk.negativos) {

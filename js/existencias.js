@@ -373,7 +373,7 @@
         .catch(function() { return { ok: true, pedidos: [] }; }),
       apiGet('getIngresos',    { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion' })
         .catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega' })
+      apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido' })
         .catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, muestras: [] }; }),
@@ -388,7 +388,9 @@
       apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida' })
         .catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' })
-        .catch(function() { return { ok: true, remisionesAnuladas: [] }; })
+        .catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
+      apiGet('getApartadosPedido', { columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso' })
+        .catch(function() { return { ok: true, apartados: [] }; })
     ]);
 
     var sources = {
@@ -405,6 +407,7 @@
       cambios:      res[8].cambios       || []
     };
     var remAnuladas = res[9].remisionesAnuladas || [];
+    var apartados = (res[10] && res[10].apartados) || [];
 
     var kxMovs = buildKxMovimientos(sources);
 
@@ -420,17 +423,71 @@
     }
 
     var saldos = computeSaldosPorEmpresa(kxMovs);
+    var apartadoPorEmpresa = computeApartadoPorEmpresa(apartados, sources.ordenes);
 
-    return { sources: sources, kxMovimientos: kxMovs, saldos: saldos };
+    return {
+      sources: sources,
+      kxMovimientos: kxMovs,
+      saldos: saldos,
+      apartados: apartados,
+      apartadoPorEmpresa: apartadoPorEmpresa
+    };
   }
 
-  // Devuelve [{empresa, sigla, disponible}] ordenado por sigla,
-  // filtrado por las empresas visibles al usuario (AUTH), sólo con
-  // disponible > 0.
-  function getPorEmpresa(snapshot, producto /*, presentacion — ignorado */) {
+  // ═════════════════════════════════════════════════════════
+  // Capa "apartado" — derivada sobre saldos, NUNCA lo modifica.
+  // ═════════════════════════════════════════════════════════
+  //
+  // Un apartado reserva stock para un pedido sin descontar la
+  // existencia física. Dos fuentes:
+  //   • filas de apartados_pedido con estado 'Activo'  (misma empresa)
+  //   • OC Tipo='Traslado' abiertas ligadas a un pedido (otra empresa)
+  //     → apartado contra Empresa_Origen
+  // Devuelve { _normProd(producto) → { empresa_stock: cantidad } }.
+  function computeApartadoPorEmpresa(apartados, ordenes) {
+    var out = {};
+    function add(prod, emp, c) {
+      var p = _normProd(prod);
+      var e = String(emp || '').trim();
+      var n = Number(c) || 0;
+      if (!p || !e || n <= 0) return;
+      if (!out[p]) out[p] = {};
+      out[p][e] = (out[p][e] || 0) + n;
+    }
+    (apartados || []).forEach(function(a) {
+      if (String(a.estado || '') !== 'Activo') return;
+      add(a.producto, a.empresa_stock, a.cantidad);
+    });
+    (ordenes || []).forEach(function(oc) {
+      if (!esSolicitudCompraViva(oc)) return;
+      if (String(oc.Remision_Origen || '').trim()) return; // ya salió del origen
+      if (!String(oc.Ref_Pedido || '').trim()) return;     // solo traslados ligados a un pedido
+      add(oc.Producto, oc.Empresa_Origen, oc.Cantidad);
+    });
+    return out;
+  }
+
+  function getApartadoEspecifico(snapshot, empresa, producto) {
+    if (!snapshot || !snapshot.apartadoPorEmpresa) return 0;
+    var m = snapshot.apartadoPorEmpresa[_normProd(producto)] || {};
+    return m[empresa] || 0;
+  }
+
+  function getDisponibleNeto(snapshot, empresa, producto) {
+    return getPorEmpresaEspecifica(snapshot, empresa, producto)
+         - getApartadoEspecifico(snapshot, empresa, producto);
+  }
+
+  // Devuelve [{empresa, sigla, disponible, apartado, disponibleNeto}]
+  // ordenado por sigla, filtrado por las empresas visibles al usuario (AUTH).
+  //   opts.neto = true → filtra/ordena por disponibleNeto (para el modal de
+  //                      apartar); por defecto filtra por disponible físico > 0.
+  function getPorEmpresa(snapshot, producto /*, presentacion — ignorado */, opts) {
     if (!snapshot || !snapshot.saldos) return [];
+    var neto = !!(opts && opts.neto);
     var prodKey = _normProd(producto);
     var perEmp = snapshot.saldos[prodKey] || {};
+    var perApa = (snapshot.apartadoPorEmpresa && snapshot.apartadoPorEmpresa[prodKey]) || {};
 
     var visibles = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas)
       ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING)
@@ -438,15 +495,24 @@
     var permitidas = {};
     visibles.forEach(function(e) { permitidas[e.value] = true; });
 
+    // Universo de empresas: las que tienen saldo o apartado.
+    var empresas = {};
+    Object.keys(perEmp).forEach(function(e) { empresas[e] = true; });
+    Object.keys(perApa).forEach(function(e) { empresas[e] = true; });
+
     var out = [];
-    Object.keys(perEmp).forEach(function(emp) {
+    Object.keys(empresas).forEach(function(emp) {
       if (!permitidas[emp]) return;
       var disp = perEmp[emp] || 0;
-      if (disp <= 0) return;
+      var apa = perApa[emp] || 0;
+      var netoVal = disp - apa;
+      if (neto ? (netoVal <= 0) : (disp <= 0)) return;
       out.push({
         empresa: emp,
         sigla: (typeof getSigla === 'function') ? getSigla(emp) : emp,
-        disponible: disp
+        disponible: disp,
+        apartado: apa,
+        disponibleNeto: netoVal
       });
     });
     out.sort(function(a, b) { return a.sigla.localeCompare(b.sigla, 'es'); });
@@ -644,6 +710,9 @@
     loadSnapshot: loadSnapshot,
     getPorEmpresa: getPorEmpresa,
     getPorEmpresaEspecifica: getPorEmpresaEspecifica,
+    getApartadoEspecifico: getApartadoEspecifico,
+    getDisponibleNeto: getDisponibleNeto,
+    computeApartadoPorEmpresa: computeApartadoPorEmpresa,
     buildKxMovimientos: buildKxMovimientos,
     computeSaldosPorEmpresa: computeSaldosPorEmpresa,
     debug: debugProducto

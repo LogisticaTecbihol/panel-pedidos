@@ -8,6 +8,7 @@ var devolucionesInv = [];
 var cambiosMercInv = [];
 var ordenesCompraInv = [];
 var entregasPedidoInv = [];
+var _apartadoPorProdInv = {};
 var editInvRow = null;
 var catalogoProductos = [];
 var invLineas = [];
@@ -94,7 +95,8 @@ async function loadInventario() {
       apiGet('getDevoluciones', { columns: 'Estado,Cantidad,Remision_Ingreso,Bodega_Ingreso,Remision_Salida,Bodega_Salida,Empresa,Producto' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Cantidad,Tipo_Linea,Producto,Bodega_Ingreso,Bodega_Salida,Remision_Ingreso,Remision_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Estado,Remision,Bodega,Cantidad,Empresa_Origen,Empresa_Destino,Producto,Tipo' }).catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getEntregasPedido', { columns: 'id,pedido_id,empresa_pedido,empresa_stock,producto,presentacion,cantidad,remision,fecha' }).catch(function() { return { ok: true, entregas: [] }; })
+      apiGet('getEntregasPedido', { columns: 'id,pedido_id,empresa_pedido,empresa_stock,producto,presentacion,cantidad,remision,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
+      apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
     ]);
 
     var dataInv = results[0];
@@ -115,6 +117,16 @@ async function loadInventario() {
     cambiosMercInv = results[6].cambios || [];
     ordenesCompraInv = results[7].ordenes || [];
     entregasPedidoInv = results[8].entregas || [];
+
+    // Apartado por producto (informativo): parte del "comprometido" que ya
+    // tiene stock reservado sin remisionar. NO cambia el cálculo de Disponible.
+    _apartadoPorProdInv = {};
+    ((results[9] && results[9].apartados) || []).forEach(function(a) {
+      if (String(a.estado || '') !== 'Activo') return;
+      var p = norm(a.producto);
+      if (!p) return;
+      _apartadoPorProdInv[p] = (_apartadoPorProdInv[p] || 0) + (Number(a.cantidad) || 0);
+    });
 
     enrichInventario();
     populateInvFilters();
@@ -255,7 +267,9 @@ function renderInvTable() {
 
   tbody.innerHTML = rows.map(function(r, i) {
     var dispClass = r._disponible <= 0 ? 'inv-disp-neg' : r._disponible <= 10 ? 'inv-disp-low' : 'inv-disp-ok';
-    var compStr = r._comprometido > 0 ? r._comprometido.toLocaleString('es-CO') : '—';
+    var _apa = (typeof _apartadoPorProdInv !== 'undefined' && _apartadoPorProdInv[norm(r.Producto)]) || 0;
+    var compStr = (r._comprometido > 0 ? r._comprometido.toLocaleString('es-CO') : '—')
+      + (_apa > 0 ? '<div style="font-size:0.68rem;color:#b45309;font-weight:700" title="Del comprometido, ' + _apa + ' ud ya tienen stock apartado sin remisionar">🔒 ' + _apa.toLocaleString('es-CO') + '</div>' : '');
     var movVal = r._movimientos || 0;
     var movStr = movVal === 0 ? '—' : (movVal > 0 ? '+' : '') + movVal.toLocaleString('es-CO');
     var movColor = movVal < 0 ? '#e74c3c' : movVal > 0 ? '#27ae60' : '#718096';

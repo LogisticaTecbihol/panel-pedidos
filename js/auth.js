@@ -268,6 +268,15 @@ var AUTH = (function() {
     return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'cartera';
   }
 
+  // Quién puede "Descomprometer" (liberar stock apartado de un pedido).
+  // El backend lo hace cumplir en la RPC liberar_apartados_pedido.
+  // NO se usa canEdit(): incluye comercial/remisionador/contabilidad, que
+  // no deben liberar reservas de otros.
+  function canDescomprometer() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'editor';
+  }
+
   function canUploadAdjuntos() {
     if (!_profile) return false;
     return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial' || _profile.rol === 'despachador' || _profile.rol === 'remisionador';
@@ -371,6 +380,7 @@ var AUTH = (function() {
     isDespachador: isDespachador,
     isCartera: isCartera,
     canToggleBloqueoCartera: canToggleBloqueoCartera,
+    canDescomprometer: canDescomprometer,
     canUploadAdjuntos: canUploadAdjuntos,
     hasCompany: hasCompany,
     getCompanies: getCompanies,

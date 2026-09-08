@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#1a5276">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
 <title>Pedidos – Sistema de Gestión Logística</title>
-<link rel="stylesheet" href="css/panel.css?v=20260908a">
+<link rel="stylesheet" href="css/panel.css?v=20260908z">
 <style>
 .ac-dropdown{position:fixed;background:white;border:1px solid #cbd5e0;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .ac-item{padding:8px 12px;cursor:pointer;font-size:.84rem;border-bottom:1px solid #f7fafc}
@@ -359,7 +359,7 @@
         <div><label class="ef-label">Estado</label>
           <select class="ef" id="md-estado2">
             <option value="Abierto">Abierto</option>
-            <option value="Alistado">Alistado</option>
+            <option value="Alistado" hidden disabled>Alistado (histórico)</option>
             <option value="Cerrado">Cerrado</option>
             <option value="Anulado">Anulado</option>
             <option value="Bloqueado por cartera">Bloqueado por cartera</option>
@@ -496,6 +496,7 @@
           <div id="rem-picker-share" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;min-width:260px;max-height:280px;overflow-y:auto;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:200"></div>
         </div>
         <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+        <button class="btn-confirm" id="btn-apartar" onclick="apartarSinRemisionar()" style="background:#b45309" title="Reserva el stock asignado para este pedido SIN emitir remisión ni descontar la existencia física. Se libera con «Descomprometer».">🔒 Apartar stock (sin remisionar)</button>
         <button class="btn-confirm" id="btn-confirmar" onclick="guardarYEnviar()">✓ Guardar cambios y enviar</button>
       </div>
     </div>
@@ -552,7 +553,7 @@
         <div><label class="ef-label">Estado 2</label>
           <select class="ef" id="ed-estado2">
             <option value="Abierto">Abierto</option>
-            <option value="Alistado">Alistado</option>
+            <option value="Alistado" hidden disabled>Alistado (histórico)</option>
             <option value="Cerrado">Cerrado</option>
             <option value="Anulado">Anulado</option>
             <option value="Bloqueado por cartera">Bloqueado por cartera</option>
@@ -869,12 +870,12 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260908c"></script>
-<script src="js/auth.js?v=20260908d"></script>
+<script src="js/shared.js?v=20260908z"></script>
+<script src="js/auth.js?v=20260908z"></script>
 <script src="js/notificaciones.js?v=20260831b"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
-<script src="js/existencias.js?v=20260901c"></script>
+<script src="js/existencias.js?v=20260908z"></script>
 <script src="js/pdf-remision.js?v=20260903u"></script>
-<script src="js/pedidos.js?v=20260908b"></script>
+<script src="js/pedidos.js?v=20260908z2"></script>
 </body>
 </html>

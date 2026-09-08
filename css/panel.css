@@ -227,6 +227,16 @@ tbody tr.row-bloqueada-cartera.row-atrasada > td:first-child { box-shadow: inset
   font-size: 0.66rem; font-weight: 700; letter-spacing: 0.3px;
   vertical-align: middle; cursor: help;
 }
+
+/* ── Stock apartado sin remisionar (tabla apartados_pedido) ── */
+.apartado-badge {
+  display: inline-block; margin-left: 6px;
+  background: #b45309; color: white;
+  border-radius: 10px; padding: 1px 7px;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.3px;
+  vertical-align: middle; cursor: help;
+}
+tbody tr.row-apartada > td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .sol-panel {
   background: #fdecea; border: 1px solid #f5c2c0;
   border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;

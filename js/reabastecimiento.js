@@ -319,6 +319,19 @@ function reabBuildSugerencias() {
     });
   });
 
+  // 0b) apartado por (prodKey, empresa) — informativo (parte del pendiente
+  //     que ya tiene stock reservado sin remisionar). NO entra en el cálculo.
+  var apaAgg = {};
+  Object.keys(reabSnapshot.apartadoPorEmpresa || {}).forEach(function(rawKey) {
+    var pk = _reabNormProd(rawKey);
+    var per = reabSnapshot.apartadoPorEmpresa[rawKey] || {};
+    Object.keys(per).forEach(function(emp) {
+      if (!empByValue[emp]) return;
+      var k = pk + _REAB_SEP + emp;
+      apaAgg[k] = (apaAgg[k] || 0) + (Number(per[emp]) || 0);
+    });
+  });
+
   // 1) consumo agregado (una pasada)
   var consumoAgg = {};
   movs.forEach(function(m) {
@@ -411,6 +424,7 @@ function reabBuildSugerencias() {
       sigla: (empByValue[c.emp] && empByValue[c.emp].sigla) || (typeof getSigla === 'function' ? getSigla(c.emp) : c.emp),
       presentacion: presAgg[k] || '',
       disponible: disponible,
+      apartado: apaAgg[k] || 0,
       enCamino: enCamino,
       yaSolicitado: yaSolic,
       pendiente: pend,
@@ -489,6 +503,7 @@ var REAB_SUG_COLS = [
   { id: 'producto',   label: 'Producto',    get: function(r) { return r.producto.toLowerCase(); } },
   { id: 'empresa',    label: 'Empresa',     get: function(r) { return r.sigla; } },
   { id: 'disponible', label: 'Disp.',       get: function(r) { return r.disponible; }, num: 1 },
+  { id: 'apartado',   label: 'Apartado 🔒', get: function(r) { return r.apartado || 0; }, num: 1 },
   { id: 'encamino',   label: 'En camino',   get: function(r) { return r.enCamino; }, num: 1 },
   { id: 'consumo',    label: 'Consumo/día', get: function(r) { return r.consumoDia; }, num: 1 },
   { id: 'cobertura',  label: 'Cobertura',   get: function(r) { return r.coberturaDias; }, num: 1 },
@@ -506,7 +521,7 @@ function reabToggleSort(col) {
 function reabSortedRows(rows) {
   var col = null;
   for (var i = 0; i < REAB_SUG_COLS.length; i++) if (REAB_SUG_COLS[i].id === reabSort.col) col = REAB_SUG_COLS[i];
-  if (!col) col = REAB_SUG_COLS[7];
+  if (!col) col = REAB_SUG_COLS[8]; // 'sugerido'
   var dir = (reabSort.dir === 'asc') ? 1 : -1;
   return rows.slice().sort(function(a, b) {
     var va = col.get(a), vb = col.get(b);
@@ -550,7 +565,7 @@ function reabRenderTable() {
       : (reabRows.length
           ? 'Ningún producto necesita reabastecimiento con los filtros actuales. Marca "Incluir productos OK" para ver todos.'
           : 'Sin datos de existencias todavía.');
-    body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:24px">' + escHtml(msg) + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#a0aec0;padding:24px">' + escHtml(msg) + '</td></tr>';
     return;
   }
 
@@ -574,6 +589,7 @@ function reabRenderTable() {
       '<td style="font-weight:600;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.producto) + '">' + escHtml(r.producto) + '</td>' +
       '<td>' + escHtml(r.sigla) + '</td>' +
       '<td class="money">' + _reabFmtNum(r.disponible) + '</td>' +
+      '<td class="money" style="color:' + (r.apartado > 0 ? '#b45309' : '#cbd5e0') + ';font-weight:' + (r.apartado > 0 ? '700' : '400') + '" title="Del pendiente comprometido, cuánto ya tiene stock apartado sin remisionar">' + (r.apartado ? _reabFmtNum(r.apartado) : '—') + '</td>' +
       '<td class="money">' + (r.enCamino ? _reabFmtNum(r.enCamino) : '—') + '</td>' +
       '<td class="money">' + (r.consumoDia ? r.consumoDia.toLocaleString('es-CO', { maximumFractionDigits: 1 }) : '—') + '</td>' +
       '<td class="money">' + _reabCoberturaCell(r.coberturaDias, lead) + '</td>' +

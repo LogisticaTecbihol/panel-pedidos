@@ -607,6 +607,40 @@ var ocsLegalizadasPorPedido = {};
 // pedidoId (Pedidos.id / __row) → fila de pedido. Se reconstruye en loadFromAPI.
 var _pedidoPorId = {};
 
+// Apartados de stock activos (tabla apartados_pedido, estado='Activo').
+// Se reconstruyen en cada loadFromAPI().
+//   apartadosPorPedido[_keySC(empresa, consecutivo)] = [{pedido_id, producto,
+//     empresa_stock, cantidad, presentacion}]  → badge en la fila y "Descomprometer"
+//   apartadosPorProdEmp[_normProdSel(producto) + '||' + norm(empresa_stock)] =
+//     [{pedido_id, empresa_pedido, consecutivo, cliente, cantidad}]  → panel de prioridad
+var apartadosPorPedido = {};
+var apartadosPorProdEmp = {};
+var apartadosPorLinea = {};
+
+function _buildApartadosMaps(rows) {
+  apartadosPorPedido = {};
+  apartadosPorProdEmp = {};
+  apartadosPorLinea = {};
+  (rows || []).forEach(function(a) {
+    if (String(a.estado || '') !== 'Activo') return;
+    var cant = Number(a.cantidad) || 0;
+    if (cant <= 0) return;
+    var kP = _keySC(a.empresa_pedido, a.consecutivo);
+    (apartadosPorPedido[kP] || (apartadosPorPedido[kP] = [])).push({
+      pedido_id: a.pedido_id, producto: a.producto, presentacion: a.presentacion || '',
+      empresa_stock: a.empresa_stock, cantidad: cant
+    });
+    var kE = _normProdSel(a.producto) + '||' + norm(a.empresa_stock);
+    (apartadosPorProdEmp[kE] || (apartadosPorProdEmp[kE] = [])).push({
+      pedido_id: a.pedido_id, empresa_pedido: a.empresa_pedido, consecutivo: a.consecutivo,
+      cliente: a.cliente || '', cantidad: cant, empresa_stock: a.empresa_stock
+    });
+    (apartadosPorLinea[a.pedido_id] || (apartadosPorLinea[a.pedido_id] = [])).push({
+      empresa_stock: a.empresa_stock, cantidad: cant
+    });
+  });
+}
+
 function _normSC(s) { return String(s || '').toLowerCase().trim(); }
 function _keySC(empresa, consecutivo) {
   return _normSC(empresa) + '||' + String(consecutivo == null ? '' : consecutivo).trim();
@@ -778,11 +812,15 @@ async function loadFromAPI() {
     var ordenesPromise = apiGet('getOrdenesCompra', {
       columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id'
     }).catch(function() { return { ok: true, ordenes: [] }; });
-    var results = await Promise.all([pedidosPromise, ordenesPromise]);
+    var apartadosPromise = apiGet('getApartadosPedido', {
+      columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado'
+    }).catch(function() { return { ok: true, apartados: [] }; });
+    var results = await Promise.all([pedidosPromise, ordenesPromise, apartadosPromise]);
     var data = results[0];
     var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
     var allOCs = (ocData && ocData.ok && ocData.ordenes) || [];
+    _buildApartadosMaps((results[2] && results[2].apartados) || []);
     // solicitudesCompraPorPedido / ocsLegalizadasPorPedido se arman más abajo,
     // DESPUÉS de poblar `pedidos` y `_pedidoPorId` (los necesitan para resolver
     // OrdenesCompra.pedido_id → cliente y no cruzar pedidos #N° distintos).
@@ -1036,6 +1074,14 @@ function derivedEstado2(lines) {
 function _gateEstado2Select(sel, actual) {
   if (!sel) return;
   var opt = sel.querySelector('option[value="Bloqueado por cartera"]');
+  // "Alistado" ya no es seleccionable manualmente (lo reemplaza el apartado de
+  // stock). Solo se muestra si el pedido ya lo tiene, para no perder el valor.
+  var optAli = sel.querySelector('option[value="Alistado"]');
+  if (optAli) {
+    var esAli = actual === 'Alistado';
+    optAli.hidden = !esAli;
+    optAli.disabled = !esAli;
+  }
   if (actual === 'Bloqueado por cartera') {
     if (opt) { opt.hidden = false; opt.disabled = false; }
     sel.disabled = true;
@@ -1091,6 +1137,112 @@ async function toggleBloqueoCartera(idx) {
     }
 
     await loadFromAPI();
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
+  }
+}
+
+// ── Apartados de stock: descomprometer + prioridad ──────────────────
+
+// Busca el consec agrupado por (empresa, consecutivo).
+function _consecLookup(empresa, consecutivo) {
+  var key = _keySC(empresa, consecutivo);
+  for (var i = 0; i < consecs.length; i++) {
+    if (_keySC(consecs[i].Nombre_Empresa, consecs[i].Consecutivo) === key) return consecs[i];
+  }
+  return null;
+}
+
+// Otros pedidos que reservan (producto, empresa_stock), enriquecidos con
+// plazo / precio / fecha de compromiso y ordenados con los MEJORES
+// CANDIDATOS A LIBERAR primero (cmpPrioridadLiberacion). excludeKey = el
+// _keySC del pedido actual (se omite de la lista).
+function _apartadoCompetencia(producto, empresaStock, excludeKey) {
+  var k = _normProdSel(producto) + '||' + norm(empresaStock);
+  var out = [];
+  (apartadosPorProdEmp[k] || []).forEach(function(r) {
+    if (_keySC(r.empresa_pedido, r.consecutivo) === excludeKey) return;
+    var c = _consecLookup(r.empresa_pedido, r.consecutivo);
+    out.push({
+      pedido_id: r.pedido_id,
+      empresa_pedido: r.empresa_pedido,
+      consecutivo: r.consecutivo,
+      empresa_stock: r.empresa_stock || empresaStock,
+      cliente: r.cliente || (c && c.Cliente) || '',
+      cantidad: r.cantidad,
+      Plazo_Pago: c ? (c.Plazo_Pago || '') : '',
+      Precio_Facturacion: c ? (c.Precio_Facturacion || '') : '',
+      Fecha_Compromiso: c ? (c.Fecha_Compromiso || '') : ''
+    });
+  });
+  out.sort(cmpPrioridadLiberacion);
+  return out;
+}
+
+// Botón "Descomprometer" de la fila: libera TODO el apartado del pedido.
+async function descomprometerPedido(idx) {
+  var c = consecs[idx];
+  if (!c) return;
+  var key = _keySC(c.Nombre_Empresa, c.Consecutivo);
+  var apaList = apartadosPorPedido[key] || [];
+  if (!apaList.length) { showToast('Este pedido no tiene stock apartado', '#e67e22'); return; }
+
+  var totApa = apaList.reduce(function(s, a) { return s + (Number(a.cantidad) || 0); }, 0);
+  var contado = esContado(c.Plazo_Pago);
+  var hayCreditoEsperando = apaList.some(function(a) {
+    return _apartadoCompetencia(a.producto, a.empresa_stock, key).some(function(x) { return !esContado(x.Plazo_Pago); });
+  });
+  var lineasTxt = apaList.map(function(a) {
+    return '  • ' + a.cantidad + ' ud · ' + (a.producto || '') + ' (' + getSigla(a.empresa_stock) + ')';
+  }).join('\n');
+  var head = 'Pedido #' + c.Consecutivo + ' — ' + (c.Cliente || '') +
+    '\nPlazo: ' + (_normalizePlazo(c.Plazo_Pago) || '—') + '   ·   Precio: ' + (c.Precio_Facturacion || '—');
+
+  if (contado) {
+    var msg = '⚠️  Este pedido es de CONTADO.\n\n' + head +
+      '\n\nVas a LIBERAR ' + totApa + ' ud de stock apartado:\n' + lineasTxt +
+      (hayCreditoEsperando ? '\n\nEse stock puede quedar disponible para un pedido de CRÉDITO.' : '') +
+      '\n\n¿Confirmas la liberación?';
+    if (!confirm(msg)) return;
+    var motivo = (window.prompt('Estás liberando stock de un cliente de CONTADO.\nEscribe el motivo (obligatorio):', '') || '').trim();
+    if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+    await _liberarApartados(c, null, null, motivo);
+  } else {
+    if (!confirm('¿Descomprometer el pedido #' + c.Consecutivo + ' (' + (c.Cliente || '') + ')?\n\n' + head +
+      '\n\nSe liberan ' + totApa + ' ud de stock apartado:\n' + lineasTxt +
+      '\n\nVolverá a estar disponible para otros pedidos.')) return;
+    await _liberarApartados(c, null, null, '');
+  }
+}
+
+// Llama a la RPC liberar_apartados_pedido y recarga.
+//   pedidoId / empresaStock: null = liberación TOTAL del pedido.
+async function _liberarApartados(c, pedidoId, empresaStock, motivo) {
+  try {
+    var r = await apiPost({
+      action: 'liberarApartadosPedido',
+      empresa: c.Nombre_Empresa,
+      consecutivo: c.Consecutivo,
+      pedido_id: (pedidoId != null ? pedidoId : null),
+      empresa_stock: (empresaStock != null ? empresaStock : null),
+      motivo: motivo || ''
+    });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al descomprometer');
+    var extra = (r.ocs_anuladas || 0) > 0 ? ' · ' + r.ocs_anuladas + ' OC de traslado anulada(s)' : '';
+    showToast('🔓 Stock descomprometido (' + (r.liberados || 0) + ' apartado' + ((r.liberados || 0) === 1 ? '' : 's') + ')' + extra);
+
+    // Si el modal de detalle sigue abierto sobre este pedido, reabrirlo en su
+    // nuevo índice tras recargar (consecs se reordena en loadFromAPI).
+    var reopenKey = (activeIdx != null && consecs[activeIdx])
+      ? keyOf(consecs[activeIdx].Nombre_Empresa, consecs[activeIdx].Consecutivo, consecs[activeIdx].Cliente)
+      : null;
+
+    await loadFromAPI();
+
+    if (reopenKey) {
+      var ni = consecs.findIndex(function(cc) { return keyOf(cc.Nombre_Empresa, cc.Consecutivo, cc.Cliente) === reopenKey; });
+      if (ni >= 0) openDetail(ni);
+    }
   } catch (err) {
     showToast('❌ ' + (err.message || err), '#e74c3c');
   }
@@ -1440,10 +1592,12 @@ function renderTable() {
     var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
     var bloqCartera = est2 === 'Bloqueado por cartera';
     var otd = c._cOtd || { clase: 'sin_compromiso', dias: null };
+    var _apaListRow = apartadosPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
     var _trCls = [];
     if (modPend) _trCls.push('row-modificada');
     if (bloqCartera) _trCls.push('row-bloqueada-cartera');
     if (otd.clase === 'atrasado') _trCls.push('row-atrasada');
+    if (_apaListRow.length && !bloqCartera) _trCls.push('row-apartada');
     var trClass = _trCls.length ? ' class="' + _trCls.join(' ') + '"' : '';
     var modBadge = '';
     if (modPend) {
@@ -1466,10 +1620,16 @@ function renderTable() {
         : solList.length + ' solicitudes de compra pendientes — legalizar las OC en Órdenes para poder emitir la remisión';
       solBadge = '<span class="sol-badge" title="' + solTitle + '">🛒 ' + solList.length + '</span>';
     }
+    var apaList = _apaListRow;
+    var apaBadge = '';
+    if (apaList.length > 0) {
+      var apaTot = apaList.reduce(function(s, a) { return s + (Number(a.cantidad) || 0); }, 0);
+      apaBadge = '<span class="apartado-badge" title="' + apaList.length + ' línea(s) con stock apartado sin remisionar (' + apaTot + ' ud). Reduce el disponible de otros pedidos; se libera con «Descomprometer».">🔒 Apartado</span>';
+    }
     return '<tr' + trClass + '>' +
       '<td style="color:#718096;font-size:0.78rem">' + escHtml(c['N°']||'') + '</td>' +
       '<td title="' + escHtml(c.Nombre_Empresa||'') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + escHtml(getSigla(c.Nombre_Empresa)) + '</span></td>' +
-      '<td style="text-align:center;font-weight:700">' + escHtml(c.Consecutivo||'') + modBadge + solBadge + '<span class="adjunto-badge-cell" data-adj-key="' + escHtml(getSigla(c.Nombre_Empresa)) + '_' + escHtml(c.Consecutivo) + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
+      '<td style="text-align:center;font-weight:700">' + escHtml(c.Consecutivo||'') + modBadge + solBadge + apaBadge + '<span class="adjunto-badge-cell" data-adj-key="' + escHtml(getSigla(c.Nombre_Empresa)) + '_' + escHtml(c.Consecutivo) + '_' + sanitizeForPath(c.Cliente) + '"></span></td>' +
       '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(c.Cliente||'') + '">' + escHtml(c.Cliente||'—') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' +
@@ -1506,6 +1666,10 @@ function renderTable() {
           ? '<button onclick="toggleBloqueoCartera(' + idx + ')" title="' + (bloqCartera ? 'Liberar el pedido del bloqueo por cartera' : 'Bloquear el pedido por cartera') + '" '
             + 'style="border:1px solid ' + (bloqCartera ? '#16a34a' : '#dc2626') + ';background:' + (bloqCartera ? '#f0fdf4' : '#fef2f2') + ';color:' + (bloqCartera ? '#15803d' : '#b91c1c') + ';border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.78rem;font-weight:700;white-space:nowrap">'
             + (bloqCartera ? '🔓 Liberar' : '🔒 Cartera') + '</button>'
+          : '') +
+        (AUTH.canDescomprometer() && apaList.length > 0 && est2 !== 'Anulado'
+          ? '<button onclick="descomprometerPedido(' + idx + ')" title="Liberar el stock apartado de este pedido — vuelve a estar disponible para otros pedidos" '
+            + 'style="border:1px solid #b45309;background:#fffbeb;color:#b45309;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.78rem;font-weight:700;white-space:nowrap">🔓 Descomprometer</button>'
           : '') +
       '</div></td>' +
     '</tr>';
@@ -1623,8 +1787,14 @@ async function openDetail(idx) {
   document.getElementById('btn-confirmar').disabled = false;
   document.getElementById('btn-confirmar').textContent = '✓ Guardar cambios y enviar';
   // El rol 'cartera' es de solo lectura sobre Pedidos: no puede guardar.
-  document.getElementById('btn-confirmar').style.display =
-    (AUTH.isCartera && AUTH.isCartera()) ? 'none' : '';
+  var _noGuardar = (AUTH.isCartera && AUTH.isCartera());
+  document.getElementById('btn-confirmar').style.display = _noGuardar ? 'none' : '';
+  var _btnApa = document.getElementById('btn-apartar');
+  if (_btnApa) {
+    _btnApa.disabled = false;
+    _btnApa.textContent = '🔒 Apartar stock (sin remisionar)';
+    _btnApa.style.display = (_noGuardar || _detailBloqueadoCartera) ? 'none' : '';
+  }
 
   detailWorkingLines = lines.map(function(l) {
     var copy = Object.assign({}, l);
@@ -2011,6 +2181,102 @@ async function _guardarFacturaRemision(remision, numFactura, fechaFactura) {
   }
 }
 
+// Apartado activo de ESTA línea (por empresa origen). Se renderiza
+// encima del selector: convierte a entrega ("Emitir entrega" añade un
+// chip que salta el tope de disponible neto, porque consume la reserva)
+// o lo libera ("Liberar").
+function _apartadoLineaHtml(i, l, empresaPedido) {
+  if (!l || !l.__row) return '';
+  var apas = apartadosPorLinea[l.__row] || [];
+  if (!apas.length) return '';
+  var c = (activeIdx != null) ? consecs[activeIdx] : null;
+  var contado = c ? esContado(c.Plazo_Pago) : false;
+  var rows = apas.map(function(a) {
+    var sig = getSigla(a.empresa_stock);
+    return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">' +
+      '<span style="font-weight:700">🔒 ' + a.cantidad + ' ud apartadas · ' + escHtml(sig) + '</span>' +
+      '<button type="button" onclick="emitirEntregaApartado(' + i + ',\'' + escHtml(a.empresa_stock).replace(/'/g,"\\'") + '\',' + a.cantidad + ')" ' +
+        'style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Emitir entrega</button>' +
+      (AUTH.canDescomprometer()
+        ? '<button type="button" onclick="descomprometerLinea(' + i + ',\'' + escHtml(a.empresa_stock).replace(/'/g,"\\'") + '\',' + a.cantidad + ',' + (contado ? 'true' : 'false') + ')" ' +
+            'style="background:#fffbeb;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Liberar</button>'
+        : '') +
+    '</div>';
+  }).join('');
+  return '<div style="font-size:0.72rem;color:#7c4a03;background:#fffbeb;border:1px solid #fde68a;padding:4px 6px;border-radius:4px;margin-bottom:4px">' +
+    'Stock ya apartado para este pedido:' + rows + '</div>';
+}
+
+// Panel "Quién tiene este producto apartado" — se muestra cuando el
+// disponible neto de la línea NO alcanza para cubrir lo pendiente.
+// Lista los OTROS pedidos que reservan el producto, ordenados con los
+// mejores candidatos a liberar arriba (cmpPrioridadLiberacion).
+function _competenciaApartadoHtml(l, empresaPedido) {
+  if (!l || !existSnapshot) return '';
+  var prodStock = _normProdSel(l.Producto);
+  var pend = Math.max(0, (Number(l.Cantidad) || 0) - (Number(l.Cant_Entregada) || 0));
+  if (pend <= 0) return '';
+  // disponible neto total (empresas visibles) para este producto
+  var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion, { neto: true });
+  var netoTotal = lista.reduce(function(s, x) { return s + Math.max(0, x.disponibleNeto || 0); }, 0);
+  if (netoTotal >= pend) return '';
+
+  var thisKey = (activeIdx != null && consecs[activeIdx])
+    ? _keySC(consecs[activeIdx].Nombre_Empresa, consecs[activeIdx].Consecutivo) : '';
+  // reunir competencia sobre TODAS las empresas donde hay apartado de este producto
+  var vistos = {}, comp = [];
+  Object.keys(apartadosPorProdEmp).forEach(function(k) {
+    if (k.indexOf(prodStock + '||') !== 0) return;
+    (apartadosPorProdEmp[k] || []).forEach(function(r) {
+      if (_keySC(r.empresa_pedido, r.consecutivo) === thisKey) return;
+      var vk = _keySC(r.empresa_pedido, r.consecutivo) + '||' + norm(r.empresa_stock);
+      if (vistos[vk]) return; vistos[vk] = 1;
+      var c = _consecLookup(r.empresa_pedido, r.consecutivo);
+      comp.push({
+        pedido_id: r.pedido_id, empresa_pedido: r.empresa_pedido, consecutivo: r.consecutivo,
+        cliente: r.cliente || (c && c.Cliente) || '', cantidad: r.cantidad,
+        _empStock: r.empresa_stock, _empStockSigla: getSigla(r.empresa_stock),
+        Plazo_Pago: c ? (c.Plazo_Pago || '') : '',
+        Precio_Facturacion: c ? (c.Precio_Facturacion || '') : '',
+        Fecha_Compromiso: c ? (c.Fecha_Compromiso || '') : ''
+      });
+    });
+  });
+  comp.sort(cmpPrioridadLiberacion);
+  var puede = AUTH.canDescomprometer();
+  if (!comp.length) {
+    // Neto bajo pero sin apartados de otros pedidos en tabla → lo retiene
+    // stock reservado vía solicitudes de compra a otras empresas (OC de traslado).
+    return '<div style="font-size:0.72rem;background:#fef9c3;border:1px solid #fde047;padding:5px 7px;border-radius:4px;margin-bottom:4px;color:#854d0e">' +
+      '⚠️ Disponible neto insuficiente (' + Math.round(netoTotal) + ' / ' + pend + ' pend.). El stock está reservado por solicitudes de compra a otras empresas — revisa el módulo Órdenes de Compra.' +
+    '</div>';
+  }
+  var filas = comp.slice(0, 5).map(function(x) {
+    var esC = esContado(x.Plazo_Pago);
+    var plBadge = '<span style="background:' + (esC ? '#dcfce7' : '#f1f5f9') + ';color:' + (esC ? '#166534' : '#475569') + ';padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">' + (esC ? 'Contado' : (_normalizePlazo(x.Plazo_Pago) || 'Crédito')) + '</span>';
+    var pr = String(x.Precio_Facturacion || '').trim();
+    var prRank = _precioRank(pr);
+    var prBadge = pr ? '<span style="background:' + (prRank >= 2 ? '#dcfce7' : '#f1f5f9') + ';color:' + (prRank >= 2 ? '#166534' : '#475569') + ';padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">' + escHtml(pr) + '</span>' : '';
+    var fc = x.Fecha_Compromiso ? ('entrega ' + fmtDate(x.Fecha_Compromiso)) : 'sin fecha';
+    var libBtn = puede
+      ? '<button type="button" onclick="descomprometerOtro(\'' + escHtml(x.empresa_pedido).replace(/'/g,"\\'") + '\',\'' + escHtml(String(x.consecutivo)).replace(/'/g,"\\'") + '\',' + x.pedido_id + ',\'' + escHtml(x._empStock).replace(/'/g,"\\'") + '\',' + (esC ? 'true' : 'false') + ')" ' +
+          'style="background:#fff;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:1px 7px;font-size:0.7rem;font-weight:700;cursor:pointer;white-space:nowrap">Liberar</button>'
+      : '';
+    return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0;border-top:1px solid #f1f5f9">' +
+      '<span style="font-weight:700">' + escHtml(getSigla(x.empresa_pedido)) + ' #' + escHtml(String(x.consecutivo)) + '</span>' +
+      '<span style="color:#475569">' + escHtml(x.cliente || '—') + '</span>' +
+      plBadge + prBadge +
+      '<span style="color:#64748b;font-size:0.7rem">' + x.cantidad + ' ud · ' + escHtml(x._empStockSigla) + ' · ' + fc + '</span>' +
+      libBtn +
+    '</div>';
+  }).join('');
+  var mas = comp.length > 5 ? '<div style="color:#64748b;font-size:0.7rem;margin-top:2px">… y ' + (comp.length - 5) + ' más</div>' : '';
+  return '<div style="font-size:0.72rem;background:#fef9c3;border:1px solid #fde047;padding:5px 7px;border-radius:4px;margin-bottom:4px">' +
+    '<div style="font-weight:700;color:#854d0e;margin-bottom:2px">⚠️ Disponible neto insuficiente (' + Math.round(netoTotal) + ' / ' + pend + ' pend.). Quién tiene este producto apartado — mejores candidatos a liberar arriba:</div>' +
+    filas + mas +
+  '</div>';
+}
+
 // ── Asignación de existencias a la entrega ────────────────
 // Renderiza la celda que reemplaza al viejo qty-input libre.
 // Muestra un selector de empresa origen (con las existencias
@@ -2043,8 +2309,11 @@ function renderAsignacionCell(i, l, empresaPedido) {
   var prodStock = _normProdSel(l.Producto);
   var opciones = '';
   if (existSnapshot && typeof Existencias !== 'undefined') {
-    var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion);
-    // Ordenar: primero la empresa del pedido si tiene stock
+    // {neto:true} → el selector ofrece "disponible neto" = existencia física
+    // − apartado (de este y otros pedidos). Así no se sobre-promete stock ya
+    // reservado. La conversión del apartado PROPIO a entrega va por los chips
+    // "🔒 apartadas" de abajo, que no pasan por este tope.
+    var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion, { neto: true });
     lista.sort(function(a, b) {
       var aEsPedido = norm(a.empresa) === norm(empresaPedido) ? 0 : 1;
       var bEsPedido = norm(b.empresa) === norm(empresaPedido) ? 0 : 1;
@@ -2053,16 +2322,14 @@ function renderAsignacionCell(i, l, empresaPedido) {
     });
     opciones = lista.map(function(x) {
       var marca = norm(x.empresa) === norm(empresaPedido) ? ' ★' : '';
-      var dispRaw = Math.round(x.disponible * 100) / 100;
-      // Ajuste por sesión: restar lo ya asignado a esa (empresa,
-      // producto) en TODAS las líneas del pedido, para que dos líneas
-      // del mismo producto no puedan sobregirar el mismo pool.
+      var netoRaw = Math.round((x.disponibleNeto != null ? x.disponibleNeto : x.disponible) * 100) / 100;
+      var apaRaw = Math.round((x.apartado || 0) * 100) / 100;
       var yaSesion = _asignadoEnSesion(x.empresa, prodStock);
-      var dispRest = Math.max(0, dispRaw - yaSesion);
-      var etiqueta = (yaSesion > 0)
-        ? x.sigla + marca + ' · ' + dispRest + ' disp. (base ' + dispRaw + ')'
-        : x.sigla + marca + ' · ' + dispRest + ' disp.';
-      return '<option value="' + escHtml(x.empresa) + '" data-disp="' + dispRaw + '">' +
+      var dispRest = Math.max(0, netoRaw - yaSesion);
+      var etiqueta = x.sigla + marca + ' · ' + dispRest + ' disp. neto'
+        + (apaRaw > 0 ? ' (' + apaRaw + ' apartado)' : '')
+        + (yaSesion > 0 ? ' · base ' + netoRaw : '');
+      return '<option value="' + escHtml(x.empresa) + '" data-disp="' + netoRaw + '">' +
         escHtml(etiqueta) + '</option>';
     }).join('');
   }
@@ -2070,13 +2337,13 @@ function renderAsignacionCell(i, l, empresaPedido) {
     ? '<select class="asig-empresa" data-i="' + i + '" onchange="onAsignEmpresaChange(' + i + ')" style="width:100%;font-size:0.75rem;padding:2px 4px">' +
         '<option value="">— Empresa origen —</option>' + opciones +
       '</select>'
-    : '<div style="font-size:0.72rem;color:#a94442;background:#fdecea;border:1px solid #f5c2c0;padding:2px 6px;border-radius:4px">Sin stock disponible</div>';
+    : '<div style="font-size:0.72rem;color:#a94442;background:#fdecea;border:1px solid #f5c2c0;padding:2px 6px;border-radius:4px">Sin disponible neto (todo el stock está apartado o no hay existencia)</div>';
   var refBar = '<div class="asig-ref-bar" style="display:flex;gap:8px;font-size:0.70rem;margin-bottom:4px;padding:2px 6px;background:#eef6fc;border-radius:4px;color:#1a5276;font-weight:600">' +
     '<span>Pedida: <b>' + pedida + '</b></span>' +
     '<span style="color:#b0bec5">|</span>' +
     '<span>Pend: <b style="color:' + (pendienteBase > 0 ? '#e67e22' : '#27ae60') + '">' + pendienteBase + '</b></span>' +
   '</div>';
-  return refBar + selectHTML +
+  return refBar + _apartadoLineaHtml(i, l, empresaPedido) + _competenciaApartadoHtml(l, empresaPedido) + selectHTML +
     '<div style="display:flex;gap:4px;margin-top:3px">' +
       '<input type="number" class="asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right" oninput="validateAsignCant(' + i + ')">' +
       '<button type="button" onclick="addAsignacion(' + i + ')" ' +
@@ -2232,9 +2499,12 @@ function _asignadoEnSesion(empresa, producto, excludeLineIdx) {
     if (!dl) return;
     if (_normProdSel(dl.Producto) !== prodN) return;
     // Chips confirmados (cuentan siempre, también en la propia línea
-    // porque validamos una asignación NUEVA sobre el resto).
+    // porque validamos una asignación NUEVA sobre el resto). Los chips
+    // "_fromApartado" NO cuentan: consumen una reserva que el disponible
+    // neto ya tiene descontada (sería doble resta).
     if (dl._asignaciones) {
       dl._asignaciones.forEach(function(a) {
+        if (a._fromApartado) return;
         if (norm(a.empresa_stock) === empN) total += (Number(a.cantidad) || 0);
       });
     }
@@ -2297,6 +2567,55 @@ function removeAsignacion(i, k) {
   _refreshSameProductoCells(i);
 }
 
+// Convierte el apartado propio de la línea en una asignación (chip) para
+// entregarlo. No pasa por el tope de "disponible neto" del selector porque
+// consume una reserva que ya estaba descontada. Al guardar con remisión,
+// guardarTodo llama a consumir_apartados_pedido.
+function emitirEntregaApartado(i, empresaStock, cant) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return;
+  if (_detailBloqueadoCartera) { showToast('🚫 Pedido bloqueado por cartera', '#e74c3c'); return; }
+  var tope = _pendienteRestante(i);
+  var n = Math.min(Number(cant) || 0, tope);
+  if (n <= 0) { showToast('La línea ya no tiene pendiente por asignar', '#e67e22'); return; }
+  if (!dl._asignaciones) dl._asignaciones = [];
+  dl._asignaciones.push({ empresa_stock: empresaStock, cantidad: n, _fromApartado: true });
+  renderAsignacionChips(i);
+  _refreshSameProductoCells(i);
+  showToast('Añadida entrega de ' + n + ' ud desde ' + getSigla(empresaStock) + ' (apartado). Guarda con «✓ Guardar cambios y enviar».');
+}
+
+// Liberar el apartado de UNA línea/empresa desde el modal.
+async function descomprometerLinea(i, empresaStock, cant, contado) {
+  if (activeIdx == null) return;
+  var c = consecs[activeIdx];
+  var dl = detailWorkingLines[i];
+  if (!c || !dl || !dl.__row) return;
+  var motivo = '';
+  if (contado) {
+    if (!confirm('⚠️  Pedido de CONTADO (' + (c.Cliente || '') + ').\n\nLiberar ' + cant + ' ud apartadas en ' + getSigla(empresaStock) + '. ¿Confirmas?')) return;
+    motivo = (window.prompt('Motivo de liberar stock de un cliente de CONTADO (obligatorio):', '') || '').trim();
+    if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+  } else {
+    if (!confirm('¿Liberar ' + cant + ' ud apartadas en ' + getSigla(empresaStock) + ' de este pedido?')) return;
+  }
+  await _liberarApartados(c, dl.__row, empresaStock, motivo);
+}
+
+// Liberar el apartado de OTRO pedido (desde el panel de competencia).
+async function descomprometerOtro(empresa, consecutivo, pedidoId, empresaStock, contado) {
+  var motivo = '';
+  var etq = getSigla(empresa) + ' #' + consecutivo;
+  if (contado) {
+    if (!confirm('⚠️  El pedido ' + etq + ' es de CONTADO.\n\nVas a liberar su stock apartado en ' + getSigla(empresaStock) + '. ¿Confirmas?')) return;
+    motivo = (window.prompt('Motivo de liberar stock de un pedido de CONTADO (obligatorio):', '') || '').trim();
+    if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+  } else {
+    if (!confirm('¿Liberar el stock apartado del pedido ' + etq + ' en ' + getSigla(empresaStock) + '?')) return;
+  }
+  await _liberarApartados({ Nombre_Empresa: empresa, Consecutivo: consecutivo }, pedidoId, empresaStock, motivo);
+}
+
 // Re-renderiza las celdas de asignación de todas las líneas que
 // comparten producto con la línea i (excepto la propia). Necesario
 // tras agregar/quitar una asignación para que la etiqueta "disp."
@@ -2327,6 +2646,7 @@ function renderAsignacionChips(i) {
     var tag = traslado
       ? '<span title="Genera SOLO una solicitud de compra (OC de traslado, Estado Abierta). La remisión al cliente NO se emite ahora: primero hay que legalizar la OC en Órdenes para que el stock quede en la empresa del pedido." style="color:#c0392b;font-weight:700">🛒 solicitud de compra (remisión pendiente)</span>'
       : '<span style="color:#27ae60;font-weight:700">✓ mismo origen — genera remisión</span>';
+    if (a._fromApartado) tag = '<span style="color:#16a34a;font-weight:700">🔒→✓ desde apartado</span> · ' + tag;
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
       '<span style="flex:1"><strong>' + escHtml(a.cantidad) + '</strong> ud · ' + escHtml(sigla) + ' · ' + tag + '</span>' +
       '<button type="button" onclick="removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
@@ -2376,6 +2696,76 @@ async function guardarYEnviar() {
     _pendingContab = r;
   }
   await guardarTodo();
+}
+
+// ── "🔒 Apartar stock (sin remisionar)" ──────────────────────────────
+// Reserva las asignaciones (chips) SIN emitir remisión ni descontar la
+// existencia física:
+//   • chips de la MISMA empresa del pedido → fila en apartados_pedido
+//   • chips de OTRA empresa                → OC de traslado 'Abierta' (igual
+//                                            que "Guardar y enviar", sin remisión)
+// NO guarda ediciones de encabezado/líneas: para eso está "Guardar cambios y
+// enviar" o el modal de edición.
+async function apartarSinRemisionar() {
+  if (activeIdx === null) return;
+  var c = consecs[activeIdx];
+  if (!c) return;
+  if (_detailBloqueadoCartera) { showToast('🚫 Pedido bloqueado por cartera', '#e74c3c'); return; }
+
+  var empPedidoN = norm(c.Nombre_Empresa);
+  var items = [];             // apartados misma empresa
+  var solicitudesCompra = []; // traslados otra empresa
+  detailWorkingLines.forEach(function(dl, i) {
+    ((dl && dl._asignaciones) || []).forEach(function(a) {
+      if (a._fromApartado) return; // esos son para entregar, no re-apartar
+      var cant = Number(a.cantidad) || 0;
+      if (cant <= 0 || !dl.__row) return;
+      if (norm(a.empresa_stock) === empPedidoN) {
+        items.push({ pedido_id: dl.__row, empresa_stock: a.empresa_stock, cantidad: cant });
+      } else {
+        solicitudesCompra.push({ row: dl.__row, _idx: i, cantidad: cant, empresa_stock: a.empresa_stock });
+      }
+    });
+  });
+
+  if (!items.length && !solicitudesCompra.length) {
+    showToast('No hay asignaciones para apartar. Elige empresa origen + cantidad y pulsa «+ Añadir».', '#e67e22');
+    return;
+  }
+
+  var fecha = document.getElementById('m-fecha').value || new Date().toISOString().slice(0, 10);
+  var obs = (document.getElementById('m-observaciones') || {}).value || '';
+  var resumen = [];
+  if (items.length) resumen.push(items.reduce(function(s, x) { return s + x.cantidad; }, 0) + ' ud apartadas (' + c.Nombre_Empresa.split(' ')[0] + ')');
+  if (solicitudesCompra.length) resumen.push(solicitudesCompra.reduce(function(s, x) { return s + x.cantidad; }, 0) + ' ud vía solicitud de compra a otra empresa');
+  if (!confirm('¿Apartar stock para el pedido #' + c.Consecutivo + '?\n\n' + resumen.join('\n') +
+      '\n\nNO se emite remisión ni se descuenta la existencia física. El pedido queda en Activos con el distintivo 🔒 Apartado.')) return;
+
+  var btn = document.getElementById('btn-apartar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Apartando...'; }
+  try {
+    if (items.length) {
+      var r = await apiPost({ action: 'crearApartados', items: items });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al apartar');
+    }
+    if (solicitudesCompra.length) {
+      await persistirEntregasYTraslados([], solicitudesCompra, c, '', fecha, obs);
+    }
+    // limpiar los chips consumidos
+    detailWorkingLines.forEach(function(dl) {
+      if (dl && dl._asignaciones) dl._asignaciones = dl._asignaciones.filter(function(a) { return a._fromApartado; });
+    });
+    showToast('🔒 Stock apartado' + (solicitudesCompra.length ? ' · solicitud(es) de compra creada(s)' : '') + '. El pedido sigue en Activos.');
+
+    var reopenKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+    await loadFromAPI();
+    var ni = consecs.findIndex(function(cc) { return keyOf(cc.Nombre_Empresa, cc.Consecutivo, cc.Cliente) === reopenKey; });
+    if (ni >= 0) openDetail(ni);
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔒 Apartar stock (sin remisionar)'; }
+  }
 }
 
 // ── Save all changes (edits + deliveries) ──
@@ -2563,6 +2953,31 @@ async function guardarTodo() {
     // encabezado del bucket splitting arriba.
     if (entregas.length > 0 || solicitudesCompra.length > 0) {
       await persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs);
+    }
+
+    // Consumir el apartado que respalda cada entrega directa: pasa a
+    // 'Consumido' (o baja su cantidad) para que el descuento de Kardex
+    // ocurra una sola vez. Best-effort: si no había apartado, no pasa nada.
+    if (entregas.length > 0) {
+      var _consAgg = {};
+      entregas.forEach(function(ent) {
+        if (!ent.row || !ent.empresa_stock) return;
+        var k = ent.row + '||' + ent.empresa_stock;
+        _consAgg[k] = (_consAgg[k] || 0) + (Number(ent.cantidad) || 0);
+      });
+      for (var _ck in _consAgg) {
+        if (!_consAgg.hasOwnProperty(_ck)) continue;
+        var _parts = _ck.split('||');
+        try {
+          await apiPost({
+            action: 'consumirApartados',
+            pedido_id: Number(_parts[0]),
+            empresa_stock: _parts.slice(1).join('||'),
+            cantidad: _consAgg[_ck],
+            remision: rem || ''
+          });
+        } catch (e) { console.warn('consumirApartados:', e); }
+      }
     }
 
     if (entregas.length > 0 && rem) {
