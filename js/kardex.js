@@ -1774,18 +1774,52 @@ async function _loadInvfData() {
 function buildNCMovimientos() {
   ncMovimientos = [];
 
-  // Salidas a producción NC (Reenvases con Bodega No Conforme)
+  // Reenvases con Bodega No Conforme:
+  //   - Sin Empresa_Destino → salida a producción NC (SALIDA de la bodega NC del origen).
+  //   - Con Empresa_Destino → traslado entre empresas: SALIDA de la bodega NC del
+  //     origen (Remision) + ENTRADA a la bodega NC del destino (Remision_Destino),
+  //     igual que los traslados de Productos Buenos en buildMovimientos().
   kxReenvases.forEach(function(re) {
     var bodega = re.Bodega || 'Productos Buenos';
     if (bodega !== 'Producto No Conforme') return;
     var cant = Number(re.Cantidad) || 0;
     if (cant <= 0) return;
+    var esTraslado = !!(re.Empresa_Destino && re.Empresa_Destino !== re.Empresa);
+    var remSalida = String(re.Remision || '').trim();
+    var obsRef = re.Observaciones ? ' — ' + re.Observaciones : '';
+    if (esTraslado) {
+      ncMovimientos.push({
+        fecha: re.Fecha || '',
+        tipo: 'Salida',
+        motivo: 'Traslado_NC',
+        remision: remSalida,
+        referencia: 'Traslado → ' + (getSiglaKx(re.Empresa_Destino) || re.Empresa_Destino || '') + obsRef,
+        empresa: re.Empresa || '',
+        producto: re.Producto,
+        presentacion: re.Presentacion || '',
+        cantidad: cant,
+        _ajusteId: null
+      });
+      ncMovimientos.push({
+        fecha: re.Fecha || '',
+        tipo: 'Entrada',
+        motivo: 'Traslado_NC',
+        remision: String(re.Remision_Destino || '').trim() || remSalida,
+        referencia: 'Traslado ← ' + (getSiglaKx(re.Empresa) || re.Empresa || '') + obsRef,
+        empresa: re.Empresa_Destino,
+        producto: re.Producto,
+        presentacion: re.Presentacion || '',
+        cantidad: cant,
+        _ajusteId: null
+      });
+      return;
+    }
     ncMovimientos.push({
       fecha: re.Fecha || '',
       tipo: 'Salida',
       motivo: 'Produccion_NC',
-      remision: re.Remision || '',
-      referencia: (re.Planta ? re.Planta : '') + (re.Observaciones ? ' — ' + re.Observaciones : ''),
+      remision: remSalida,
+      referencia: (re.Planta ? re.Planta : '') + obsRef,
       empresa: re.Empresa || '',
       producto: re.Producto,
       presentacion: re.Presentacion || '',
@@ -3169,6 +3203,7 @@ function _kxncModulo(m) {
   if (m.motivo === 'Produccion_NC') return 'Producción NC';
   if (m.motivo === 'Devolucion_NC') return 'Devolución NC';
   if (m.motivo === 'Cambio_NC') return 'Cambio NC';
+  if (m.motivo === 'Traslado_NC') return 'Traslado NC';
   if (m.tipo === 'Entrada') return 'Ingreso NC';
   return 'Salida NC';
 }
@@ -3279,7 +3314,8 @@ function renderKardexNCTable() {
     'Salida NC': '#27ae60',
     'Devolución NC': '#e67e22',
     'Producción NC': '#d35400',
-    'Cambio NC': '#2980b9'
+    'Cambio NC': '#2980b9',
+    'Traslado NC': '#16a085'
   };
 
   tbody.innerHTML = pageRows.map(function(m, i) {
@@ -3291,7 +3327,7 @@ function renderKardexNCTable() {
     var saldoColor = m._saldoKxnc < 0 ? '#e74c3c' : '#c0392b';
     var referencia = m.referencia || '';
     var motivoLbl = NC_MOTIVO_LABELS[m.motivo] || m.motivo || '';
-    if (motivoLbl && m.motivo !== 'Saldo_Inicial' && m.motivo !== 'Produccion_NC' && m.motivo !== 'Devolucion_NC') {
+    if (motivoLbl && m.motivo !== 'Saldo_Inicial' && m.motivo !== 'Produccion_NC' && m.motivo !== 'Devolucion_NC' && m.motivo !== 'Traslado_NC') {
       referencia = motivoLbl + (referencia ? ' — ' + referencia : '');
     }
     var pdfBtns = m.remision ? '<button onclick="exportarRemisionKardexPDF(' + gi + ',\'kxnc\')" title="Exportar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📄</button><button onclick="enviarRemisionKardexPDF(' + gi + ',\'kxnc\')" title="Enviar PDF" style="background:none;border:none;cursor:pointer;font-size:0.74rem;padding:1px 3px;opacity:0.6;vertical-align:middle" onmouseover="this.style.opacity=\'1\'" onmouseout="this.style.opacity=\'0.6\'">📤</button>' : '';
