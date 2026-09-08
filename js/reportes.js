@@ -350,6 +350,18 @@ function exportExcel() {
   showToast('Excel exportado: ' + rows.length + ' líneas');
 }
 
+// Registra en la nube que el usuario abrió un reporte vigilado (hoy solo
+// "Programación de planta"). Es solo para trazabilidad — se ve en la
+// pestaña Consultas del panel Auditoría (solo admin). Nunca bloquea la UI
+// ni muestra errores: si falla, el reporte igual se abre.
+// Solo se llama al abrir la pestaña, no al recargar filtros.
+function _logAccesoReporte(reporte) {
+  try {
+    if (typeof _sb === 'undefined' || !_sb.rpc) return;
+    _sb.rpc('registrar_acceso_reporte', { p_reporte: reporte }).then(function() {}, function() {});
+  } catch (e) { /* silencioso */ }
+}
+
 // ── Tabs ──
 function switchTab(tab) {
   var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion', 'cumplimiento'];
@@ -359,7 +371,7 @@ function switchTab(tab) {
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
     if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
   });
-  if (tab === 'planta') buildPlanta();
+  if (tab === 'planta') { buildPlanta(); _logAccesoReporte('programacion_planta'); }
   if (tab === 'traslados') buildTraslados();
   if (tab === 'remisiones') buildRemisiones();
   if (tab === 'valorizacion') buildValorizacion();

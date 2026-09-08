@@ -290,3 +290,183 @@ function exportCSV() {
   URL.revokeObjectURL(url);
   showToast('CSV exportado con ' + filteredData.length + ' registros');
 }
+
+
+// ══════════════════════════════════════════════════════════════
+// PESTAÑA: CONSULTAS DE REPORTES
+// Quién abrió cada reporte de solo lectura y cuándo (tabla
+// acceso_reportes, 1 fila por usuario/reporte/día).
+// ══════════════════════════════════════════════════════════════
+
+var consultaData = [];
+var consultaFiltered = [];
+var consultaPage = 1;
+var consultasLoaded = false;
+
+// Etiqueta legible por identificador de reporte.
+var REPORTE_LABELS = {
+  programacion_planta: 'Programación de planta'
+};
+function reporteLabel(id) { return REPORTE_LABELS[id] || id || '—'; }
+
+function showAuditTab(tab) {
+  var isConsultas = tab === 'consultas';
+  document.getElementById('atab-cambios').style.display = isConsultas ? 'none' : 'block';
+  document.getElementById('atab-consultas').style.display = isConsultas ? 'block' : 'none';
+  document.getElementById('atab-btn-cambios').style.background = isConsultas ? '#718096' : '#1a5276';
+  document.getElementById('atab-btn-consultas').style.background = isConsultas ? '#1a5276' : '#718096';
+  if (isConsultas && !consultasLoaded) loadConsultas();
+}
+
+async function loadConsultas() {
+  consultasLoaded = true;
+  setSyncStatus('syncing', 'Cargando consultas de reportes...');
+  try {
+    var res = await _sb.from('acceso_reportes')
+      .select('*')
+      .order('dia', { ascending: false })
+      .order('ultima_hora', { ascending: false })
+      .limit(5000);
+
+    if (res.error) throw new Error(res.error.message);
+
+    consultaData = res.data || [];
+    populateConsultaUserFilter();
+    applyConsultaFilters();
+    setSyncStatus('ok', 'Conectado a la nube. ' + consultaData.length + ' consultas registradas.');
+  } catch (err) {
+    setSyncStatus('error', 'Error al cargar consultas: ' + err.message);
+    showToast('Error al cargar consultas: ' + err.message, '#e74c3c');
+  }
+}
+
+function populateConsultaUserFilter() {
+  var sel = document.getElementById('cf-usuario');
+  var prev = sel.value;
+  var seen = {};
+  var opts = '<option value="">Todos</option>';
+  consultaData.forEach(function(r) {
+    var label = r.usuario_email || r.usuario_nombre;
+    if (label && !seen[label]) {
+      seen[label] = true;
+      opts += '<option value="' + escHtml(label) + '">' + escHtml(label) + '</option>';
+    }
+  });
+  sel.innerHTML = opts;
+  sel.value = prev;
+}
+
+function applyConsultaFilters() {
+  var usuario = document.getElementById('cf-usuario').value;
+  var desde = document.getElementById('cf-desde').value;
+  var hasta = document.getElementById('cf-hasta').value;
+
+  consultaFiltered = consultaData.filter(function(r) {
+    if (usuario && (r.usuario_email || r.usuario_nombre) !== usuario) return false;
+    if (desde && r.dia < desde) return false;
+    if (hasta && r.dia > hasta) return false;
+    return true;
+  });
+
+  updateConsultaStats();
+  consultaPage = 1;
+  renderConsultaTable();
+}
+
+function clearConsultaFilters() {
+  document.getElementById('cf-usuario').value = '';
+  document.getElementById('cf-desde').value = '';
+  document.getElementById('cf-hasta').value = '';
+  applyConsultaFilters();
+}
+
+function updateConsultaStats() {
+  var usuarios = {}, dias = {};
+  consultaFiltered.forEach(function(r) {
+    if (r.usuario_email || r.usuario_nombre) usuarios[r.usuario_email || r.usuario_nombre] = true;
+    if (r.dia) dias[r.dia] = true;
+  });
+  document.getElementById('c-total').textContent = consultaFiltered.length;
+  document.getElementById('c-usuarios').textContent = Object.keys(usuarios).length;
+  document.getElementById('c-dias').textContent = Object.keys(dias).length;
+}
+
+function formatDay(d) {
+  if (!d) return '—';
+  var p = String(d).slice(0, 10).split('-');
+  if (p.length !== 3) return d;
+  return p[2] + '/' + p[1] + '/' + p[0];
+}
+
+function renderConsultaTable() {
+  var start = (consultaPage - 1) * PAGE_SIZE;
+  var page = consultaFiltered.slice(start, start + PAGE_SIZE);
+  var html = '';
+
+  if (!page.length) {
+    html = '<tr><td colspan="6" style="text-align:center;padding:32px;color:#718096">No hay consultas registradas</td></tr>';
+  } else {
+    page.forEach(function(r) {
+      html += '<tr>' +
+        '<td style="white-space:nowrap;font-size:0.82rem">' + formatDay(r.dia) + '</td>' +
+        '<td style="white-space:nowrap;font-size:0.82rem">' + formatTimestamp(r.primera_hora) + '</td>' +
+        '<td style="white-space:nowrap;font-size:0.82rem">' + formatTimestamp(r.ultima_hora) + '</td>' +
+        '<td style="text-align:center;font-weight:700">' + (r.veces || 1) + '</td>' +
+        '<td>' + escHtml(r.usuario_email || r.usuario_nombre || '—') + '</td>' +
+        '<td>' + escHtml(reporteLabel(r.reporte)) + '</td>' +
+        '</tr>';
+    });
+  }
+
+  document.getElementById('c-body').innerHTML = html;
+  document.getElementById('c-row-ct').textContent = '(' + consultaFiltered.length + ' registros)';
+  renderConsultaPagination();
+}
+
+function renderConsultaPagination() {
+  var totalPages = Math.ceil(consultaFiltered.length / PAGE_SIZE);
+  if (totalPages <= 1) { document.getElementById('c-pagination').innerHTML = ''; return; }
+
+  var html = '';
+  if (consultaPage > 1) {
+    html += '<button class="btn-dl" onclick="goConsultaPage(' + (consultaPage - 1) + ')">← Anterior</button>';
+  }
+  html += '<span style="padding:8px 12px;font-size:0.85rem;color:#4a5568">Página ' + consultaPage + ' de ' + totalPages + '</span>';
+  if (consultaPage < totalPages) {
+    html += '<button class="btn-dl" onclick="goConsultaPage(' + (consultaPage + 1) + ')">Siguiente →</button>';
+  }
+  document.getElementById('c-pagination').innerHTML = html;
+}
+
+function goConsultaPage(p) {
+  consultaPage = p;
+  renderConsultaTable();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function exportConsultasCSV() {
+  if (!consultaFiltered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+
+  var headers = ['Día','Primera_consulta','Última_consulta','Veces','Usuario','Reporte'];
+  var rows = [headers.join(',')];
+
+  consultaFiltered.forEach(function(r) {
+    rows.push([
+      '"' + formatDay(r.dia) + '"',
+      '"' + formatTimestamp(r.primera_hora) + '"',
+      '"' + formatTimestamp(r.ultima_hora) + '"',
+      (r.veces || 1),
+      '"' + (r.usuario_email || r.usuario_nombre || '') + '"',
+      '"' + reporteLabel(r.reporte) + '"'
+    ].join(','));
+  });
+
+  var blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'consultas_reportes_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exportado con ' + consultaFiltered.length + ' registros');
+}

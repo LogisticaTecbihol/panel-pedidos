@@ -78,6 +78,15 @@
     <span id="sync-msg">Conectado a la nube.</span>
   </div>
 
+  <!-- TABS -->
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="btn-dl" id="atab-btn-cambios" onclick="showAuditTab('cambios')" style="background:#1a5276">📝 Cambios</button>
+    <button class="btn-dl" id="atab-btn-consultas" onclick="showAuditTab('consultas')" style="background:#718096">👁️ Consultas de reportes</button>
+  </div>
+
+  <!-- ══════════ TAB: CAMBIOS ══════════ -->
+  <div id="atab-cambios">
+
   <div class="stats">
     <div class="sc" style="border-color:#1a5276"><div class="num" id="s-total" style="color:#1a5276">0</div><div class="lbl">Total registros</div></div>
     <div class="sc" style="border-color:#27ae60"><div class="num" id="s-inserts" style="color:#27ae60">0</div><div class="lbl">Creaciones</div></div>
@@ -162,6 +171,67 @@
     <div id="pagination" style="display:flex;justify-content:center;gap:8px;padding:14px 0"></div>
   </div>
 
+  </div><!-- /atab-cambios -->
+
+  <!-- ══════════ TAB: CONSULTAS DE REPORTES ══════════ -->
+  <div id="atab-consultas" style="display:none">
+
+  <div class="stats">
+    <div class="sc" style="border-color:#1a5276"><div class="num" id="c-total" style="color:#1a5276">0</div><div class="lbl">Consultas registradas</div></div>
+    <div class="sc" style="border-color:#8e44ad"><div class="num" id="c-usuarios" style="color:#8e44ad">0</div><div class="lbl">Usuarios distintos</div></div>
+    <div class="sc" style="border-color:#e67e22"><div class="num" id="c-dias" style="color:#e67e22">0</div><div class="lbl">Días con actividad</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg">
+      <label>Usuario:</label>
+      <select class="ef" id="cf-usuario" style="min-width:180px">
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Desde:</label>
+      <input class="ef" type="date" id="cf-desde" style="min-width:130px">
+    </div>
+    <div class="fg">
+      <label>Hasta:</label>
+      <input class="ef" type="date" id="cf-hasta" style="min-width:130px">
+    </div>
+    <button class="btn-dl" onclick="applyConsultaFilters()" style="background:#1a5276">🔍 Filtrar</button>
+    <button class="btn-dl" onclick="clearConsultaFilters()">✕ Limpiar</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>👁️ Consultas de reportes <span id="c-row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="exportConsultasCSV()">📥 Exportar CSV</button>
+        <button class="btn-dl" onclick="loadConsultas()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="padding:8px 20px;font-size:0.8rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
+      Quién abrió cada reporte de solo lectura y cuándo. Se guarda <strong>una fila por usuario y día</strong>: la primera hora en que lo consultó, la última, y cuántas veces ese día.
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:110px">Día</th>
+            <th style="width:150px">1ª consulta</th>
+            <th style="width:150px">Última consulta</th>
+            <th style="width:70px;text-align:center">Veces</th>
+            <th>Usuario</th>
+            <th>Reporte</th>
+          </tr>
+        </thead>
+        <tbody id="c-body"></tbody>
+      </table>
+    </div>
+    <div id="c-pagination" style="display:flex;justify-content:center;gap:8px;padding:14px 0"></div>
+  </div>
+
+  </div><!-- /atab-consultas -->
+
 </div>
 
 <!-- DETAIL MODAL -->
@@ -188,6 +258,6 @@
 <script src="js/shared.js?v=20260908c"></script>
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
-<script src="js/auditoria.js?v=20260903a"></script>
+<script src="js/auditoria.js?v=20260908a"></script>
 </body>
 </html>
