@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Reabastecimiento — punto de reorden y solicitudes de compra — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
+<title>Reabastecimiento – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260908a">
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body data-modulo="reabastecimiento">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>🔄 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="reabastecimiento.html" data-modulo="reabastecimiento" class="active">🔄 Reabastecimiento</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando existencias, consumo y parámetros</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadReabastecimiento()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
+  </div>
+
+  <!-- Aviso in-app (F3-F) -->
+  <div id="reab-banner" style="display:none;margin:0 0 14px;padding:10px 14px;border-radius:8px;background:#fdecea;border:1px solid #f5c2c0;color:#922b21;font-weight:700;font-size:0.86rem;cursor:pointer"></div>
+
+  <div class="stats">
+    <div class="sc sol-pend"><div class="num" id="s-reorden">0</div><div class="lbl">Bajo punto de reorden</div></div>
+    <div class="sc recibido"><div class="num" id="s-agotados">0</div><div class="lbl">Agotados con pendiente</div></div>
+    <div class="sc total"><div class="num" id="s-sugerencias">0</div><div class="lbl">Sugerencias</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="filters" style="gap:6px;padding-bottom:0;border:none">
+    <button class="btn-export tab-btn" id="tab-sugerencias" onclick="reabSwitchTab('sugerencias')" style="background:#1a5276">📈 Sugerencias</button>
+    <button class="btn-export tab-btn" id="tab-solicitudes" onclick="reabSwitchTab('solicitudes')" style="background:#718096">📋 Solicitudes</button>
+  </div>
+
+  <!-- PANEL: Sugerencias -->
+  <div id="panel-sugerencias">
+    <div class="filters">
+      <div class="fg"><label>Empresa</label><select id="f-emp"><option value="">Todas</option></select></div>
+      <div class="fg"><label>Buscar producto</label><input type="text" id="f-txt" placeholder="Nombre del producto…" style="width:240px"></div>
+      <div class="fg"><label>Motivo</label>
+        <select id="f-motivo">
+          <option value="">Todos</option>
+          <option value="agotado_con_pendiente">Agotado con pedidos</option>
+          <option value="bajo_reorden">Bajo punto de reorden</option>
+          <option value="pronostico">Cobertura corta</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:0.8rem;color:#4a5568;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="f-incluir-ok" onchange="reabRender()"> Incluir productos OK
+      </label>
+      <button onclick="reabClearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>📈 Sugerencias de reabastecimiento <span id="sug-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="loadReabastecimiento()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr id="sug-head"></tr></thead>
+          <tbody id="sug-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px">
+      Consumo = salidas a cliente de los últimos 90 días · Stock y "en camino" a hoy (snapshot de Kardex) ·
+      Sugerido = máx(pendiente comprometido, pronóstico por consumo) − disponible − en camino − ya solicitado.
+    </p>
+  </div>
+
+  <!-- PANEL: Solicitudes (F3-D) -->
+  <div id="panel-solicitudes" style="display:none">
+    <div class="card">
+      <div class="card-head"><h3>📋 Solicitudes de reabastecimiento</h3></div>
+      <div style="padding:24px;text-align:center;color:#a0aec0">Disponible en la siguiente entrega (F3-D).</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20260908c"></script>
+<script src="js/auth.js?v=20260908d"></script>
+<script src="js/notificaciones.js?v=20260828b"></script>
+<script src="js/reabastecimiento.js?v=20260908a"></script>
+</body>
+</html>

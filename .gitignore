@@ -19,3 +19,6 @@ Thumbs.db
 
 # ── Arnés de pruebas offline (se regenera; nunca commitear) ──
 _xsstest.html
+
+# Arnés de pruebas offline (Fase 3)
+_reabtest.html
