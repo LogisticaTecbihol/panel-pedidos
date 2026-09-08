@@ -105,6 +105,7 @@
       <div class="card-head">
         <h3>📈 Sugerencias de reabastecimiento <span id="sug-ct" style="font-weight:400;color:#718096"></span></h3>
         <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl auth-edit-only" onclick="reabOpenParamNuevo()" style="background:#1a5276">⚙️ Nuevo parámetro</button>
           <button class="btn-dl" onclick="loadReabastecimiento()">🔄 Actualizar</button>
         </div>
       </div>
@@ -130,12 +131,104 @@
   </div>
 </div>
 
+<!-- MODAL: Parámetro de inventario -->
+<div class="overlay" id="param-overlay">
+  <div class="modal-box" style="max-width:560px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="pm-titulo">⚙️ Parámetro de inventario</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Punto de reorden y lead time por producto y empresa</div>
+      </div>
+      <button class="btn-close" onclick="reabCloseParam()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="grid-column:1/-1">
+          <label class="ef-label">Producto *</label>
+          <input class="ef" id="pm-producto" type="text" list="pm-prod-list" placeholder="Nombre del producto" autocomplete="off">
+          <datalist id="pm-prod-list"></datalist>
+        </div>
+        <div>
+          <label class="ef-label">Empresa</label>
+          <select class="ef" id="pm-empresa" onchange="reabParamEmpresaChange()">
+            <option value="">Todas las empresas</option>
+          </select>
+        </div>
+        <div>
+          <label class="ef-label">Lead time (días) *</label>
+          <input class="ef" id="pm-lead" type="number" min="1" step="1" placeholder="15">
+        </div>
+        <div>
+          <label class="ef-label">Stock de seguridad</label>
+          <input class="ef" id="pm-seguridad" type="number" min="0" step="1" placeholder="0">
+        </div>
+        <div>
+          <label class="ef-label">Días de cobertura objetivo *</label>
+          <input class="ef" id="pm-cobertura" type="number" min="1" step="1" placeholder="30">
+        </div>
+        <div>
+          <label class="ef-label">Punto de reorden</label>
+          <div style="display:flex;gap:6px">
+            <input class="ef" id="pm-reorden" type="number" min="0" step="1" placeholder="0 = automático" style="flex:1">
+            <button type="button" onclick="reabParamCalcular()" title="= consumo diario × lead time + stock de seguridad"
+              style="background:#718096;color:#fff;border:none;border-radius:6px;padding:0 10px;font-size:0.78rem;font-weight:700;cursor:pointer">Calcular</button>
+          </div>
+          <div id="pm-reorden-hint" style="font-size:0.72rem;color:#a0aec0;margin-top:3px"></div>
+        </div>
+        <div>
+          <label class="ef-label">Lote óptimo de compra</label>
+          <input class="ef" id="pm-lote" type="number" min="0" step="1" placeholder="0 = sin redondeo">
+        </div>
+        <div>
+          <label class="ef-label">Empresa proveedora por defecto</label>
+          <select class="ef" id="pm-proveedora">
+            <option value="">— Ninguna —</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:#2d3748;font-weight:600;cursor:pointer;align-self:end;padding-bottom:6px">
+          <input type="checkbox" id="pm-activo" checked> Activo
+        </label>
+      </div>
+      <div id="pm-warn" style="display:none;margin-top:10px;font-size:0.8rem;color:#b7791f;background:#fef9e7;border:1px solid #f9e79f;border-radius:6px;padding:8px 10px"></div>
+      <div id="pm-audit"></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex;align-items:center">
+        <button class="btn-dl" id="pm-btn-del" onclick="reabOpenParamDelete()" style="background:#e74c3c;display:none">🗑️ Quitar</button>
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="reabCloseParam()">Cancelar</button>
+        <button class="btn-confirm" id="pm-btn-save" onclick="reabSaveParam()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Quitar parámetro -->
+<div class="overlay" id="param-del-overlay">
+  <div class="modal-box" style="max-width:460px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1"><h2>🗑️ Quitar parámetro</h2></div>
+      <button class="btn-close" onclick="reabCloseParamDelete()">✕</button>
+    </div>
+    <div class="mbody" style="text-align:center;padding:24px">
+      <div style="font-size:2.2rem;margin-bottom:10px">⚠️</div>
+      <div style="font-size:0.9rem;font-weight:700;color:#2d3748;margin-bottom:6px">¿Quitar este parámetro de inventario?</div>
+      <div style="font-size:0.82rem;color:#718096" id="pm-del-detail"></div>
+      <div style="font-size:0.78rem;color:#a0aec0;margin-top:8px">El producto volverá a usar el parámetro general o los valores por defecto.</div>
+    </div>
+    <div class="mftr" style="justify-content:center;gap:12px">
+      <button class="btn-cancel" onclick="reabCloseParamDelete()">Cancelar</button>
+      <button class="btn-confirm" id="pm-btn-del-confirm" onclick="reabConfirmParamDelete()" style="background:#e74c3c">🗑️ Sí, quitar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js?v=20260908c"></script>
 <script src="js/auth.js?v=20260908d"></script>
 <script src="js/notificaciones.js?v=20260828b"></script>
-<script src="js/reabastecimiento.js?v=20260908a"></script>
+<script src="js/reabastecimiento.js?v=20260908b"></script>
 </body>
 </html>

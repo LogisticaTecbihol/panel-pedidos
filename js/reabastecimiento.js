@@ -223,8 +223,10 @@ var reabOC = [];
 var reabParams = [];           // filas de parametros_inventario
 var reabSolicitudes = [];      // filas de solicitudes_reabastecimiento
 var reabRows = [];             // filas calculadas (todas: sugerir true|false)
+var reabRenderedRows = [];     // filas actualmente en la tabla (acciones por índice)
 var reabTab = 'sugerencias';
 var reabSort = { col: 'sugerido', dir: 'desc' };
+var reabParamState = { id: null, prodKey: '' };   // parámetro en edición
 var _REAB_SEP = '';
 
 function _reabEmpresasVisibles() {
@@ -271,7 +273,11 @@ async function loadReabastecimiento() {
     reabParams = (res[3] && res[3].data) || [];
     reabSolicitudes = (res[4] && res[4].data) || [];
 
+    populateEmpresaSelect('pm-empresa', 'Todas las empresas');
+    populateEmpresaSelect('pm-proveedora', '— Ninguna —');
+
     reabBuildSugerencias();
+    _reabFillProductList();
     lz.style.display = 'none';
     main.style.display = 'block';
     reabRender();
@@ -532,6 +538,7 @@ function reabRenderTable() {
   }).join('') + '<th></th>';
 
   var rows = reabSortedRows(reabFilteredRows());
+  reabRenderedRows = rows;
   var ct = document.getElementById('sug-ct');
   if (ct) ct.textContent = '(' + rows.length + (rows.length === 1 ? ' producto)' : ' productos)');
 
@@ -541,10 +548,22 @@ function reabRenderTable() {
     return;
   }
 
-  body.innerHTML = rows.map(function(r) {
+  var puedeEditar = !(typeof AUTH !== 'undefined' && AUTH.canEdit) || AUTH.canEdit();
+
+  body.innerHTML = rows.map(function(r, i) {
     var lead = Number(r.param && r.param.lead_time_dias) || REAB_DEFAULTS.lead_time_dias;
     var tint = r.motivo === 'agotado_con_pendiente' ? 'background:#fff5f5'
              : r.motivo === 'bajo_reorden' ? 'background:#fffdf3' : '';
+    var origen = r.param && r.param._origen;
+    var prTxt = _reabFmtNum(r.puntoReorden) + (origen === 'empresa'
+      ? ' <span title="parámetro por empresa" style="color:#2c5282;font-size:0.7rem">◆</span>'
+      : origen === 'general'
+      ? ' <span title="parámetro general (todas las empresas)" style="color:#a0aec0;font-size:0.7rem">◇</span>'
+      : '');
+    var btn = puedeEditar
+      ? '<button onclick="reabOpenParam(' + i + ')" title="Configurar parámetro" ' +
+        'style="background:#edf2f7;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;cursor:pointer;font-size:0.78rem">⚙️</button>'
+      : '';
     return '<tr style="' + tint + '">' +
       '<td style="font-weight:600;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.producto) + '">' + escHtml(r.producto) + '</td>' +
       '<td>' + escHtml(r.sigla) + '</td>' +
@@ -552,12 +571,242 @@ function reabRenderTable() {
       '<td class="money">' + (r.enCamino ? _reabFmtNum(r.enCamino) : '—') + '</td>' +
       '<td class="money">' + (r.consumoDia ? r.consumoDia.toLocaleString('es-CO', { maximumFractionDigits: 1 }) : '—') + '</td>' +
       '<td class="money">' + _reabCoberturaCell(r.coberturaDias, lead) + '</td>' +
-      '<td class="money">' + _reabFmtNum(r.puntoReorden) + '</td>' +
+      '<td class="money">' + prTxt + '</td>' +
       '<td class="money" style="font-weight:700">' + _reabFmtNum(r.sugerido) + '</td>' +
       '<td>' + _reabMotivoBadge(r.motivo) + '</td>' +
-      '<td></td>' +
+      '<td>' + btn + '</td>' +
     '</tr>';
   }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Parámetros de inventario — CRUD (F3-C)
+// ═══════════════════════════════════════════════════════════════
+
+// Datalist de productos conocidos (para el modal "Nuevo parámetro").
+function _reabFillProductList() {
+  var dl = document.getElementById('pm-prod-list');
+  if (!dl) return;
+  var vistos = {};
+  reabRows.forEach(function(r) { vistos[r.producto] = 1; });
+  reabParams.forEach(function(p) { if (p.Producto) vistos[String(p.Producto).toUpperCase()] = 1; });
+  dl.innerHTML = Object.keys(vistos).sort().map(function(n) {
+    return '<option value="' + escHtml(n) + '"></option>';
+  }).join('');
+}
+
+// Fila de parametros_inventario que aplica exactamente a (prodKey, empresaVal).
+// empresaVal '' → busca el parámetro general (Empresa NULL).
+function _reabParamLookup(prodKey, empresaVal) {
+  for (var i = 0; i < reabParams.length; i++) {
+    var p = reabParams[i];
+    if (_reabNormProd(p.Producto) !== prodKey) continue;
+    var emp = p.Empresa == null ? '' : String(p.Empresa);
+    if (emp === (empresaVal || '')) return p;
+  }
+  return null;
+}
+
+// Consumo diario del holding para un producto (suma sobre empresas visibles).
+function _reabConsumoProducto(prodKey, empresaVal) {
+  if (empresaVal) {
+    var r = _reabFindRow(prodKey, empresaVal);
+    return r ? r.consumoDia : 0;
+  }
+  var tot = 0;
+  reabRows.forEach(function(r) { if (r.prodKey === prodKey) tot += r.consumoDia || 0; });
+  return tot;
+}
+
+function _reabFindRow(prodKey, empresaVal) {
+  for (var i = 0; i < reabRows.length; i++) {
+    if (reabRows[i].prodKey === prodKey && reabRows[i].empresa === empresaVal) return reabRows[i];
+  }
+  return null;
+}
+
+function _reabSetVal(id, v) { var el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); }
+
+function reabOpenParam(idx) {
+  var r = reabRenderedRows[idx];
+  if (!r) return;
+  _reabParamAbrir(r.prodKey, r.empresa, r.producto);
+}
+
+function reabOpenParamNuevo() {
+  _reabParamAbrir('', '', '');
+  setTimeout(function() { var el = document.getElementById('pm-producto'); if (el) el.focus(); }, 50);
+}
+
+function _reabParamAbrir(prodKey, empresaVal, prodDisplay) {
+  reabParamState = { id: null, prodKey: prodKey || '' };
+  var pmProd = document.getElementById('pm-producto');
+  pmProd.value = prodDisplay || prodKey || '';
+  pmProd.readOnly = !!prodKey;   // desde una fila: no editable; nuevo: sí
+  pmProd.style.background = prodKey ? '#f0f4f8' : '';
+  _reabSetVal('pm-empresa', empresaVal || '');
+  document.getElementById('pm-warn').style.display = 'none';
+  _reabParamCargarValores();
+  document.getElementById('param-overlay').style.display = 'flex';
+}
+
+// Rellena los campos numéricos según el parámetro existente para
+// (producto, empresa seleccionada) o, si no hay, con los defaults.
+function _reabParamCargarValores() {
+  var prodKey = _reabNormProd(document.getElementById('pm-producto').value);
+  var empresaVal = _reabVal('pm-empresa');
+  var existente = prodKey ? _reabParamLookup(prodKey, empresaVal) : null;
+  var base = existente || REAB_DEFAULTS;
+
+  reabParamState.id = existente ? existente.id : null;
+  reabParamState.prodKey = prodKey;
+
+  document.getElementById('pm-titulo').textContent = existente
+    ? '⚙️ Editar parámetro de inventario' : '⚙️ Nuevo parámetro de inventario';
+  _reabSetVal('pm-lead', base.lead_time_dias != null ? base.lead_time_dias : REAB_DEFAULTS.lead_time_dias);
+  _reabSetVal('pm-seguridad', base.stock_seguridad || 0);
+  _reabSetVal('pm-cobertura', base.dias_cobertura_objetivo != null ? base.dias_cobertura_objetivo : REAB_DEFAULTS.dias_cobertura_objetivo);
+  _reabSetVal('pm-reorden', base.punto_reorden || 0);
+  _reabSetVal('pm-lote', base.lote_optimo_compra || 0);
+  _reabSetVal('pm-proveedora', base.empresa_proveedora_default || '');
+  document.getElementById('pm-activo').checked = existente ? existente.activo !== false : true;
+
+  document.getElementById('pm-btn-del').style.display = existente ? '' : 'none';
+  document.getElementById('pm-audit').innerHTML = (existente && typeof _auditoriaHtml === 'function')
+    ? _auditoriaHtml(existente, false) : '';
+  _reabParamHint();
+}
+
+function reabParamEmpresaChange() { _reabParamCargarValores(); }
+
+function _reabParamHint() {
+  var hint = document.getElementById('pm-reorden-hint');
+  if (!hint) return;
+  var prodKey = _reabNormProd(document.getElementById('pm-producto').value);
+  var cons = prodKey ? _reabConsumoProducto(prodKey, _reabVal('pm-empresa')) : 0;
+  hint.textContent = cons > 0
+    ? 'Consumo ' + (_reabVal('pm-empresa') ? 'de la empresa' : 'del holding') + ': ' +
+      cons.toLocaleString('es-CO', { maximumFractionDigits: 2 }) + '/día'
+    : 'Sin histórico de consumo — el punto de reorden se toma tal cual.';
+}
+
+function reabParamCalcular() {
+  var prodKey = _reabNormProd(document.getElementById('pm-producto').value);
+  var cons = prodKey ? _reabConsumoProducto(prodKey, _reabVal('pm-empresa')) : 0;
+  var lead = Number(document.getElementById('pm-lead').value) || REAB_DEFAULTS.lead_time_dias;
+  var seg = Number(document.getElementById('pm-seguridad').value) || 0;
+  if (cons <= 0) { showToast('No hay histórico de consumo para calcular', '#e67e22'); return; }
+  _reabSetVal('pm-reorden', Math.ceil(cons * lead + seg));
+}
+
+function reabCloseParam() {
+  document.getElementById('param-overlay').style.display = 'none';
+  reabParamState = { id: null, prodKey: '' };
+}
+
+async function reabSaveParam() {
+  var prod = (document.getElementById('pm-producto').value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  var warn = document.getElementById('pm-warn');
+  if (!prod) { showToast('Ingresa el producto', '#e74c3c'); return; }
+
+  var empresaVal = _reabVal('pm-empresa');
+  var lead = Math.round(Number(document.getElementById('pm-lead').value) || 0);
+  var cob = Math.round(Number(document.getElementById('pm-cobertura').value) || 0);
+  if (lead < 1) { warn.textContent = '⚠️ El lead time debe ser al menos 1 día'; warn.style.display = 'block'; return; }
+  if (cob < 1) { warn.textContent = '⚠️ Los días de cobertura objetivo deben ser al menos 1'; warn.style.display = 'block'; return; }
+
+  var neg = ['pm-seguridad', 'pm-reorden', 'pm-lote'].some(function(id) {
+    return Number(document.getElementById(id).value) < 0;
+  });
+  if (neg) { warn.textContent = '⚠️ Los valores no pueden ser negativos'; warn.style.display = 'block'; return; }
+
+  var prodKey = _reabNormProd(prod);
+  // ¿ya existe una fila para (producto, empresa)?  (evita chocar con el índice único)
+  var choque = _reabParamLookup(prodKey, empresaVal);
+  var editId = reabParamState.id;
+  if (choque && choque.id !== editId) editId = choque.id;
+
+  var payload = {
+    Producto: prod,
+    Empresa: empresaVal || null,
+    stock_seguridad: Number(document.getElementById('pm-seguridad').value) || 0,
+    punto_reorden: Number(document.getElementById('pm-reorden').value) || 0,
+    lote_optimo_compra: Number(document.getElementById('pm-lote').value) || 0,
+    lead_time_dias: lead,
+    dias_cobertura_objetivo: cob,
+    empresa_proveedora_default: _reabVal('pm-proveedora') || '',
+    activo: !!document.getElementById('pm-activo').checked
+  };
+
+  var btn = document.getElementById('pm-btn-save');
+  btn.disabled = true; btn.textContent = '⏳ Guardando...';
+  try {
+    var res = editId
+      ? await _sb.from('parametros_inventario').update(payload).eq('id', editId).select('*').single()
+      : await _sb.from('parametros_inventario').insert(payload).select('*').single();
+    if (res.error) {
+      if (res.error.code === '42501' || /row-level security/i.test(res.error.message || '')) {
+        throw new Error('No tienes permiso para editar parámetros de inventario');
+      }
+      if (res.error.code === '23505') throw new Error('Ya existe un parámetro para ese producto y empresa');
+      throw new Error(res.error.message);
+    }
+    var idx = -1;
+    for (var i = 0; i < reabParams.length; i++) if (reabParams[i].id === res.data.id) idx = i;
+    if (idx >= 0) reabParams[idx] = res.data; else reabParams.push(res.data);
+    reabCloseParam();
+    reabBuildSugerencias();
+    _reabFillProductList();
+    reabRender();
+    showToast(editId ? '✅ Parámetro actualizado' : '✅ Parámetro creado');
+  } catch (err) {
+    showToast('❌ ' + err.message, '#e74c3c');
+  } finally {
+    btn.disabled = false; btn.textContent = '✓ Guardar';
+  }
+}
+
+// ── Quitar parámetro ───────────────────────────────────────────
+function reabOpenParamDelete() {
+  if (!reabParamState.id) return;
+  var p = null;
+  for (var i = 0; i < reabParams.length; i++) if (reabParams[i].id === reabParamState.id) p = reabParams[i];
+  if (!p) return;
+  document.getElementById('pm-del-detail').textContent =
+    (p.Producto || '') + ' · ' + (p.Empresa ? (typeof getSigla === 'function' ? getSigla(p.Empresa) : p.Empresa) : 'Todas las empresas');
+  document.getElementById('param-del-overlay').style.display = 'flex';
+}
+
+function reabCloseParamDelete() {
+  document.getElementById('param-del-overlay').style.display = 'none';
+}
+
+async function reabConfirmParamDelete() {
+  var id = reabParamState.id;
+  if (!id) return;
+  var btn = document.getElementById('pm-btn-del-confirm');
+  btn.disabled = true; btn.textContent = '⏳ Quitando...';
+  try {
+    var res = await _sb.from('parametros_inventario').delete().eq('id', id).select('id');
+    if (res.error) {
+      if (res.error.code === '42501' || /row-level security/i.test(res.error.message || '')) {
+        throw new Error('No tienes permiso para quitar parámetros');
+      }
+      throw new Error(res.error.message);
+    }
+    if (!res.data || !res.data.length) throw new Error('No tienes permiso para quitar parámetros');
+    reabParams = reabParams.filter(function(p) { return p.id !== id; });
+    reabCloseParamDelete();
+    reabCloseParam();
+    reabBuildSugerencias();
+    _reabFillProductList();
+    reabRender();
+    showToast('✅ Parámetro quitado');
+  } catch (err) {
+    showToast('❌ ' + err.message, '#e74c3c');
+  } finally {
+    btn.disabled = false; btn.textContent = '🗑️ Sí, quitar';
+  }
 }
 
 // ── Listeners de filtro ────────────────────────────────────────
@@ -568,6 +817,12 @@ function reabRenderTable() {
   on('f-emp', 'change', reabRenderTable);
   on('f-motivo', 'change', reabRenderTable);
   on('f-txt', 'input', deb);
+  on('pm-producto', 'input', function() { _reabParamHint(); });
+  on('pm-producto', 'change', function() { _reabParamCargarValores(); });
+  var pov = document.getElementById('param-overlay');
+  if (pov) pov.addEventListener('click', function(e) { if (typeof isBackdropClick === 'function' && isBackdropClick(e)) reabCloseParam(); });
+  var pdo = document.getElementById('param-del-overlay');
+  if (pdo) pdo.addEventListener('click', function(e) { if (typeof isBackdropClick === 'function' && isBackdropClick(e)) reabCloseParamDelete(); });
 })();
 
 // ── Init ───────────────────────────────────────────────────────
