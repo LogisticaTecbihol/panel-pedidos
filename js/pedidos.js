@@ -594,16 +594,34 @@ var existSnapshot = null;
 
 // Índice de solicitudes de compra abiertas (OCs Tipo='Traslado' con
 // Ref_Pedido apuntando a un pedido y Remisión Destino aún vacía).
-// Clave: normSC(Nombre_Empresa) + '||' + String(Consecutivo).trim()
-// Valor: array de OCs { id, Consecutivo, Producto, Presentacion,
-//                       Cantidad, Empresa_Origen, Fecha, Estado }.
+// Clave: _keySC(Nombre_Empresa, Consecutivo)  (SIN cliente — el consecutivo
+// se numera por comercial, así que un mismo N° se repite entre pedidos de
+// clientes distintos). Cada entrada lleva _pedKey = _keyPed(...) del pedido
+// exacto que originó la OC (resuelto por OrdenesCompra.pedido_id), o null si
+// es una OC histórica sin resolver. Los lookups (_solicitudesCompraDe /
+// _ocsLegalizadasDe) filtran por ese _pedKey para no cruzar pedidos #N°.
 // Se reconstruye en cada loadFromAPI().
 var solicitudesCompraPorPedido = {};
 var ocsLegalizadasPorPedido = {};
 
+// pedidoId (Pedidos.id / __row) → fila de pedido. Se reconstruye en loadFromAPI.
+var _pedidoPorId = {};
+
 function _normSC(s) { return String(s || '').toLowerCase().trim(); }
 function _keySC(empresa, consecutivo) {
   return _normSC(empresa) + '||' + String(consecutivo == null ? '' : consecutivo).trim();
+}
+// Clave de pedido que SÍ distingue pedidos que comparten (empresa, consecutivo)
+// pero son de clientes distintos.
+function _keyPed(empresa, consecutivo, cliente) {
+  return _keySC(empresa, consecutivo) + '||' + _normSC(cliente);
+}
+// OrdenesCompra.pedido_id → _keyPed del pedido que originó esa OC, o null si
+// no se resuelve (OC histórica sin backfill, o no ligada a un pedido).
+function _pedKeyPorId(pedidoId) {
+  if (pedidoId == null) return null;
+  var p = _pedidoPorId[pedidoId];
+  return p ? _keyPed(p.Nombre_Empresa, p.Consecutivo, p.Cliente) : null;
 }
 // "CARVAL #123" → { empresa: 'CARVAL', consecutivo: '123' }
 function _parseRefPedido(ref) {
@@ -616,6 +634,21 @@ function _parseRefPedido(ref) {
   if (!empresa || !consecutivo) return null;
   return { empresa: empresa, consecutivo: consecutivo };
 }
+
+// Solicitudes de compra / OCs legalizadas que pertenecen a ESTE pedido `c`
+// (y no a otro pedido que comparte empresa+consecutivo). Filtra por _pedKey;
+// las entradas sin resolver (_pedKey null: OC histórica) se muestran en todos
+// los #N° como antes del backfill.
+function _solicitudesCompraDe(c) {
+  var arr = solicitudesCompraPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+  var mk = _keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+  return arr.filter(function(s) { return !s._pedKey || s._pedKey === mk; });
+}
+function _ocsLegalizadasDe(c) {
+  var arr = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+  var mk = _keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+  return arr.filter(function(g) { return !g._pedKey || g._pedKey === mk; });
+}
 // Renderiza la sección de solicitudes de compra pendientes dentro
 // del modal detalle. Se oculta si no hay OCs abiertas para ese
 // pedido. Fuente de verdad: solicitudesCompraPorPedido (indexado
@@ -623,7 +656,7 @@ function _parseRefPedido(ref) {
 function renderSolicitudesCompraSection(c) {
   var host = document.getElementById('solicitudes-compra-section');
   if (!host) return;
-  var list = solicitudesCompraPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+  var list = _solicitudesCompraDe(c);
   if (!list.length) {
     host.style.display = 'none';
     host.innerHTML = '';
@@ -676,7 +709,8 @@ function _buildSolicitudesMap(ordenes) {
       Cantidad: Number(oc.Cantidad) || 0,
       Empresa_Origen: oc.Empresa_Origen || '',
       Fecha: oc.Fecha || '',
-      Estado: oc.Estado || 'Abierta'
+      Estado: oc.Estado || 'Abierta',
+      _pedKey: _pedKeyPorId(oc.pedido_id)
     });
   });
   return map;
@@ -699,7 +733,18 @@ function _buildOCsLegalizadasMap(ordenes) {
   });
   var result = {};
   Object.keys(map).forEach(function(k) {
-    result[k] = Object.keys(map[k]).map(function(c) { return map[k][c]; });
+    result[k] = Object.keys(map[k]).map(function(c) {
+      var grupo = map[k][c];
+      // Todas las líneas de una OC de traslado nacen del mismo pedido; toma la
+      // clave de la primera línea que la tenga resuelta (pedido_id → _keyPed).
+      var pk = null;
+      for (var i = 0; i < grupo.length; i++) {
+        var cand = _pedKeyPorId(grupo[i].pedido_id);
+        if (cand) { pk = cand; break; }
+      }
+      grupo._pedKey = pk;
+      return grupo;
+    });
   });
   return result;
 }
@@ -731,15 +776,16 @@ async function loadFromAPI() {
     // sin badges (los pedidos siguen cargando).
     var pedidosPromise = apiGet('getPedidos');
     var ordenesPromise = apiGet('getOrdenesCompra', {
-      columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido'
+      columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id'
     }).catch(function() { return { ok: true, ordenes: [] }; });
     var results = await Promise.all([pedidosPromise, ordenesPromise]);
     var data = results[0];
     var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
     var allOCs = (ocData && ocData.ok && ocData.ordenes) || [];
-    solicitudesCompraPorPedido = _buildSolicitudesMap(allOCs);
-    ocsLegalizadasPorPedido = _buildOCsLegalizadasMap(allOCs);
+    // solicitudesCompraPorPedido / ocsLegalizadasPorPedido se arman más abajo,
+    // DESPUÉS de poblar `pedidos` y `_pedidoPorId` (los necesitan para resolver
+    // OrdenesCompra.pedido_id → cliente y no cruzar pedidos #N° distintos).
 
     var EXPECTED = ['Fecha_Procesamiento','Nombre_Empresa','Consecutivo','Fecha_Pedido',
       'Cliente','NIT','Telefono','Direccion_Envio','Municipio','Departamento',
@@ -819,6 +865,15 @@ async function loadFromAPI() {
     });
 
     rebuildConsecs();
+
+    // Índice pedido_id → fila de pedido, y los mapas de OC de traslado por
+    // pedido que lo usan para amarrar cada OC a su pedido exacto (dos pedidos
+    // pueden compartir empresa+consecutivo: el N° se numera por comercial).
+    _pedidoPorId = {};
+    pedidos.forEach(function(p) { if (p.__row != null) _pedidoPorId[p.__row] = p; });
+    solicitudesCompraPorPedido = _buildSolicitudesMap(allOCs);
+    ocsLegalizadasPorPedido = _buildOCsLegalizadasMap(allOCs);
+
     populateFilters();
     renderTable();
     initDespachosTab();
@@ -1403,7 +1458,7 @@ function renderTable() {
       var tsAttr = escHtml(String(c._ModTs)).replace(/&#39;/g, "\\'");
       modBadge = '<span class="mod-badge" title="' + modTitle + '" onclick="dismissPedidoModificado(\'' + keyAttr + '\', \'' + tsAttr + '\', event)">✏️ ' + modLabel + '</span>';
     }
-    var solList = solicitudesCompraPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+    var solList = _solicitudesCompraDe(c);
     var solBadge = '';
     if (solList.length > 0) {
       var solTitle = solList.length === 1
@@ -2556,7 +2611,7 @@ async function guardarTodo() {
       var _pkgSigla = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || 'EMP';
       var _pedidoPkgData = _dataPedidoDesdeModal(c, detailWorkingLines);
       _pedidoPkgData.total = hdr.Total_Orden;
-      var _ocGroupsPkg = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+      var _ocGroupsPkg = _ocsLegalizadasDe(c);
 
       try {
         var _dlDoc = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, {});
@@ -2701,6 +2756,9 @@ async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, 
         Consecutivo: consecTras,
         Tipo: 'Traslado',
         Ref_Pedido: c.Nombre_Empresa + ' #' + c.Consecutivo,
+        // Línea de pedido exacta que originó esta OC: desambigua pedidos que
+        // comparten empresa+consecutivo (el N° se numera por comercial).
+        pedido_id: (sol.row != null ? sol.row : null),
         Producto: dls.Producto || '',
         Presentacion: dls.Presentacion || '',
         Cantidad: sol.cantidad,
@@ -5052,7 +5110,7 @@ function _exportarRemisionEspecifica(rem, opts) {
   };
   var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
   var dataPedidoPkg = _dataPedidoDesdeModal(c);
-  var ocGroupsPkg = ocsLegalizadasPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+  var ocGroupsPkg = _ocsLegalizadasDe(c);
 
   if (opts.share) {
     if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
@@ -5203,14 +5261,18 @@ function _construirPaquetePedidoPDF(pedidoData, remData, ocGroups, opts) {
     generarRemisionPDF(Object.assign({}, remData, remExtra));
   }
 
+  // Cada LÍNEA de OC se agrupa por su propio par (Remisión Destino, Remisión
+  // Origen): una misma OC de traslado puede haberse legalizado en varias
+  // remesas, cada una con su par de remisiones (ej. RE-0004/RS-0052 y
+  // RE-0005/RS-0053 de la misma OC no deben fundirse en un solo documento).
   var mergedByRem = {};
   (ocGroups || []).forEach(function(ocLines) {
-    if (!ocLines || !ocLines.length) return;
-    var h = ocLines[0];
-    var kRem = String(h.Remision || '').trim() + '||' + String(h.Remision_Origen || '').trim();
-    if (kRem === '||') return; // OC sin ninguna remisión de traslado → no legalizada
-    if (!mergedByRem[kRem]) mergedByRem[kRem] = [];
-    ocLines.forEach(function(l) { mergedByRem[kRem].push(l); });
+    (ocLines || []).forEach(function(l) {
+      var kRem = String(l.Remision || '').trim() + '||' + String(l.Remision_Origen || '').trim();
+      if (kRem === '||') return; // línea sin remisión de traslado → no legalizada
+      if (!mergedByRem[kRem]) mergedByRem[kRem] = [];
+      mergedByRem[kRem].push(l);
+    });
   });
   Object.keys(mergedByRem).forEach(function(k) {
     generarRemisionesTrasladoPDF(mergedByRem[k], { return_doc: true, _doc: doc, contabilidad: !!opts.contabilidad });
