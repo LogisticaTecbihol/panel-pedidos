@@ -130,6 +130,7 @@
     <button class="btn-export" id="tab-traslados"  onclick="switchTab('traslados')"  style="background:#718096">🚚 Traslados pendientes</button>
     <button class="btn-export" id="tab-remisiones" onclick="switchTab('remisiones')" style="background:#718096">📄 Remisiones por empresa</button>
     <button class="btn-export" id="tab-valorizacion" onclick="switchTab('valorizacion')" style="background:#718096">💰 Valorización ventas</button>
+    <button class="btn-export" id="tab-cumplimiento" onclick="switchTab('cumplimiento')" style="background:#718096">📅 Cumplimiento de entregas</button>
   </div>
 
   <div id="panel-pendientes">
@@ -272,6 +273,34 @@
     </div>
   </div>
 
+  <div id="panel-cumplimiento" style="display:none">
+    <div class="rpt-stats" id="cump-stats">
+      <div class="rpt-stat" style="border-left-color:#148f77"><div class="num" id="st-cump-otd">—</div><div class="lbl">OTD % (entregas a tiempo)</div></div>
+      <div class="rpt-stat" style="border-left-color:#27ae60"><div class="num" id="st-cump-atiempo">0</div><div class="lbl">Órdenes entregadas a tiempo</div></div>
+      <div class="rpt-stat" style="border-left-color:#e74c3c"><div class="num" id="st-cump-tarde">0</div><div class="lbl">Órdenes entregadas tarde</div></div>
+      <div class="rpt-stat" style="border-left-color:#e67e22"><div class="num" id="st-cump-atrasadas">0</div><div class="lbl">🔴 Órdenes abiertas atrasadas</div></div>
+    </div>
+    <div class="rpt-card">
+      <div class="rpt-card-head">
+        <h3>📅 Cumplimiento de entregas <span id="cump-count" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-export" onclick="exportCumplimiento()">📊 Exportar Excel</button>
+      </div>
+      <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
+        Una fila por orden. <strong>OTD</strong> = órdenes 100% despachadas en/antes de su <strong>fecha de compromiso</strong>
+        (referencia: última entrega registrada). Los pedidos sin fecha de compromiso quedan fuera del %.
+        El plazo por defecto al crear un pedido es <strong>Fecha del pedido + 3 días hábiles</strong>.
+      </div>
+      <div style="overflow-x:auto">
+        <table class="rpt-table">
+          <thead>
+            <tr id="cump-head"></tr>
+          </thead>
+          <tbody id="cump-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Modal: Agregar Remisión Anulada -->
@@ -321,6 +350,6 @@
 <script src="js/auth.js?v=20260829c"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260901c"></script>
-<script src="js/reportes.js?v=20260908a"></script>
+<script src="js/reportes.js?v=20260908b"></script>
 </body>
 </html>

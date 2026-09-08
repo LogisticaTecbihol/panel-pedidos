@@ -176,10 +176,12 @@ function _rebuildActiveTab() {
   var isTraslad  = document.getElementById('panel-traslados')&& document.getElementById('panel-traslados').style.display !== 'none';
   var isRem      = document.getElementById('panel-remisiones')&&document.getElementById('panel-remisiones').style.display!== 'none';
   var isVal      = document.getElementById('panel-valorizacion')&&document.getElementById('panel-valorizacion').style.display!== 'none';
+  var isCump = document.getElementById('panel-cumplimiento') && document.getElementById('panel-cumplimiento').style.display !== 'none';
   if (isPlanta) buildPlanta();
   if (isTraslad) buildTraslados();
   if (isRem) buildRemisiones();
   if (isVal) buildValorizacion();
+  if (isCump) buildCumplimiento();
 }
 
 function limpiarProducto(nombre) {
@@ -350,7 +352,7 @@ function exportExcel() {
 
 // ── Tabs ──
 function switchTab(tab) {
-  var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion'];
+  var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion', 'cumplimiento'];
   tabs.forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
@@ -361,6 +363,7 @@ function switchTab(tab) {
   if (tab === 'traslados') buildTraslados();
   if (tab === 'remisiones') buildRemisiones();
   if (tab === 'valorizacion') buildValorizacion();
+  if (tab === 'cumplimiento') buildCumplimiento();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1777,6 +1780,173 @@ function exportRemExcel() {
   XLSX.utils.book_append_sheet(wb, ws, 'Remisiones');
   XLSX.writeFile(wb, 'remisiones_' + today() + '.xlsx');
   showToast('Excel exportado: ' + rows.length + ' remisiones');
+}
+
+// ══════════════════════════════════════════════════════════════
+// CUMPLIMIENTO DE ENTREGAS / OTD
+// ══════════════════════════════════════════════════════════════
+// Una fila por orden (agrupada por empresa+consecutivo+cliente). Clasifica
+// con _otdClasificar (js/shared.js). OTD% = a tiempo / (a tiempo + tarde)
+// sobre órdenes 100% despachadas CON fecha de compromiso.
+
+var cumplData = [];
+var cumplSort = { col: 'atraso', dir: 'desc' };
+var _cumpEstadoLabels = {
+  a_tiempo: '🟢 A tiempo', tarde: '🔴 Tarde',
+  atrasado: '🔴 Atrasado', en_plazo: '🕓 En plazo', sin_compromiso: '— Sin compromiso'
+};
+
+function buildCumplimiento() {
+  var fEmp = document.getElementById('rf-emp').value;
+  var fCom = document.getElementById('rf-com').value;
+  var fCli = document.getElementById('rf-cli').value;
+  var fTxt = document.getElementById('rf-txt').value.toLowerCase();
+
+  var map = {};
+  pedidos.forEach(function(p) {
+    var k = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '') + '||' + (p.Cliente || '');
+    if (!map[k]) map[k] = {
+      empresa: p.Nombre_Empresa || '', consecutivo: p.Consecutivo || '', cliente: (p.Cliente || '').trim(),
+      comercial: (p.Comercial || '').trim(), fechaPedido: p.Fecha_Pedido || '',
+      fechaCompromiso: p.Fecha_Compromiso || '', fechaUlt: '', lines: []
+    };
+    var o = map[k];
+    o.lines.push(p);
+    var f = String(p.Fecha_Ult_Entrega || '').slice(0, 10);
+    if (f && f > o.fechaUlt) o.fechaUlt = f;
+    if (p.Comercial && !o.comercial) o.comercial = (p.Comercial || '').trim();
+    if (p.Fecha_Compromiso && !o.fechaCompromiso) o.fechaCompromiso = p.Fecha_Compromiso;
+  });
+
+  cumplData = Object.keys(map).map(function(k) {
+    var o = map[k];
+    var estado2 = 'Abierto';
+    if (o.lines.some(function(l) { return (l.Estado_2 || '').trim() === 'Anulado'; })) estado2 = 'Anulado';
+    var completa = o.lines.every(function(l) {
+      var e = norm(l.Estado_Entrega);
+      return e === 'entregado' || e === 'facturado';
+    });
+    var otd = _otdClasificar({ fechaCompromiso: o.fechaCompromiso, fechaUltEntrega: o.fechaUlt, completa: completa, estado2: estado2 });
+    return {
+      empresa: o.empresa, consecutivo: o.consecutivo, cliente: o.cliente, comercial: o.comercial,
+      fechaPedido: o.fechaPedido, fechaCompromiso: o.fechaCompromiso, fechaUlt: o.fechaUlt,
+      completa: completa, clase: otd.clase,
+      // atraso con signo: >0 tarde/atrasado, <=0 holgura
+      atraso: (otd.clase === 'tarde' || otd.clase === 'atrasado') ? (otd.dias || 0)
+            : (otd.clase === 'a_tiempo' || otd.clase === 'en_plazo') ? -(otd.dias || 0) : null
+    };
+  }).filter(function(r) {
+    if (fEmp && r.empresa !== fEmp) return false;
+    if (fCom && r.comercial !== fCom) return false;
+    if (fCli && r.cliente !== fCli) return false;
+    if (fTxt) {
+      var hay = (r.cliente + ' ' + r.consecutivo + ' ' + getSigla(r.empresa) + ' ' + r.comercial).toLowerCase();
+      if (hay.indexOf(fTxt) < 0) return false;
+    }
+    return true;
+  });
+
+  var aTiempo = 0, tarde = 0, atrasadas = 0;
+  cumplData.forEach(function(r) {
+    if (r.clase === 'a_tiempo') aTiempo++;
+    else if (r.clase === 'tarde') tarde++;
+    else if (r.clase === 'atrasado') atrasadas++;
+  });
+  var conComp = aTiempo + tarde;
+  document.getElementById('st-cump-otd').textContent = conComp ? Math.round(aTiempo / conComp * 100) + '%' : '—';
+  document.getElementById('st-cump-atiempo').textContent = aTiempo.toLocaleString('es-CO');
+  document.getElementById('st-cump-tarde').textContent = tarde.toLocaleString('es-CO');
+  document.getElementById('st-cump-atrasadas').textContent = atrasadas.toLocaleString('es-CO');
+
+  renderCumplTable();
+}
+
+function toggleCumplSort(col) {
+  if (cumplSort.col === col) cumplSort.dir = cumplSort.dir === 'asc' ? 'desc' : 'asc';
+  else { cumplSort.col = col; cumplSort.dir = (col === 'atraso' || col === 'fechaPedido' || col === 'fechaCompromiso' || col === 'fechaUlt') ? 'desc' : 'asc'; }
+  renderCumplTable();
+}
+
+function sortedCumpl() {
+  var col = cumplSort.col, dir = cumplSort.dir;
+  return [].concat(cumplData).sort(function(a, b) {
+    var va, vb;
+    if (col === 'empresa') { va = getSigla(a.empresa); vb = getSigla(b.empresa); }
+    else if (col === 'consecutivo') { va = Number(a.consecutivo) || 0; vb = Number(b.consecutivo) || 0; }
+    else if (col === 'cliente') { va = a.cliente.toLowerCase(); vb = b.cliente.toLowerCase(); }
+    else if (col === 'comercial') { va = a.comercial.toLowerCase(); vb = b.comercial.toLowerCase(); }
+    else if (col === 'fechaPedido') { va = +new Date(a.fechaPedido || 0); vb = +new Date(b.fechaPedido || 0); }
+    else if (col === 'fechaCompromiso') { va = a.fechaCompromiso ? +new Date(a.fechaCompromiso) : 0; vb = b.fechaCompromiso ? +new Date(b.fechaCompromiso) : 0; }
+    else if (col === 'fechaUlt') { va = a.fechaUlt ? +new Date(a.fechaUlt) : 0; vb = b.fechaUlt ? +new Date(b.fechaUlt) : 0; }
+    else if (col === 'estado') { va = a.clase; vb = b.clase; }
+    else { va = a.atraso == null ? -9e9 : a.atraso; vb = b.atraso == null ? -9e9 : b.atraso; }
+    var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function renderCumplTable() {
+  var cols = [
+    { id: 'empresa', label: 'Empresa' }, { id: 'consecutivo', label: 'Consecutivo' },
+    { id: 'cliente', label: 'Cliente' }, { id: 'comercial', label: 'Comercial' },
+    { id: 'fechaPedido', label: 'Fecha Pedido' }, { id: 'fechaCompromiso', label: 'Compromiso' },
+    { id: 'fechaUlt', label: 'Últ. Entrega' }, { id: 'estado', label: 'Estado' },
+    { id: 'atraso', label: 'Atraso / Holgura' }
+  ];
+  document.getElementById('cump-head').innerHTML = cols.map(function(c) {
+    var cls = cumplSort.col === c.id ? (cumplSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    return '<th class="' + cls + '" onclick="toggleCumplSort(\'' + c.id + '\')">' + c.label + '</th>';
+  }).join('');
+  document.getElementById('cump-count').textContent = '(' + cumplData.length + ' órdenes)';
+
+  var rows = sortedCumpl();
+  var tbody = document.getElementById('cump-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-msg">No hay órdenes con los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var atrasoTxt = r.atraso == null ? '—'
+      : r.atraso > 0 ? '<span style="color:#991b1b;font-weight:700">+' + r.atraso + ' d</span>'
+      : r.atraso < 0 ? '<span style="color:#166534">' + (-r.atraso) + ' d de holgura</span>'
+      : '<span style="color:#166534">justo a tiempo</span>';
+    return '<tr' + (r.clase === 'atrasado' ? ' style="background:#fff4ed"' : '') + '>' +
+      '<td><span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + escHtml(getSigla(r.empresa)) + '</span></td>' +
+      '<td style="text-align:center;font-weight:700">' + escHtml(r.consecutivo || '—') + '</td>' +
+      '<td style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.cliente) + '">' + escHtml(r.cliente || '—') + '</td>' +
+      '<td style="font-size:0.82rem">' + escHtml(r.comercial || '—') + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.8rem">' + fmtDate(r.fechaPedido) + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.8rem">' + (r.fechaCompromiso ? fmtDate(r.fechaCompromiso) : '<span style="color:#cbd5e0">—</span>') + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.8rem">' + (r.fechaUlt ? fmtDate(r.fechaUlt) : '<span style="color:#cbd5e0">—</span>') + '</td>' +
+      '<td style="font-size:0.8rem;white-space:nowrap">' + (_cumpEstadoLabels[r.clase] || r.clase) + '</td>' +
+      '<td class="money">' + atrasoTxt + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function exportCumplimiento() {
+  var rows = sortedCumpl();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(r) {
+    return {
+      'Empresa': getSigla(r.empresa),
+      'Consecutivo': r.consecutivo || '',
+      'Cliente': r.cliente || '',
+      'Comercial': r.comercial || '',
+      'Fecha Pedido': r.fechaPedido ? fmtDate(r.fechaPedido) : '',
+      'Fecha Compromiso': r.fechaCompromiso ? fmtDate(r.fechaCompromiso) : '',
+      'Última Entrega': r.fechaUlt ? fmtDate(r.fechaUlt) : '',
+      'Estado': (_cumpEstadoLabels[r.clase] || r.clase).replace(/^[^\w]+\s*/, ''),
+      'Días de atraso': r.atraso != null && r.atraso > 0 ? r.atraso : '',
+      'Días de holgura': r.atraso != null && r.atraso < 0 ? -r.atraso : ''
+    };
+  });
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 35 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cumplimiento');
+  XLSX.writeFile(wb, 'cumplimiento_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' órdenes');
 }
 
 // ── Remisiones Anuladas (manual) ──
