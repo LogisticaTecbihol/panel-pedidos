@@ -1965,37 +1965,41 @@ function exportCumplimiento() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// LITROS: BALANCE DE ENTRADAS Y SALIDAS POR EMPRESA
+// LITROS: BALANCE POR EMPRESA (cuadra exacto con el Kardex)
 // ══════════════════════════════════════════════════════════════
 // La presentación casi siempre viene embebida en el nombre del producto
 // (p.ej. "CALIMAN X GALON"), no en la columna Presentacion. Convertimos
-// cada presentación a litros por unidad de empaque y agregamos por
-// empresa → referencia → mes:
+// cada presentación a litros por unidad de empaque.
 //
-//   Ingresos       = módulo Ingresos, por Empresa_Destino (empresa que
-//                    recibe), EXCLUYENDO ingresos de retorno (Reenvase_Ref
-//                    con valor).
-//   Salida term.   = Reenvases (salidas a producción) con Bodega "Producto
-//                    Terminado"/"Productos Buenos", por Reenvases.Empresa.
-//   Salida NC      = Reenvases con Bodega "Producto No Conforme".
-//   Ventas         = Pedidos, lo ENTREGADO (Cant_Entregada, desglosado por
-//                    remisión/fecha del campo Remisiones), por Nombre_Empresa,
-//                    excluye pedidos Anulados. Mismo criterio que el Kardex.
-//   Muestras       = SolicitudMuestras entregadas (Cant_Entregada), por Empresa.
-//   Dev/Camb. neto = Devoluciones + Cambios de mercancía, ambos sentidos
-//                    (igual que el Kardex): el reingreso a bodega de producto
-//                    bueno suma como entrada, la salida (si hay remisión de
-//                    salida a bodega buena) resta. Estado Tramitada/Cerrado/
-//                    Parcial; se ignora la bodega No Conforme.
-//   Diferencia     = Ingresos + Dev/Camb.neto − Salida term. − Salida NC
-//                    − Ventas − Muestras   (flujo del período, no saldo).
-//   Exist. inicio  = existencias en litros (producto bueno) el día ANTES de
-//                    "Desde"; Exist. cierre = existencias el día "Hasta".
-//                    Se reusa existSnapshot.kxMovimientos (mismo cálculo que
-//                    "Existencias por Empresa" del Kardex) filtrando por fecha.
-//                    Si no hay snapshot se muestra "—". Aparecen también
-//                    referencias con existencia aunque no tuvieran movimiento.
+// TODO el flujo se deriva de UN solo stream: existSnapshot.kxMovimientos
+// (el mismo que usa "Existencias por Empresa" del Kardex, ya cargado en
+// reportes.js). Cada movimiento del período cae en exactamente una columna:
 //
+//   Ingresos     = kxMovimientos modulo 'Ingresos' tipo Entrada  (magnitud).
+//                  Incluye los ingresos de RETORNO (producto que vuelve de
+//                  reproceso): son entradas reales de stock y el Kardex los
+//                  cuenta, así que deben entrar para que el balance cuadre.
+//   Salida prod. = modulo 'Producción'  (magnitud; Reenvases Producto Terminado)
+//   Ventas       = modulo 'Pedidos'     (magnitud)
+//   Muestras     = modulo 'Muestras'    (magnitud)
+//   Dev/Camb.    = modulo 'Devoluciones' + 'Cambios'  (neto con signo)
+//   Traslados    = modulo 'Traslado' + Ingresos-tipo-Salida  (neto)
+//   Órd. compra  = modulo 'Órdenes de Compra'  (neto)
+//   Ajustes/NC   = modulo 'Ajuste' + 'Saldo Inicial' + 'Bodega NC'  (neto)
+//   Diferencia   = Ingresos − Salida prod. − Ventas − Muestras
+//                  + Dev/Camb. + Traslados + Órd. compra + Ajustes/NC
+//                = neto de TODOS los movimientos del período
+//
+//   Exist. inicio = saldo (con signo) el día ANTES de "Desde".
+//   Exist. cierre = saldo el día "Hasta".
+//   ⇒  Exist. inicio + Diferencia = Exist. cierre  (exacto, por construcción)
+//
+//   Sal. prod. NC = Reenvases con Bodega "Producto No Conforme". Es solo
+//                   informativo: sale de la bodega NC, NO del stock bueno,
+//                   así que NO entra en la Diferencia ni en el cuadre.
+//
+// Si el snapshot no cargó, el tab muestra un aviso y no calcula nada.
+// Aparecen también referencias con existencia aunque no se movieran.
 // Respeta los filtros de Empresa y "Buscar producto" del encabezado + el
 // rango Desde/Hasta propio del tab (por defecto, el mes en curso).
 //
@@ -2013,22 +2017,29 @@ function exportCumplimiento() {
 var LIT_GALON_L = 4;   // 1 galón = 4 L (redondeo comercial de la empresa)
 var LIT_BIDON_L = 20;  // bidón / caneca sin cifra = 20 L
 
-var litData = [];       // [{ empresa, refs:[{ref, ...metrics, meses}], tot }]
+var litData = [];       // [{ empresa, refs:[{ref, ...flow, existIni, existFin, salNC, dif, meses}], tot }]
 var litSinConv = [];    // [{ origen, empresa, producto, presentacion, registros, unidades }]
-var litSort = { col: 'ingresos', dir: 'desc' };
+var litSort = { col: 'existFin', dir: 'desc' };
 var litExpanded = {};   // 'empresa||ref' → true
+var litSnapshotMissing = false;
 
-// Campos crudos que acumulamos por bucket / mes.
-var LIT_FIELDS = ['ingresos', 'salTerm', 'salNC', 'ventas', 'muestras', 'devCamIn', 'devCamOut'];
-function _litZero() { var o = {}; LIT_FIELDS.forEach(function(f) { o[f] = 0; }); return o; }
-// Deriva métricas mostrables (neto dev/camb + diferencia) de un objeto crudo.
-function _litMetrics(x) {
-  var devCamNeto = (x.devCamIn || 0) - (x.devCamOut || 0);
-  return {
-    ingresos: x.ingresos || 0, salTerm: x.salTerm || 0, salNC: x.salNC || 0,
-    ventas: x.ventas || 0, muestras: x.muestras || 0, devCamNeto: devCamNeto,
-    dif: (x.ingresos || 0) + devCamNeto - (x.salTerm || 0) - (x.salNC || 0) - (x.ventas || 0) - (x.muestras || 0)
-  };
+// Columnas de flujo — todas alimentadas desde el MISMO stream de movimientos
+// del Kardex (existSnapshot.kxMovimientos) para que el balance cuadre exacto:
+//   Exist. inicio + (todas estas) = Exist. cierre
+// ingresos/salidaProd/ventas/muestras se guardan como magnitud (positiva);
+// devCam/traslados/ordenes/ajustes como neto con signo (entradas − salidas).
+var LIT_FLOW_FIELDS = ['ingresos', 'salidaProd', 'ventas', 'muestras', 'devCam', 'traslados', 'ordenes', 'ajustes'];
+function _litZeroFlow() { var o = {}; LIT_FLOW_FIELDS.forEach(function(f) { o[f] = 0; }); return o; }
+function _litDif(x) {
+  return (x.ingresos || 0) - (x.salidaProd || 0) - (x.ventas || 0) - (x.muestras || 0) +
+         (x.devCam || 0) + (x.traslados || 0) + (x.ordenes || 0) + (x.ajustes || 0);
+}
+// Copia de flujo con `dif` derivada (para filas de tabla / meses / export).
+function _litRow(b) {
+  var r = {};
+  LIT_FLOW_FIELDS.forEach(function(f) { r[f] = b[f] || 0; });
+  r.dif = _litDif(r);
+  return r;
 }
 
 function _litNum(s) {
@@ -2127,48 +2138,27 @@ function _litPasaTxt(fTxt, prodRaw, ref) {
   return String(prodRaw || '').toLowerCase().indexOf(fTxt) >= 0 || String(ref || '').toLowerCase().indexOf(fTxt) >= 0;
 }
 
-// Existencias (producto bueno/terminado, en litros) por empresa → referencia,
-// a una fecha de corte. Reusa el stream de movimientos del snapshot del Kardex
-// (existSnapshot.kxMovimientos): mismo cálculo que "Existencias por Empresa".
-//   limite  = 'YYYY-MM-DD' (o '' = sin tope)
-//   strict  = true  → cuenta movimientos con fecha  <  limite (saldo de apertura)
-//             false → cuenta movimientos con fecha <= limite (saldo de cierre)
-// Devuelve { empresa: { ref: litros } }, o null si no hay snapshot.
-function _litExistLiters(limite, strict, fEmp, fTxt) {
-  if (!existSnapshot || !existSnapshot.kxMovimientos) return null;
-  var movs = existSnapshot.kxMovimientos;
-  var fechaCorte = null;
-  movs.forEach(function(m) {
-    if (m.modulo === 'Saldo Inicial' && m.fecha) {
-      var f = String(m.fecha).slice(0, 10);
-      if (!fechaCorte || f < fechaCorte) fechaCorte = f;
-    }
-  });
-  var saldo = {};  // producto -> { empresa: cantidad }
-  movs.forEach(function(m) {
-    if (!m.producto || !m.empresa) return;
-    var f = String(m.fecha || '').slice(0, 10);
-    if (fechaCorte && f < fechaCorte) return;
-    if (limite) { if (strict ? !(f < limite) : !(f <= limite)) return; }
-    if (!saldo[m.producto]) saldo[m.producto] = {};
-    saldo[m.producto][m.empresa] = (saldo[m.producto][m.empresa] || 0) +
-      (m.tipo === 'Entrada' ? (Number(m.cantidad) || 0) : -(Number(m.cantidad) || 0));
-  });
-  var out = {};
-  Object.keys(saldo).forEach(function(prod) {
-    var p = _litParse(prod, '');
-    if (!p.convertible) return;
-    if (!_litPasaTxt(fTxt, prod, p.ref)) return;
-    Object.keys(saldo[prod]).forEach(function(emp) {
-      var qty = saldo[prod][emp];
-      if (!qty) return;
-      if (fEmp && emp !== fEmp) return;
-      if (!out[emp]) out[emp] = {};
-      out[emp][p.ref] = (out[emp][p.ref] || 0) + qty * p.litrosUnidad;
-    });
-  });
-  return out;
+// Módulo del stream unificado del Kardex → columna del reporte.
+// Todo movimiento cae en exactamente una columna; ingresos/salidaProd/ventas/
+// muestras reciben la MAGNITUD (siempre del mismo tipo), el resto el neto con
+// signo. Así la suma de las columnas = neto de movimientos del período.
+function _litColDeMov(modulo, tipo) {
+  switch (modulo) {
+    case 'Ingresos':          return tipo === 'Entrada' ? 'ingresos' : 'traslados';
+    case 'Traslado':          return 'traslados';
+    case 'Órdenes de Compra': return 'ordenes';
+    case 'Pedidos':           return 'ventas';
+    case 'Muestras':          return 'muestras';
+    case 'Devoluciones':
+    case 'Cambios':           return 'devCam';
+    case 'Producción':        return 'salidaProd';
+    case 'Bodega NC':         return 'ajustes';   // paso de bodega buena a No Conforme
+    case 'Ajuste':
+    case 'Saldo Inicial':     return 'ajustes';
+    default:                  return 'ajustes';
+  }
 }
+var LIT_FLOW_MAGNITUD = { ingresos: 1, salidaProd: 1, ventas: 1, muestras: 1 };
 
 function _litMesLabel(ym) {
   var p = String(ym).split('-');
@@ -2192,190 +2182,112 @@ function buildLitros() {
   var desde = (document.getElementById('lit-desde') || {}).value || '';
   var hasta = (document.getElementById('lit-hasta') || {}).value || '';
 
-  function enRango(f) {
-    var d = String(f || '').slice(0, 10);
-    if (!d) return false;
-    if (desde && d < desde) return false;
-    if (hasta && d > hasta) return false;
-    return true;
-  }
-  function pasaTxt(prodRaw, ref) { return _litPasaTxt(fTxt, prodRaw, ref); }
-
-  var acc = {};       // empresa → ref → { ...LIT_FIELDS, meses:{ ym: {...LIT_FIELDS} } }
-  var sinConv = {};   // 'origen||empresa||producto||pres' → {…}
-
-  function _bucket(emp, ref) {
-    if (!acc[emp]) acc[emp] = {};
-    if (!acc[emp][ref]) { acc[emp][ref] = _litZero(); acc[emp][ref].meses = {}; }
-    return acc[emp][ref];
-  }
-  function _mes(b, ym) {
-    if (!b.meses[ym]) b.meses[ym] = _litZero();
-    return b.meses[ym];
-  }
-  // Suma `litros` al campo `field` del bucket (empresa/ref) y del mes `ym`.
-  function _add(emp, ref, field, litros, ym) {
-    var b = _bucket(emp, ref);
-    b[field] += litros;
-    _mes(b, ym)[field] += litros;
-  }
+  var sinConv = {};   // 'origen||empresa||producto||pres' -> {...}
   function _addSinConv(origen, emp, producto, pres, unidades) {
     var k = origen + '||' + emp + '||' + producto + '||' + pres;
     if (!sinConv[k]) sinConv[k] = { origen: origen, empresa: emp, producto: producto, presentacion: pres, registros: 0, unidades: 0 };
     sinConv[k].registros++;
     sinConv[k].unidades += unidades;
   }
-  function _bodBuena(b) {
-    var v = (b || 'Productos Buenos').trim();
-    return v === 'Productos Buenos' || v === 'Producto Terminado';
+  function _enPeriodo(f) { return (!desde || f >= desde) && (!hasta || f <= hasta); }
+
+  var movs = (typeof existSnapshot !== 'undefined' && existSnapshot && existSnapshot.kxMovimientos) || null;
+  litSnapshotMissing = !movs;
+
+  if (!movs) {
+    litData = [];
+    litSinConv = [];
+    ['st-lit-ing', 'st-lit-prod', 'st-lit-ventas', 'st-lit-muestras', 'st-lit-devcam', 'st-lit-dif', 'st-lit-existfin'].forEach(function(id) { _litSetTxt(id, '—'); });
+    _litSetTxt('st-lit-sinconv', '0');
+    renderLitTable();
+    renderLitSinConv();
+    return;
   }
 
-  // ── Ingresos → "ingresos" (por Empresa_Destino, sin retornos) ──
-  (typeof ingresos !== 'undefined' ? ingresos : []).forEach(function(i) {
-    if (String(i.Reenvase_Ref || '').trim()) return;
-    if (!enRango(i.Fecha)) return;
-    var emp = (i.Empresa_Destino || '').trim();
-    if (!emp) return;
-    if (fEmp && emp !== fEmp) return;
-    var cant = Number(i.Cantidad) || 0;
-    if (!cant) return;
-    var p = _litParse(i.Producto, i.Presentacion);
-    if (!pasaTxt(i.Producto, p.ref)) return;
-    if (!p.convertible) { _addSinConv('Ingreso', emp, String(i.Producto || '').trim(), String(i.Presentacion || '').trim(), cant); return; }
-    _add(emp, p.ref, 'ingresos', cant * p.litrosUnidad, String(i.Fecha).slice(0, 7));
+  // Fecha del Saldo Inicial mas antiguo — los movimientos previos se ignoran
+  // (igual que "Existencias por Empresa" del Kardex).
+  var fechaCorte = null;
+  movs.forEach(function(m) {
+    if (m.modulo === 'Saldo Inicial' && m.fecha) {
+      var f = String(m.fecha).slice(0, 10);
+      if (!fechaCorte || f < fechaCorte) fechaCorte = f;
+    }
   });
 
-  // ── Reenvases → salida a producción (por Reenvases.Empresa) ──
+  var flow = {};   // empresa -> ref -> { ...LIT_FLOW_FIELDS, meses:{ ym:{...} } }
+  var eIni = {};   // empresa -> ref -> litros (saldo con signo el dia antes de "Desde")
+  var eFin = {};   // empresa -> ref -> litros (saldo con signo el dia "Hasta")
+  var salNCm = {}; // empresa -> ref -> litros salida de bodega No Conforme (informativo)
+
+  function _flowB(emp, ref) {
+    if (!flow[emp]) flow[emp] = {};
+    if (!flow[emp][ref]) { flow[emp][ref] = _litZeroFlow(); flow[emp][ref].meses = {}; }
+    return flow[emp][ref];
+  }
+  function _flowMes(b, ym) {
+    if (!b.meses[ym]) b.meses[ym] = _litZeroFlow();
+    return b.meses[ym];
+  }
+  function _snap(map, emp, ref, v) {
+    if (!map[emp]) map[emp] = {};
+    map[emp][ref] = (map[emp][ref] || 0) + v;
+  }
+
+  // ── Un solo recorrido del stream unificado del Kardex ──
+  movs.forEach(function(m) {
+    if (!m.empresa) return;
+    var emp = String(m.empresa).trim();
+    if (fEmp && emp !== fEmp) return;
+    var cant = Number(m.cantidad) || 0;
+    if (cant <= 0) return;
+    var f = String(m.fecha || '').slice(0, 10);
+    if (fechaCorte && f < fechaCorte) return;
+
+    var p = _litParse(m.producto, m.presentacion);
+    if (!_litPasaTxt(fTxt, m.producto, p.ref)) return;
+
+    if (!p.convertible) {
+      if (_enPeriodo(f)) _addSinConv(m.modulo || 'Movimiento', emp, String(m.producto || '').trim(), '', cant);
+      return;
+    }
+
+    var sl = (m.tipo === 'Entrada' ? 1 : -1) * cant * p.litrosUnidad;   // litros con signo
+    var absL = cant * p.litrosUnidad;                                   // litros magnitud
+
+    // Saldos de existencias (siempre con signo).
+    if (!hasta || f <= hasta) _snap(eFin, emp, p.ref, sl);
+    if (desde && f < desde) { _snap(eIni, emp, p.ref, sl); return; }
+    if (hasta && f > hasta) return;
+
+    // Movimiento dentro del período → alimenta las columnas de flujo.
+    var b = _flowB(emp, p.ref);
+    var mm = _flowMes(b, f.slice(0, 7));
+    var col = _litColDeMov(m.modulo, m.tipo);
+    var val = LIT_FLOW_MAGNITUD[col] ? absL : sl;
+    b[col] += val;
+    mm[col] += val;
+  });
+
+  // ── Salida de bodega No Conforme (Reenvases) — informativo, fuera del cuadre ──
   (typeof reenvases !== 'undefined' ? reenvases : []).forEach(function(r) {
-    if (!enRango(r.Fecha)) return;
+    if (_litEsBodegaBuenos(r.Bodega)) return;
+    var f = String(r.Fecha || '').slice(0, 10);
+    if (!_enPeriodo(f)) return;
     var emp = (r.Empresa || '').trim();
     if (!emp) return;
     if (fEmp && emp !== fEmp) return;
     var cant = Number(r.Cantidad) || 0;
-    if (!cant) return;
+    if (cant <= 0) return;
     var p = _litParse(r.Producto, r.Presentacion);
-    if (!pasaTxt(r.Producto, p.ref)) return;
-    var buenos = _litEsBodegaBuenos(r.Bodega);
-    if (!p.convertible) { _addSinConv(buenos ? 'Salida terminado' : 'Salida NC', emp, String(r.Producto || '').trim(), String(r.Presentacion || '').trim(), cant); return; }
-    _add(emp, p.ref, buenos ? 'salTerm' : 'salNC', cant * p.litrosUnidad, String(r.Fecha).slice(0, 7));
+    if (!_litPasaTxt(fTxt, r.Producto, p.ref)) return;
+    if (!p.convertible) { _addSinConv('Salida NC', emp, String(r.Producto || '').trim(), String(r.Presentacion || '').trim(), cant); return; }
+    _snap(salNCm, emp, p.ref, cant * p.litrosUnidad);
   });
 
-  // ── Pedidos → "ventas" (lo entregado, desglosado por remisión/fecha) ──
-  (typeof pedidos !== 'undefined' ? pedidos : []).forEach(function(pd) {
-    var cantE = Number(pd.Cant_Entregada) || 0;
-    if (cantE <= 0) return;
-    if ((pd.Estado_2 || '').trim() === 'Anulado') return;
-    var emp = (pd.Nombre_Empresa || '').trim();
-    if (!emp) return;
-    if (fEmp && emp !== fEmp) return;
-    var remStr = (pd.Remisiones || '').trim();
-    if (!remStr) return;
-    var p = _litParse(pd.Producto, pd.Presentacion);
-    if (!pasaTxt(pd.Producto, p.ref)) return;
-    var tramos = [];
-    if (remStr.indexOf('|') >= 0) {
-      remStr.split(',').forEach(function(seg) {
-        var parts = seg.trim().split('|');
-        var c = Number(parts[1]) || 0;
-        if (c <= 0) return;
-        tramos.push({ cant: c, fecha: parts[2] || pd.Fecha_Ult_Entrega || pd.Fecha_Pedido || '' });
-      });
-    } else {
-      tramos.push({ cant: cantE, fecha: pd.Fecha_Ult_Entrega || pd.Fecha_Pedido || '' });
-    }
-    tramos.forEach(function(t) {
-      if (!enRango(t.fecha)) return;
-      if (!p.convertible) { _addSinConv('Venta', emp, String(pd.Producto || '').trim(), String(pd.Presentacion || '').trim(), t.cant); return; }
-      _add(emp, p.ref, 'ventas', t.cant * p.litrosUnidad, String(t.fecha).slice(0, 7));
-    });
-  });
-
-  // ── Muestras → "muestras" (entregadas) ──
-  (typeof muestras !== 'undefined' ? muestras : []).forEach(function(m) {
-    var cant = Number(m.Cant_Entregada) || 0;
-    if (cant <= 0) return;
-    if (!String(m.Remision || '').trim()) return;
-    var emp = (m.Empresa || '').trim();
-    if (!emp) return;
-    if (fEmp && emp !== fEmp) return;
-    var fecha = m.Fecha_Despacho || m.Fecha_Entrega || m.Fecha_Solicitud || '';
-    if (!enRango(fecha)) return;
-    var p = _litParse(m.Producto, m.Presentacion);
-    if (!pasaTxt(m.Producto, p.ref)) return;
-    if (!p.convertible) { _addSinConv('Muestra', emp, String(m.Producto || '').trim(), String(m.Presentacion || '').trim(), cant); return; }
-    _add(emp, p.ref, 'muestras', cant * p.litrosUnidad, String(fecha).slice(0, 7));
-  });
-
-  // ── Devoluciones → dev/camb (reingreso suma, salida resta) ──
-  (typeof devoluciones !== 'undefined' ? devoluciones : []).forEach(function(d) {
-    var estado = (d.Estado || '').toLowerCase();
-    if (estado === 'anulado' || estado === 'pendiente') return;
-    var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
-    if (cant <= 0) return;
-    var emp = (d.Empresa || '').trim();
-    if (!emp) return;
-    if (fEmp && emp !== fEmp) return;
-    var p = _litParse(d.Producto, d.Presentacion);
-    if (!pasaTxt(d.Producto, p.ref)) return;
-    // Reingreso a bodega de producto bueno
-    if ((d.Bodega_Ingreso || '').trim() !== 'Producto No Conforme') {
-      var fIn = d.Fecha_Devolucion || d.Fecha || '';
-      if (enRango(fIn)) {
-        if (!p.convertible) _addSinConv('Devolución', emp, String(d.Producto || '').trim(), String(d.Presentacion || '').trim(), cant);
-        else _add(emp, p.ref, 'devCamIn', cant * p.litrosUnidad, String(fIn).slice(0, 7));
-      }
-    }
-    // Salida (si hay remisión de salida a bodega buena)
-    if (String(d.Remision_Salida || '').trim() && _bodBuena(d.Bodega_Salida)) {
-      var fOut = d.Fecha_Salida || d.Fecha_Devolucion || d.Fecha || '';
-      if (enRango(fOut) && p.convertible) _add(emp, p.ref, 'devCamOut', cant * p.litrosUnidad, String(fOut).slice(0, 7));
-    }
-  });
-
-  // ── Cambios de mercancía → dev/camb (mismo criterio del Kardex) ──
-  var _camEntregar = {};
-  (typeof cambiosMerc !== 'undefined' ? cambiosMerc : []).forEach(function(c) {
-    if (c.Tipo_Linea === 'ENTREGAR') _camEntregar[(c.Empresa || '').trim() + '||' + (c.Consecutivo || c.id)] = true;
-  });
-  (typeof cambiosMerc !== 'undefined' ? cambiosMerc : []).forEach(function(c) {
-    var cant = Number(c.Cantidad) || 0;
-    if (cant <= 0) return;
-    var estado = (c.Estado || '').toLowerCase();
-    if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
-    var emp = (c.Empresa || '').trim();
-    if (!emp) return;
-    if (fEmp && emp !== fEmp) return;
-    var p = _litParse(c.Producto, '');
-    if (!pasaTxt(c.Producto, p.ref)) return;
-    var tieneEntregar = _camEntregar[emp + '||' + (c.Consecutivo || c.id)];
-
-    if (c.Tipo_Linea === 'CAMBIAR') {
-      if (_bodBuena(c.Bodega_Ingreso) && String(c.Remision_Ingreso || '').trim()) {
-        var fIn = c.Fecha_Ingreso || c.Fecha_Solicitud || '';
-        if (enRango(fIn)) {
-          if (!p.convertible) _addSinConv('Cambio', emp, String(c.Producto || '').trim(), '', cant);
-          else _add(emp, p.ref, 'devCamIn', cant * p.litrosUnidad, String(fIn).slice(0, 7));
-        }
-      }
-      if (tieneEntregar) return;
-    }
-    if ((tieneEntregar && c.Tipo_Linea === 'ENTREGAR') || (!tieneEntregar && c.Tipo_Linea === 'CAMBIAR')) {
-      if (_bodBuena(c.Bodega_Salida) && String(c.Remision_Salida || '').trim()) {
-        var fOut = c.Fecha_Salida || c.Fecha_Solicitud || '';
-        if (enRango(fOut) && p.convertible) _add(emp, p.ref, 'devCamOut', cant * p.litrosUnidad, String(fOut).slice(0, 7));
-      }
-    }
-  });
-
-  // ── Existencias en litros: apertura (día antes de "Desde") y cierre ("Hasta") ──
-  var existIni = _litExistLiters(desde || '', true, fEmp, fTxt);   // fecha < desde
-  var existFin = _litExistLiters(hasta || '', false, fEmp, fTxt);  // fecha <= hasta
-
-  // ── Ordenar empresas (holding primero) y armar litData ──
+  // ── Ordenar empresas (holding primero) ──
   var ordenEmp = (typeof _empresasVisibles === 'function' ? _empresasVisibles() : EMPRESAS_HOLDING).map(function(e) { return e.value; });
   var empSet = {};
-  Object.keys(acc).forEach(function(e) { empSet[e] = true; });
-  [existIni, existFin].forEach(function(mp) { if (mp) Object.keys(mp).forEach(function(e) { empSet[e] = true; }); });
+  [flow, eIni, eFin, salNCm].forEach(function(o) { Object.keys(o).forEach(function(e) { empSet[e] = true; }); });
   var empNombres = Object.keys(empSet).sort(function(a, b) {
     var ia = ordenEmp.indexOf(a); if (ia < 0) ia = 99;
     var ib = ordenEmp.indexOf(b); if (ib < 0) ib = 99;
@@ -2385,43 +2297,44 @@ function buildLitros() {
 
   litData = empNombres.map(function(emp) {
     var refSet = {};
-    if (acc[emp]) Object.keys(acc[emp]).forEach(function(r) { refSet[r] = true; });
-    if (existIni && existIni[emp]) Object.keys(existIni[emp]).forEach(function(r) { refSet[r] = true; });
-    if (existFin && existFin[emp]) Object.keys(existFin[emp]).forEach(function(r) { refSet[r] = true; });
+    [flow[emp], eIni[emp], eFin[emp], salNCm[emp]].forEach(function(o) { if (o) Object.keys(o).forEach(function(r) { refSet[r] = true; }); });
 
     var refs = Object.keys(refSet).map(function(ref) {
-      var x = (acc[emp] && acc[emp][ref]) || _litZero();
-      var mx = _litMetrics(x);
-      mx.ref = ref;
-      mx.meses = x.meses || {};
-      mx._raw = x;
-      mx.existIni = existIni ? ((existIni[emp] && existIni[emp][ref]) || 0) : null;
-      mx.existFin = existFin ? ((existFin[emp] && existFin[emp][ref]) || 0) : null;
-      return mx;
+      var b = (flow[emp] && flow[emp][ref]) || (function() { var z = _litZeroFlow(); z.meses = {}; return z; })();
+      var row = _litRow(b);
+      row.ref = ref;
+      row.meses = b.meses || {};
+      row._raw = b;
+      row.existIni = (eIni[emp] && eIni[emp][ref]) || 0;
+      row.existFin = (eFin[emp] && eFin[emp][ref]) || 0;
+      row.salNC = (salNCm[emp] && salNCm[emp][ref]) || 0;
+      return row;
     });
-    var rawTot = _litZero();
-    refs.forEach(function(r) { LIT_FIELDS.forEach(function(f) { rawTot[f] += r._raw[f]; }); });
-    var tot = _litMetrics(rawTot);
-    tot.existIni = existIni ? refs.reduce(function(s, r) { return s + (r.existIni || 0); }, 0) : null;
-    tot.existFin = existFin ? refs.reduce(function(s, r) { return s + (r.existFin || 0); }, 0) : null;
+
+    var tot = _litZeroFlow();
+    refs.forEach(function(r) { LIT_FLOW_FIELDS.forEach(function(f) { tot[f] += r[f]; }); });
+    tot = _litRow(tot);
+    tot.existIni = refs.reduce(function(s, r) { return s + r.existIni; }, 0);
+    tot.existFin = refs.reduce(function(s, r) { return s + r.existFin; }, 0);
+    tot.salNC = refs.reduce(function(s, r) { return s + r.salNC; }, 0);
     return { empresa: emp, refs: refs, tot: tot };
   });
 
   litSinConv = Object.keys(sinConv).map(function(k) { return sinConv[k]; }).sort(function(a, b) { return b.unidades - a.unidades; });
 
   // ── Stats ──
-  var g = _litZero();
-  litData.forEach(function(e) { e.refs.forEach(function(r) { LIT_FIELDS.forEach(function(f) { g[f] += r._raw[f]; }); }); });
-  var gm = _litMetrics(g);
-  var gExistFin = existFin ? litData.reduce(function(s, e) { return s + (e.tot.existFin || 0); }, 0) : null;
+  var g = _litZeroFlow();
+  litData.forEach(function(e) { LIT_FLOW_FIELDS.forEach(function(f) { g[f] += e.tot[f]; }); });
+  var gDif = _litDif(g);
+  var gExistFin = litData.reduce(function(s, e) { return s + e.tot.existFin; }, 0);
   var nSinConv = litSinConv.reduce(function(s, r) { return s + r.registros; }, 0);
-  _litSetTxt('st-lit-ing', _litFmt(gm.ingresos));
-  _litSetTxt('st-lit-prod', _litFmt(gm.salTerm + gm.salNC));
-  _litSetTxt('st-lit-ventas', _litFmt(gm.ventas));
-  _litSetTxt('st-lit-muestras', _litFmt(gm.muestras));
-  _litSetTxt('st-lit-devcam', _litFmt(gm.devCamNeto));
-  _litSetTxt('st-lit-dif', _litFmt(gm.dif));
-  _litSetTxt('st-lit-existfin', gExistFin == null ? '—' : _litFmt(gExistFin));
+  _litSetTxt('st-lit-ing', _litFmt(g.ingresos));
+  _litSetTxt('st-lit-prod', _litFmt(g.salidaProd));
+  _litSetTxt('st-lit-ventas', _litFmt(g.ventas));
+  _litSetTxt('st-lit-muestras', _litFmt(g.muestras));
+  _litSetTxt('st-lit-devcam', _litFmt(g.devCam));
+  _litSetTxt('st-lit-dif', _litFmt(gDif));
+  _litSetTxt('st-lit-existfin', _litFmt(gExistFin));
   _litSetTxt('st-lit-sinconv', nSinConv.toLocaleString('es-CO'));
 
   renderLitTable();
@@ -2459,30 +2372,38 @@ function toggleLitDetail(key) {
   renderLitTable();
 }
 
-// Columnas de flujo (tienen valor mes a mes).
+// Columnas de flujo (tienen valor mes a mes). Diferencia cierra el bloque.
 var LIT_FLOW_COLS = [
-  { id: 'ingresos', label: 'Ingresos', color: '#1e8449' },
-  { id: 'salTerm', label: 'Salida prod. (term.)', color: '#d35400' },
-  { id: 'salNC', label: 'Salida prod. (NC)', color: '#c0392b' },
-  { id: 'ventas', label: 'Ventas (pedidos)', color: '#8e44ad' },
-  { id: 'muestras', label: 'Muestras', color: '#b7791f' },
-  { id: 'devCamNeto', label: 'Dev/Camb. neto', sign: true },
-  { id: 'dif', label: 'Diferencia', sign: true }
+  { id: 'ingresos',   label: 'Ingresos',     color: '#1e8449' },
+  { id: 'salidaProd', label: 'Salida prod.', color: '#d35400' },
+  { id: 'ventas',     label: 'Ventas',       color: '#8e44ad' },
+  { id: 'muestras',   label: 'Muestras',     color: '#b7791f' },
+  { id: 'devCam',     label: 'Dev/Camb.',    sign: true },
+  { id: 'traslados',  label: 'Traslados',    sign: true },
+  { id: 'ordenes',    label: 'Órd. compra',  sign: true },
+  { id: 'ajustes',    label: 'Ajustes/NC',   sign: true },
+  { id: 'dif',        label: 'Diferencia',   sign: true }
 ];
-// Columnas de existencias (saldo a una fecha; sin desglose mensual).
+// Saldos de existencias (a una fecha; sin desglose mensual).
 var LIT_SNAP_INI = { id: 'existIni', label: 'Exist. inicio', color: '#5b6b7c', snap: true };
 var LIT_SNAP_FIN = { id: 'existFin', label: 'Exist. cierre', color: '#1a5276', snap: true };
-// Orden de la tabla principal: apertura · flujo · cierre.
-var LIT_MAIN_COLS = [{ id: 'ref', label: 'Referencia' }, LIT_SNAP_INI].concat(LIT_FLOW_COLS).concat([LIT_SNAP_FIN]);
+// Informativa: salida de bodega No Conforme (no afecta el stock de producto bueno).
+var LIT_INFO_NC = { id: 'salNC', label: 'Sal. prod. NC', color: '#c0392b', info: true };
+// Orden de la tabla principal: apertura · flujo · cierre · (info NC).
+var LIT_MAIN_COLS = [{ id: 'ref', label: 'Referencia' }, LIT_SNAP_INI].concat(LIT_FLOW_COLS).concat([LIT_SNAP_FIN, LIT_INFO_NC]);
 var LIT_COLSPAN = LIT_MAIN_COLS.length + 1;
 
 function _litValCell(c, val, bold, pad) {
   var p = pad ? 'padding:3px 8px;font-size:0.76rem;text-align:right;border-bottom:1px solid #f0f4f8;' : '';
   var cls = pad ? '' : ' class="money"';
   if (c.snap && val == null) return '<td' + cls + ' style="' + p + 'color:#cbd5e0">—</td>';
-  var color = c.sign ? _litSignColor(val) : (val > 0.0001 ? (c.color || '#2c3e50') : '#a0aec0');
+  var color;
+  if (c.sign) color = _litSignColor(val);
+  else if (c.snap) color = (val < -0.0001 ? '#c0392b' : (val > 0.0001 ? c.color : '#a0aec0'));
+  else color = (Math.abs(val) > 0.0001 ? (c.color || '#2c3e50') : '#a0aec0');
   var w = bold ? '800' : ((c.sign || c.snap) ? '700' : '400');
-  return '<td' + cls + ' style="' + p + 'color:' + color + ';font-weight:' + w + '">' + _litFmt(val) + '</td>';
+  var op = c.info ? 'opacity:0.75;' : '';
+  return '<td' + cls + ' style="' + p + op + 'color:' + color + ';font-weight:' + w + '">' + _litFmt(val) + '</td>';
 }
 
 function renderLitTable() {
@@ -2495,6 +2416,10 @@ function renderLitTable() {
   document.getElementById('lit-count').textContent = '(' + litData.length + ' empresa' + (litData.length === 1 ? '' : 's') + ' · ' + totRefs + ' referencia' + (totRefs === 1 ? '' : 's') + ')';
 
   var tbody = document.getElementById('lit-body');
+  if (litSnapshotMissing) {
+    tbody.innerHTML = '<tr><td colspan="' + LIT_COLSPAN + '"><div class="empty-msg">El balance necesita el snapshot de existencias del Kardex, que no se pudo cargar. Recarga la página (botón Reintentar arriba) e inténtalo de nuevo.</div></td></tr>';
+    return;
+  }
   if (!litData.length) {
     tbody.innerHTML = '<tr><td colspan="' + LIT_COLSPAN + '"><div class="empty-msg">No hay movimientos ni existencias de litros en el período y los filtros seleccionados.</div></td></tr>';
     return;
@@ -2532,7 +2457,7 @@ function _litDetailRow(r) {
   var head = '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Mes</th>' +
     LIT_FLOW_COLS.map(function(c) { return '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">' + c.label + '</th>'; }).join('');
   var rows = Object.keys(r.meses).sort().map(function(ym) {
-    var mm = _litMetrics(r.meses[ym]);
+    var mm = _litRow(r.meses[ym]);
     return '<tr>' +
       '<td style="padding:3px 8px;font-size:0.76rem;border-bottom:1px solid #f0f4f8">' + escHtml(_litMesLabel(ym)) + '</td>' +
       LIT_FLOW_COLS.map(function(c) { return _litValCell(c, mm[c.id], false, true); }).join('') +
@@ -2564,31 +2489,33 @@ function renderLitSinConv() {
 }
 
 function _litXlsxRow(empSigla, ref, mesLabel, m, snap) {
-  var row = {
+  return {
     'Empresa': empSigla,
     'Referencia': ref,
     'Mes': mesLabel,
-    'Exist. inicio': snap && m.existIni != null ? _litRound(m.existIni) : '',
-    'Litros ingresos': _litRound(m.ingresos),
-    'Litros salida prod. terminado': _litRound(m.salTerm),
-    'Litros salida prod. NC': _litRound(m.salNC),
-    'Litros ventas (pedidos)': _litRound(m.ventas),
-    'Litros muestras': _litRound(m.muestras),
-    'Litros dev/cambios neto': _litRound(m.devCamNeto),
-    'Diferencia': _litRound(m.dif),
-    'Exist. cierre': snap && m.existFin != null ? _litRound(m.existFin) : ''
+    'Exist. inicio': snap ? _litRound(m.existIni || 0) : '',
+    'Ingresos': _litRound(m.ingresos),
+    'Salida producción': _litRound(m.salidaProd),
+    'Ventas': _litRound(m.ventas),
+    'Muestras': _litRound(m.muestras),
+    'Dev/Cambios (neto)': _litRound(m.devCam),
+    'Traslados (neto)': _litRound(m.traslados),
+    'Órdenes compra (neto)': _litRound(m.ordenes),
+    'Ajustes/NC (neto)': _litRound(m.ajustes),
+    'Diferencia': _litRound(m.dif != null ? m.dif : _litDif(m)),
+    'Exist. cierre': snap ? _litRound(m.existFin || 0) : '',
+    'Salida prod. NC (info)': snap ? _litRound(m.salNC || 0) : ''
   };
-  return row;
 }
 
 function exportLitros() {
-  if (!litData.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  if (litSnapshotMissing || !litData.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
   var rows = [];
   litData.forEach(function(e) {
     var sig = getSigla(e.empresa);
     _litSortedRefs(e.refs).forEach(function(r) {
       Object.keys(r.meses).sort().forEach(function(ym) {
-        rows.push(_litXlsxRow(sig, r.ref, _litMesLabel(ym), _litMetrics(r.meses[ym]), false));
+        rows.push(_litXlsxRow(sig, r.ref, _litMesLabel(ym), _litRow(r.meses[ym]), false));
       });
       rows.push(_litXlsxRow(sig, r.ref, '➤ TOTAL período', r, true));
     });
@@ -2596,7 +2523,7 @@ function exportLitros() {
   });
   var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 16 }, { wch: 13 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 13 }];
+  ws['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 11 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Litros');
   if (litSinConv.length) {
     var ws2 = XLSX.utils.json_to_sheet(litSinConv.map(function(r) {

@@ -330,16 +330,13 @@
         </div>
       </div>
       <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
-        Convierte cada presentación a <strong>litros</strong> y arma el flujo del período por empresa y referencia:
-        <strong>Ingresos</strong> (por empresa destino, sin ingresos de retorno) ·
-        <strong>Salida a producción</strong> (Reenvases, terminado y no conforme) ·
-        <strong>Ventas</strong> (lo entregado en Pedidos) ·
-        <strong>Muestras</strong> entregadas ·
-        <strong>Devol./Cambios neto</strong> (reingreso a bodega buena − salida, igual que el Kardex).
-        <strong>Diferencia = Ingresos + Devol./Cambios neto − Salida producción − Ventas − Muestras</strong> (es flujo, no saldo de inventario).
-        <strong>Exist. inicio / Exist. cierre</strong>: existencias en litros (producto bueno) el día anterior a «Desde» y el día «Hasta», con el mismo cálculo que «Existencias por Empresa» del Kardex; aparecen también referencias con stock aunque no se hayan movido en el período.
-        Conversión: <strong>LITRO</strong> = 1 L · <strong>N ML/CC</strong> = N ÷ 1000 · <strong>GALÓN</strong> = 4 L · <strong>BIDÓN/CANECA</strong> sin cifra = 20 L ·
-        si la presentación trae los litros explícitos (p. ej. «CANECA 10 LITROS») se usa esa cifra.
+        Balance de litros del período por empresa y referencia. Todo el flujo sale del <strong>mismo cálculo de movimientos del Kardex</strong>, así que <strong>Exist. inicio + Diferencia = Exist. cierre</strong>, exacto. (Por eso «Ingresos» ahora sí incluye los ingresos de retorno: son entradas reales de stock.)
+        Columnas: <strong>Ingresos</strong> · <strong>Salida prod.</strong> (a producción, producto bueno) · <strong>Ventas</strong> (entregado en Pedidos) · <strong>Muestras</strong> ·
+        <strong>Dev/Camb.</strong> · <strong>Traslados</strong> (entre empresas) · <strong>Órd. compra</strong> · <strong>Ajustes/NC</strong> (ajustes de inventario y paso a bodega No Conforme) — estas cuatro con su neto (entradas − salidas).
+        <strong>Diferencia</strong> = Ingresos − Salida prod. − Ventas − Muestras + Dev/Camb. + Traslados + Órd. compra + Ajustes/NC.
+        <strong>Exist. inicio / cierre</strong>: existencias en litros (producto bueno) el día anterior a «Desde» y el día «Hasta»; aparecen también referencias con stock aunque no se movieran.
+        <strong>Sal. prod. NC</strong> es informativa (sale de la bodega No Conforme, no del stock bueno) y no entra en la Diferencia.
+        Conversión: <strong>LITRO</strong> = 1 L · <strong>N ML/CC</strong> = N ÷ 1000 · <strong>GALÓN</strong> = 4 L · <strong>BIDÓN/CANECA</strong> sin cifra = 20 L · si la presentación trae los litros explícitos (p. ej. «CANECA 10 LITROS») se usa esa cifra.
         Kilos, unidades o texto sin volumen <strong>no suman</strong> y se listan abajo.
         Respeta los filtros de <strong>Empresa</strong> y <strong>Buscar producto</strong> del encabezado. Abre cada referencia (▸) para el detalle mes a mes.
       </div>
@@ -423,6 +420,6 @@
 <script src="js/auth.js?v=20260908z"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260908z"></script>
-<script src="js/reportes.js?v=20260909c"></script>
+<script src="js/reportes.js?v=20260909d"></script>
 </body>
 </html>
