@@ -43,6 +43,7 @@ function getSigla(n) { return SIGLAS[(n||'').trim()] || n || '—'; }
 // ── Load ──
 async function loadReportes() {
   await _authReady;
+  _rptAplicarPermisos();
   populateEmpresaSelect('ra-empresa', 'Seleccionar...');
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
@@ -220,6 +221,7 @@ function buildReport() {
     if (pend <= 0) return false;
     var est2 = (p.Estado_2 || 'Abierto').trim();
     if (est2 === 'Anulado' || est2 === 'Alistado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera' || est2 === 'Entregado por proveedor') return false;
+    if (!_rptEmpOK(p.Nombre_Empresa)) return false;
     if (fEmp && p.Nombre_Empresa !== fEmp) return false;
     if (fCom && p.Comercial !== fCom) return false;
     if (fCli && (p.Cliente || '').trim() !== fCli) return false;
@@ -366,6 +368,7 @@ function _logAccesoReporte(reporte) {
 
 // ── Tabs ──
 function switchTab(tab) {
+  if (tab === 'litros' && !_rptPuedeVerLitros()) { showToast('No tienes permiso para ver este reporte', '#e74c3c'); return; }
   var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion', 'cumplimiento', 'litros'];
   tabs.forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
@@ -407,6 +410,38 @@ function _empresasVisibles() {
   return lista;
 }
 
+// ══════════════════════════════════════════════════════════════
+// PERMISOS DE VISUALIZACIÓN DE REPORTES
+// ══════════════════════════════════════════════════════════════
+// Todas las pestañas se restringen a las empresas del usuario (admin y
+// cartera ven todas). La pestaña "Balance de litros" además solo la ven
+// admin, editor y gerente_iaso.
+
+// ¿el usuario puede ver datos de esta empresa?
+function _rptEmpOK(nombre) {
+  if (!nombre) return false;
+  if (typeof AUTH === 'undefined' || !AUTH.hasCompany) return true;
+  return AUTH.hasCompany(nombre);
+}
+// ¿el usuario ve menos empresas que el holding completo? (→ mostrar consolidado)
+function _rptEmpLimitado() {
+  var total = (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING.length : 5;
+  return _empresasVisibles().length < total;
+}
+// ¿puede abrir la pestaña "Balance de litros"?
+function _rptPuedeVerLitros() {
+  if (typeof AUTH === 'undefined') return true;
+  if (AUTH.isAdmin && AUTH.isAdmin()) return true;
+  var prof = AUTH.getProfile && AUTH.getProfile();
+  var rol = prof ? prof.rol : '';
+  return rol === 'editor' || rol === 'gerente_iaso';
+}
+// Aplica el gating de pestañas por rol. Llamar tras _authReady.
+function _rptAplicarPermisos() {
+  var btn = document.getElementById('tab-litros');
+  if (btn) btn.style.display = _rptPuedeVerLitros() ? '' : 'none';
+}
+
 function buildPlanta() {
   var fEmp = document.getElementById('rf-emp').value;
   var fCom = document.getElementById('rf-com').value;
@@ -424,6 +459,7 @@ function buildPlanta() {
     if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera' || est2L === 'entregado por proveedor') return;
     var rawEst = (p.Estado_Entrega || '').trim().toLowerCase() || 'recibido';
     if (rawEst === 'recibido' && est2L === 'cerrado') return;
+    if (!_rptEmpOK(p.Nombre_Empresa)) return;
     if (fEmp && p.Nombre_Empresa !== fEmp) return;
     if (fCom && p.Comercial !== fCom) return;
     if (fCli && (p.Cliente || '').trim() !== fCli) return;
@@ -468,6 +504,7 @@ function buildPlanta() {
     if ((oc.Tipo || 'Compra') !== 'Traslado') return;
     if (String(oc.Remision || '').trim()) return;
     if ((oc.Estado || '').toLowerCase() === 'anulada') return;
+    if (!_rptEmpOK(oc.Empresa_Origen) && !_rptEmpOK(oc.Empresa_Destino)) return;
     var cant = Number(oc.Cantidad) || 0;
     if (cant <= 0) return;
     var key = _normProdRep(oc.Producto);
@@ -486,7 +523,8 @@ function buildPlanta() {
   });
 
   // 3) Existencia por empresa desde el snapshot (misma lógica que Kardex)
-  var empresasList = _empresasVisibles();
+  var empresasList = _empresasVisibles();                       // columnas visibles al usuario
+  var empresasTodas = (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : empresasList;
   var saldos = (existSnapshot && existSnapshot.saldos) || {};
 
   // 4) Armar filas
@@ -494,12 +532,10 @@ function buildPlanta() {
     var a = acum[key];
     var perEmp = saldos[key] || {};
     var porEmp = {};
+    empresasList.forEach(function(e) { porEmp[e.value] = Math.max(0, perEmp[e.value] || 0); });
+    // "Exist. total" = holding completo (aunque el usuario solo vea sus columnas)
     var existHolding = 0;
-    empresasList.forEach(function(e) {
-      var v = Math.max(0, perEmp[e.value] || 0);
-      porEmp[e.value] = v;
-      existHolding += v;
-    });
+    empresasTodas.forEach(function(e) { existHolding += Math.max(0, perEmp[e.value] || 0); });
     var trasladosPend = trasladosByProd[key] || 0;
     var producir = Math.max(0, a.pendiente - existHolding - trasladosPend);
     var estado;
@@ -824,6 +860,7 @@ function buildValorizacion() {
     var est2 = (p.Estado_2 || 'Abierto').trim();
     var est2L = est2.toLowerCase();
     if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera' || est2L === 'entregado por proveedor') return;
+    if (!_rptEmpOK(p.Nombre_Empresa)) return;
     if (fEmp && p.Nombre_Empresa !== fEmp) return;
     if (fCom && p.Comercial !== fCom) return;
     if (fCli && (p.Cliente || '').trim() !== fCli) return;
@@ -862,6 +899,7 @@ function buildValorizacion() {
     if ((oc.Tipo || 'Compra') !== 'Traslado') return;
     if (String(oc.Remision || '').trim()) return;
     if ((oc.Estado || '').toLowerCase() === 'anulada') return;
+    if (!_rptEmpOK(oc.Empresa_Origen) && !_rptEmpOK(oc.Empresa_Destino)) return;
     var cant = Number(oc.Cantidad) || 0;
     if (cant <= 0) return;
     var key = _normProdRep(oc.Producto);
@@ -1233,6 +1271,7 @@ function buildTraslados() {
     if ((oc.Tipo || 'Compra') !== 'Traslado') return false;
     if (String(oc.Remision || '').trim()) return false;
     if ((oc.Estado || '').toLowerCase() === 'anulada') return false;
+    if (!_rptEmpOK(oc.Empresa_Origen) && !_rptEmpOK(oc.Empresa_Destino)) return false;
     if (fEmp && oc.Empresa_Destino !== fEmp && oc.Empresa_Origen !== fEmp) return false;
     if (fTxt) {
       var hay = ((oc.Producto || '') + ' ' + (oc.Consecutivo || '') + ' ' + (oc.Ref_Pedido || '')).toLowerCase();
@@ -1365,6 +1404,9 @@ var remData = [];
 var remSortLevels = [{ col: 'empresa', dir: 'asc' }];
 
 function _addRemision(map, key, empresa, numRem, modulo, referencia, detalle, cantidad, fecha, empresaOrigen, empresaDestino) {
+  // Filtro de permisos: si el usuario no ve esta empresa (ni el origen/destino
+  // del traslado), la remisión no entra al reporte.
+  if (!_rptEmpOK(empresa) && !_rptEmpOK(empresaOrigen) && !_rptEmpOK(empresaDestino)) return;
   if (!map[key]) {
     map[key] = {
       empresa: getSigla(empresa),
@@ -1629,12 +1671,16 @@ function _buildRemisionesInner() {
     return r;
   });
 
+  // Stats recalculados desde remData (ya filtrado por permisos en _addRemision),
+  // no desde los contadores de los bucles (que no conocen el filtro).
+  var empSetVis = {}, lineasVis = 0;
+  remData.forEach(function(r) { empSetVis[r.empresa] = true; lineasVis += r.numDetalles; });
   document.getElementById('st-rem-total').textContent = remData.length;
-  document.getElementById('st-rem-empresas').textContent = Object.keys(empresasSet).length;
+  document.getElementById('st-rem-empresas').textContent = Object.keys(empSetVis).length;
   var modulosSet = {};
   remData.forEach(function(r) { modulosSet[r.modulo] = true; });
   document.getElementById('st-rem-ordenes').textContent = Object.keys(modulosSet).length;
-  document.getElementById('st-rem-lineas').textContent = totalLineas;
+  document.getElementById('st-rem-lineas').textContent = lineasVis;
 
   renderRemTable();
 }
@@ -1851,6 +1897,7 @@ function buildCumplimiento() {
             : (otd.clase === 'a_tiempo' || otd.clase === 'en_plazo') ? -(otd.dias || 0) : null
     };
   }).filter(function(r) {
+    if (!_rptEmpOK(r.empresa)) return false;
     if (fEmp && r.empresa !== fEmp) return false;
     if (fCom && r.comercial !== fCom) return false;
     if (fCli && r.cliente !== fCli) return false;
@@ -2022,6 +2069,7 @@ var litSinConv = [];    // [{ origen, empresa, producto, presentacion, registros
 var litSort = { col: 'existFin', dir: 'desc' };
 var litExpanded = {};   // 'empresa||ref' → true
 var litSnapshotMissing = false;
+var litSinPermiso = false;
 
 // Columnas de flujo — todas alimentadas desde el MISMO stream de movimientos
 // del Kardex (existSnapshot.kxMovimientos) para que el balance cuadre exacto:
@@ -2177,10 +2225,23 @@ function _litDefaults() {
 
 function buildLitros() {
   _litDefaults();
+
+  // Gating por rol: solo admin / editor / gerente_iaso ven este reporte.
+  litSinPermiso = !_rptPuedeVerLitros();
+  if (litSinPermiso) {
+    litData = []; litSinConv = []; litSnapshotMissing = false;
+    ['st-lit-ing', 'st-lit-prod', 'st-lit-ventas', 'st-lit-muestras', 'st-lit-devcam', 'st-lit-dif', 'st-lit-existfin'].forEach(function(id) { _litSetTxt(id, '—'); });
+    _litSetTxt('st-lit-sinconv', '0');
+    renderLitTable();
+    renderLitSinConv();
+    return;
+  }
+
   var fEmp = document.getElementById('rf-emp').value;
   var fTxt = (document.getElementById('rf-txt').value || '').toLowerCase().trim();
   var desde = (document.getElementById('lit-desde') || {}).value || '';
   var hasta = (document.getElementById('lit-hasta') || {}).value || '';
+  var limitado = _rptEmpLimitado();
 
   var sinConv = {};   // 'origen||empresa||producto||pres' -> {...}
   function _addSinConv(origen, emp, producto, pres, unidades) {
@@ -2214,10 +2275,12 @@ function buildLitros() {
     }
   });
 
-  var flow = {};   // empresa -> ref -> { ...LIT_FLOW_FIELDS, meses:{ ym:{...} } }
+  var flow = {};   // empresa -> ref -> { ...LIT_FLOW_FIELDS, meses:{ ym:{...} } }  (solo empresas del usuario)
   var eIni = {};   // empresa -> ref -> litros (saldo con signo el dia antes de "Desde")
   var eFin = {};   // empresa -> ref -> litros (saldo con signo el dia "Hasta")
   var salNCm = {}; // empresa -> ref -> litros salida de bodega No Conforme (informativo)
+  var gAll = _litZeroFlow();   // consolidado del holding (todas las empresas)
+  var gExistIniAll = 0, gExistFinAll = 0;
 
   function _flowB(emp, ref) {
     if (!flow[emp]) flow[emp] = {};
@@ -2234,6 +2297,8 @@ function buildLitros() {
   }
 
   // ── Un solo recorrido del stream unificado del Kardex ──
+  // El consolidado del holding (gAll / gExist*All) suma TODAS las empresas;
+  // las columnas por empresa (flow/eIni/eFin) solo las que el usuario puede ver.
   movs.forEach(function(m) {
     if (!m.empresa) return;
     var emp = String(m.empresa).trim();
@@ -2246,26 +2311,30 @@ function buildLitros() {
     var p = _litParse(m.producto, m.presentacion);
     if (!_litPasaTxt(fTxt, m.producto, p.ref)) return;
 
+    var permitida = _rptEmpOK(emp);
+
     if (!p.convertible) {
-      if (_enPeriodo(f)) _addSinConv(m.modulo || 'Movimiento', emp, String(m.producto || '').trim(), '', cant);
+      if (permitida && _enPeriodo(f)) _addSinConv(m.modulo || 'Movimiento', emp, String(m.producto || '').trim(), '', cant);
       return;
     }
 
     var sl = (m.tipo === 'Entrada' ? 1 : -1) * cant * p.litrosUnidad;   // litros con signo
     var absL = cant * p.litrosUnidad;                                   // litros magnitud
-
-    // Saldos de existencias (siempre con signo).
-    if (!hasta || f <= hasta) _snap(eFin, emp, p.ref, sl);
-    if (desde && f < desde) { _snap(eIni, emp, p.ref, sl); return; }
-    if (hasta && f > hasta) return;
-
-    // Movimiento dentro del período → alimenta las columnas de flujo.
-    var b = _flowB(emp, p.ref);
-    var mm = _flowMes(b, f.slice(0, 7));
     var col = _litColDeMov(m.modulo, m.tipo);
     var val = LIT_FLOW_MAGNITUD[col] ? absL : sl;
-    b[col] += val;
-    mm[col] += val;
+
+    // Saldos de existencias (siempre con signo).
+    if (!hasta || f <= hasta) { gExistFinAll += sl; if (permitida) _snap(eFin, emp, p.ref, sl); }
+    if (desde && f < desde) { gExistIniAll += sl; if (permitida) _snap(eIni, emp, p.ref, sl); return; }
+    if (hasta && f > hasta) return;
+
+    // Movimiento dentro del período → columnas de flujo.
+    gAll[col] += val;
+    if (permitida) {
+      var b = _flowB(emp, p.ref);
+      b[col] += val;
+      _flowMes(b, f.slice(0, 7))[col] += val;
+    }
   });
 
   // ── Salida de bodega No Conforme (Reenvases) — informativo, fuera del cuadre ──
@@ -2276,6 +2345,7 @@ function buildLitros() {
     var emp = (r.Empresa || '').trim();
     if (!emp) return;
     if (fEmp && emp !== fEmp) return;
+    if (!_rptEmpOK(emp)) return;
     var cant = Number(r.Cantidad) || 0;
     if (cant <= 0) return;
     var p = _litParse(r.Producto, r.Presentacion);
@@ -2320,21 +2390,29 @@ function buildLitros() {
     return { empresa: emp, refs: refs, tot: tot };
   });
 
+  // Consolidado del holding: si el usuario ve menos empresas que el holding
+  // completo, se agrega una sección con los totales de TODO el holding
+  // (sin desglose por empresa) para dar contexto.
+  if (limitado) {
+    var totAll = _litRow(gAll);
+    totAll.existIni = gExistIniAll;
+    totAll.existFin = gExistFinAll;
+    totAll.salNC = null;
+    litData.push({ empresa: null, holding: true, refs: [], tot: totAll });
+  }
+
   litSinConv = Object.keys(sinConv).map(function(k) { return sinConv[k]; }).sort(function(a, b) { return b.unidades - a.unidades; });
 
-  // ── Stats ──
-  var g = _litZeroFlow();
-  litData.forEach(function(e) { LIT_FLOW_FIELDS.forEach(function(f) { g[f] += e.tot[f]; }); });
-  var gDif = _litDif(g);
-  var gExistFin = litData.reduce(function(s, e) { return s + e.tot.existFin; }, 0);
+  // ── Stats (totales del holding) ──
+  var gDif = _litDif(gAll);
   var nSinConv = litSinConv.reduce(function(s, r) { return s + r.registros; }, 0);
-  _litSetTxt('st-lit-ing', _litFmt(g.ingresos));
-  _litSetTxt('st-lit-prod', _litFmt(g.salidaProd));
-  _litSetTxt('st-lit-ventas', _litFmt(g.ventas));
-  _litSetTxt('st-lit-muestras', _litFmt(g.muestras));
-  _litSetTxt('st-lit-devcam', _litFmt(g.devCam));
+  _litSetTxt('st-lit-ing', _litFmt(gAll.ingresos));
+  _litSetTxt('st-lit-prod', _litFmt(gAll.salidaProd));
+  _litSetTxt('st-lit-ventas', _litFmt(gAll.ventas));
+  _litSetTxt('st-lit-muestras', _litFmt(gAll.muestras));
+  _litSetTxt('st-lit-devcam', _litFmt(gAll.devCam));
   _litSetTxt('st-lit-dif', _litFmt(gDif));
-  _litSetTxt('st-lit-existfin', _litFmt(gExistFin));
+  _litSetTxt('st-lit-existfin', _litFmt(gExistFinAll));
   _litSetTxt('st-lit-sinconv', nSinConv.toLocaleString('es-CO'));
 
   renderLitTable();
@@ -2396,7 +2474,7 @@ var LIT_COLSPAN = LIT_MAIN_COLS.length + 1;
 function _litValCell(c, val, bold, pad) {
   var p = pad ? 'padding:3px 8px;font-size:0.76rem;text-align:right;border-bottom:1px solid #f0f4f8;' : '';
   var cls = pad ? '' : ' class="money"';
-  if (c.snap && val == null) return '<td' + cls + ' style="' + p + 'color:#cbd5e0">—</td>';
+  if ((c.snap || c.info) && val == null) return '<td' + cls + ' style="' + p + 'color:#cbd5e0">—</td>';
   var color;
   if (c.sign) color = _litSignColor(val);
   else if (c.snap) color = (val < -0.0001 ? '#c0392b' : (val > 0.0001 ? c.color : '#a0aec0'));
@@ -2412,10 +2490,15 @@ function renderLitTable() {
     return '<th class="' + cls + '" onclick="toggleLitSort(\'' + c.id + '\')">' + c.label + '</th>';
   }).join('');
 
+  var nEmp = litData.filter(function(e) { return !e.holding; }).length;
   var totRefs = litData.reduce(function(s, e) { return s + e.refs.length; }, 0);
-  document.getElementById('lit-count').textContent = '(' + litData.length + ' empresa' + (litData.length === 1 ? '' : 's') + ' · ' + totRefs + ' referencia' + (totRefs === 1 ? '' : 's') + ')';
+  document.getElementById('lit-count').textContent = '(' + nEmp + ' empresa' + (nEmp === 1 ? '' : 's') + ' · ' + totRefs + ' referencia' + (totRefs === 1 ? '' : 's') + ')';
 
   var tbody = document.getElementById('lit-body');
+  if (litSinPermiso) {
+    tbody.innerHTML = '<tr><td colspan="' + LIT_COLSPAN + '"><div class="empty-msg">No tienes permiso para ver el Balance de litros. Solicítalo a un administrador si lo necesitas.</div></td></tr>';
+    return;
+  }
   if (litSnapshotMissing) {
     tbody.innerHTML = '<tr><td colspan="' + LIT_COLSPAN + '"><div class="empty-msg">El balance necesita el snapshot de existencias del Kardex, que no se pudo cargar. Recarga la página (botón Reintentar arriba) e inténtalo de nuevo.</div></td></tr>';
     return;
@@ -2428,6 +2511,17 @@ function renderLitTable() {
   var valCols = LIT_MAIN_COLS.slice(1);
   var html = '';
   litData.forEach(function(e) {
+    if (e.holding) {
+      // Sección consolidada del holding (sin desglose por empresa).
+      html += '<tr><td colspan="' + LIT_COLSPAN + '" style="background:#e8eef4;padding:9px 16px;font-weight:800;font-size:0.85rem;color:#2c3e50;border-top:3px solid #7f8c8d;border-bottom:2px solid #7f8c8d">🌐 Consolidado holding <span style="font-weight:400;color:#718096">(todas las empresas — solo totales)</span></td></tr>';
+      html += '<tr style="background:#f4f6f8">' +
+        '<td></td>' +
+        '<td style="font-weight:800;color:#2c3e50">TOTAL HOLDING</td>' +
+        valCols.map(function(c) { return _litValCell(c, e.tot[c.id], true); }).join('') +
+      '</tr>';
+      return;
+    }
+
     html += '<tr><td colspan="' + LIT_COLSPAN + '" style="background:#eaf2f8;padding:9px 16px;font-weight:800;font-size:0.85rem;color:#1a5276;border-bottom:2px solid #2980b9">' +
       '<span class="badge-emp" style="background:#d4e6f1;color:#1a5276">' + escHtml(getSigla(e.empresa)) + '</span> ' + escHtml(e.empresa) + '</td></tr>';
 
@@ -2509,9 +2603,13 @@ function _litXlsxRow(empSigla, ref, mesLabel, m, snap) {
 }
 
 function exportLitros() {
-  if (litSnapshotMissing || !litData.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  if (litSinPermiso || litSnapshotMissing || !litData.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
   var rows = [];
   litData.forEach(function(e) {
+    if (e.holding) {
+      rows.push(_litXlsxRow('HOLDING', 'CONSOLIDADO HOLDING', '➤ TOTAL período', e.tot, true));
+      return;
+    }
     var sig = getSigla(e.empresa);
     _litSortedRefs(e.refs).forEach(function(r) {
       Object.keys(r.meses).sort().forEach(function(ym) {
