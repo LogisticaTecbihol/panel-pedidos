@@ -2296,6 +2296,7 @@ document.getElementById('nc-motivo').addEventListener('change', _updateNCMotivoH
 
 function openNCModal(tipo) {
   editNCId = null;
+  editNCRemisionOrig = '';
   ncModalTipo = tipo;
   var isIngreso = tipo === 'Ingreso_NC';
   document.getElementById('nc-modal-title').textContent = isIngreso ? '📥 Ingreso a Bodega No Conforme' : '📤 Salida de Bodega No Conforme';
@@ -2307,6 +2308,7 @@ function openNCModal(tipo) {
   document.getElementById('nc-empresa').value = document.getElementById('nc-f-empresa').value || '';
   _populateNCMotivos(isIngreso, isIngreso ? 'Vencimiento' : 'Disposicion_final');
   document.getElementById('nc-remision').value = '';
+  _resetNCRemisionField(true);
   document.getElementById('nc-observaciones').value = '';
   document.getElementById('btn-save-nc').disabled = false;
   var _ncA = document.getElementById('nc-audit');
@@ -2366,12 +2368,66 @@ function readNCLines() {
   });
 }
 
+// Restablece el campo "N° Remisión" del modal NC al modo indicado.
+// auto=true  → solo lectura, "(Auto al guardar)": el consecutivo se genera al guardar.
+// auto=false → editable: el usuario teclea el número (rol admin/remisionador).
+function _resetNCRemisionField(auto) {
+  var el = document.getElementById('nc-remision');
+  var chk = document.getElementById('nc-remision-auto');
+  if (chk) chk.checked = !!auto;
+  if (!el) return;
+  if (auto) { el.readOnly = true; el.style.background = '#f0f4f8'; el.placeholder = '(Auto al guardar)'; }
+  else { el.readOnly = false; el.style.background = ''; el.placeholder = 'N° remisión'; }
+}
+
+// ¿La empresa maneja consecutivo automático de remisión? (las 5 del holding;
+// "CHIA ABAGO" y otros extras no están en generar_remision).
+function _ncEmpresaAutoRemision(empresa) {
+  return (typeof EMPRESAS_HOLDING !== 'undefined') &&
+    EMPRESAS_HOLDING.some(function(e) { return e.value === empresa; });
+}
+
+// Datos para el PDF de remisión de un movimiento de Bodega NC.
+function _buildNCRemisionPDFData(empresa, fecha, motivo, tipo, remision, lineas) {
+  var esIngreso = tipo === 'Ingreso_NC';
+  var motivoLabel = NC_MOTIVO_LABELS[motivo] || motivo || '';
+  var entregas = (lineas || []).map(function(l) {
+    return { producto: l.Producto || '', presentacion: l.Presentacion || '', cantidad: Number(l.Cantidad) || 0, observaciones: '' };
+  });
+  return {
+    empresa: empresa,
+    consecutivo: '',
+    remision: remision,
+    fecha_entrega: fmtDate(fecha),
+    doc_title: esIngreso ? 'REMISION DE ENTRADA' : 'REMISION DE SALIDA',
+    doc_number: remision,
+    date_label: 'Fecha',
+    ref_label: null,
+    file_prefix: esIngreso ? 'Remision_Ingreso_NC' : 'Remision_Salida_NC',
+    copies: ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD'],
+    last_col_header: 'Observaciones',
+    entregas: entregas,
+    left_fields: [
+      ['Tipo', esIngreso ? 'INGRESO A BODEGA NC' : 'SALIDA DE BODEGA NC'],
+      ['Motivo', motivoLabel],
+      ['Bodega', 'Producto No Conforme']
+    ],
+    right_fields: [
+      ['Fecha', fmtDate(fecha)],
+      ['N° Remision', remision],
+      ['Productos', entregas.length + ' linea(s)']
+    ]
+  };
+}
+
 async function saveNC() {
   if (editNCId) { await saveEditNC(); return; }
   var fecha = document.getElementById('nc-fecha').value;
   var empresa = document.getElementById('nc-empresa').value;
   var motivo = document.getElementById('nc-motivo').value;
-  var remision = document.getElementById('nc-remision').value.trim();
+  var autoChk = document.getElementById('nc-remision-auto');
+  var autoOn = !autoChk || autoChk.checked;
+  var remisionManual = document.getElementById('nc-remision').value.trim();
   var obs = document.getElementById('nc-observaciones').value.trim();
 
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
@@ -2381,40 +2437,67 @@ async function saveNC() {
   var validLines = ncLineas.filter(function(l) { return l.Producto && l.Cantidad > 0; });
   if (!validLines.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }
 
+  var esIngreso = ncModalTipo === 'Ingreso_NC';
+  var remTipo = esIngreso ? 'ENTRADA' : 'SALIDA';
+  var btnLabel = esIngreso ? '✓ Registrar ingreso' : '✓ Registrar salida';
+  var esHolding = _ncEmpresaAutoRemision(empresa);
+
+  if (autoOn && !remisionManual && !esHolding) {
+    showToast('Esta empresa no genera remisión automática. Desmarca "Auto" y escribe el número.', '#e74c3c');
+    return;
+  }
+
   var btn = document.getElementById('btn-save-nc');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
 
+  var remGenerada = '';
+  var remisionFinal = autoOn ? '' : remisionManual;
   try {
+    if (!remisionFinal && esHolding && (esIngreso || ncModalTipo === 'Salida_NC')) {
+      remisionFinal = await generarRemisionConsecutivo(empresa, remTipo);
+      remGenerada = remisionFinal;
+    }
+
     var result = await apiPost({
       action: 'agregarKardexNC',
       Fecha: fecha,
       Empresa: empresa,
       Tipo: ncModalTipo,
       Motivo: motivo,
-      Remision: remision,
+      Remision: remisionFinal,
       Observaciones: obs,
       lineas: validLines
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+
+    if (remisionFinal && typeof generarRemisionPDF === 'function') {
+      try {
+        generarRemisionPDF(_buildNCRemisionPDFData(empresa, fecha, motivo, ncModalTipo, remisionFinal, validLines));
+      } catch (ePdf) { console.error('PDF remisión NC:', ePdf); }
+    }
+
     closeNCModal();
-    showToast('✅ ' + result.added + ' registro(s) NC guardado(s)');
+    showToast('✅ ' + result.added + ' registro(s) NC' + (remisionFinal ? ' · Rem ' + remisionFinal : ''));
     await loadKardex();
   } catch (err) {
+    if (remGenerada) await liberarRemisionConsecutivo(empresa, remTipo, remGenerada);
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
-    btn.textContent = ncModalTipo === 'Ingreso_NC' ? '✓ Registrar ingreso' : '✓ Registrar salida';
+    btn.textContent = btnLabel;
   }
 }
 
 // ── NC Edit ──
 var editNCId = null;
+var editNCRemisionOrig = '';
 
 function openEditNC(id) {
   var reg = ncAjustes.find(function(a) { return (a.__row || a.id) === id; });
   if (!reg) { showToast('Registro no encontrado', '#e74c3c'); return; }
 
   editNCId = id;
+  editNCRemisionOrig = (reg.Remision || '').trim();
   var isIngreso = reg.Tipo === 'Ingreso_NC' || reg.Tipo === 'Saldo_Inicial_NC';
   ncModalTipo = reg.Tipo;
 
@@ -2429,6 +2512,7 @@ function openEditNC(id) {
   document.getElementById('nc-empresa').value = reg.Empresa || '';
   _populateNCMotivos(isIngreso, reg.Motivo || 'Otro');
   document.getElementById('nc-remision').value = reg.Remision || '';
+  _resetNCRemisionField(true);
   document.getElementById('nc-observaciones').value = reg.Observaciones || '';
 
   var _ncA = document.getElementById('nc-audit');
@@ -2443,7 +2527,9 @@ async function saveEditNC() {
   var fecha = document.getElementById('nc-fecha').value;
   var empresa = document.getElementById('nc-empresa').value;
   var motivo = document.getElementById('nc-motivo').value;
-  var remision = document.getElementById('nc-remision').value.trim();
+  var autoChk = document.getElementById('nc-remision-auto');
+  var autoOn = !autoChk || autoChk.checked;
+  var remisionManual = document.getElementById('nc-remision').value.trim();
   var obs = document.getElementById('nc-observaciones').value.trim();
 
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
@@ -2453,11 +2539,28 @@ async function saveEditNC() {
   var line = ncLineas[0];
   if (!line || !line.Producto || line.Cantidad <= 0) { showToast('Completa el producto y cantidad', '#e74c3c'); return; }
 
+  var esIngreso = ncModalTipo === 'Ingreso_NC';
+  var remTipo = esIngreso ? 'ENTRADA' : 'SALIDA';
+  var esHolding = _ncEmpresaAutoRemision(empresa);
+  var puedeAutogenerar = esHolding && (esIngreso || ncModalTipo === 'Salida_NC');
+
+  // Con "Auto" marcado se conserva el consecutivo que ya tenía (nunca se
+  // re-numera); si no tenía, se le asigna uno ahora. Sin "Auto" vale lo que
+  // se teclee (y si se deja en blanco, tampoco se pierde el que ya existía).
+  var remGenerada = '';
+  var remisionFinal = autoOn ? '' : remisionManual;
+  if (!remisionFinal && editNCRemisionOrig) remisionFinal = editNCRemisionOrig;
+
   var btn = document.getElementById('btn-save-nc');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
 
   try {
+    if (!remisionFinal && puedeAutogenerar) {
+      remisionFinal = await generarRemisionConsecutivo(empresa, remTipo);
+      remGenerada = remisionFinal;
+    }
+
     var result = await apiPost({
       action: 'editarKardexNC',
       row: editNCId,
@@ -2468,15 +2571,17 @@ async function saveEditNC() {
       Presentacion: line.Presentacion,
       Cantidad: line.Cantidad,
       Motivo: motivo,
-      Remision: remision,
+      Remision: remisionFinal,
       Observaciones: obs
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     editNCId = null;
+    editNCRemisionOrig = '';
     closeNCModal();
-    showToast('✅ Registro NC actualizado');
+    showToast('✅ Registro NC actualizado' + (remisionFinal ? ' · Rem ' + remisionFinal : ''));
     await loadKardex();
   } catch (err) {
+    if (remGenerada) await liberarRemisionConsecutivo(empresa, remTipo, remGenerada);
     showToast('❌ Error: ' + err.message, '#e74c3c');
     btn.disabled = false;
     btn.textContent = '✓ Guardar cambios';
