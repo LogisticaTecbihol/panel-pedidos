@@ -62,10 +62,10 @@ async function loadReportes() {
   try {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Consecutivo,Fecha_Pedido,Fecha_Compromiso,Cliente,Comercial,Producto,Presentacion,Cantidad,Cant_Entregada,Cant_Pendiente,Estado_Entrega,Estado_2,Remisiones,Fecha_Ult_Entrega,Valor_Unitario,Precio_Facturacion' }),
-      apiGet('getIngresos', { columns: 'id,Empresa_Origen,Empresa_Destino,Remision_Origen,Remision_Destino,Origen,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getIngresos', { columns: 'id,Empresa_Origen,Empresa_Destino,Remision_Origen,Remision_Destino,Origen,Producto,Presentacion,Cantidad,Fecha,Reenvase_Ref' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'id,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha,Tipo,Estado,Ref_Pedido,Observaciones' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'id,Remision,Empresa,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Entrega,Fecha_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases', { columns: 'id,Remision,Remision_Destino,Empresa,Empresa_Destino,Producto,Presentacion,Cantidad,Fecha' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getReenvases', { columns: 'id,Remision,Remision_Destino,Empresa,Empresa_Destino,Producto,Presentacion,Cantidad,Fecha,Bodega,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getDevoluciones', { columns: 'id,Empresa,Consecutivo,Remision_Ingreso,Remision,Remision_Salida,Producto,Presentacion,Cantidad,Fecha_Ingreso,Fecha_Devolucion,Fecha,Fecha_Salida' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha,Observaciones' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
       apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision_Salida,Observaciones,Producto,Tipo_Linea,Cantidad,Fecha_Ingreso,Fecha_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
@@ -177,11 +177,13 @@ function _rebuildActiveTab() {
   var isRem      = document.getElementById('panel-remisiones')&&document.getElementById('panel-remisiones').style.display!== 'none';
   var isVal      = document.getElementById('panel-valorizacion')&&document.getElementById('panel-valorizacion').style.display!== 'none';
   var isCump = document.getElementById('panel-cumplimiento') && document.getElementById('panel-cumplimiento').style.display !== 'none';
+  var isLitros = document.getElementById('panel-litros') && document.getElementById('panel-litros').style.display !== 'none';
   if (isPlanta) buildPlanta();
   if (isTraslad) buildTraslados();
   if (isRem) buildRemisiones();
   if (isVal) buildValorizacion();
   if (isCump) buildCumplimiento();
+  if (isLitros) buildLitros();
 }
 
 function limpiarProducto(nombre) {
@@ -364,7 +366,7 @@ function _logAccesoReporte(reporte) {
 
 // ── Tabs ──
 function switchTab(tab) {
-  var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion', 'cumplimiento'];
+  var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion', 'cumplimiento', 'litros'];
   tabs.forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
@@ -376,6 +378,7 @@ function switchTab(tab) {
   if (tab === 'remisiones') buildRemisiones();
   if (tab === 'valorizacion') buildValorizacion();
   if (tab === 'cumplimiento') buildCumplimiento();
+  if (tab === 'litros') buildLitros();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1959,6 +1962,429 @@ function exportCumplimiento() {
   XLSX.utils.book_append_sheet(wb, ws, 'Cumplimiento');
   XLSX.writeFile(wb, 'cumplimiento_' + today() + '.xlsx');
   showToast('Excel exportado: ' + rows.length + ' órdenes');
+}
+
+// ══════════════════════════════════════════════════════════════
+// LITROS: ENTRADAS (Ingresos) vs SALIDAS A PRODUCCIÓN (Reenvases)
+// ══════════════════════════════════════════════════════════════
+// La presentación casi siempre viene embebida en el nombre del producto
+// (p.ej. "CALIMAN X GALON"), no en la columna Presentacion. Convertimos
+// cada presentación a litros por unidad de empaque y agregamos:
+//
+//   Entrada     = Ingresos, atribuida a Empresa_Destino (empresa que
+//                 recibe), EXCLUYENDO ingresos de retorno (Reenvase_Ref
+//                 con valor).
+//   Salida term.= Reenvases con Bodega "Producto Terminado" / "Productos
+//                 Buenos", atribuida a Reenvases.Empresa (de la que sale).
+//   Salida NC   = Reenvases con cualquier otra Bodega (Producto No
+//                 Conforme), misma atribución.
+//   Diferencia  = Entrada − Salida term. − Salida NC.
+//
+// Se agrupa por empresa → referencia (nombre del producto sin la
+// presentación) → mes (de Fecha). Respeta los filtros de Empresa y
+// "Buscar producto" del encabezado + el rango Desde/Hasta propio del tab
+// (por defecto, el mes en curso).
+//
+// Conversión a litros por unidad de empaque:
+//   "… N LITRO(S)" / "N L" / "N LT"        → N   (la cifra explícita manda,
+//                                                 incl. "GALON 5 LITROS")
+//   "… N ML" / "N CC" / "N CM3"            → N / 1000
+//   "GALON" / "GALÓN" (sin cifra)          → LIT_GALON_L (4)
+//   "LITRO" (sin cifra)                    → 1
+//   "MEDIO/1÷2 LITRO" · "CUARTO/1÷4 LITRO" → 0.5 · 0.25
+//   "BIDON/CANECA/GARRAFA/TAMBOR" sin cifra→ LIT_BIDON_L (20)
+//   kilos / gramos / unidades / no legible → NO suma (se lista aparte)
+// ══════════════════════════════════════════════════════════════
+
+var LIT_GALON_L = 4;   // 1 galón = 4 L (redondeo comercial de la empresa)
+var LIT_BIDON_L = 20;  // bidón / caneca sin cifra = 20 L
+
+var litData = [];       // [{ empresa, refs:[{ref,entrada,salTerm,salNC,dif,meses}], tot }]
+var litSinConv = [];    // [{ origen, empresa, producto, presentacion, registros, unidades }]
+var litSort = { col: 'entrada', dir: 'desc' };
+var litExpanded = {};   // 'empresa||ref' → true
+
+function _litNum(s) {
+  var m = String(s).replace(',', '.').match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : 0;
+}
+function _litRound(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+function _litFmt(n) {
+  return _litRound(n).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' L';
+}
+
+// "Producto Terminado" / "Productos Buenos" (o vacío) = salida de producto
+// bueno; cualquier otra bodega = No Conforme. Espeja isBodegaBuenos de
+// js/reenvases.js (que no se carga en esta página).
+function _litEsBodegaBuenos(b) {
+  var v = (b == null || b === '') ? 'Producto Terminado' : b;
+  return v === 'Producto Terminado' || v === 'Productos Buenos';
+}
+
+// Interpreta un segmento de texto ("GALON", "250 ML", "BIDON 20 LITROS"…)
+// como litros por unidad de empaque. Devuelve Number, o null si no se
+// reconoce como volumen.
+function _litSegLitros(seg) {
+  if (!seg) return null;
+  var s = String(seg).toUpperCase().replace(/\s+/g, ' ').trim();
+
+  // Cifra explícita en litros: "20 LITROS", "3 LITROS", "5 L", "20L", "1 LITRO"
+  var mL = s.match(/(\d+(?:[.,]\d+)?)\s*(LITROS?|LTS?|L)\b/);
+  if (mL) return _litNum(mL[1]);
+
+  // Mililitros / centímetros cúbicos: "250 ML", "250ML", "200 CC"
+  var mMl = s.match(/(\d+(?:[.,]\d+)?)\s*(ML|MILILITROS?|CC|CM3|C\.C\.)\b/);
+  if (mMl) return _litNum(mMl[1]) / 1000;
+
+  // Sólidos / conteo → no es volumen
+  if (/\b(KILOS?|KILOGRAMOS?|KGS?|K|GRAMOS?|GR|UNIDAD(ES)?|UND|SOBRES?|BOLSAS?|PASTILLAS?|TARROS?)\b/.test(s)) return null;
+
+  // Galón sin cifra
+  if (/\bGAL[OÓ]N(ES)?\b/.test(s) || /\bGL\b/.test(s)) return LIT_GALON_L;
+
+  // Fracciones de litro
+  if (/\b(MEDIO|1\/2)\s*LITRO\b/.test(s)) return 0.5;
+  if (/\b(CUARTO|1\/4)\s*LITRO\b/.test(s)) return 0.25;
+
+  // Litro suelto
+  if (/\bLITRO\b/.test(s)) return 1;
+
+  // Envase sin cifra → 20 L
+  if (/\b(BIDON|BID[OÓ]N|CANECA|GARRAFA|TAMBOR|CU[ÑN]ETE|PIMPINA)\b/.test(s)) return LIT_BIDON_L;
+
+  return null;
+}
+
+// Devuelve { ref, litrosUnidad, convertible }.
+function _litParse(nombreRaw, presCol) {
+  var nombre = String(nombreRaw || '').replace(/\s+/g, ' ').trim();
+  var U = nombre.toUpperCase();
+
+  var seg = '', ref = nombre;
+  var xIdx = U.lastIndexOf(' X ');
+  if (xIdx >= 0) {
+    seg = nombre.slice(xIdx + 3).trim();
+    ref = nombre.slice(0, xIdx).trim();
+  } else {
+    // Sin " X ": ¿termina en una palabra de presentación conocida?
+    var mTail = U.match(/\s+(\d+(?:[.,]\d+)?\s*)?(LITROS?|ML|CC|GAL[OÓ]N|BID[OÓ]N|BIDON|CANECA|GARRAFA)\s*$/);
+    if (mTail) {
+      seg = nombre.slice(nombre.length - mTail[0].length).trim();
+      ref = nombre.slice(0, nombre.length - mTail[0].length).trim();
+    }
+  }
+
+  var litros = _litSegLitros(seg);
+  if (litros == null && presCol) litros = _litSegLitros(String(presCol).trim());
+
+  // Limpieza del ref: quitar envase suelto o " X" colgando al final.
+  ref = ref.replace(/\s+(BIDON|BID[OÓ]N|CANECA|GARRAFA|TAMBOR|FRASCO|BOTELLA|BOLSA)\s*$/i, '').trim();
+  ref = ref.replace(/\s+X\s*$/i, '').trim();
+  if (!ref) ref = nombre;
+
+  return {
+    ref: ref.toUpperCase(),
+    litrosUnidad: litros == null ? 0 : litros,
+    convertible: litros != null && litros > 0
+  };
+}
+
+function _litMesLabel(ym) {
+  var p = String(ym).split('-');
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, 1);
+  if (isNaN(d)) return ym;
+  var s = d.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function _litDefaults() {
+  var de = document.getElementById('lit-desde');
+  var ha = document.getElementById('lit-hasta');
+  if (de && !de.value) de.value = today().slice(0, 7) + '-01';
+  if (ha && !ha.value) ha.value = today();
+}
+
+function buildLitros() {
+  _litDefaults();
+  var fEmp = document.getElementById('rf-emp').value;
+  var fTxt = (document.getElementById('rf-txt').value || '').toLowerCase().trim();
+  var desde = (document.getElementById('lit-desde') || {}).value || '';
+  var hasta = (document.getElementById('lit-hasta') || {}).value || '';
+
+  function enRango(f) {
+    var d = String(f || '').slice(0, 10);
+    if (!d) return false;
+    if (desde && d < desde) return false;
+    if (hasta && d > hasta) return false;
+    return true;
+  }
+  function pasaTxt(prodRaw, ref) {
+    if (!fTxt) return true;
+    return String(prodRaw || '').toLowerCase().indexOf(fTxt) >= 0 || ref.toLowerCase().indexOf(fTxt) >= 0;
+  }
+
+  var acc = {};       // empresa → ref → { entrada, salTerm, salNC, meses }
+  var sinConv = {};   // 'origen||empresa||producto||pres' → {…}
+
+  function _bucket(emp, ref) {
+    if (!acc[emp]) acc[emp] = {};
+    if (!acc[emp][ref]) acc[emp][ref] = { entrada: 0, salTerm: 0, salNC: 0, meses: {} };
+    return acc[emp][ref];
+  }
+  function _mes(b, ym) {
+    if (!b.meses[ym]) b.meses[ym] = { entrada: 0, salTerm: 0, salNC: 0 };
+    return b.meses[ym];
+  }
+  function _addSinConv(origen, emp, producto, pres, unidades) {
+    var k = origen + '||' + emp + '||' + producto + '||' + pres;
+    if (!sinConv[k]) sinConv[k] = { origen: origen, empresa: emp, producto: producto, presentacion: pres, registros: 0, unidades: 0 };
+    sinConv[k].registros++;
+    sinConv[k].unidades += unidades;
+  }
+
+  // ── Ingresos → entrada (por Empresa_Destino, sin retornos) ──
+  (typeof ingresos !== 'undefined' ? ingresos : []).forEach(function(i) {
+    if (String(i.Reenvase_Ref || '').trim()) return;
+    if (!enRango(i.Fecha)) return;
+    var emp = (i.Empresa_Destino || '').trim();
+    if (!emp) return;
+    if (fEmp && emp !== fEmp) return;
+    var cant = Number(i.Cantidad) || 0;
+    if (!cant) return;
+    var p = _litParse(i.Producto, i.Presentacion);
+    if (!pasaTxt(i.Producto, p.ref)) return;
+    if (!p.convertible) { _addSinConv('Ingreso', emp, String(i.Producto || '').trim(), String(i.Presentacion || '').trim(), cant); return; }
+    var litros = cant * p.litrosUnidad;
+    var b = _bucket(emp, p.ref);
+    b.entrada += litros;
+    _mes(b, String(i.Fecha).slice(0, 7)).entrada += litros;
+  });
+
+  // ── Reenvases → salida a producción (por Reenvases.Empresa) ──
+  (typeof reenvases !== 'undefined' ? reenvases : []).forEach(function(r) {
+    if (!enRango(r.Fecha)) return;
+    var emp = (r.Empresa || '').trim();
+    if (!emp) return;
+    if (fEmp && emp !== fEmp) return;
+    var cant = Number(r.Cantidad) || 0;
+    if (!cant) return;
+    var p = _litParse(r.Producto, r.Presentacion);
+    if (!pasaTxt(r.Producto, p.ref)) return;
+    var buenos = _litEsBodegaBuenos(r.Bodega);
+    if (!p.convertible) { _addSinConv(buenos ? 'Salida terminado' : 'Salida NC', emp, String(r.Producto || '').trim(), String(r.Presentacion || '').trim(), cant); return; }
+    var litros = cant * p.litrosUnidad;
+    var b = _bucket(emp, p.ref);
+    var ym = String(r.Fecha).slice(0, 7);
+    if (buenos) { b.salTerm += litros; _mes(b, ym).salTerm += litros; }
+    else { b.salNC += litros; _mes(b, ym).salNC += litros; }
+  });
+
+  // ── Ordenar empresas (holding primero) y armar litData ──
+  var ordenEmp = (typeof _empresasVisibles === 'function' ? _empresasVisibles() : EMPRESAS_HOLDING).map(function(e) { return e.value; });
+  var empNombres = Object.keys(acc).sort(function(a, b) {
+    var ia = ordenEmp.indexOf(a); if (ia < 0) ia = 99;
+    var ib = ordenEmp.indexOf(b); if (ib < 0) ib = 99;
+    if (ia !== ib) return ia - ib;
+    return getSigla(a).localeCompare(getSigla(b), 'es');
+  });
+
+  litData = empNombres.map(function(emp) {
+    var refs = Object.keys(acc[emp]).map(function(ref) {
+      var x = acc[emp][ref];
+      return { ref: ref, entrada: x.entrada, salTerm: x.salTerm, salNC: x.salNC, dif: x.entrada - x.salTerm - x.salNC, meses: x.meses };
+    });
+    var tot = refs.reduce(function(s, r) { s.entrada += r.entrada; s.salTerm += r.salTerm; s.salNC += r.salNC; return s; }, { entrada: 0, salTerm: 0, salNC: 0 });
+    tot.dif = tot.entrada - tot.salTerm - tot.salNC;
+    return { empresa: emp, refs: refs, tot: tot };
+  });
+
+  litSinConv = Object.keys(sinConv).map(function(k) { return sinConv[k]; }).sort(function(a, b) { return b.unidades - a.unidades; });
+
+  // ── Stats ──
+  var g = litData.reduce(function(s, e) { s.entrada += e.tot.entrada; s.salTerm += e.tot.salTerm; s.salNC += e.tot.salNC; return s; }, { entrada: 0, salTerm: 0, salNC: 0 });
+  var nRefs = litData.reduce(function(s, e) { return s + e.refs.length; }, 0);
+  var nSinConv = litSinConv.reduce(function(s, r) { return s + r.registros; }, 0);
+  document.getElementById('st-lit-entrada').textContent = _litFmt(g.entrada);
+  document.getElementById('st-lit-salterm').textContent = _litFmt(g.salTerm);
+  document.getElementById('st-lit-salnc').textContent = _litFmt(g.salNC);
+  document.getElementById('st-lit-dif').textContent = _litFmt(g.entrada - g.salTerm - g.salNC);
+  document.getElementById('st-lit-refs').textContent = nRefs.toLocaleString('es-CO');
+  document.getElementById('st-lit-sinconv').textContent = nSinConv.toLocaleString('es-CO');
+
+  renderLitTable();
+  renderLitSinConv();
+}
+
+function toggleLitSort(col) {
+  if (litSort.col === col) litSort.dir = litSort.dir === 'asc' ? 'desc' : 'asc';
+  else { litSort.col = col; litSort.dir = col === 'ref' ? 'asc' : 'desc'; }
+  renderLitTable();
+}
+
+function _litSortedRefs(refs) {
+  var col = litSort.col, dir = litSort.dir;
+  return [].concat(refs).sort(function(a, b) {
+    var va, vb;
+    if (col === 'ref') { va = a.ref; vb = b.ref; }
+    else if (col === 'salTerm') { va = a.salTerm; vb = b.salTerm; }
+    else if (col === 'salNC') { va = a.salNC; vb = b.salNC; }
+    else if (col === 'dif') { va = a.dif; vb = b.dif; }
+    else { va = a.entrada; vb = b.entrada; }
+    var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function toggleLitDetail(key) {
+  if (litExpanded[key]) delete litExpanded[key];
+  else litExpanded[key] = true;
+  renderLitTable();
+}
+
+function renderLitTable() {
+  var cols = [
+    { id: 'ref', label: 'Referencia' },
+    { id: 'entrada', label: 'Litros entrada' },
+    { id: 'salTerm', label: 'Salida producción (term.)' },
+    { id: 'salNC', label: 'Salida producción (NC)' },
+    { id: 'dif', label: 'Diferencia' }
+  ];
+  document.getElementById('lit-head').innerHTML = '<th style="width:26px"></th>' + cols.map(function(c) {
+    var cls = litSort.col === c.id ? (litSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    return '<th class="' + cls + '" onclick="toggleLitSort(\'' + c.id + '\')">' + c.label + '</th>';
+  }).join('');
+
+  var totRefs = litData.reduce(function(s, e) { return s + e.refs.length; }, 0);
+  document.getElementById('lit-count').textContent = '(' + litData.length + ' empresa' + (litData.length === 1 ? '' : 's') + ' · ' + totRefs + ' referencia' + (totRefs === 1 ? '' : 's') + ')';
+
+  var tbody = document.getElementById('lit-body');
+  if (!litData.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-msg">No hay movimientos de litros en el período y los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+
+  var html = '';
+  litData.forEach(function(e) {
+    html += '<tr><td colspan="6" style="background:#eaf2f8;padding:9px 16px;font-weight:800;font-size:0.85rem;color:#1a5276;border-bottom:2px solid #2980b9">' +
+      '<span class="badge-emp" style="background:#d4e6f1;color:#1a5276">' + escHtml(getSigla(e.empresa)) + '</span> ' + escHtml(e.empresa) + '</td></tr>';
+
+    _litSortedRefs(e.refs).forEach(function(r) {
+      var key = e.empresa + '||' + r.ref;
+      var abierto = !!litExpanded[key];
+      var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      var difColor = r.dif > 0.0001 ? '#1e8449' : (r.dif < -0.0001 ? '#c0392b' : '#718096');
+      html += '<tr>' +
+        '<td style="text-align:center"><button onclick="toggleLitDetail(\'' + keyEsc + '\')" title="Ver detalle mes a mes" style="background:none;border:none;color:#1a5276;cursor:pointer;font-size:0.85rem;font-weight:700;padding:0 4px">' + (abierto ? '▾' : '▸') + '</button></td>' +
+        '<td style="font-weight:700">' + escHtml(r.ref) + '</td>' +
+        '<td class="money" style="color:#1e8449;font-weight:700">' + _litFmt(r.entrada) + '</td>' +
+        '<td class="money" style="color:#d35400">' + _litFmt(r.salTerm) + '</td>' +
+        '<td class="money" style="color:#c0392b">' + _litFmt(r.salNC) + '</td>' +
+        '<td class="money" style="font-weight:800;color:' + difColor + '">' + _litFmt(r.dif) + '</td>' +
+      '</tr>';
+      if (abierto) html += _litDetailRow(r);
+    });
+
+    var t = e.tot;
+    var tDif = t.dif > 0.0001 ? '#1e8449' : (t.dif < -0.0001 ? '#c0392b' : '#718096');
+    html += '<tr style="background:#f7fafc;border-top:2px solid #cbd5e0">' +
+      '<td></td>' +
+      '<td style="font-weight:800;color:#1a5276">Subtotal ' + escHtml(getSigla(e.empresa)) + '</td>' +
+      '<td class="money" style="font-weight:800;color:#1e8449">' + _litFmt(t.entrada) + '</td>' +
+      '<td class="money" style="font-weight:800;color:#d35400">' + _litFmt(t.salTerm) + '</td>' +
+      '<td class="money" style="font-weight:800;color:#c0392b">' + _litFmt(t.salNC) + '</td>' +
+      '<td class="money" style="font-weight:800;color:' + tDif + '">' + _litFmt(t.dif) + '</td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function _litDetailRow(r) {
+  var yms = Object.keys(r.meses).sort();
+  var rows = yms.map(function(ym) {
+    var m = r.meses[ym];
+    var dif = m.entrada - m.salTerm - m.salNC;
+    var dc = dif > 0.0001 ? '#1e8449' : (dif < -0.0001 ? '#c0392b' : '#718096');
+    return '<tr>' +
+      '<td style="padding:3px 8px;font-size:0.76rem;border-bottom:1px solid #f0f4f8">' + escHtml(_litMesLabel(ym)) + '</td>' +
+      '<td style="padding:3px 8px;font-size:0.76rem;text-align:right;color:#1e8449;border-bottom:1px solid #f0f4f8">' + _litFmt(m.entrada) + '</td>' +
+      '<td style="padding:3px 8px;font-size:0.76rem;text-align:right;color:#d35400;border-bottom:1px solid #f0f4f8">' + _litFmt(m.salTerm) + '</td>' +
+      '<td style="padding:3px 8px;font-size:0.76rem;text-align:right;color:#c0392b;border-bottom:1px solid #f0f4f8">' + _litFmt(m.salNC) + '</td>' +
+      '<td style="padding:3px 8px;font-size:0.76rem;text-align:right;font-weight:700;color:' + dc + ';border-bottom:1px solid #f0f4f8">' + _litFmt(dif) + '</td>' +
+    '</tr>';
+  }).join('');
+  return '<tr><td></td><td colspan="5" style="background:#f7fafc;padding:8px 16px 12px 16px">' +
+    '<div style="font-weight:700;font-size:0.76rem;color:#1a5276;margin-bottom:4px">📅 Detalle mes a mes — ' + escHtml(r.ref) + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;background:white;border:1px solid #e2e8f0;border-radius:4px">' +
+    '<thead><tr style="background:#f7fafc">' +
+      '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Mes</th>' +
+      '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Entrada</th>' +
+      '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Salida term.</th>' +
+      '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Salida NC</th>' +
+      '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Diferencia</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></td></tr>';
+}
+
+function renderLitSinConv() {
+  var card = document.getElementById('lit-sinconv-card');
+  var body = document.getElementById('lit-sinconv-body');
+  if (!card || !body) return;
+  if (!litSinConv.length) { card.style.display = 'none'; body.innerHTML = ''; return; }
+  card.style.display = '';
+  document.getElementById('lit-sinconv-count').textContent = '(' + litSinConv.length + ')';
+  body.innerHTML = litSinConv.map(function(r) {
+    return '<tr>' +
+      '<td>' + escHtml(r.origen) + '</td>' +
+      '<td><span class="badge-emp" style="background:#ebf5fb;color:#1a5276">' + escHtml(getSigla(r.empresa)) + '</span></td>' +
+      '<td style="font-weight:600">' + escHtml(r.producto || '—') + '</td>' +
+      '<td>' + escHtml(r.presentacion || '—') + '</td>' +
+      '<td class="money">' + r.registros.toLocaleString('es-CO') + '</td>' +
+      '<td class="money">' + r.unidades.toLocaleString('es-CO') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function exportLitros() {
+  if (!litData.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var rows = [];
+  litData.forEach(function(e) {
+    _litSortedRefs(e.refs).forEach(function(r) {
+      Object.keys(r.meses).sort().forEach(function(ym) {
+        var m = r.meses[ym];
+        rows.push({
+          'Empresa': getSigla(e.empresa),
+          'Referencia': r.ref,
+          'Mes': _litMesLabel(ym),
+          'Litros entrada': _litRound(m.entrada),
+          'Litros salida terminado': _litRound(m.salTerm),
+          'Litros salida NC': _litRound(m.salNC),
+          'Diferencia': _litRound(m.entrada - m.salTerm - m.salNC)
+        });
+      });
+      rows.push({
+        'Empresa': getSigla(e.empresa), 'Referencia': r.ref, 'Mes': '➤ TOTAL período',
+        'Litros entrada': _litRound(r.entrada), 'Litros salida terminado': _litRound(r.salTerm),
+        'Litros salida NC': _litRound(r.salNC), 'Diferencia': _litRound(r.dif)
+      });
+    });
+    rows.push({
+      'Empresa': getSigla(e.empresa), 'Referencia': 'SUBTOTAL ' + getSigla(e.empresa), 'Mes': '➤ TOTAL período',
+      'Litros entrada': _litRound(e.tot.entrada), 'Litros salida terminado': _litRound(e.tot.salTerm),
+      'Litros salida NC': _litRound(e.tot.salNC), 'Diferencia': _litRound(e.tot.dif)
+    });
+  });
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 16 }, { wch: 15 }, { wch: 22 }, { wch: 16 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Litros');
+  if (litSinConv.length) {
+    var ws2 = XLSX.utils.json_to_sheet(litSinConv.map(function(r) {
+      return { 'Origen': r.origen, 'Empresa': getSigla(r.empresa), 'Producto': r.producto, 'Presentación': r.presentacion, 'Registros': r.registros, 'Unidades': r.unidades };
+    }));
+    ws2['!cols'] = [{ wch: 16 }, { wch: 12 }, { wch: 42 }, { wch: 18 }, { wch: 10 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Sin convertir');
+  }
+  XLSX.writeFile(wb, 'litros_entradas_vs_produccion_' + today() + '.xlsx');
+  showToast('Excel exportado');
 }
 
 // ── Remisiones Anuladas (manual) ──
