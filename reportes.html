@@ -311,6 +311,7 @@
       <div class="rpt-stat" style="border-left-color:#b7791f"><div class="num" id="st-lit-muestras">0 L</div><div class="lbl">Muestras</div></div>
       <div class="rpt-stat" style="border-left-color:#7f8c8d"><div class="num" id="st-lit-devcam">0 L</div><div class="lbl">Devol./Cambios (neto)</div></div>
       <div class="rpt-stat" style="border-left-color:#1a5276"><div class="num" id="st-lit-dif">0 L</div><div class="lbl">Diferencia neta del período</div></div>
+      <div class="rpt-stat" style="border-left-color:#2c3e50"><div class="num" id="st-lit-existfin">0 L</div><div class="lbl">Existencia al cierre</div></div>
       <div class="rpt-stat" style="border-left-color:#c0392b"><div class="num" id="st-lit-sinconv">0</div><div class="lbl">⚠️ Registros sin convertir</div></div>
     </div>
     <div class="rpt-card">
@@ -336,6 +337,7 @@
         <strong>Muestras</strong> entregadas ·
         <strong>Devol./Cambios neto</strong> (reingreso a bodega buena − salida, igual que el Kardex).
         <strong>Diferencia = Ingresos + Devol./Cambios neto − Salida producción − Ventas − Muestras</strong> (es flujo, no saldo de inventario).
+        <strong>Exist. inicio / Exist. cierre</strong>: existencias en litros (producto bueno) el día anterior a «Desde» y el día «Hasta», con el mismo cálculo que «Existencias por Empresa» del Kardex; aparecen también referencias con stock aunque no se hayan movido en el período.
         Conversión: <strong>LITRO</strong> = 1 L · <strong>N ML/CC</strong> = N ÷ 1000 · <strong>GALÓN</strong> = 4 L · <strong>BIDÓN/CANECA</strong> sin cifra = 20 L ·
         si la presentación trae los litros explícitos (p. ej. «CANECA 10 LITROS») se usa esa cifra.
         Kilos, unidades o texto sin volumen <strong>no suman</strong> y se listan abajo.
@@ -421,6 +423,6 @@
 <script src="js/auth.js?v=20260908z"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260908z"></script>
-<script src="js/reportes.js?v=20260909b"></script>
+<script src="js/reportes.js?v=20260909c"></script>
 </body>
 </html>

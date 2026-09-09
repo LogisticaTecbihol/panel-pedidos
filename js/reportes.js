@@ -1989,6 +1989,12 @@ function exportCumplimiento() {
 //                    Parcial; se ignora la bodega No Conforme.
 //   Diferencia     = Ingresos + Dev/Camb.neto − Salida term. − Salida NC
 //                    − Ventas − Muestras   (flujo del período, no saldo).
+//   Exist. inicio  = existencias en litros (producto bueno) el día ANTES de
+//                    "Desde"; Exist. cierre = existencias el día "Hasta".
+//                    Se reusa existSnapshot.kxMovimientos (mismo cálculo que
+//                    "Existencias por Empresa" del Kardex) filtrando por fecha.
+//                    Si no hay snapshot se muestra "—". Aparecen también
+//                    referencias con existencia aunque no tuvieran movimiento.
 //
 // Respeta los filtros de Empresa y "Buscar producto" del encabezado + el
 // rango Desde/Hasta propio del tab (por defecto, el mes en curso).
@@ -2103,11 +2109,65 @@ function _litParse(nombreRaw, presCol) {
   ref = ref.replace(/\s+X\s*$/i, '').trim();
   if (!ref) ref = nombre;
 
+  // Normalización final: mayúsculas y sin tildes — así una referencia con el
+  // nombre acentuado (movimientos) y sin acentuar (_normProd de existencias)
+  // caen en la misma fila.
+  ref = ref.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
   return {
-    ref: ref.toUpperCase(),
+    ref: ref,
     litrosUnidad: litros == null ? 0 : litros,
     convertible: litros != null && litros > 0
   };
+}
+
+// ¿pasa el filtro "Buscar producto" del encabezado?
+function _litPasaTxt(fTxt, prodRaw, ref) {
+  if (!fTxt) return true;
+  return String(prodRaw || '').toLowerCase().indexOf(fTxt) >= 0 || String(ref || '').toLowerCase().indexOf(fTxt) >= 0;
+}
+
+// Existencias (producto bueno/terminado, en litros) por empresa → referencia,
+// a una fecha de corte. Reusa el stream de movimientos del snapshot del Kardex
+// (existSnapshot.kxMovimientos): mismo cálculo que "Existencias por Empresa".
+//   limite  = 'YYYY-MM-DD' (o '' = sin tope)
+//   strict  = true  → cuenta movimientos con fecha  <  limite (saldo de apertura)
+//             false → cuenta movimientos con fecha <= limite (saldo de cierre)
+// Devuelve { empresa: { ref: litros } }, o null si no hay snapshot.
+function _litExistLiters(limite, strict, fEmp, fTxt) {
+  if (!existSnapshot || !existSnapshot.kxMovimientos) return null;
+  var movs = existSnapshot.kxMovimientos;
+  var fechaCorte = null;
+  movs.forEach(function(m) {
+    if (m.modulo === 'Saldo Inicial' && m.fecha) {
+      var f = String(m.fecha).slice(0, 10);
+      if (!fechaCorte || f < fechaCorte) fechaCorte = f;
+    }
+  });
+  var saldo = {};  // producto -> { empresa: cantidad }
+  movs.forEach(function(m) {
+    if (!m.producto || !m.empresa) return;
+    var f = String(m.fecha || '').slice(0, 10);
+    if (fechaCorte && f < fechaCorte) return;
+    if (limite) { if (strict ? !(f < limite) : !(f <= limite)) return; }
+    if (!saldo[m.producto]) saldo[m.producto] = {};
+    saldo[m.producto][m.empresa] = (saldo[m.producto][m.empresa] || 0) +
+      (m.tipo === 'Entrada' ? (Number(m.cantidad) || 0) : -(Number(m.cantidad) || 0));
+  });
+  var out = {};
+  Object.keys(saldo).forEach(function(prod) {
+    var p = _litParse(prod, '');
+    if (!p.convertible) return;
+    if (!_litPasaTxt(fTxt, prod, p.ref)) return;
+    Object.keys(saldo[prod]).forEach(function(emp) {
+      var qty = saldo[prod][emp];
+      if (!qty) return;
+      if (fEmp && emp !== fEmp) return;
+      if (!out[emp]) out[emp] = {};
+      out[emp][p.ref] = (out[emp][p.ref] || 0) + qty * p.litrosUnidad;
+    });
+  });
+  return out;
 }
 
 function _litMesLabel(ym) {
@@ -2139,10 +2199,7 @@ function buildLitros() {
     if (hasta && d > hasta) return false;
     return true;
   }
-  function pasaTxt(prodRaw, ref) {
-    if (!fTxt) return true;
-    return String(prodRaw || '').toLowerCase().indexOf(fTxt) >= 0 || ref.toLowerCase().indexOf(fTxt) >= 0;
-  }
+  function pasaTxt(prodRaw, ref) { return _litPasaTxt(fTxt, prodRaw, ref); }
 
   var acc = {};       // empresa → ref → { ...LIT_FIELDS, meses:{ ym: {...LIT_FIELDS} } }
   var sinConv = {};   // 'origen||empresa||producto||pres' → {…}
@@ -2310,9 +2367,16 @@ function buildLitros() {
     }
   });
 
+  // ── Existencias en litros: apertura (día antes de "Desde") y cierre ("Hasta") ──
+  var existIni = _litExistLiters(desde || '', true, fEmp, fTxt);   // fecha < desde
+  var existFin = _litExistLiters(hasta || '', false, fEmp, fTxt);  // fecha <= hasta
+
   // ── Ordenar empresas (holding primero) y armar litData ──
   var ordenEmp = (typeof _empresasVisibles === 'function' ? _empresasVisibles() : EMPRESAS_HOLDING).map(function(e) { return e.value; });
-  var empNombres = Object.keys(acc).sort(function(a, b) {
+  var empSet = {};
+  Object.keys(acc).forEach(function(e) { empSet[e] = true; });
+  [existIni, existFin].forEach(function(mp) { if (mp) Object.keys(mp).forEach(function(e) { empSet[e] = true; }); });
+  var empNombres = Object.keys(empSet).sort(function(a, b) {
     var ia = ordenEmp.indexOf(a); if (ia < 0) ia = 99;
     var ib = ordenEmp.indexOf(b); if (ib < 0) ib = 99;
     if (ia !== ib) return ia - ib;
@@ -2320,17 +2384,26 @@ function buildLitros() {
   });
 
   litData = empNombres.map(function(emp) {
-    var refs = Object.keys(acc[emp]).map(function(ref) {
-      var x = acc[emp][ref];
+    var refSet = {};
+    if (acc[emp]) Object.keys(acc[emp]).forEach(function(r) { refSet[r] = true; });
+    if (existIni && existIni[emp]) Object.keys(existIni[emp]).forEach(function(r) { refSet[r] = true; });
+    if (existFin && existFin[emp]) Object.keys(existFin[emp]).forEach(function(r) { refSet[r] = true; });
+
+    var refs = Object.keys(refSet).map(function(ref) {
+      var x = (acc[emp] && acc[emp][ref]) || _litZero();
       var mx = _litMetrics(x);
       mx.ref = ref;
-      mx.meses = x.meses;
+      mx.meses = x.meses || {};
       mx._raw = x;
+      mx.existIni = existIni ? ((existIni[emp] && existIni[emp][ref]) || 0) : null;
+      mx.existFin = existFin ? ((existFin[emp] && existFin[emp][ref]) || 0) : null;
       return mx;
     });
     var rawTot = _litZero();
     refs.forEach(function(r) { LIT_FIELDS.forEach(function(f) { rawTot[f] += r._raw[f]; }); });
     var tot = _litMetrics(rawTot);
+    tot.existIni = existIni ? refs.reduce(function(s, r) { return s + (r.existIni || 0); }, 0) : null;
+    tot.existFin = existFin ? refs.reduce(function(s, r) { return s + (r.existFin || 0); }, 0) : null;
     return { empresa: emp, refs: refs, tot: tot };
   });
 
@@ -2340,6 +2413,7 @@ function buildLitros() {
   var g = _litZero();
   litData.forEach(function(e) { e.refs.forEach(function(r) { LIT_FIELDS.forEach(function(f) { g[f] += r._raw[f]; }); }); });
   var gm = _litMetrics(g);
+  var gExistFin = existFin ? litData.reduce(function(s, e) { return s + (e.tot.existFin || 0); }, 0) : null;
   var nSinConv = litSinConv.reduce(function(s, r) { return s + r.registros; }, 0);
   _litSetTxt('st-lit-ing', _litFmt(gm.ingresos));
   _litSetTxt('st-lit-prod', _litFmt(gm.salTerm + gm.salNC));
@@ -2347,6 +2421,7 @@ function buildLitros() {
   _litSetTxt('st-lit-muestras', _litFmt(gm.muestras));
   _litSetTxt('st-lit-devcam', _litFmt(gm.devCamNeto));
   _litSetTxt('st-lit-dif', _litFmt(gm.dif));
+  _litSetTxt('st-lit-existfin', gExistFin == null ? '—' : _litFmt(gExistFin));
   _litSetTxt('st-lit-sinconv', nSinConv.toLocaleString('es-CO'));
 
   renderLitTable();
@@ -2363,9 +2438,13 @@ function toggleLitSort(col) {
 
 function _litSortedRefs(refs) {
   var col = litSort.col, dir = litSort.dir;
+  function val(o) {
+    if (col === 'ref') return o.ref;
+    var v = o[col];
+    return typeof v === 'number' ? v : (v == null ? -Infinity : (typeof o.ingresos === 'number' ? o.ingresos : 0));
+  }
   return [].concat(refs).sort(function(a, b) {
-    var va = col === 'ref' ? a.ref : (a[col] != null ? a[col] : a.ingresos);
-    var vb = col === 'ref' ? b.ref : (b[col] != null ? b[col] : b.ingresos);
+    var va = val(a), vb = val(b);
     var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
     return dir === 'asc' ? cmp : -cmp;
   });
@@ -2380,8 +2459,8 @@ function toggleLitDetail(key) {
   renderLitTable();
 }
 
-var LIT_COLS = [
-  { id: 'ref', label: 'Referencia' },
+// Columnas de flujo (tienen valor mes a mes).
+var LIT_FLOW_COLS = [
   { id: 'ingresos', label: 'Ingresos', color: '#1e8449' },
   { id: 'salTerm', label: 'Salida prod. (term.)', color: '#d35400' },
   { id: 'salNC', label: 'Salida prod. (NC)', color: '#c0392b' },
@@ -2390,10 +2469,24 @@ var LIT_COLS = [
   { id: 'devCamNeto', label: 'Dev/Camb. neto', sign: true },
   { id: 'dif', label: 'Diferencia', sign: true }
 ];
-var LIT_COLSPAN = LIT_COLS.length + 1;
+// Columnas de existencias (saldo a una fecha; sin desglose mensual).
+var LIT_SNAP_INI = { id: 'existIni', label: 'Exist. inicio', color: '#5b6b7c', snap: true };
+var LIT_SNAP_FIN = { id: 'existFin', label: 'Exist. cierre', color: '#1a5276', snap: true };
+// Orden de la tabla principal: apertura · flujo · cierre.
+var LIT_MAIN_COLS = [{ id: 'ref', label: 'Referencia' }, LIT_SNAP_INI].concat(LIT_FLOW_COLS).concat([LIT_SNAP_FIN]);
+var LIT_COLSPAN = LIT_MAIN_COLS.length + 1;
+
+function _litValCell(c, val, bold, pad) {
+  var p = pad ? 'padding:3px 8px;font-size:0.76rem;text-align:right;border-bottom:1px solid #f0f4f8;' : '';
+  var cls = pad ? '' : ' class="money"';
+  if (c.snap && val == null) return '<td' + cls + ' style="' + p + 'color:#cbd5e0">—</td>';
+  var color = c.sign ? _litSignColor(val) : (val > 0.0001 ? (c.color || '#2c3e50') : '#a0aec0');
+  var w = bold ? '800' : ((c.sign || c.snap) ? '700' : '400');
+  return '<td' + cls + ' style="' + p + 'color:' + color + ';font-weight:' + w + '">' + _litFmt(val) + '</td>';
+}
 
 function renderLitTable() {
-  document.getElementById('lit-head').innerHTML = '<th style="width:26px"></th>' + LIT_COLS.map(function(c) {
+  document.getElementById('lit-head').innerHTML = '<th style="width:26px"></th>' + LIT_MAIN_COLS.map(function(c) {
     var cls = litSort.col === c.id ? (litSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
     return '<th class="' + cls + '" onclick="toggleLitSort(\'' + c.id + '\')">' + c.label + '</th>';
   }).join('');
@@ -2403,16 +2496,11 @@ function renderLitTable() {
 
   var tbody = document.getElementById('lit-body');
   if (!litData.length) {
-    tbody.innerHTML = '<tr><td colspan="' + LIT_COLSPAN + '"><div class="empty-msg">No hay movimientos de litros en el período y los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + LIT_COLSPAN + '"><div class="empty-msg">No hay movimientos ni existencias de litros en el período y los filtros seleccionados.</div></td></tr>';
     return;
   }
 
-  function _cell(c, val, bold) {
-    var color = c.sign ? _litSignColor(val) : (val > 0.0001 ? (c.color || '#2c3e50') : '#a0aec0');
-    var w = bold ? '800' : (c.sign ? '700' : '400');
-    return '<td class="money" style="color:' + color + ';font-weight:' + w + '">' + _litFmt(val) + '</td>';
-  }
-
+  var valCols = LIT_MAIN_COLS.slice(1);
   var html = '';
   litData.forEach(function(e) {
     html += '<tr><td colspan="' + LIT_COLSPAN + '" style="background:#eaf2f8;padding:9px 16px;font-weight:800;font-size:0.85rem;color:#1a5276;border-bottom:2px solid #2980b9">' +
@@ -2425,7 +2513,7 @@ function renderLitTable() {
       html += '<tr>' +
         '<td style="text-align:center"><button onclick="toggleLitDetail(\'' + keyEsc + '\')" title="Ver detalle mes a mes" style="background:none;border:none;color:#1a5276;cursor:pointer;font-size:0.85rem;font-weight:700;padding:0 4px">' + (abierto ? '▾' : '▸') + '</button></td>' +
         '<td style="font-weight:700">' + escHtml(r.ref) + '</td>' +
-        LIT_COLS.slice(1).map(function(c) { return _cell(c, r[c.id], c.id === 'dif'); }).join('') +
+        valCols.map(function(c) { return _litValCell(c, r[c.id], c.id === 'dif'); }).join('') +
       '</tr>';
       if (abierto) html += _litDetailRow(r);
     });
@@ -2434,30 +2522,24 @@ function renderLitTable() {
     html += '<tr style="background:#f7fafc;border-top:2px solid #cbd5e0">' +
       '<td></td>' +
       '<td style="font-weight:800;color:#1a5276">Subtotal ' + escHtml(getSigla(e.empresa)) + '</td>' +
-      LIT_COLS.slice(1).map(function(c) { return _cell(c, t[c.id], true); }).join('') +
+      valCols.map(function(c) { return _litValCell(c, t[c.id], true); }).join('') +
     '</tr>';
   });
   tbody.innerHTML = html;
 }
 
 function _litDetailRow(r) {
-  var detCols = LIT_COLS.slice(1);
   var head = '<th style="text-align:left;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">Mes</th>' +
-    detCols.map(function(c) { return '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">' + c.label + '</th>'; }).join('');
+    LIT_FLOW_COLS.map(function(c) { return '<th style="text-align:right;padding:4px 8px;font-size:0.7rem;color:#4a5568;border-bottom:1px solid #e2e8f0">' + c.label + '</th>'; }).join('');
   var rows = Object.keys(r.meses).sort().map(function(ym) {
     var mm = _litMetrics(r.meses[ym]);
     return '<tr>' +
       '<td style="padding:3px 8px;font-size:0.76rem;border-bottom:1px solid #f0f4f8">' + escHtml(_litMesLabel(ym)) + '</td>' +
-      detCols.map(function(c) {
-        var v = mm[c.id];
-        var color = c.sign ? _litSignColor(v) : (v > 0.0001 ? (c.color || '#4a5568') : '#a0aec0');
-        var w = (c.id === 'dif' || c.sign) ? '700' : '400';
-        return '<td style="padding:3px 8px;font-size:0.76rem;text-align:right;color:' + color + ';font-weight:' + w + ';border-bottom:1px solid #f0f4f8">' + _litFmt(v) + '</td>';
-      }).join('') +
+      LIT_FLOW_COLS.map(function(c) { return _litValCell(c, mm[c.id], false, true); }).join('') +
     '</tr>';
   }).join('');
   return '<tr><td></td><td colspan="' + (LIT_COLSPAN - 1) + '" style="background:#f7fafc;padding:8px 16px 12px 16px">' +
-    '<div style="font-weight:700;font-size:0.76rem;color:#1a5276;margin-bottom:4px">📅 Detalle mes a mes — ' + escHtml(r.ref) + '</div>' +
+    '<div style="font-weight:700;font-size:0.76rem;color:#1a5276;margin-bottom:4px">📅 Detalle mes a mes — ' + escHtml(r.ref) + ' <span style="font-weight:400;color:#718096">(las existencias son a fecha de corte, no mensuales)</span></div>' +
     '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;background:white;border:1px solid #e2e8f0;border-radius:4px">' +
     '<thead><tr style="background:#f7fafc">' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div></td></tr>';
 }
@@ -2481,19 +2563,22 @@ function renderLitSinConv() {
   }).join('');
 }
 
-function _litXlsxRow(empSigla, ref, mesLabel, m) {
-  return {
+function _litXlsxRow(empSigla, ref, mesLabel, m, snap) {
+  var row = {
     'Empresa': empSigla,
     'Referencia': ref,
     'Mes': mesLabel,
+    'Exist. inicio': snap && m.existIni != null ? _litRound(m.existIni) : '',
     'Litros ingresos': _litRound(m.ingresos),
     'Litros salida prod. terminado': _litRound(m.salTerm),
     'Litros salida prod. NC': _litRound(m.salNC),
     'Litros ventas (pedidos)': _litRound(m.ventas),
     'Litros muestras': _litRound(m.muestras),
     'Litros dev/cambios neto': _litRound(m.devCamNeto),
-    'Diferencia': _litRound(m.dif)
+    'Diferencia': _litRound(m.dif),
+    'Exist. cierre': snap && m.existFin != null ? _litRound(m.existFin) : ''
   };
+  return row;
 }
 
 function exportLitros() {
@@ -2503,15 +2588,15 @@ function exportLitros() {
     var sig = getSigla(e.empresa);
     _litSortedRefs(e.refs).forEach(function(r) {
       Object.keys(r.meses).sort().forEach(function(ym) {
-        rows.push(_litXlsxRow(sig, r.ref, _litMesLabel(ym), _litMetrics(r.meses[ym])));
+        rows.push(_litXlsxRow(sig, r.ref, _litMesLabel(ym), _litMetrics(r.meses[ym]), false));
       });
-      rows.push(_litXlsxRow(sig, r.ref, '➤ TOTAL período', r));
+      rows.push(_litXlsxRow(sig, r.ref, '➤ TOTAL período', r, true));
     });
-    rows.push(_litXlsxRow(sig, 'SUBTOTAL ' + sig, '➤ TOTAL período', e.tot));
+    rows.push(_litXlsxRow(sig, 'SUBTOTAL ' + sig, '➤ TOTAL período', e.tot, true));
   });
   var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 16 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 18 }, { wch: 14 }];
+  ws['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 16 }, { wch: 13 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 13 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Litros');
   if (litSinConv.length) {
     var ws2 = XLSX.utils.json_to_sheet(litSinConv.map(function(r) {
