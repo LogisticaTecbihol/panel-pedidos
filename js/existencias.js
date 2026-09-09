@@ -309,6 +309,25 @@
       });
     });
 
+    // Salidas de Bodega NC que retornan a Productos Buenos — ENTRADA.
+    // Espejo de js/kardex.js:buildMovimientos (motivos Reacondicionamiento /
+    // Retorno conforme). Antes de KX_NC_RETORNO_DESDE quedan fuera (revisión manual).
+    var _ncRetDesde = (typeof KX_NC_RETORNO_DESDE !== 'undefined') ? KX_NC_RETORNO_DESDE : '2026-09-01';
+    (src.ajustesNC || []).forEach(function(a) {
+      if (a.Tipo !== 'Salida_NC') return;
+      var _mn = _norm(a.Motivo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+      if (_mn !== 'reacondicionamiento' && _mn !== 'retornoconforme' && _mn !== 'retornoabodegaconforme') return;
+      var cant = Number(a.Cantidad) || 0;
+      if (cant <= 0) return;
+      if (_ncRetDesde && (a.Fecha || '') < _ncRetDesde) return;
+      movs.push({
+        fecha: a.Fecha || '', tipo: 'Entrada', modulo: 'Bodega NC',
+        remision: a.Remision || '', empresa: a.Empresa || '',
+        producto: _normProd(a.Producto),
+        presentacion: a.Presentacion || '', cantidad: cant
+      });
+    });
+
     // Ajustes manuales y Saldos Iniciales
     (src.ajustes || []).forEach(function(a) {
       var cant = Number(a.Cantidad) || 0;

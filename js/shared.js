@@ -1860,6 +1860,15 @@ function toDateInput(v) {
 // sin festivos — no hay tabla de festivos). Ajustar este número si cambia el SLA.
 var PLAZO_COMPROMISO_DIAS_HABILES = 8;
 
+// ── Kardex: retorno de Bodega No Conforme a Productos Buenos ────────────
+// Una "Salida de Bodega NC" con motivo Reacondicionamiento o Retorno conforme
+// reingresa el producto a Productos Buenos (ver NC_MOTIVOS_SALIDA.afectan en
+// kardex.js). Los movimientos con fecha anterior a esta quedan pendientes de
+// revisión manual de bodega y todavía NO se proyectan al Kardex General ni a
+// Existencias. Bajar esta fecha (o ponerla en '') cuando la revisión termine.
+// Lo leen js/kardex.js (buildMovimientos) y js/existencias.js (buildKardexStream).
+var KX_NC_RETORNO_DESDE = '2026-09-01';
+
 function _isoDia(v) {
   var s = String(v || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';

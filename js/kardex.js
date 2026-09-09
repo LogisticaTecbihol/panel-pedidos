@@ -509,6 +509,34 @@ function buildMovimientos() {
     });
   });
 
+  // Salidas de Bodega NC que retornan a Productos Buenos — ENTRADA al Kardex General.
+  //   Motivos "afectan" (NC_MOTIVOS_SALIDA.afectan): Reacondicionamiento y Retorno
+  //   conforme. El resto (Disposición final, Dev. proveedor, Traslado_NC, Otro) sale
+  //   de la bodega NC sin reingresar a Productos Buenos → no toca el Kardex General.
+  //   Los movimientos anteriores a KX_NC_RETORNO_DESDE están pendientes de revisión
+  //   manual de bodega y todavía no se proyectan aquí.
+  ncAjustes.forEach(function(a) {
+    if (a.Tipo !== 'Salida_NC') return;
+    var _mn = (a.Motivo || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+    if (_mn !== 'reacondicionamiento' && _mn !== 'retornoconforme' && _mn !== 'retornoabodegaconforme') return;
+    var cant = Number(a.Cantidad) || 0;
+    if (cant <= 0) return;
+    if (KX_NC_RETORNO_DESDE && (a.Fecha || '') < KX_NC_RETORNO_DESDE) return;
+    var motivoLbl = NC_MOTIVO_LABELS[a.Motivo] || a.Motivo || '';
+    kxMovimientos.push({
+      fecha: a.Fecha || '',
+      tipo: 'Entrada',
+      modulo: 'Bodega NC',
+      remision: a.Remision || '',
+      referencia: 'Retorno de NC' + (motivoLbl ? ' — ' + motivoLbl : '') + (a.Observaciones ? ' — ' + a.Observaciones : ''),
+      empresa: a.Empresa || '',
+      producto: a.Producto,
+      presentacion: a.Presentacion || '',
+      cantidad: cant,
+      _ajusteId: null
+    });
+  });
+
   // Ajustes manuales y Saldos iniciales
   kxAjustes.forEach(function(a) {
     var cant = Number(a.Cantidad) || 0;
