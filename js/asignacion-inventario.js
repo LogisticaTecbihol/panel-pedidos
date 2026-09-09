@@ -20,6 +20,13 @@ function createAsignacionEngine(config) {
   var _getEmpresa = config.getEmpresa;
   var _gn = config.globalName;
   var _prefix = config.prefix || 'asig';
+  // config.neto=true → el selector ofrece "disponible neto" (existencia
+  //   física − apartado de pedidos/muestras) en vez del físico. Lo usa
+  //   muestras.js para respetar las reservas; cambios.js lo deja en false.
+  // config.cellPrefixHtml(i, l) → HTML extra que se inyecta bajo la barra
+  //   de referencia de cada celda (panel de apartado / competencia).
+  var _neto = !!config.neto;
+  var _cellPrefixHtml = typeof config.cellPrefixHtml === 'function' ? config.cellPrefixHtml : null;
 
   function _normProd(s) {
     return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -54,6 +61,9 @@ function createAsignacionEngine(config) {
       if (_normProd(dl.Producto) !== prodN) return;
       if (dl._asignaciones) {
         dl._asignaciones.forEach(function(a) {
+          // Los chips "desde apartado" ya están descontados del disponible
+          // neto; no se vuelven a restar aquí (evita doble conteo).
+          if (a._fromApartado) return;
           if (norm(a.empresa_stock) === empN) total += (Number(a.cantidad) || 0);
         });
       }
@@ -87,15 +97,16 @@ function createAsignacionEngine(config) {
     var pedida = Number(l.Cantidad) || 0;
     var yaEntregada = Number(l.Cant_Entregada) || 0;
     var pendienteBase = Math.max(0, pedida - yaEntregada);
+    var prefixHtml = _cellPrefixHtml ? (_cellPrefixHtml(i, l) || '') : '';
     if (pendienteBase <= 0) {
       return '<div style="font-size:0.72rem;color:#276749;background:#f0fff4;border:1px solid #9ae6b4;padding:4px 8px;border-radius:4px;font-weight:700">' +
-        '✓ Línea entregada</div>' +
+        '✓ Línea entregada</div>' + prefixHtml +
         '<div class="' + _prefix + '-asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
     }
     var prodStock = _normProd(l.Producto);
     var opciones = '';
     if (_snapshot && typeof Existencias !== 'undefined') {
-      var lista = Existencias.getPorEmpresa(_snapshot, prodStock, l.Presentacion);
+      var lista = Existencias.getPorEmpresa(_snapshot, prodStock, l.Presentacion, { neto: _neto });
       lista.sort(function(a, b) {
         var aEs = norm(a.empresa) === norm(empresa) ? 0 : 1;
         var bEs = norm(b.empresa) === norm(empresa) ? 0 : 1;
@@ -104,12 +115,14 @@ function createAsignacionEngine(config) {
       });
       opciones = lista.map(function(x) {
         var marca = norm(x.empresa) === norm(empresa) ? ' ★' : '';
-        var dispRaw = Math.round(x.disponible * 100) / 100;
+        var dispRaw = Math.round((_neto ? (x.disponibleNeto != null ? x.disponibleNeto : x.disponible) : x.disponible) * 100) / 100;
+        var apaRaw = Math.round((x.apartado || 0) * 100) / 100;
         var yaSesion = _asignadoEnSesion(x.empresa, prodStock);
         var dispRest = Math.max(0, dispRaw - yaSesion);
-        var etiqueta = (yaSesion > 0)
-          ? x.sigla + marca + ' · ' + dispRest + ' disp. (base ' + dispRaw + ')'
-          : x.sigla + marca + ' · ' + dispRest + ' disp.';
+        var unidad = _neto ? ' disp. neto' : ' disp.';
+        var etiqueta = x.sigla + marca + ' · ' + dispRest + unidad
+          + (_neto && apaRaw > 0 ? ' (' + apaRaw + ' apartado)' : '')
+          + (yaSesion > 0 ? ' · base ' + dispRaw : '');
         return '<option value="' + escHtml(x.empresa) + '" data-disp="' + dispRaw + '">' +
           escHtml(etiqueta) + '</option>';
       }).join('');
@@ -118,13 +131,14 @@ function createAsignacionEngine(config) {
       ? '<select class="' + _prefix + '-asig-empresa" data-i="' + i + '" onchange="' + _gn + '.onEmpresaChange(' + i + ')" style="width:100%;font-size:0.75rem;padding:2px 4px">' +
         '<option value="">— Empresa origen —</option>' + opciones +
         '</select>'
-      : '<div style="font-size:0.72rem;color:#a94442;background:#fdecea;border:1px solid #f5c2c0;padding:2px 6px;border-radius:4px">Sin stock disponible</div>';
+      : '<div style="font-size:0.72rem;color:#a94442;background:#fdecea;border:1px solid #f5c2c0;padding:2px 6px;border-radius:4px">' +
+        (_neto ? 'Sin disponible neto (todo apartado o sin existencia)' : 'Sin stock disponible') + '</div>';
     var refBar = '<div style="display:flex;gap:8px;font-size:0.70rem;margin-bottom:4px;padding:2px 6px;background:#eef6fc;border-radius:4px;color:#1a5276;font-weight:600">' +
       '<span>Solicitada: <b>' + pedida + '</b></span>' +
       '<span style="color:#b0bec5">|</span>' +
       '<span>Pend: <b style="color:' + (pendienteBase > 0 ? '#e67e22' : '#27ae60') + '">' + pendienteBase + '</b></span>' +
       '</div>';
-    return refBar + selectHTML +
+    return refBar + prefixHtml + selectHTML +
       '<div style="display:flex;gap:4px;margin-top:3px">' +
       '<input type="number" class="' + _prefix + '-asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right" oninput="' + _gn + '.validate(' + i + ')">' +
       '<button type="button" onclick="' + _gn + '.addAsignacion(' + i + ')" ' +
@@ -252,6 +266,22 @@ function createAsignacionEngine(config) {
     _refreshSameProduct(i);
   }
 
+  // Convierte el apartado propio de la línea en un chip de entrega. No
+  // pasa por el tope de "disponible neto" del selector porque consume una
+  // reserva que ya estaba descontada. Al guardar, quien despacha llama a
+  // consumir_apartados_*.
+  function addApartadoChip(i, empresaStock, cant) {
+    var dl = _getLines()[i];
+    if (!dl) return;
+    var n = Math.min(Number(cant) || 0, _pendienteRestante(i));
+    if (n <= 0) { if (typeof showToast === 'function') showToast('La línea ya no tiene pendiente por asignar', '#e67e22'); return; }
+    if (!dl._asignaciones) dl._asignaciones = [];
+    dl._asignaciones.push({ empresa_stock: empresaStock, cantidad: n, _fromApartado: true });
+    renderChips(i);
+    _refreshSameProduct(i);
+    if (typeof showToast === 'function') showToast('Añadida entrega de ' + n + ' ud desde ' + getSigla(empresaStock) + ' (apartado).');
+  }
+
   function renderChips(i) {
     var wrap = document.querySelector('.' + _prefix + '-asig-chips[data-i="' + i + '"]');
     if (!wrap) return;
@@ -266,6 +296,7 @@ function createAsignacionEngine(config) {
       var tag = traslado
         ? '<span style="color:#c0392b;font-weight:700">🛒 solicitud de compra (remisión pendiente)</span>'
         : '<span style="color:#27ae60;font-weight:700">✓ mismo origen — genera remisión</span>';
+      if (a._fromApartado) tag = '<span style="color:#7c3aed;font-weight:700">🔒→✓ desde apartado</span>';
       return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
         '<span style="flex:1"><strong>' + escHtml(a.cantidad) + '</strong> ud · ' + escHtml(sigla) + ' · ' + tag + '</span>' +
         '<button type="button" onclick="' + _gn + '.removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
@@ -283,7 +314,11 @@ function createAsignacionEngine(config) {
       asigs.forEach(function(a) {
         var cant = Number(a.cantidad) || 0;
         if (cant <= 0) return;
-        var item = { _idx: i, cantidad: cant, empresa_stock: a.empresa_stock };
+        var item = {
+          _idx: i, cantidad: cant, empresa_stock: a.empresa_stock,
+          row: (dl.__row != null ? dl.__row : dl.id),
+          _fromApartado: !!a._fromApartado
+        };
         if (norm(a.empresa_stock) === empN) entregas.push(item);
         else solicitudesCompra.push(item);
       });
@@ -379,6 +414,8 @@ function createAsignacionEngine(config) {
     refreshCell: refreshCell,
     addAsignacion: addAsignacion,
     removeAsignacion: removeAsignacion,
+    addApartadoChip: addApartadoChip,
+    pendienteRestante: _pendienteRestante,
     renderChips: renderChips,
     validate: validate,
     onEmpresaChange: onEmpresaChange,

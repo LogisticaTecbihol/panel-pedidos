@@ -52,6 +52,62 @@ var muViewEmpresa = '';
 var muAsig = null;
 var ocsLegalizadasPorMuestra = {};
 
+// Apartados de stock activos. Se reconstruyen en cada loadMuestras().
+//   muApartadosPorSolicitud[Empresa||Consecutivo] = [{muestra_id, producto, empresa_stock, cantidad, presentacion}]
+//   muApartadosPorLinea[muestra_id] = [{empresa_stock, cantidad}]
+//   muApartadosPorProdEmp[_normProdMu(producto)||norm(empresa_stock)] = [{...}]  → panel de competencia
+//   pedApartadosPorProdEmp[...] = apartados de PEDIDOS (para el mismo panel)
+var muApartadosPorSolicitud = {};
+var muApartadosPorLinea = {};
+var muApartadosPorProdEmp = {};
+var pedApartadosPorProdEmp = {};
+
+function _normProdMu(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s*bonificado\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+function _muKeySC(empresa, consecutivo) {
+  return String(empresa || '').toLowerCase().trim() + '||' + String(consecutivo == null ? '' : consecutivo).trim();
+}
+
+function _buildMuApartadosMaps(muRows, pedRows) {
+  muApartadosPorSolicitud = {};
+  muApartadosPorLinea = {};
+  muApartadosPorProdEmp = {};
+  pedApartadosPorProdEmp = {};
+  (muRows || []).forEach(function(a) {
+    if (String(a.estado || '') !== 'Activo') return;
+    var cant = Number(a.cantidad) || 0;
+    if (cant <= 0) return;
+    var kS = _muKeySC(a.empresa_muestra, a.consecutivo);
+    (muApartadosPorSolicitud[kS] || (muApartadosPorSolicitud[kS] = [])).push({
+      muestra_id: a.muestra_id, producto: a.producto, presentacion: a.presentacion || '',
+      empresa_stock: a.empresa_stock, cantidad: cant
+    });
+    (muApartadosPorLinea[a.muestra_id] || (muApartadosPorLinea[a.muestra_id] = [])).push({
+      empresa_stock: a.empresa_stock, cantidad: cant
+    });
+    var kE = _normProdMu(a.producto) + '||' + String(a.empresa_stock || '').toLowerCase().trim();
+    (muApartadosPorProdEmp[kE] || (muApartadosPorProdEmp[kE] = [])).push({
+      _esMuestra: true, id: a.muestra_id, empresa: a.empresa_muestra, consecutivo: a.consecutivo,
+      titular: a.responsable || a.solicitante || '', empresa_stock: a.empresa_stock,
+      cantidad: cant, fecha: a.fecha_aplicacion || a.fecha_despacho || ''
+    });
+  });
+  (pedRows || []).forEach(function(a) {
+    if (String(a.estado || '') !== 'Activo') return;
+    var cant = Number(a.cantidad) || 0;
+    if (cant <= 0) return;
+    var kE = _normProdMu(a.producto) + '||' + String(a.empresa_stock || '').toLowerCase().trim();
+    (pedApartadosPorProdEmp[kE] || (pedApartadosPorProdEmp[kE] = [])).push({
+      _esMuestra: false, id: a.pedido_id, empresa: a.empresa_pedido, consecutivo: a.consecutivo,
+      titular: a.cliente || '', empresa_stock: a.empresa_stock, cantidad: cant,
+      Plazo_Pago: a.plazo_pago || '', Precio_Facturacion: a.precio_facturacion || '',
+      Fecha_Compromiso: a.fecha_compromiso || '', Bonificado: a.bonificado || ''
+    });
+  });
+}
+
 // ── Autocomplete engine ──
 
 function muInitAC(input, opts) {
@@ -218,7 +274,13 @@ async function loadMuestras() {
     apiGet('getMuestras'),
     apiGet('getOrdenesCompra', {
       columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido'
-    }).catch(function() { return { ok: true, ordenes: [] }; })
+    }).catch(function() { return { ok: true, ordenes: [] }; }),
+    apiGet('getApartadosMuestra', {
+      columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_despacho,fecha_aplicacion'
+    }).catch(function() { return { ok: true, apartados: [] }; }),
+    apiGet('getApartadosPedido', {
+      columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado'
+    }).catch(function() { return { ok: true, apartados: [] }; })
   ]);
   var res = results[0];
   var ocData = results[1];
@@ -231,6 +293,10 @@ async function loadMuestras() {
 
   allMuestras = res.muestras || [];
   ocsLegalizadasPorMuestra = _buildOCsLegalizadasMu((ocData && ocData.ok && ocData.ordenes) || []);
+  _buildMuApartadosMaps(
+    (results[2] && results[2].apartados) || [],
+    (results[3] && results[3].apartados) || []
+  );
   loadZone.style.display = 'none';
   main.style.display = 'block';
   populateMuFilters();
@@ -459,17 +525,28 @@ function renderMuTable() {
 
     var soloLectura = muScope === 'tramitadas';
     var canApr = AUTH.canApprove && AUTH.canApprove();
+    var argsMu = "'" + escHtml((r.Empresa || '').replace(/'/g, "\\'")) + "','" + escHtml(String(r.Consecutivo || '').replace(/'/g, "\\'")) + "'";
     var aprBtns = '';
     if (canApr && apr === 'Por aprobar' && !soloLectura) {
-      var argsAR = "'" + escHtml((r.Empresa || '').replace(/'/g, "\\'")) + "','" + escHtml(String(r.Consecutivo || '').replace(/'/g, "\\'")) + "'";
+      var argsAR = argsMu;
       aprBtns =
         '<button class="btn-edit" style="background:#27ae60;color:white;border-color:#27ae60" title="Aprobar" onclick="approveMuestra(' + argsAR + ')">✅</button> ' +
         '<button class="btn-del" style="background:#e74c3c;color:white;border-color:#e74c3c" title="Rechazar" onclick="askRejectMuestra(' + argsAR + ')">❌</button> ';
     }
 
-    return '<tr style="cursor:pointer" onclick="viewMuestra(' + r.id + ')">' +
+    var apaRows = muApartadosPorSolicitud[_muKeySC(r.Empresa, r.Consecutivo)] || [];
+    var apaBadge = '';
+    if (apaRows.length) {
+      var apaTot = apaRows.reduce(function(s, a) { return s + (Number(a.cantidad) || 0); }, 0);
+      apaBadge = ' <span class="apartado-badge" title="' + apaRows.length + ' línea(s) con stock apartado sin despachar (' + apaTot + ' ud). Reduce el disponible neto de otros pedidos y muestras; se libera con «Descomprometer».">🔒 Apartado</span>';
+    }
+    var descBtn = (typeof AUTH.canDescomprometer === 'function' && AUTH.canDescomprometer() && apaRows.length && !soloLectura)
+      ? '<button class="btn-edit" style="background:#fffbeb;color:#b45309;border-color:#b45309" title="Liberar el stock apartado de esta solicitud" onclick="descomprometerMuestra(' + argsMu + ')">🔓</button> '
+      : '';
+
+    return '<tr style="cursor:pointer"' + (apaRows.length && !soloLectura ? ' class="row-apartada"' : '') + ' onclick="viewMuestra(' + r.id + ')">' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
-      '<td>' + escHtml(r.Consecutivo || '—') + '</td>' +
+      '<td>' + escHtml(r.Consecutivo || '—') + apaBadge + '</td>' +
       '<td>' + fmtDate(r.Fecha_Solicitud) + '</td>' +
       '<td>' + escHtml(r.Responsable || '—') + '</td>' +
       '<td>' + escHtml(r.Municipio || '—') + '</td>' +
@@ -481,6 +558,7 @@ function renderMuTable() {
       '<td>' + estadoBadge + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
         aprBtns +
+        descBtn +
         (AUTH.canEdit() && !soloLectura ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
         // 'comercial' solo ve sus propias solicitudes (RLS), así que puede borrarlas;
         // el backend igual lo restringe a responsable_id / creado_por = auth.uid().
@@ -584,16 +662,22 @@ async function viewMuestra(id) {
       getLines: function() { return muViewWorkingLines; },
       getEmpresa: function() { return muViewEmpresa; },
       globalName: 'muAsig',
-      prefix: 'mu'
+      prefix: 'mu',
+      neto: true,                      // el selector ofrece "disponible neto" (resta apartados)
+      cellPrefixHtml: _muApartadoCellHtml
     });
     await muAsig.loadSnapshot();
 
+    var puedeApartar = !despachoDisabled && typeof AUTH.canDescomprometer === 'function' && AUTH.canDescomprometer();
+    var apartarBtn = puedeApartar
+      ? '<button onclick="apartarMuestraSinDespachar()" id="btn-mu-apartar" title="Reservar el stock asignado para esta solicitud SIN despacharlo ni descontar la existencia física" style="background:#7c3aed;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">🔒 Apartar stock (sin despachar)</button>'
+      : '';
     var saveBtn = despachoDisabled
       ? '<button disabled title="Requiere aprobación previa" style="background:#cbd5e0;color:#4a5568;border:none;padding:6px 14px;border-radius:6px;cursor:not-allowed;font-size:0.8rem;font-weight:700">🔒 Aprobación requerida</button>'
       : '<button onclick="saveEntregas()" style="background:#27ae60;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700" id="btn-save-entregas">💾 Guardar entregas</button>';
-    html += '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">' +
+    html += '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
       '<div style="font-weight:700;font-size:0.84rem;color:#2d3748">📦 Productos solicitados (' + sameConsec.length + ')</div>' +
-      saveBtn +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' + apartarBtn + saveBtn + '</div>' +
       '</div>';
     html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc"><th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad</th><th style="text-align:right;width:90px">Entregada</th>' +
       (despachoDisabled ? '' : '<th style="min-width:220px">Asignar entrega (empresa · cant.)</th>') +
@@ -745,6 +829,31 @@ async function saveEntregas() {
       throw new Error('No se encontraron ' + noEncontradas.length + ' línea(s) en la base de datos. Recargá la página e intentá de nuevo.');
     }
 
+    // Consumir el apartado que respalda cada entrega directa: pasa a
+    // 'Consumido' (o baja su cantidad) para que el descuento de Kardex
+    // ocurra una sola vez. Best-effort: si no había apartado, no pasa nada.
+    if (entregas.length > 0) {
+      var _consAgg = {};
+      entregas.forEach(function(ent) {
+        if (!ent.row || !ent.empresa_stock) return;
+        var k = ent.row + '||' + ent.empresa_stock;
+        _consAgg[k] = (_consAgg[k] || 0) + (Number(ent.cantidad) || 0);
+      });
+      for (var _ck in _consAgg) {
+        if (!_consAgg.hasOwnProperty(_ck)) continue;
+        var _parts = _ck.split('||');
+        try {
+          await apiPost({
+            action: 'consumirApartadosMuestra',
+            muestra_id: Number(_parts[0]),
+            empresa_stock: _parts.slice(1).join('||'),
+            cantidad: _consAgg[_ck],
+            remision: remision || ''
+          });
+        } catch (e) { console.warn('consumirApartadosMuestra:', e); }
+      }
+    }
+
     if (solicitudesCompra.length > 0 && muAsig) {
       var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
       var refLabel = (muViewEmpresa || '') + ' Muestra #' + ((head && head.Consecutivo) || '');
@@ -833,6 +942,260 @@ async function saveEntregas() {
     if (remGenerada) await liberarRemisionConsecutivo(muViewEmpresa, 'SALIDA', remGenerada);
     btn.disabled = false;
     btn.textContent = '💾 Guardar entregas';
+  }
+}
+
+// ── Apartado de stock (reserva sin despachar) ─────────────────────
+
+function _muConsecLookup(empresa, consecutivo) {
+  var k = _muKeySC(empresa, consecutivo);
+  for (var i = 0; i < allMuestras.length; i++) {
+    if (_muKeySC(allMuestras[i].Empresa, allMuestras[i].Consecutivo) === k) return allMuestras[i];
+  }
+  return null;
+}
+
+// HTML que se inyecta bajo la barra de referencia de cada línea del modal:
+//   (a) apartados ya activos de esta línea (Emitir entrega / Liberar)
+//   (b) panel "quién tiene este producto apartado" si el neto no alcanza
+function _muApartadoCellHtml(i, l) {
+  if (!l) return '';
+  var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+  var empMu = head ? (head.Empresa || '') : muViewEmpresa;
+  var consec = head ? (head.Consecutivo || '') : '';
+  var thisKey = _muKeySC(empMu, consec);
+  var puede = typeof AUTH.canDescomprometer === 'function' && AUTH.canDescomprometer();
+  var out = '';
+
+  // (a) apartados ya activos de esta línea
+  var apas = muApartadosPorLinea[l.id] || [];
+  if (apas.length) {
+    var rows = apas.map(function(a) {
+      var sig = getSigla(a.empresa_stock);
+      return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">' +
+        '<span style="font-weight:700">🔒 ' + a.cantidad + ' ud apartadas · ' + escHtml(sig) + '</span>' +
+        '<button type="button" onclick="emitirEntregaMuestraApartado(' + i + ',\'' + escHtml(String(a.empresa_stock)).replace(/'/g, "\\'") + '\',' + a.cantidad + ')" ' +
+          'style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Emitir entrega</button>' +
+        (puede
+          ? '<button type="button" onclick="descomprometerLineaMuestra(' + i + ',\'' + escHtml(String(a.empresa_stock)).replace(/'/g, "\\'") + '\',' + a.cantidad + ')" ' +
+              'style="background:#fffbeb;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Liberar</button>'
+          : '') +
+      '</div>';
+    }).join('');
+    out += '<div style="font-size:0.72rem;color:#7c4a03;background:#fffbeb;border:1px solid #fde68a;padding:4px 6px;border-radius:4px;margin-bottom:4px">' +
+      'Stock ya apartado para esta muestra:' + rows + '</div>';
+  }
+
+  // (b) competencia
+  var snap = muAsig ? muAsig.getSnapshot() : null;
+  if (snap && typeof Existencias !== 'undefined') {
+    var prodKey = _normProdMu(l.Producto);
+    var pend = Math.max(0, (Number(l.Cantidad) || 0) - (Number(l.Cant_Entregada) || 0));
+    if (pend > 0) {
+      var lista = Existencias.getPorEmpresa(snap, prodKey, l.Presentacion, { neto: true });
+      var netoTotal = lista.reduce(function(s, x) { return s + Math.max(0, x.disponibleNeto || 0); }, 0);
+      if (netoTotal < pend) {
+        var vistos = {}, comp = [];
+        [muApartadosPorProdEmp, pedApartadosPorProdEmp].forEach(function(idx) {
+          Object.keys(idx).forEach(function(k) {
+            if (k.indexOf(prodKey + '||') !== 0) return;
+            (idx[k] || []).forEach(function(r) {
+              if (r._esMuestra && _muKeySC(r.empresa, r.consecutivo) === thisKey) return;
+              var vk = (r._esMuestra ? 'M' : 'P') + '|' + _muKeySC(r.empresa, r.consecutivo) + '|' + norm(r.empresa_stock);
+              if (vistos[vk]) return; vistos[vk] = 1;
+              comp.push(r);
+            });
+          });
+        });
+        comp.sort(cmpPrioridadLiberacion);
+        if (comp.length) {
+          var filas = comp.slice(0, 5).map(function(x) {
+            var tipoBadge = x._esMuestra
+              ? '<span style="background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">Muestra</span>'
+              : (String(x.Bonificado || '').trim().toLowerCase().replace('í','i') === 'si'
+                  ? '<span style="background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">Pedido bonificado</span>'
+                  : '<span style="background:#f1f5f9;color:#475569;padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">' + (esContado(x.Plazo_Pago) ? 'Contado' : (_normalizePlazo(x.Plazo_Pago) || 'Crédito')) + (x.Precio_Facturacion ? ' · ' + escHtml(x.Precio_Facturacion) : '') + '</span>');
+            var fc = x.Fecha_Compromiso ? ('entrega ' + fmtDate(x.Fecha_Compromiso)) : (x.fecha ? ('aplic. ' + fmtDate(x.fecha)) : 'sin fecha');
+            var libBtn = puede
+              ? '<button type="button" onclick="descomprometerCompetidor(' + (x._esMuestra ? '1' : '0') + ',\'' + escHtml(String(x.empresa)).replace(/'/g, "\\'") + '\',\'' + escHtml(String(x.consecutivo)).replace(/'/g, "\\'") + '\',' + x.id + ',\'' + escHtml(String(x.empresa_stock)).replace(/'/g, "\\'") + '\')" ' +
+                  'style="background:#fff;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:1px 7px;font-size:0.7rem;font-weight:700;cursor:pointer;white-space:nowrap">Liberar</button>'
+              : '';
+            return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0;border-top:1px solid #f1f5f9">' +
+              '<span style="font-weight:700">' + escHtml(getSigla(x.empresa)) + (x._esMuestra ? ' Muestra' : '') + ' #' + escHtml(String(x.consecutivo)) + '</span>' +
+              '<span style="color:#475569">' + escHtml(x.titular || '—') + '</span>' + tipoBadge +
+              '<span style="color:#64748b;font-size:0.7rem">' + x.cantidad + ' ud · ' + escHtml(getSigla(x.empresa_stock)) + ' · ' + fc + '</span>' + libBtn +
+            '</div>';
+          }).join('');
+          var mas = comp.length > 5 ? '<div style="color:#64748b;font-size:0.7rem;margin-top:2px">… y ' + (comp.length - 5) + ' más</div>' : '';
+          out += '<div style="font-size:0.72rem;background:#fef9c3;border:1px solid #fde047;padding:5px 7px;border-radius:4px;margin-bottom:4px">' +
+            '<div style="font-weight:700;color:#854d0e;margin-bottom:2px">⚠️ Disponible neto insuficiente (' + Math.round(netoTotal) + ' / ' + pend + ' pend.). Quién tiene este producto apartado — mejores candidatos a liberar arriba:</div>' +
+            filas + mas + '</div>';
+        } else {
+          out += '<div style="font-size:0.72rem;background:#fef9c3;border:1px solid #fde047;padding:5px 7px;border-radius:4px;margin-bottom:4px;color:#854d0e">' +
+            '⚠️ Disponible neto insuficiente (' + Math.round(netoTotal) + ' / ' + pend + ' pend.). El stock está reservado por solicitudes de compra a otras empresas — revisa Órdenes de Compra.</div>';
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// Botón "🔒 Apartar stock (sin despachar)" del modal. Hermano de saveEntregas:
+// actúa sobre los mismos chips pero NO emite remisión ni toca Cant_Entregada.
+async function apartarMuestraSinDespachar() {
+  if (!muAsig || muViewingId == null) return;
+  var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+  if (!head) return;
+
+  var split = muAsig.splitAsignaciones();
+  var items = [];            // apartados misma empresa
+  split.entregas.forEach(function(e) {
+    if (e._fromApartado) return;
+    if (!e.row || (Number(e.cantidad) || 0) <= 0) return;
+    items.push({ muestra_id: e.row, empresa_stock: e.empresa_stock, cantidad: Number(e.cantidad) });
+  });
+  var solicitudesCompra = split.solicitudesCompra;
+
+  if (!items.length && !solicitudesCompra.length) {
+    showToast('No hay asignaciones para apartar. Elige empresa origen + cantidad y pulsa «+ Añadir».', '#e67e22');
+    return;
+  }
+
+  var resumen = [];
+  if (items.length) resumen.push(items.reduce(function(s, x) { return s + x.cantidad; }, 0) + ' ud apartadas (' + getSigla(muViewEmpresa) + ')');
+  if (solicitudesCompra.length) resumen.push(solicitudesCompra.reduce(function(s, x) { return s + x.cantidad; }, 0) + ' ud vía solicitud de compra a otra empresa');
+  if (!confirm('¿Apartar stock para la solicitud de muestras #' + (head.Consecutivo || '') + '?\n\n' + resumen.join('\n') +
+      '\n\nNO se despacha ni se descuenta la existencia física. La solicitud sigue en Pendientes con el distintivo 🔒 Apartado.')) return;
+
+  var btn = document.getElementById('btn-mu-apartar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Apartando...'; }
+  try {
+    if (items.length) {
+      var r = await apiPost({ action: 'crearApartadosMuestra', items: items });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al apartar');
+    }
+    if (solicitudesCompra.length && muAsig) {
+      var refLabel = (muViewEmpresa || '') + ' Muestra #' + (head.Consecutivo || '');
+      var fecha = document.getElementById('mu-view-fecha-despacho').value ||
+                  new Date().toISOString().slice(0, 10);
+      await muAsig.persistirOCSolicitudes(solicitudesCompra, { fecha: fecha, refLabel: refLabel });
+    }
+    showToast('🔒 Stock apartado' + (solicitudesCompra.length ? ' · solicitud(es) de compra creada(s)' : '') + '. La solicitud sigue en Pendientes.');
+    if (solicitudesCompra.length) {
+      showToast('⚠ Legalizar la OC en Órdenes para que el stock quede en ' + muViewEmpresa, '#e67e22');
+    }
+    var reopenId = muViewingId;
+    await loadMuestras();
+    viewMuestra(reopenId);
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔒 Apartar stock (sin despachar)'; }
+  }
+}
+
+// Llama a liberar_apartados_muestra y recarga (reabriendo el modal si estaba abierto).
+async function _liberarMuApartados(empresa, consecutivo, muestraId, empStock, motivo) {
+  try {
+    var r = await apiPost({
+      action: 'liberarApartadosMuestra',
+      empresa: empresa, consecutivo: consecutivo,
+      muestra_id: (muestraId != null ? muestraId : null),
+      empresa_stock: (empStock != null ? empStock : null),
+      motivo: motivo || ''
+    });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al descomprometer');
+    var extra = (r.ocs_anuladas || 0) > 0 ? ' · ' + r.ocs_anuladas + ' OC de traslado anulada(s)' : '';
+    showToast('🔓 Stock descomprometido (' + (r.liberados || 0) + ' apartado' + ((r.liberados || 0) === 1 ? '' : 's') + ')' + extra);
+    var reopenId = muViewingId;
+    await loadMuestras();
+    if (reopenId != null && allMuestras.some(function(x) { return x.id === reopenId; })) viewMuestra(reopenId);
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
+  }
+}
+
+// Botón "Descomprometer" de la fila (o del modal): libera TODO el apartado
+// de la solicitud. Muestra = grupo más protegido → confirmación reforzada + motivo.
+async function descomprometerMuestra(empresa, consecutivo) {
+  if (typeof AUTH.canDescomprometer !== 'function' || !AUTH.canDescomprometer()) {
+    showToast('No tienes permiso para descomprometer.', '#e74c3c'); return;
+  }
+  var apaList = muApartadosPorSolicitud[_muKeySC(empresa, consecutivo)] || [];
+  if (!apaList.length) { showToast('Esta solicitud no tiene stock apartado', '#e67e22'); return; }
+  var head = _muConsecLookup(empresa, consecutivo);
+  var tot = apaList.reduce(function(s, a) { return s + (Number(a.cantidad) || 0); }, 0);
+  var lineasTxt = apaList.map(function(a) {
+    return '  • ' + a.cantidad + ' ud · ' + (a.producto || '') + ' (' + getSigla(a.empresa_stock) + ')';
+  }).join('\n');
+  var msg = '⚠️  Vas a LIBERAR stock reservado para una MUESTRA aprobada' +
+    (head ? ' (#' + (head.Consecutivo || '') + ' · ' + (head.Responsable || head.Solicitante || '') + ')' : '') + '.\n\n' +
+    'Las muestras son el grupo más protegido: solo se liberan si el producto hace falta con urgencia para otro pedido.\n\n' +
+    'Se liberan ' + tot + ' ud:\n' + lineasTxt + '\n\n¿Confirmas la liberación?';
+  if (!confirm(msg)) return;
+  var motivo = (window.prompt('Motivo de liberar stock apartado a una muestra (obligatorio):', '') || '').trim();
+  if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+  await _liberarMuApartados(empresa, consecutivo, null, null, motivo);
+}
+
+// Liberar el apartado de UNA línea/empresa desde el modal.
+async function descomprometerLineaMuestra(i, empresaStock, cant) {
+  var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+  var wl = muViewWorkingLines[i];
+  if (!head || !wl) return;
+  if (!confirm('¿Liberar ' + cant + ' ud apartadas en ' + getSigla(empresaStock) + ' de esta muestra?\n\nLas muestras son el grupo más protegido; libéralas solo si el producto hace falta para otro pedido.')) return;
+  var motivo = (window.prompt('Motivo (obligatorio):', '') || '').trim();
+  if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+  await _liberarMuApartados(head.Empresa, head.Consecutivo, wl.id, empresaStock, motivo);
+}
+
+// Convierte el apartado propio de la línea en un chip de entrega.
+function emitirEntregaMuestraApartado(i, empresaStock, cant) {
+  if (!muAsig) return;
+  muAsig.addApartadoChip(i, empresaStock, cant);
+  muAsig.refreshCell(i);
+}
+
+// "Liberar" desde el panel de competencia — puede ser una muestra (tipo=1) o
+// un pedido (tipo=0) el que tiene el stock apartado.
+async function descomprometerCompetidor(tipo, empresa, consecutivo, id, empStock) {
+  if (typeof AUTH.canDescomprometer !== 'function' || !AUTH.canDescomprometer()) {
+    showToast('No tienes permiso para descomprometer.', '#e74c3c'); return;
+  }
+  if (Number(tipo) === 1) {
+    if (!confirm('¿Liberar el apartado de la MUESTRA ' + getSigla(empresa) + ' #' + consecutivo + '?\n\nLas muestras son el grupo más protegido.')) return;
+    var m1 = (window.prompt('Motivo (obligatorio):', '') || '').trim();
+    if (!m1) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+    await _liberarMuApartados(empresa, consecutivo, id, empStock, m1);
+    return;
+  }
+  // Pedido: usa la RPC de apartados de pedido.
+  try {
+    var esBonif = false;
+    Object.keys(pedApartadosPorProdEmp).forEach(function(k) {
+      (pedApartadosPorProdEmp[k] || []).forEach(function(r) {
+        if (r.id === id && String(r.consecutivo) === String(consecutivo)) {
+          esBonif = String(r.Bonificado || '').trim().toLowerCase().replace('í', 'i') === 'si' || esContado(r.Plazo_Pago);
+        }
+      });
+    });
+    if (!confirm('¿Liberar el apartado del PEDIDO ' + getSigla(empresa) + ' #' + consecutivo + '?\n\nVolverá a estar disponible para esta muestra y para otros pedidos.')) return;
+    var m0 = '';
+    if (esBonif) {
+      m0 = (window.prompt('Ese pedido es de Contado o bonificado (grupo protegido). Motivo de la liberación (obligatorio):', '') || '').trim();
+      if (!m0) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+    }
+    var r = await apiPost({
+      action: 'liberarApartadosPedido', empresa: empresa, consecutivo: consecutivo,
+      pedido_id: id, empresa_stock: empStock, motivo: m0 || 'liberado desde Muestras'
+    });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al descomprometer');
+    showToast('🔓 Apartado del pedido liberado (' + (r.liberados || 0) + ')');
+    var reopenId = muViewingId;
+    await loadMuestras();
+    if (reopenId != null) viewMuestra(reopenId);
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
   }
 }
 

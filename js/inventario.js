@@ -96,7 +96,8 @@ async function loadInventario() {
       apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Cantidad,Tipo_Linea,Producto,Bodega_Ingreso,Bodega_Salida,Remision_Ingreso,Remision_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Estado,Remision,Bodega,Cantidad,Empresa_Origen,Empresa_Destino,Producto,Tipo' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getEntregasPedido', { columns: 'id,pedido_id,empresa_pedido,empresa_stock,producto,presentacion,cantidad,remision,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
-      apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
+      apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; }),
+      apiGet('getApartadosMuestra', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
     ]);
 
     var dataInv = results[0];
@@ -121,12 +122,14 @@ async function loadInventario() {
     // Apartado por producto (informativo): parte del "comprometido" que ya
     // tiene stock reservado sin remisionar. NO cambia el cálculo de Disponible.
     _apartadoPorProdInv = {};
-    ((results[9] && results[9].apartados) || []).forEach(function(a) {
-      if (String(a.estado || '') !== 'Activo') return;
-      var p = norm(a.producto);
-      if (!p) return;
-      _apartadoPorProdInv[p] = (_apartadoPorProdInv[p] || 0) + (Number(a.cantidad) || 0);
-    });
+    ((results[9] && results[9].apartados) || [])
+      .concat((results[10] && results[10].apartados) || [])
+      .forEach(function(a) {
+        if (String(a.estado || '') !== 'Activo') return;
+        var p = norm(a.producto);
+        if (!p) return;
+        _apartadoPorProdInv[p] = (_apartadoPorProdInv[p] || 0) + (Number(a.cantidad) || 0);
+      });
 
     enrichInventario();
     populateInvFilters();

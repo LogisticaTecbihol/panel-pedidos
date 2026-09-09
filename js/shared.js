@@ -308,6 +308,11 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, apartados: _addRow(res.data) };
     }
+    if (action === 'getApartadosMuestra') {
+      var res = await _fetchAllRows('apartados_muestra', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, apartados: _addRow(res.data) };
+    }
     if (action === 'getMaestroProductos') {
       var res = await _sb.from('maestro_productos').select('Producto');
       if (res.error) return { ok: false, error: res.error.message, productos: [] };
@@ -650,6 +655,34 @@ async function _apiPostCore(body) {
     if (action === 'consumirApartados') {
       var res = await _sb.rpc('consumir_apartados_pedido', {
         p_pedido_id: body.pedido_id,
+        p_empresa_stock: body.empresa_stock || '',
+        p_cantidad: Number(body.cantidad) || 0,
+        p_remision: body.remision || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+
+    // ── APARTADOS DE STOCK PARA MUESTRAS (espejo de los de pedido) ──
+    if (action === 'crearApartadosMuestra') {
+      var res = await _sb.rpc('crear_apartados_muestra', { p_items: body.items || [] });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+    if (action === 'liberarApartadosMuestra') {
+      var res = await _sb.rpc('liberar_apartados_muestra', {
+        p_empresa: body.empresa || '',
+        p_consecutivo: String(body.consecutivo || ''),
+        p_muestra_id: (body.muestra_id != null ? body.muestra_id : null),
+        p_empresa_stock: (body.empresa_stock != null ? body.empresa_stock : null),
+        p_motivo: body.motivo || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+    if (action === 'consumirApartadosMuestra') {
+      var res = await _sb.rpc('consumir_apartados_muestra', {
+        p_muestra_id: body.muestra_id,
         p_empresa_stock: body.empresa_stock || '',
         p_cantidad: Number(body.cantidad) || 0,
         p_remision: body.remision || ''
@@ -1927,13 +1960,32 @@ function _precioRank(precio) {
   return 1;
 }
 
+// Grupo más protegido en el ranking de liberación (lo ÚLTIMO que se
+// suelta): 0 = normal · 1 = línea de pedido bonificada · 2 = muestra.
+// Una muestra (bonificado por definición) nunca se libera si hay
+// cualquier otro apartado que se pueda soltar; un pedido bonificado va
+// justo por encima. `x` puede traer `_esMuestra`/`origen==='muestra'` o
+// `Bonificado`/`bonificado` ('Sí').
+function _grupoProtegido(x) {
+  if (x && (x._esMuestra === true || x.origen === 'muestra')) return 2;
+  var b = String((x && (x.Bonificado != null ? x.Bonificado : x.bonificado)) || '')
+    .trim().toLowerCase();
+  if (b === 'sí' || b === 'si') return 1;
+  return 0;
+}
+
 // Comparador para ordenar apartados/pedidos que compiten por el mismo
 // stock, con los MEJORES CANDIDATOS A LIBERAR primero. Criterios (el
-// negocio los fijó así): 1) plazo — Crédito antes que Contado (Contado
-// protegido); 2) precio — Mayorista antes que Dealer antes que Público;
-// 3) Fecha_Compromiso más lejana primero (liberar antes); sin fecha → al
-// final. `a`/`b`: objetos con { Plazo_Pago, Precio_Facturacion, Fecha_Compromiso }.
+// negocio los fijó así): 0) grupo protegido — muestras y pedidos
+// bonificados de últimos (nunca se sueltan si hay otra cosa que soltar);
+// 1) plazo — Crédito antes que Contado (Contado protegido); 2) precio —
+// Mayorista antes que Dealer antes que Público; 3) Fecha_Compromiso más
+// lejana primero (liberar antes); sin fecha → al final. `a`/`b`: objetos
+// con { Plazo_Pago, Precio_Facturacion, Fecha_Compromiso, Bonificado, _esMuestra }.
 function cmpPrioridadLiberacion(a, b) {
+  var ga = _grupoProtegido(a);
+  var gb = _grupoProtegido(b);
+  if (ga !== gb) return ga - gb;
   var ca = esContado(a && a.Plazo_Pago) ? 1 : 0;
   var cb = esContado(b && b.Plazo_Pago) ? 1 : 0;
   if (ca !== cb) return ca - cb;

@@ -100,7 +100,8 @@ async function loadKardex() {
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
       apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
-      apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
+      apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; }),
+      apiGet('getApartadosMuestra', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
     ];
 
     corePromises.push(apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }));
@@ -122,11 +123,14 @@ async function loadKardex() {
     kxCatalogo = results[7].productos || [];
     kxCambios = results[8].cambios || [];
     kxRemAnuladas = results[9].remisionesAnuladas || [];
-    kxApartados = (results[10] && results[10].apartados) || [];
+    // apartados_pedido + apartados_muestra: misma capa derivada. computeApartadoPorEmpresa
+    // solo lee estado/producto/empresa_stock/cantidad, así que se concatenan.
+    kxApartados = ((results[10] && results[10].apartados) || [])
+      .concat((results[11] && results[11].apartados) || []);
 
-    ncAjustes = results[11].ajustesNC || [];
+    ncAjustes = results[12].ajustesNC || [];
     _ncLoaded = true;
-    var extraIdx = 12;
+    var extraIdx = 13;
 
     [kxPedidos, kxIngresos, kxOrdenes, kxMuestras, kxReenvases, kxDevoluciones, kxAjustes, kxCatalogo, kxCambios, ncAjustes].forEach(function(arr) {
       arr.forEach(function(r) { if (r.Producto) r.Producto = _normProd(r.Producto); });

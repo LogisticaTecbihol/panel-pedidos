@@ -617,7 +617,7 @@ var apartadosPorPedido = {};
 var apartadosPorProdEmp = {};
 var apartadosPorLinea = {};
 
-function _buildApartadosMaps(rows) {
+function _buildApartadosMaps(rows, muRows) {
   apartadosPorPedido = {};
   apartadosPorProdEmp = {};
   apartadosPorLinea = {};
@@ -628,15 +628,31 @@ function _buildApartadosMaps(rows) {
     var kP = _keySC(a.empresa_pedido, a.consecutivo);
     (apartadosPorPedido[kP] || (apartadosPorPedido[kP] = [])).push({
       pedido_id: a.pedido_id, producto: a.producto, presentacion: a.presentacion || '',
-      empresa_stock: a.empresa_stock, cantidad: cant
+      empresa_stock: a.empresa_stock, cantidad: cant, bonificado: a.bonificado || ''
     });
     var kE = _normProdSel(a.producto) + '||' + norm(a.empresa_stock);
     (apartadosPorProdEmp[kE] || (apartadosPorProdEmp[kE] = [])).push({
       pedido_id: a.pedido_id, empresa_pedido: a.empresa_pedido, consecutivo: a.consecutivo,
-      cliente: a.cliente || '', cantidad: cant, empresa_stock: a.empresa_stock
+      cliente: a.cliente || '', cantidad: cant, empresa_stock: a.empresa_stock,
+      bonificado: a.bonificado || '', _esMuestra: false
     });
     (apartadosPorLinea[a.pedido_id] || (apartadosPorLinea[a.pedido_id] = [])).push({
-      empresa_stock: a.empresa_stock, cantidad: cant
+      empresa_stock: a.empresa_stock, cantidad: cant, bonificado: a.bonificado || ''
+    });
+  });
+  // Apartados de MUESTRAS que compiten por el mismo (producto, empresa_stock):
+  // se listan en el panel "quién tiene este producto apartado" y son el grupo
+  // más protegido (cmpPrioridadLiberacion los pone de últimos).
+  (muRows || []).forEach(function(a) {
+    if (String(a.estado || '') !== 'Activo') return;
+    var cant = Number(a.cantidad) || 0;
+    if (cant <= 0) return;
+    var kE = _normProdSel(a.producto) + '||' + norm(a.empresa_stock);
+    (apartadosPorProdEmp[kE] || (apartadosPorProdEmp[kE] = [])).push({
+      _esMuestra: true, muestra_id: a.muestra_id,
+      empresa_pedido: a.empresa_muestra, consecutivo: a.consecutivo,
+      cliente: a.responsable || a.solicitante || '', cantidad: cant, empresa_stock: a.empresa_stock,
+      Fecha_Compromiso: a.fecha_aplicacion || ''
     });
   });
 }
@@ -813,14 +829,20 @@ async function loadFromAPI() {
       columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id'
     }).catch(function() { return { ok: true, ordenes: [] }; });
     var apartadosPromise = apiGet('getApartadosPedido', {
-      columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado'
+      columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,bonificado'
     }).catch(function() { return { ok: true, apartados: [] }; });
-    var results = await Promise.all([pedidosPromise, ordenesPromise, apartadosPromise]);
+    var apartadosMuPromise = apiGet('getApartadosMuestra', {
+      columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_aplicacion'
+    }).catch(function() { return { ok: true, apartados: [] }; });
+    var results = await Promise.all([pedidosPromise, ordenesPromise, apartadosPromise, apartadosMuPromise]);
     var data = results[0];
     var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
     var allOCs = (ocData && ocData.ok && ocData.ordenes) || [];
-    _buildApartadosMaps((results[2] && results[2].apartados) || []);
+    _buildApartadosMaps(
+      (results[2] && results[2].apartados) || [],
+      (results[3] && results[3].apartados) || []
+    );
     // solicitudesCompraPorPedido / ocsLegalizadasPorPedido se arman más abajo,
     // DESPUÉS de poblar `pedidos` y `_pedidoPorId` (los necesitan para resolver
     // OrdenesCompra.pedido_id → cliente y no cruzar pedidos #N° distintos).
@@ -1162,6 +1184,16 @@ function _apartadoCompetencia(producto, empresaStock, excludeKey) {
   var out = [];
   (apartadosPorProdEmp[k] || []).forEach(function(r) {
     if (_keySC(r.empresa_pedido, r.consecutivo) === excludeKey) return;
+    if (r._esMuestra) {
+      out.push({
+        _esMuestra: true, muestra_id: r.muestra_id,
+        empresa_pedido: r.empresa_pedido, consecutivo: r.consecutivo,
+        empresa_stock: r.empresa_stock || empresaStock,
+        cliente: r.cliente || '', cantidad: r.cantidad,
+        Plazo_Pago: '', Precio_Facturacion: '', Fecha_Compromiso: r.Fecha_Compromiso || ''
+      });
+      return;
+    }
     var c = _consecLookup(r.empresa_pedido, r.consecutivo);
     out.push({
       pedido_id: r.pedido_id,
@@ -1170,6 +1202,7 @@ function _apartadoCompetencia(producto, empresaStock, excludeKey) {
       empresa_stock: r.empresa_stock || empresaStock,
       cliente: r.cliente || (c && c.Cliente) || '',
       cantidad: r.cantidad,
+      bonificado: r.bonificado || '',
       Plazo_Pago: c ? (c.Plazo_Pago || '') : '',
       Precio_Facturacion: c ? (c.Precio_Facturacion || '') : '',
       Fecha_Compromiso: c ? (c.Fecha_Compromiso || '') : ''
@@ -1189,22 +1222,26 @@ async function descomprometerPedido(idx) {
 
   var totApa = apaList.reduce(function(s, a) { return s + (Number(a.cantidad) || 0); }, 0);
   var contado = esContado(c.Plazo_Pago);
+  var _esBonif = function(v) { var s = String(v || '').trim().toLowerCase(); return s === 'sí' || s === 'si'; };
+  var hayBonif = apaList.some(function(a) { return _esBonif(a.bonificado); });
+  var protegido = contado || hayBonif;
   var hayCreditoEsperando = apaList.some(function(a) {
-    return _apartadoCompetencia(a.producto, a.empresa_stock, key).some(function(x) { return !esContado(x.Plazo_Pago); });
+    return _apartadoCompetencia(a.producto, a.empresa_stock, key).some(function(x) { return !x._esMuestra && !esContado(x.Plazo_Pago) && !_esBonif(x.bonificado); });
   });
   var lineasTxt = apaList.map(function(a) {
-    return '  • ' + a.cantidad + ' ud · ' + (a.producto || '') + ' (' + getSigla(a.empresa_stock) + ')';
+    return '  • ' + a.cantidad + ' ud · ' + (a.producto || '') + ' (' + getSigla(a.empresa_stock) + ')' + (_esBonif(a.bonificado) ? ' · BONIFICADO' : '');
   }).join('\n');
   var head = 'Pedido #' + c.Consecutivo + ' — ' + (c.Cliente || '') +
     '\nPlazo: ' + (_normalizePlazo(c.Plazo_Pago) || '—') + '   ·   Precio: ' + (c.Precio_Facturacion || '—');
 
-  if (contado) {
-    var msg = '⚠️  Este pedido es de CONTADO.\n\n' + head +
+  if (protegido) {
+    var msg = '⚠️  ' + (contado ? 'Este pedido es de CONTADO.' : 'Este pedido tiene línea(s) BONIFICADAS.') +
+      ' Grupo protegido.\n\n' + head +
       '\n\nVas a LIBERAR ' + totApa + ' ud de stock apartado:\n' + lineasTxt +
       (hayCreditoEsperando ? '\n\nEse stock puede quedar disponible para un pedido de CRÉDITO.' : '') +
       '\n\n¿Confirmas la liberación?';
     if (!confirm(msg)) return;
-    var motivo = (window.prompt('Estás liberando stock de un cliente de CONTADO.\nEscribe el motivo (obligatorio):', '') || '').trim();
+    var motivo = (window.prompt('Estás liberando stock de un pedido protegido (Contado / bonificado).\nEscribe el motivo (obligatorio):', '') || '').trim();
     if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
     await _liberarApartados(c, null, null, motivo);
   } else {
@@ -2191,6 +2228,9 @@ function _apartadoLineaHtml(i, l, empresaPedido) {
   if (!apas.length) return '';
   var c = (activeIdx != null) ? consecs[activeIdx] : null;
   var contado = c ? esContado(c.Plazo_Pago) : false;
+  var lineaBonif = /bonificado/i.test(String(l.Producto || '')) ||
+    (function(v) { var s = String(v || '').trim().toLowerCase(); return s === 'sí' || s === 'si'; })(l.Bonificado);
+  var protegido = contado || lineaBonif;
   var rows = apas.map(function(a) {
     var sig = getSigla(a.empresa_stock);
     return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">' +
@@ -2198,7 +2238,7 @@ function _apartadoLineaHtml(i, l, empresaPedido) {
       '<button type="button" onclick="emitirEntregaApartado(' + i + ',\'' + escHtml(a.empresa_stock).replace(/'/g,"\\'") + '\',' + a.cantidad + ')" ' +
         'style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Emitir entrega</button>' +
       (AUTH.canDescomprometer()
-        ? '<button type="button" onclick="descomprometerLinea(' + i + ',\'' + escHtml(a.empresa_stock).replace(/'/g,"\\'") + '\',' + a.cantidad + ',' + (contado ? 'true' : 'false') + ')" ' +
+        ? '<button type="button" onclick="descomprometerLinea(' + i + ',\'' + escHtml(a.empresa_stock).replace(/'/g,"\\'") + '\',' + a.cantidad + ',' + (protegido ? 'true' : 'false') + ')" ' +
             'style="background:#fffbeb;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Liberar</button>'
         : '') +
     '</div>';
@@ -2229,13 +2269,24 @@ function _competenciaApartadoHtml(l, empresaPedido) {
     if (k.indexOf(prodStock + '||') !== 0) return;
     (apartadosPorProdEmp[k] || []).forEach(function(r) {
       if (_keySC(r.empresa_pedido, r.consecutivo) === thisKey) return;
-      var vk = _keySC(r.empresa_pedido, r.consecutivo) + '||' + norm(r.empresa_stock);
+      var vk = (r._esMuestra ? 'M|' : 'P|') + _keySC(r.empresa_pedido, r.consecutivo) + '||' + norm(r.empresa_stock);
       if (vistos[vk]) return; vistos[vk] = 1;
+      if (r._esMuestra) {
+        comp.push({
+          _esMuestra: true, muestra_id: r.muestra_id,
+          empresa_pedido: r.empresa_pedido, consecutivo: r.consecutivo,
+          cliente: r.cliente || '', cantidad: r.cantidad,
+          _empStock: r.empresa_stock, _empStockSigla: getSigla(r.empresa_stock),
+          Plazo_Pago: '', Precio_Facturacion: '', Fecha_Compromiso: r.Fecha_Compromiso || ''
+        });
+        return;
+      }
       var c = _consecLookup(r.empresa_pedido, r.consecutivo);
       comp.push({
         pedido_id: r.pedido_id, empresa_pedido: r.empresa_pedido, consecutivo: r.consecutivo,
         cliente: r.cliente || (c && c.Cliente) || '', cantidad: r.cantidad,
         _empStock: r.empresa_stock, _empStockSigla: getSigla(r.empresa_stock),
+        bonificado: r.bonificado || '',
         Plazo_Pago: c ? (c.Plazo_Pago || '') : '',
         Precio_Facturacion: c ? (c.Precio_Facturacion || '') : '',
         Fecha_Compromiso: c ? (c.Fecha_Compromiso || '') : ''
@@ -2253,19 +2304,31 @@ function _competenciaApartadoHtml(l, empresaPedido) {
   }
   var filas = comp.slice(0, 5).map(function(x) {
     var esC = esContado(x.Plazo_Pago);
-    var plBadge = '<span style="background:' + (esC ? '#dcfce7' : '#f1f5f9') + ';color:' + (esC ? '#166534' : '#475569') + ';padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">' + (esC ? 'Contado' : (_normalizePlazo(x.Plazo_Pago) || 'Crédito')) + '</span>';
-    var pr = String(x.Precio_Facturacion || '').trim();
-    var prRank = _precioRank(pr);
-    var prBadge = pr ? '<span style="background:' + (prRank >= 2 ? '#dcfce7' : '#f1f5f9') + ';color:' + (prRank >= 2 ? '#166534' : '#475569') + ';padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">' + escHtml(pr) + '</span>' : '';
-    var fc = x.Fecha_Compromiso ? ('entrega ' + fmtDate(x.Fecha_Compromiso)) : 'sin fecha';
+    var esBonif = String(x.bonificado || '').trim().toLowerCase() === 'sí' || String(x.bonificado || '').trim().toLowerCase() === 'si';
+    var tipoBadge;
+    if (x._esMuestra) {
+      tipoBadge = '<span style="background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700" title="Grupo más protegido">Muestra</span>';
+    } else if (esBonif) {
+      tipoBadge = '<span style="background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700" title="Grupo más protegido">Bonificado</span>';
+    } else {
+      var plBadge = '<span style="background:' + (esC ? '#dcfce7' : '#f1f5f9') + ';color:' + (esC ? '#166534' : '#475569') + ';padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">' + (esC ? 'Contado' : (_normalizePlazo(x.Plazo_Pago) || 'Crédito')) + '</span>';
+      var pr = String(x.Precio_Facturacion || '').trim();
+      var prRank = _precioRank(pr);
+      var prBadge = pr ? '<span style="background:' + (prRank >= 2 ? '#dcfce7' : '#f1f5f9') + ';color:' + (prRank >= 2 ? '#166534' : '#475569') + ';padding:1px 6px;border-radius:8px;font-size:0.68rem;font-weight:700">' + escHtml(pr) + '</span>' : '';
+      tipoBadge = plBadge + prBadge;
+    }
+    var fc = x.Fecha_Compromiso ? ((x._esMuestra ? 'aplic. ' : 'entrega ') + fmtDate(x.Fecha_Compromiso)) : 'sin fecha';
     var libBtn = puede
-      ? '<button type="button" onclick="descomprometerOtro(\'' + escHtml(x.empresa_pedido).replace(/'/g,"\\'") + '\',\'' + escHtml(String(x.consecutivo)).replace(/'/g,"\\'") + '\',' + x.pedido_id + ',\'' + escHtml(x._empStock).replace(/'/g,"\\'") + '\',' + (esC ? 'true' : 'false') + ')" ' +
-          'style="background:#fff;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:1px 7px;font-size:0.7rem;font-weight:700;cursor:pointer;white-space:nowrap">Liberar</button>'
+      ? (x._esMuestra
+          ? '<button type="button" onclick="descomprometerOtroMuestra(\'' + escHtml(String(x.empresa_pedido)).replace(/'/g,"\\'") + '\',\'' + escHtml(String(x.consecutivo)).replace(/'/g,"\\'") + '\',' + x.muestra_id + ',\'' + escHtml(String(x._empStock)).replace(/'/g,"\\'") + '\')" ' +
+              'style="background:#fff;color:#6d28d9;border:1px solid #6d28d9;border-radius:4px;padding:1px 7px;font-size:0.7rem;font-weight:700;cursor:pointer;white-space:nowrap">Liberar</button>'
+          : '<button type="button" onclick="descomprometerOtro(\'' + escHtml(x.empresa_pedido).replace(/'/g,"\\'") + '\',\'' + escHtml(String(x.consecutivo)).replace(/'/g,"\\'") + '\',' + x.pedido_id + ',\'' + escHtml(x._empStock).replace(/'/g,"\\'") + '\',' + ((esC || esBonif) ? 'true' : 'false') + ')" ' +
+              'style="background:#fff;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:1px 7px;font-size:0.7rem;font-weight:700;cursor:pointer;white-space:nowrap">Liberar</button>')
       : '';
     return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0;border-top:1px solid #f1f5f9">' +
-      '<span style="font-weight:700">' + escHtml(getSigla(x.empresa_pedido)) + ' #' + escHtml(String(x.consecutivo)) + '</span>' +
+      '<span style="font-weight:700">' + escHtml(getSigla(x.empresa_pedido)) + (x._esMuestra ? ' Muestra' : '') + ' #' + escHtml(String(x.consecutivo)) + '</span>' +
       '<span style="color:#475569">' + escHtml(x.cliente || '—') + '</span>' +
-      plBadge + prBadge +
+      tipoBadge +
       '<span style="color:#64748b;font-size:0.7rem">' + x.cantidad + ' ud · ' + escHtml(x._empStockSigla) + ' · ' + fc + '</span>' +
       libBtn +
     '</div>';
@@ -2586,15 +2649,15 @@ function emitirEntregaApartado(i, empresaStock, cant) {
 }
 
 // Liberar el apartado de UNA línea/empresa desde el modal.
-async function descomprometerLinea(i, empresaStock, cant, contado) {
+async function descomprometerLinea(i, empresaStock, cant, protegido) {
   if (activeIdx == null) return;
   var c = consecs[activeIdx];
   var dl = detailWorkingLines[i];
   if (!c || !dl || !dl.__row) return;
   var motivo = '';
-  if (contado) {
-    if (!confirm('⚠️  Pedido de CONTADO (' + (c.Cliente || '') + ').\n\nLiberar ' + cant + ' ud apartadas en ' + getSigla(empresaStock) + '. ¿Confirmas?')) return;
-    motivo = (window.prompt('Motivo de liberar stock de un cliente de CONTADO (obligatorio):', '') || '').trim();
+  if (protegido) {
+    if (!confirm('⚠️  Grupo protegido (Contado o bonificado · ' + (c.Cliente || '') + ').\n\nLiberar ' + cant + ' ud apartadas en ' + getSigla(empresaStock) + '. ¿Confirmas?')) return;
+    motivo = (window.prompt('Motivo de liberar stock de un pedido protegido (obligatorio):', '') || '').trim();
     if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
   } else {
     if (!confirm('¿Liberar ' + cant + ' ud apartadas en ' + getSigla(empresaStock) + ' de este pedido?')) return;
@@ -2603,17 +2666,42 @@ async function descomprometerLinea(i, empresaStock, cant, contado) {
 }
 
 // Liberar el apartado de OTRO pedido (desde el panel de competencia).
-async function descomprometerOtro(empresa, consecutivo, pedidoId, empresaStock, contado) {
+async function descomprometerOtro(empresa, consecutivo, pedidoId, empresaStock, protegido) {
   var motivo = '';
   var etq = getSigla(empresa) + ' #' + consecutivo;
-  if (contado) {
-    if (!confirm('⚠️  El pedido ' + etq + ' es de CONTADO.\n\nVas a liberar su stock apartado en ' + getSigla(empresaStock) + '. ¿Confirmas?')) return;
-    motivo = (window.prompt('Motivo de liberar stock de un pedido de CONTADO (obligatorio):', '') || '').trim();
+  if (protegido) {
+    if (!confirm('⚠️  El pedido ' + etq + ' está en el grupo protegido (Contado o bonificado).\n\nVas a liberar su stock apartado en ' + getSigla(empresaStock) + '. ¿Confirmas?')) return;
+    motivo = (window.prompt('Motivo de liberar stock de un pedido protegido (obligatorio):', '') || '').trim();
     if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
   } else {
     if (!confirm('¿Liberar el stock apartado del pedido ' + etq + ' en ' + getSigla(empresaStock) + '?')) return;
   }
   await _liberarApartados({ Nombre_Empresa: empresa, Consecutivo: consecutivo }, pedidoId, empresaStock, motivo);
+}
+
+// "Liberar" en el panel de competencia cuando quien retiene el stock es una MUESTRA.
+async function descomprometerOtroMuestra(empresa, consecutivo, muestraId, empresaStock) {
+  if (!AUTH.canDescomprometer()) { showToast('Sin permiso para descomprometer', '#e74c3c'); return; }
+  if (!confirm('⚠️  Vas a liberar stock apartado a una MUESTRA (' + getSigla(empresa) + ' Muestra #' + consecutivo + ') en ' + getSigla(empresaStock) + '.\n\nLas muestras son el grupo más protegido. ¿Confirmas?')) return;
+  var motivo = (window.prompt('Motivo de liberar stock apartado a una muestra (obligatorio):', '') || '').trim();
+  if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+  try {
+    var r = await apiPost({
+      action: 'liberarApartadosMuestra', empresa: empresa, consecutivo: consecutivo,
+      muestra_id: muestraId, empresa_stock: empresaStock, motivo: motivo
+    });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al descomprometer');
+    showToast('🔓 Apartado de la muestra liberado (' + (r.liberados || 0) + ')');
+    var reopenKey = (activeIdx != null && consecs[activeIdx])
+      ? keyOf(consecs[activeIdx].Nombre_Empresa, consecs[activeIdx].Consecutivo, consecs[activeIdx].Cliente) : null;
+    await loadFromAPI();
+    if (reopenKey) {
+      var ni = consecs.findIndex(function(cc) { return keyOf(cc.Nombre_Empresa, cc.Consecutivo, cc.Cliente) === reopenKey; });
+      if (ni >= 0) openDetail(ni);
+    }
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
+  }
 }
 
 // Re-renderiza las celdas de asignación de todas las líneas que

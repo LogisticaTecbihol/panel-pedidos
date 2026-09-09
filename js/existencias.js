@@ -389,7 +389,9 @@
         .catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' })
         .catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
-      apiGet('getApartadosPedido', { columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso' })
+      apiGet('getApartadosPedido', { columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado' })
+        .catch(function() { return { ok: true, apartados: [] }; }),
+      apiGet('getApartadosMuestra', { columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_despacho,fecha_aplicacion' })
         .catch(function() { return { ok: true, apartados: [] }; })
     ]);
 
@@ -407,7 +409,14 @@
       cambios:      res[8].cambios       || []
     };
     var remAnuladas = res[9].remisionesAnuladas || [];
-    var apartados = (res[10] && res[10].apartados) || [];
+    // Apartados de pedido + de muestra: ambos son la misma capa derivada
+    // sobre `saldos` (reservan stock sin descontar existencia física).
+    // computeApartadoPorEmpresa solo lee estado/producto/empresa_stock/cantidad,
+    // así que se concatenan sin normalizar.
+    var apartadosPedido  = (res[10] && res[10].apartados) || [];
+    var apartadosMuestra = (res[11] && res[11].apartados) || [];
+    apartadosMuestra.forEach(function(a) { a._esMuestra = true; });
+    var apartados = apartadosPedido.concat(apartadosMuestra);
 
     var kxMovs = buildKxMovimientos(sources);
 
