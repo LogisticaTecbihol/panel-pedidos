@@ -664,7 +664,8 @@ async function viewMuestra(id) {
       globalName: 'muAsig',
       prefix: 'mu',
       neto: true,                      // el selector ofrece "disponible neto" (resta apartados)
-      cellPrefixHtml: _muApartadoCellHtml
+      cellPrefixHtml: _muApartadoCellHtml,
+      onChipsChange: _muRefreshEntregadaPreview
     });
     await muAsig.loadSnapshot();
 
@@ -953,6 +954,32 @@ function _muConsecLookup(empresa, consecutivo) {
     if (_muKeySC(allMuestras[i].Empresa, allMuestras[i].Consecutivo) === k) return allMuestras[i];
   }
   return null;
+}
+
+// Vista previa en vivo de la columna "Entregada" del modal:
+// valor guardado + suministro asignado en esta sesión (chips de la MISMA
+// empresa, que son los que suben Cant_Entregada al "Guardar entregas").
+function _muRefreshEntregadaPreview() {
+  if (!muAsig || !muViewWorkingLines.length) return;
+  var perLinea = {};
+  try {
+    muAsig.splitAsignaciones().entregas.forEach(function(e) {
+      perLinea[e._idx] = (perLinea[e._idx] || 0) + (Number(e.cantidad) || 0);
+    });
+  } catch (err) { return; }
+  muViewWorkingLines.forEach(function(wl, i) {
+    var inp = document.querySelector('.mu-view-cant-ent[data-i="' + i + '"]');
+    if (!inp) return;
+    var base = Number(wl.Cant_Entregada) || 0;
+    var ses = perLinea[i] || 0;
+    inp.value = base + ses;
+    inp.style.background = ses > 0 ? '#dcfce7' : '#f1f5f9';
+    inp.style.color = ses > 0 ? '#166534' : '#94a3b8';
+    inp.style.fontWeight = ses > 0 ? '700' : '';
+    inp.title = ses > 0
+      ? ('Incluye ' + ses + ' ud sin guardar — se confirman al pulsar «Guardar entregas»')
+      : 'Se calcula desde las asignaciones';
+  });
 }
 
 // HTML que se inyecta bajo la barra de referencia de cada línea del modal:

@@ -27,6 +27,9 @@ function createAsignacionEngine(config) {
   //   de referencia de cada celda (panel de apartado / competencia).
   var _neto = !!config.neto;
   var _cellPrefixHtml = typeof config.cellPrefixHtml === 'function' ? config.cellPrefixHtml : null;
+  // config.onChipsChange(i) → se dispara tras cualquier alta/baja de chip,
+  //   para que el consumidor recalcule su vista previa de "entregada".
+  var _onChipsChange = typeof config.onChipsChange === 'function' ? config.onChipsChange : null;
 
   function _normProd(s) {
     return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -284,13 +287,19 @@ function createAsignacionEngine(config) {
 
   function renderChips(i) {
     var wrap = document.querySelector('.' + _prefix + '-asig-chips[data-i="' + i + '"]');
-    if (!wrap) return;
     var lines = _getLines();
     var dl = lines[i];
     var arr = (dl && dl._asignaciones) || [];
-    if (!arr.length) { wrap.innerHTML = ''; return; }
+    if (wrap) {
+      if (!arr.length) { wrap.innerHTML = ''; }
+      else { wrap.innerHTML = _chipsHtml(i, arr); }
+    }
+    if (_onChipsChange) { try { _onChipsChange(i); } catch (e) {} }
+  }
+
+  function _chipsHtml(i, arr) {
     var empRec = norm(_getEmpresa());
-    wrap.innerHTML = arr.map(function(a, k) {
+    return arr.map(function(a, k) {
       var sigla = getSigla(a.empresa_stock);
       var traslado = norm(a.empresa_stock) !== empRec;
       var tag = traslado

@@ -1873,7 +1873,7 @@ async function openDetail(idx) {
         '<td><input class="ef md-pres" data-i="' + i + '" type="text" value="' + presEsc + '" style="width:90px' + lockStyle + '"' + lockAttr + '></td>' +
         '<td style="text-align:center">' + (esBonif ? '<span style="background:#d5f5e3;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:700">Sí</span>' : '<span style="color:#718096;font-size:0.75rem">No</span>') + '</td>' +
         '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right' + (lockEntregado || lockCant ? ';background:#f7fafc;opacity:0.7' : '') + '"' + (lockEntregado || lockCant ? ' disabled' : '') + (lockEntregado || lockCant ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
-        '<td><input class="ef md-ent" data-i="' + i + '" type="number" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700;background:#f0fff4" readonly tabindex="-1"></td>' +
+        '<td><input class="ef md-ent" data-i="' + i + '" data-saved="' + entregada + '" type="number" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700;background:#f0fff4" readonly tabindex="-1" title=""></td>' +
         '<td class="money"><span class="pend-tag ' + (pendiente > 0 ? 'pend' : 'ok') + '" id="md-pend-' + i + '">' + pendiente + '</span></td>' +
         '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + escHtml(estL) + '</span>' + lockBadge +
           '<div class="entregas-wrap" data-i="' + i + '">' + renderEntregasHTML(i, l._entregas || []) + '</div>' +
@@ -1990,14 +1990,13 @@ function updateDetailLine(i) {
   var ents = document.querySelectorAll('.md-ent');
   var cant = parseFloat(cants[i] && cants[i].value) || 0;
   var vuni = parseFloat(vunis[i] && vunis[i].value) || 0;
-  var entregada = parseFloat(ents[i] && ents[i].value) || 0;
+  // La columna "Entregada" puede mostrar una vista previa (guardado + sesión);
+  // el valor GUARDADO real vive en data-saved.
+  var entregada = ents[i] ? (Number(ents[i].dataset.saved) || 0) : 0;
   if (ents[i]) {
-    ents[i].max = cant;
     if (entregada > cant) {
-      entregada = cant;
-      ents[i].value = cant;
       ents[i].classList.add('error');
-      showToast('La cantidad entregada no puede superar la pedida (' + cant + ')', '#e74c3c');
+      showToast('La cantidad no puede quedar por debajo de lo ya entregado (' + entregada + ')', '#e74c3c');
     } else {
       ents[i].classList.remove('error');
     }
@@ -2011,7 +2010,7 @@ function updateDetailLine(i) {
     detailWorkingLines[i].Valor_Total = vtot;
     detailWorkingLines[i].Cant_Entregada = entregada;
   }
-  var pendiente = Math.max(0, cant - entregada);
+  var pendiente = Math.max(0, cant - entregada - _sesionEntregaLinea(i));
   var pendEl = document.getElementById('md-pend-' + i);
   if (pendEl) {
     pendEl.textContent = pendiente;
@@ -2722,10 +2721,10 @@ function _refreshSameProductoCells(i) {
 
 function renderAsignacionChips(i) {
   var wrap = document.querySelector('.asig-chips[data-i="' + i + '"]');
-  if (!wrap) return;
   var dl = detailWorkingLines[i];
   var arr = (dl && dl._asignaciones) || [];
-  if (!arr.length) { wrap.innerHTML = ''; return; }
+  if (!wrap) { _refreshEntregadaPreview(); return; }
+  if (!arr.length) { wrap.innerHTML = ''; _refreshEntregadaPreview(); return; }
   var c = consecs[activeIdx];
   var empPedido = c ? norm(c.Nombre_Empresa) : '';
   wrap.innerHTML = arr.map(function(a, k) {
@@ -2740,15 +2739,55 @@ function renderAsignacionChips(i) {
       '<button type="button" onclick="removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
     '</div>';
   }).join('');
+  _refreshEntregadaPreview();
+}
+
+// Suma en la sesión el suministro dirigido a la línea i desde la MISMA
+// empresa del pedido (los chips de otra empresa generan OC de traslado y
+// NO suben Cant_Entregada). Es lo que la vista previa añade al valor guardado.
+function _sesionEntregaLinea(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl || !dl._asignaciones) return 0;
+  var c = (activeIdx != null) ? consecs[activeIdx] : null;
+  var empN = c ? norm(c.Nombre_Empresa) : '';
+  return dl._asignaciones.reduce(function(s, a) {
+    return s + (norm(a.empresa_stock) === empN ? (Number(a.cantidad) || 0) : 0);
+  }, 0);
+}
+
+// Refresca en vivo las columnas "Entregada" y "Pendiente" del modal:
+// Entregada = valor guardado (data-saved) + asignado en la sesión;
+// Pendiente = Cantidad − Entregada(preview). El input real conserva el
+// valor guardado en data-saved para que updateDetailLine no lo infle.
+function _refreshEntregadaPreview() {
+  (detailWorkingLines || []).forEach(function(dl, i) {
+    if (!dl) return;
+    var inp = document.querySelector('.md-ent[data-i="' + i + '"]');
+    var pendEl = document.getElementById('md-pend-' + i);
+    var base = inp ? (Number(inp.dataset.saved) || 0) : (Number(dl.Cant_Entregada) || 0);
+    var ses = _sesionEntregaLinea(i);
+    var total = base + ses;
+    if (inp) {
+      inp.value = total;
+      inp.style.background = ses > 0 ? '#dcfce7' : '#f0fff4';
+      inp.title = ses > 0 ? ('Incluye ' + ses + ' ud sin guardar — se confirman al «Guardar cambios y enviar»') : '';
+    }
+    if (pendEl) {
+      var pend = Math.max(0, (Number(dl.Cantidad) || 0) - total);
+      pendEl.textContent = pend;
+      pendEl.className = 'pend-tag ' + (pend > 0 ? 'pend' : 'ok');
+    }
+  });
 }
 
 function syncEntregaTotal(lineIdx) {
   var entregas = detailWorkingLines[lineIdx]._entregas || [];
   var total = entregas.reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
   var entInput = document.querySelector('.md-ent[data-i="' + lineIdx + '"]');
-  if (entInput) entInput.value = total;
+  if (entInput) { entInput.value = total; entInput.dataset.saved = total; }
   detailWorkingLines[lineIdx].Cant_Entregada = total;
   updateDetailLine(lineIdx);
+  _refreshEntregadaPreview();
 }
 
 function removeEntrega(lineIdx, entIdx) {
