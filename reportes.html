@@ -132,7 +132,7 @@
     <button class="btn-export" id="tab-remisiones" onclick="switchTab('remisiones')" style="background:#718096">📄 Remisiones por empresa</button>
     <button class="btn-export" id="tab-valorizacion" onclick="switchTab('valorizacion')" style="background:#718096">💰 Valorización ventas</button>
     <button class="btn-export" id="tab-cumplimiento" onclick="switchTab('cumplimiento')" style="background:#718096">📅 Cumplimiento de entregas</button>
-    <button class="btn-export" id="tab-litros" onclick="switchTab('litros')" style="background:#718096">💧 Litros: entradas vs producción</button>
+    <button class="btn-export" id="tab-litros" onclick="switchTab('litros')" style="background:#718096">💧 Balance de litros</button>
   </div>
 
   <div id="panel-pendientes">
@@ -305,16 +305,17 @@
 
   <div id="panel-litros" style="display:none">
     <div class="rpt-stats" id="lit-stats">
-      <div class="rpt-stat" style="border-left-color:#1e8449"><div class="num" id="st-lit-entrada">0 L</div><div class="lbl">Litros que entraron</div></div>
-      <div class="rpt-stat" style="border-left-color:#d35400"><div class="num" id="st-lit-salterm">0 L</div><div class="lbl">Litros salida · terminado</div></div>
-      <div class="rpt-stat" style="border-left-color:#c0392b"><div class="num" id="st-lit-salnc">0 L</div><div class="lbl">Litros salida · no conforme</div></div>
-      <div class="rpt-stat" style="border-left-color:#1a5276"><div class="num" id="st-lit-dif">0 L</div><div class="lbl">Diferencia neta (entrada − salidas)</div></div>
-      <div class="rpt-stat" style="border-left-color:#e67e22"><div class="num" id="st-lit-refs">0</div><div class="lbl">Referencias</div></div>
-      <div class="rpt-stat" style="border-left-color:#7f8c8d"><div class="num" id="st-lit-sinconv">0</div><div class="lbl">⚠️ Registros sin convertir</div></div>
+      <div class="rpt-stat" style="border-left-color:#1e8449"><div class="num" id="st-lit-ing">0 L</div><div class="lbl">Ingresos</div></div>
+      <div class="rpt-stat" style="border-left-color:#d35400"><div class="num" id="st-lit-prod">0 L</div><div class="lbl">Salida a producción</div></div>
+      <div class="rpt-stat" style="border-left-color:#8e44ad"><div class="num" id="st-lit-ventas">0 L</div><div class="lbl">Ventas (pedidos)</div></div>
+      <div class="rpt-stat" style="border-left-color:#b7791f"><div class="num" id="st-lit-muestras">0 L</div><div class="lbl">Muestras</div></div>
+      <div class="rpt-stat" style="border-left-color:#7f8c8d"><div class="num" id="st-lit-devcam">0 L</div><div class="lbl">Devol./Cambios (neto)</div></div>
+      <div class="rpt-stat" style="border-left-color:#1a5276"><div class="num" id="st-lit-dif">0 L</div><div class="lbl">Diferencia neta del período</div></div>
+      <div class="rpt-stat" style="border-left-color:#c0392b"><div class="num" id="st-lit-sinconv">0</div><div class="lbl">⚠️ Registros sin convertir</div></div>
     </div>
     <div class="rpt-card">
       <div class="rpt-card-head">
-        <h3>💧 Litros: entradas vs salidas a producción <span id="lit-count" style="font-weight:400;color:#718096"></span></h3>
+        <h3>💧 Balance de litros por empresa <span id="lit-count" style="font-weight:400;color:#718096"></span></h3>
         <div style="display:flex;gap:10px;align-items:end">
           <div class="fg">
             <label style="font-size:0.72rem;font-weight:700;color:#4a5568;text-transform:uppercase">Desde</label>
@@ -328,12 +329,17 @@
         </div>
       </div>
       <div style="padding:8px 12px;font-size:0.78rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
-        Convierte cada presentación a <strong>litros</strong> y compara <strong>Ingresos</strong> (litros que entraron a cada empresa — por <strong>Empresa destino</strong>, sin contar ingresos de retorno)
-        contra <strong>Salidas a producción</strong> (módulo Reenvases — por empresa <strong>de la que sale</strong> el producto).
+        Convierte cada presentación a <strong>litros</strong> y arma el flujo del período por empresa y referencia:
+        <strong>Ingresos</strong> (por empresa destino, sin ingresos de retorno) ·
+        <strong>Salida a producción</strong> (Reenvases, terminado y no conforme) ·
+        <strong>Ventas</strong> (lo entregado en Pedidos) ·
+        <strong>Muestras</strong> entregadas ·
+        <strong>Devol./Cambios neto</strong> (reingreso a bodega buena − salida, igual que el Kardex).
+        <strong>Diferencia = Ingresos + Devol./Cambios neto − Salida producción − Ventas − Muestras</strong> (es flujo, no saldo de inventario).
         Conversión: <strong>LITRO</strong> = 1 L · <strong>N ML/CC</strong> = N ÷ 1000 · <strong>GALÓN</strong> = 4 L · <strong>BIDÓN/CANECA</strong> sin cifra = 20 L ·
         si la presentación trae los litros explícitos (p. ej. «CANECA 10 LITROS») se usa esa cifra.
-        Las presentaciones en kilos, unidades o sin volumen reconocible <strong>no suman</strong> y se listan abajo.
-        Respeta los filtros de <strong>Empresa</strong> y <strong>Buscar producto</strong> del encabezado. Abre cada referencia (▸) para ver el detalle mes a mes.
+        Kilos, unidades o texto sin volumen <strong>no suman</strong> y se listan abajo.
+        Respeta los filtros de <strong>Empresa</strong> y <strong>Buscar producto</strong> del encabezado. Abre cada referencia (▸) para el detalle mes a mes.
       </div>
       <div style="overflow-x:auto">
         <table class="rpt-table">
@@ -349,8 +355,8 @@
         <h3>⚠️ Presentaciones sin convertir a litros <span id="lit-sinconv-count" style="font-weight:400;color:#718096"></span></h3>
       </div>
       <div style="padding:8px 12px;font-size:0.78rem;color:#7d6608;background:#fef9e7;border-bottom:1px solid #f0e0c0">
-        Estos registros están dentro del período y los filtros actuales, pero su presentación no pudo convertirse a litros (kilos, unidades, o texto sin volumen).
-        <strong>No suman</strong> en la tabla de arriba. Corrige el nombre o la presentación en <strong>Ingresos</strong> o <strong>Salidas a producción</strong> si deberían contar.
+        Registros dentro del período y los filtros actuales (de Ingresos, Salidas a producción, Pedidos, Muestras, Devoluciones o Cambios) cuya presentación no pudo convertirse a litros (kilos, unidades, o texto sin volumen).
+        <strong>No suman</strong> en la tabla de arriba. Corrige el nombre o la presentación en el módulo de origen si deberían contar.
       </div>
       <div style="overflow-x:auto">
         <table class="rpt-table">
@@ -415,6 +421,6 @@
 <script src="js/auth.js?v=20260908z"></script>
 <script src="js/notificaciones.js"></script>
 <script src="js/existencias.js?v=20260908z"></script>
-<script src="js/reportes.js?v=20260909a"></script>
+<script src="js/reportes.js?v=20260909b"></script>
 </body>
 </html>
