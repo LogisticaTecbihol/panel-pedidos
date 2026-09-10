@@ -165,7 +165,7 @@ async function _maybeOpenRetornoFromURL() {
   var salLines = null;
   try {
     var r = await apiGet('getReenvases', {
-      columns: 'id,Empresa,Empresa_Destino,Planta,Producto,Presentacion,Cantidad,Remision,Fecha,Bodega',
+      columns: 'id,Empresa,Empresa_Destino,Planta,Producto,Presentacion,Cantidad,Remision,Fecha,Bodega,Muestra_Ref',
       remisionEq: ref
     });
     if (r && r.ok && (r.reenvases || []).length) salLines = r.reenvases;
@@ -188,7 +188,15 @@ function openRetornoIngreso(ref, salLines) {
     var elDest = document.getElementById('ing-empresa-destino');
     if (elDest) elDest.value = hdr.Empresa;
   }
-  document.getElementById('ing-observaciones').value = 'Retorno de salida a producción ' + ref;
+  var muRef = (hdr.Muestra_Ref || '').trim();
+  if (muRef) {
+    var mpMu = muRef.match(/^(.+)\s+Muestra\s+#(.+)$/i);
+    var consecMu = mpMu ? mpMu[2].trim() : muRef;
+    document.getElementById('ing-observaciones').value =
+      'Retorno de producción de muestras — orden #' + consecMu + ' (salida ' + ref + ')';
+  } else {
+    document.getElementById('ing-observaciones').value = 'Retorno de salida a producción ' + ref;
+  }
   _ingReenvaseRef = ref;
   // Líneas copiadas de la salida — el usuario ajusta presentación/nombre/cantidad
   // reales de lo que efectivamente volvió.
@@ -198,7 +206,9 @@ function openRetornoIngreso(ref, salLines) {
   if (!ingLineas.length) ingLineas = [{ Producto: '', Presentacion: '', Cantidad: '' }];
   renderIngLines();
   _syncReenvaseSelector();
-  showToast('Registrando retorno de ' + ref + ' — ajusta presentación y cantidad reales', '#1a5276');
+  showToast(
+    (muRef ? 'Retorno de producción de muestras — ' : 'Registrando retorno de ') + ref +
+    ' — ajusta presentación y cantidad reales de lo que ingresó', '#1a5276');
 }
 
 async function _loadReenvasesAbiertas() {

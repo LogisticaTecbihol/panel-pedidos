@@ -257,6 +257,8 @@
 
     // Muestras — SALIDA
     (src.muestras || []).forEach(function(m) {
+      // Las órdenes de producción de muestras no despachan (ver kardex.js).
+      if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
       var cantE = Number(m.Cant_Entregada);
       var cant = (isNaN(cantE) || cantE === 0) ? 0 : cantE;
       if (cant <= 0) return;
@@ -394,7 +396,7 @@
         .catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido' })
         .catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion' })
+      apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion,Tipo_Solicitud' })
         .catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases',   { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion' })
         .catch(function() { return { ok: true, reenvases: [] }; }),
@@ -599,6 +601,7 @@
       if (re.Empresa_Destino) add(re.Empresa_Destino, re.Producto, cant);
     });
     (sources.muestras || []).forEach(function(m) {
+      if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
       var cant = Number(m.Cant_Entregada) || 0;
       if (cant <= 0) return;
       add(m.Empresa, m.Producto, -cant);

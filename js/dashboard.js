@@ -321,7 +321,7 @@ async function loadDashboard() {
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras', { columns: 'Empresa,Estado,Fecha_Solicitud,Fecha_Despacho,Cantidad' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getMuestras', { columns: 'Empresa,Estado,Fecha_Solicitud,Fecha_Despacho,Cantidad,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases', { columns: 'Empresa,Cantidad,Fecha,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getEntregasPedido', { columns: 'empresa_pedido,empresa_stock,producto,cantidad,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
       apiGet('getCambios', { columns: 'Empresa,Estado,Fecha_Solicitud,Producto,Cantidad' }).catch(function() { return { ok: true, cambios: [] }; }),
@@ -480,7 +480,7 @@ function dSlice(fEmp, desde, hasta) {
     orders: dBuildOrders(ped),
     dev: dDevoluciones.filter(function(d) { return (!fEmp || d.Empresa === fEmp) && r(d.Fecha); }),
     oc: dOrdenes.filter(function(o) { return (!fEmp || o.Empresa_Destino === fEmp || o.Empresa_Origen === fEmp) && r(o.Fecha); }),
-    mue: dMuestras.filter(function(m) { return (!fEmp || m.Empresa === fEmp) && r(m.Fecha_Solicitud); }),
+    mue: dMuestras.filter(function(m) { return (m.Tipo_Solicitud || 'Despacho') !== 'Produccion' && (!fEmp || m.Empresa === fEmp) && r(m.Fecha_Solicitud); }),
     ree: dReenvases.filter(function(x) { return (!fEmp || x.Empresa === fEmp) && r(x.Fecha); }),
     ing: dIngresos.filter(function(i) { return (!fEmp || i.Empresa_Origen === fEmp || i.Empresa_Destino === fEmp) && r(i.Fecha); }),
     cam: dCambios.filter(function(c) { return (!fEmp || c.Empresa === fEmp) && r(c.Fecha_Solicitud); })

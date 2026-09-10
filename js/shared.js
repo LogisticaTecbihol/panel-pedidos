@@ -373,6 +373,9 @@ async function apiGet(action, opts) {
         if (opts && opts.remisionEq) q = q.eq('Remision', opts.remisionEq);
         // Solo salidas no cerradas — para el selector de retornos en Ingresos.
         if (opts && opts.abiertasOnly) q = q.neq('Estado', 'Cerrada');
+        // Solo salidas ligadas a una orden de producción de muestras — para el
+        // panel de producción del módulo de Muestras.
+        if (opts && opts.muestraRefOnly) q = q.neq('Muestra_Ref', '');
         return q;
       });
       if (res.error) return { ok: false, error: res.error.message };
@@ -1260,6 +1263,7 @@ async function _apiPostCore(body) {
           Estado_Aprobacion: body.Estado_Aprobacion || 'Por aprobar',
           Aprobada_Por: body.Aprobada_Por || '', Fecha_Aprobacion: body.Fecha_Aprobacion || null,
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          Tipo_Solicitud: body.Tipo_Solicitud || 'Despacho',
           responsable_id: body.responsable_id || null,
           creado_por: _uid()
         };
@@ -1327,7 +1331,7 @@ async function _apiPostCore(body) {
       if (!remMuE && body._generar_remision && (body.Empresa || '').trim()) {
         remMuE = await _genRem(body.Empresa, 'SALIDA');
       }
-      var res = await _sb.from('SolicitudMuestras').update({
+      var _updMu = {
         Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '', Fecha_Solicitud: body.Fecha_Solicitud || null,
         Fecha_Despacho: body.Fecha_Despacho || null, Responsable: body.Responsable || '',
         Departamento: body.Departamento || '', Municipio: body.Municipio || '', Tipo_Cultivo: body.Tipo_Cultivo || '',
@@ -1339,7 +1343,11 @@ async function _apiPostCore(body) {
         Autoriza: body.Autoriza || '', Estado: body.Estado || 'Pendiente',
         Observaciones: body.Observaciones || '',
         modificado_por: _uid()
-      }).eq('id', body.row);
+      };
+      // Solo lo tocan los modales de alta/edición; las ediciones línea-a-línea
+      // de saveEntregas no lo envían y no deben pisarlo.
+      if (body.Tipo_Solicitud !== undefined) _updMu.Tipo_Solicitud = body.Tipo_Solicitud || 'Despacho';
+      var res = await _sb.from('SolicitudMuestras').update(_updMu).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1, remision: remMuE };
     }
@@ -1570,6 +1578,7 @@ async function _apiPostCore(body) {
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
         Remision: remReenv, Remision_Destino: remReenvDest, Fecha: body.Fecha || '',
         Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
+        Muestra_Ref: (body.Muestra_Ref || '').trim(),
         Fecha_Registro: now,
         creado_por: _uid()
       };
@@ -1589,14 +1598,16 @@ async function _apiPostCore(body) {
       if (!remReenvDestEd && empReenvDestEd && empReenvDestEd !== empReenvEd && !body._remision_destino_existente) {
         remReenvDestEd = await _genRem(empReenvDestEd, 'ENTRADA');
       }
-      var res = await _sb.from('Reenvases').update({
+      var _updRe = {
         Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
         Producto: body.Producto || '',
         Presentacion: body.Presentacion || '', Cantidad: Number(body.Cantidad) || 0,
         Remision: remReenvEd, Remision_Destino: remReenvDestEd, Fecha: body.Fecha || '',
         Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
         modificado_por: _uid()
-      }).eq('id', body.row);
+      };
+      if (body.Muestra_Ref !== undefined) _updRe.Muestra_Ref = (body.Muestra_Ref || '').trim();
+      var res = await _sb.from('Reenvases').update(_updRe).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1, remision: remReenvEd, remision_destino: remReenvDestEd };
     }
@@ -1620,6 +1631,24 @@ async function _apiPostCore(body) {
       var res = await _qSal;
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, estado: _estSal };
+    }
+
+    // Cierra o reabre una orden de producción de muestras (todas sus líneas
+    // comparten Empresa + Consecutivo). Estado: 'Pendiente' | 'Producida'.
+    // Espejo de editarEstadoSalidaReenvase para el sub-flujo de producción.
+    if (action === 'editarEstadoProduccionMuestra') {
+      if (typeof AUTH !== 'undefined' && AUTH.canEdit && !AUTH.canEdit()) {
+        return { ok: false, error: 'No tienes permiso para cerrar la orden.' };
+      }
+      var _empPm = (body.Empresa || '').trim();
+      var _conPm = (body.Consecutivo || '').trim();
+      var _estPm = body.Estado === 'Producida' ? 'Producida' : 'Pendiente';
+      if (!_empPm || !_conPm) return { ok: false, error: 'Faltan datos de la solicitud.' };
+      var res = await _sb.from('SolicitudMuestras')
+        .update({ Estado: _estPm, modificado_por: _uid() })
+        .eq('Empresa', _empPm).eq('Consecutivo', _conPm).eq('Tipo_Solicitud', 'Produccion');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, estado: _estPm };
     }
 
     if (action === 'agregarRemisionAnulada') {

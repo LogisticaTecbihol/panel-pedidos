@@ -65,7 +65,7 @@ async function loadReportes() {
       apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Consecutivo,Fecha_Pedido,Fecha_Compromiso,Cliente,Comercial,Producto,Presentacion,Cantidad,Cant_Entregada,Cant_Pendiente,Estado_Entrega,Estado_2,Remisiones,Fecha_Ult_Entrega,Valor_Unitario,Precio_Facturacion' }),
       apiGet('getIngresos', { columns: 'id,Empresa_Origen,Empresa_Destino,Remision_Origen,Remision_Destino,Origen,Producto,Presentacion,Cantidad,Fecha,Reenvase_Ref' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'id,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Fecha,Tipo,Estado,Ref_Pedido,Observaciones' }).catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras', { columns: 'id,Remision,Empresa,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getMuestras', { columns: 'id,Remision,Empresa,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases', { columns: 'id,Remision,Remision_Destino,Empresa,Empresa_Destino,Producto,Presentacion,Cantidad,Fecha,Bodega,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getDevoluciones', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision,Remision_Salida,Bodega_Ingreso,Bodega_Salida,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Ingreso,Fecha_Devolucion,Fecha,Fecha_Salida' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha,Observaciones' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
@@ -1519,6 +1519,7 @@ function _buildRemisionesInner() {
 
   // 4. Muestras — campo Remision
   muestras.forEach(function(m) {
+    if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
     var rem = String(m.Remision || '').trim();
     if (!rem) return;
     var empNombre = m.Empresa || '';

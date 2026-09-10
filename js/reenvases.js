@@ -181,7 +181,7 @@ function rebuildReGroups() {
       seen[k] = {
         _key: k, Fecha: r.Fecha, Empresa: r.Empresa, Empresa_Destino: r.Empresa_Destino,
         Planta: r.Planta, Remision: r.Remision, Remision_Destino: r.Remision_Destino,
-        Bodega: bod, Estado: r.Estado || 'Pendiente'
+        Bodega: bod, Estado: r.Estado || 'Pendiente', Muestra_Ref: r.Muestra_Ref || ''
       };
       order.push(k);
     }
@@ -284,6 +284,71 @@ async function loadReenvases() {
   populateReFilters();
   applyReFilters();
   _maybeOpenSalidaFromURL();
+  _maybeOpenReenvaseFromMuestra();
+}
+
+// Deep-link desde Muestras: reenvases.html?muestra_id=<id> abre "Nueva Salida"
+// prellenada para la orden de producción de muestras de esa línea (envía el
+// granel a la planta; el retorno entra como ingreso de muestra).
+var _muestraReURLHandled = false;
+window._reMuestraRef = '';
+async function _maybeOpenReenvaseFromMuestra() {
+  if (_muestraReURLHandled) return;
+  var id = null;
+  try { id = new URLSearchParams(location.search).get('muestra_id'); } catch (e) {}
+  if (!id) return;
+  _muestraReURLHandled = true;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  if (typeof AUTH !== 'undefined' && AUTH.canEdit && !AUTH.canEdit()) {
+    showToast('No tienes permiso para registrar salidas a producción.', '#e67e22');
+    return;
+  }
+  var muRows = null;
+  try {
+    var res = await apiGet('getMuestras', {
+      columns: 'id,Empresa,Consecutivo,Tipo_Solicitud,Estado,Estado_Aprobacion,Solicitante,Responsable,Producto,Presentacion,Cantidad'
+    });
+    if (res && res.ok) muRows = res.muestras || [];
+  } catch (e) {}
+  if (!muRows) { showToast('No se pudo cargar la orden de producción.', '#e67e22'); return; }
+  var hdr = muRows.filter(function(x) { return String(x.id) === String(id); })[0];
+  if (!hdr) { showToast('No se encontró la solicitud de muestras.', '#e67e22'); return; }
+  if ((hdr.Tipo_Solicitud || 'Despacho') !== 'Produccion') {
+    showToast('Esa solicitud no es una orden de producción de muestras.', '#e67e22');
+    return;
+  }
+  if ((hdr.Estado_Aprobacion || 'Por aprobar') !== 'Aprobada') {
+    showToast('La orden de producción debe estar aprobada primero.', '#e67e22');
+    return;
+  }
+  var lineas = muRows.filter(function(x) {
+    return (x.Empresa || '') === (hdr.Empresa || '') && String(x.Consecutivo || '') === String(hdr.Consecutivo || '');
+  });
+
+  if (activeTab !== 'buenos') switchReTab('buenos');
+  openNewReenvase();
+  window._reMuestraRef = String(hdr.Empresa || '').trim() + ' Muestra #' + String(hdr.Consecutivo || '').trim();
+  var elEmp = document.getElementById('re-empresa');
+  if (elEmp) elEmp.value = hdr.Empresa || '';
+  var elEmpDest = document.getElementById('re-empresa-destino');
+  if (elEmpDest) { elEmpDest.value = ''; var w = document.getElementById('re-remision-destino-wrap'); if (w) w.style.display = 'none'; }
+
+  var banner = document.getElementById('re-muestra-banner');
+  if (banner) {
+    var sig = (typeof EMPRESAS_SIGLA !== 'undefined' && EMPRESAS_SIGLA[hdr.Empresa]) || hdr.Empresa || '';
+    var refRows = lineas.map(function(l) {
+      return '<tr><td style="padding:1px 8px 1px 0">' + escHtml(l.Producto || '—') + '</td>' +
+        '<td style="padding:1px 8px">' + escHtml(l.Presentacion || '—') + '</td>' +
+        '<td style="padding:1px 0;text-align:right">' + (Number(l.Cantidad) || 0).toLocaleString('es-CO') + '</td></tr>';
+    }).join('');
+    banner.innerHTML =
+      '<div style="font-weight:700;margin-bottom:4px">🧪 Salida para la orden de producción de muestras ' + escHtml(sig) + ' #' + escHtml(String(hdr.Consecutivo || '')) + '</div>' +
+      '<div style="font-size:0.78rem;margin-bottom:6px">Captura abajo el <strong>granel</strong> que envías a la planta. Al registrar el retorno, ese producto entra como muestra al inventario de ' + escHtml(sig) + '.</div>' +
+      '<div style="font-size:0.76rem;color:#6d28d9"><strong>Muestras pedidas:</strong></div>' +
+      '<table style="font-size:0.76rem;color:#6d28d9"><tbody>' + refRows + '</tbody></table>';
+    banner.style.display = '';
+  }
+  showToast('Nueva salida a producción para la orden de muestras #' + (hdr.Consecutivo || ''), '#1a5276');
 }
 
 // Deep-link desde Ingresos: reenvases.html?salida=GREEN-RS-0042 abre el detalle
@@ -763,8 +828,23 @@ function renderReRetornos() {
     botones += ' <button onclick="toggleEstadoSalidaReenvase()" id="btn-re-estado" style="background:' + (est === 'Cerrada' ? '#718096' : '#1e8449') + ';color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">' + (est === 'Cerrada' ? '🔓 Reabrir salida' : '🔒 Cerrar salida') + '</button>';
   }
 
+  var muRef = (g.Muestra_Ref || '').trim();
+  var muChip = '';
+  if (muRef) {
+    var mp = muRef.match(/^(.+)\s+Muestra\s+#(.+)$/i);
+    var empMu = mp ? mp[1].trim() : '';
+    var consecMu = mp ? mp[2].trim() : muRef;
+    var verKey = empMu ? (empMu + '||' + consecMu) : '';
+    muChip = '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:6px 10px;margin-bottom:10px;font-size:0.8rem;color:#5b21b6">' +
+      '🧪 Salida para la <strong>orden de producción de muestras #' + escHtml(consecMu) + '</strong>. ' +
+      'El retorno ingresa como muestra al inventario. ' +
+      (verKey ? '<a href="muestras.html?ver_solicitud=' + encodeURIComponent(verKey) + '" style="color:#7c3aed;font-weight:700">Ver orden →</a>' : '') +
+      '</div>';
+  }
+
   wrap.innerHTML =
     '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-top:16px">' +
+      muChip +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
         '<div style="font-weight:700;font-size:0.88rem;color:#2d3748">📥 Retornos / Ingresos vinculados ' + estadoBadgeRe(est) + '</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + botones + '</div>' +
@@ -1087,6 +1167,11 @@ async function loadProductosCache() {
 
 async function openNewReenvase() {
   reEditId = null;
+  // Se limpia el vínculo con una orden de producción de muestras; el deep-link
+  // _maybeOpenReenvaseFromMuestra lo vuelve a poner después de llamar aquí.
+  window._reMuestraRef = '';
+  var _muBanner = document.getElementById('re-muestra-banner');
+  if (_muBanner) { _muBanner.style.display = 'none'; _muBanner.innerHTML = ''; }
   document.getElementById('re-bodega').value = getBodegaFromTab();
   document.getElementById('re-modal-title').textContent = '🏭 Nueva Salida a producción';
   document.getElementById('btn-save-re').textContent = '✓ Registrar salida y enviar';
@@ -1169,6 +1254,9 @@ function closeReModal() {
   document.getElementById('re-overlay').classList.remove('show');
   reEditId = null;
   reLines = [];
+  window._reMuestraRef = '';
+  var _muBanner = document.getElementById('re-muestra-banner');
+  if (_muBanner) { _muBanner.style.display = 'none'; _muBanner.innerHTML = ''; }
   destroyReProdACs();
   if (reEditProdAC) { reEditProdAC.destroy(); reEditProdAC = null; }
 }
@@ -1367,7 +1455,8 @@ async function confirmAndSaveReenvase() {
         action: 'agregarReenvase',
         Empresa: empresa, Empresa_Destino: empresaDestino, Planta: planta, Producto: p.producto, Presentacion: p.presentacion,
         Cantidad: p.cantidad, Remision: remAutoSalida, Remision_Destino: remAutoEntrada, Fecha: fecha,
-        Observaciones: (p.observaciones || '').trim(), Bodega: bodegaVal
+        Observaciones: (p.observaciones || '').trim(), Bodega: bodegaVal,
+        Muestra_Ref: window._reMuestraRef || ''
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar línea ' + (i + 1));
       added++;

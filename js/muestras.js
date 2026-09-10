@@ -62,6 +62,22 @@ var muApartadosPorLinea = {};
 var muApartadosPorProdEmp = {};
 var pedApartadosPorProdEmp = {};
 
+// Sub-flujo "orden de producción de muestras" (Solicitante = Mercadeo). Se
+// reconstruyen en cada loadMuestras().
+//   muProdSalidasPorSolicitud[Empresa||Consecutivo] = [ filas de Reenvases (salidas a producción vinculadas) ]
+//   muProdRetornosPorRem[Remision de la salida]     = [ ingresos de retorno de esa salida ]
+var muProdSalidasPorSolicitud = {};
+var muProdRetornosPorRem = {};
+
+function _muMuestraRef(empresa, consecutivo) {
+  return String(empresa || '').trim() + ' Muestra #' + String(consecutivo == null ? '' : consecutivo).trim();
+}
+// Inverso de _muMuestraRef: "<Empresa> Muestra #<Consecutivo>" -> {empresa, consecutivo}
+function _parseMuestraRef(ref) {
+  var m = String(ref || '').match(/^(.+)\s+Muestra\s+#(.+)$/i);
+  return m ? { empresa: m[1].trim(), consecutivo: m[2].trim() } : null;
+}
+
 function _normProdMu(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/\s*bonificado\s*/gi, ' ').replace(/\s+/g, ' ').trim();
@@ -251,9 +267,14 @@ var groupedMu = [];
 // Sub-pestaña activa: 'pendientes' o 'tramitadas' (esta última solo lectura)
 var muScope = 'pendientes';
 
-// Una solicitud está "tramitada" cuando ya fue despachada o rechazada (no requiere más acción)
+// Una solicitud está "tramitada" cuando ya fue despachada, producida (orden de
+// producción cerrada) o rechazada (no requiere más acción)
 function esMuestraTramitada(r) {
-  return r.Estado === 'Despachada' || (r.Estado_Aprobacion || 'Por aprobar') === 'Rechazada';
+  return r.Estado === 'Despachada' || r.Estado === 'Producida' || (r.Estado_Aprobacion || 'Por aprobar') === 'Rechazada';
+}
+
+function esOrdenProduccion(r) {
+  return (r && r.Tipo_Solicitud) === 'Produccion';
 }
 
 // ── Load data ──
@@ -280,7 +301,17 @@ async function loadMuestras() {
     }).catch(function() { return { ok: true, apartados: [] }; }),
     apiGet('getApartadosPedido', {
       columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado'
-    }).catch(function() { return { ok: true, apartados: [] }; })
+    }).catch(function() { return { ok: true, apartados: [] }; }),
+    // Salidas a producción vinculadas a una orden de producción de muestras.
+    // Si la columna Muestra_Ref aún no existe (migración sin aplicar) degrada sin romper.
+    apiGet('getReenvases', {
+      columns: 'id,Empresa,Remision,Muestra_Ref,Producto,Presentacion,Cantidad,Fecha,Estado,Planta,Bodega',
+      muestraRefOnly: true
+    }).catch(function() { return { ok: true, reenvases: [] }; }),
+    apiGet('getIngresos', {
+      columns: 'id,Fecha,Reenvase_Ref,Producto,Presentacion,Cantidad,Remision_Destino,Empresa_Destino',
+      reenvaseRefOnly: true
+    }).catch(function() { return { ok: true, ingresos: [] }; })
   ]);
   var res = results[0];
   var ocData = results[1];
@@ -297,10 +328,100 @@ async function loadMuestras() {
     (results[2] && results[2].apartados) || [],
     (results[3] && results[3].apartados) || []
   );
+  _buildMuProduccionMaps(
+    (results[4] && results[4].reenvases) || [],
+    (results[5] && results[5].ingresos) || []
+  );
   loadZone.style.display = 'none';
   main.style.display = 'block';
   populateMuFilters();
   applyMuFilters();
+  _maybeOpenSolicitudFromURL();
+}
+
+// Deep-link desde Reenvases: muestras.html?ver_solicitud=<Empresa||Consecutivo>
+// abre el detalle de esa orden de producción.
+var _verSolicitudURLHandled = false;
+function _maybeOpenSolicitudFromURL() {
+  if (_verSolicitudURLHandled) return;
+  var ref = null;
+  try { ref = new URLSearchParams(location.search).get('ver_solicitud'); } catch (e) {}
+  if (!ref) return;
+  _verSolicitudURLHandled = true;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  var parts = ref.split('||');
+  var emp = (parts[0] || '').trim();
+  var consec = (parts[1] || '').trim();
+  var row = allMuestras.filter(function(r) {
+    return String(r.Empresa || '').trim() === emp && String(r.Consecutivo || '').trim() === consec;
+  })[0];
+  if (!row) { showToast('No se encontró la solicitud ' + consec, '#e67e22'); return; }
+  // Si está tramitada, hay que ver la pestaña correcta para que quede en contexto.
+  if (esMuestraTramitada(row) && muScope !== 'tramitadas') switchMuTab('mu-tramitadas');
+  viewMuestra(row.id);
+}
+
+// Vincula cada orden de producción de muestras con sus salidas a producción
+// (Reenvases.Muestra_Ref) y los ingresos de retorno de esas salidas
+// (Ingresos.Reenvase_Ref = Reenvases.Remision). Espejo de `retornosByRef` en
+// reenvases.js.
+// Clave normalizada empresa||consecutivo (empresas con espacio final existen en datos).
+function _muProdKey(empresa, consecutivo) {
+  return String(empresa || '').trim() + '||' + String(consecutivo == null ? '' : consecutivo).trim();
+}
+
+function _buildMuProduccionMaps(reenvases, ingresos) {
+  muProdSalidasPorSolicitud = {};
+  muProdRetornosPorRem = {};
+  (ingresos || []).forEach(function(ing) {
+    var k = (ing.Reenvase_Ref || '').trim();
+    if (!k) return;
+    (muProdRetornosPorRem[k] = muProdRetornosPorRem[k] || []).push(ing);
+  });
+  (reenvases || []).forEach(function(re) {
+    var ref = (re.Muestra_Ref || '').trim();
+    if (!ref) return;
+    var p = _parseMuestraRef(ref);
+    if (!p) return;
+    var key = _muProdKey(p.empresa, p.consecutivo);
+    (muProdSalidasPorSolicitud[key] = muProdSalidasPorSolicitud[key] || []).push(re);
+  });
+}
+
+// Totales de una orden de producción: lo pedido, lo que ya ingresó de la planta,
+// y lista agrupada de salidas a producción vinculadas.
+function _muProduccionTotales(empresa, consecutivo) {
+  var lineas = allMuestras.filter(function(x) {
+    return String(x.Empresa || '').trim() === String(empresa || '').trim() &&
+           String(x.Consecutivo || '').trim() === String(consecutivo || '').trim();
+  });
+  var solicitado = lineas.reduce(function(s, l) { return s + (Number(l.Cantidad) || 0); }, 0);
+  var salidas = muProdSalidasPorSolicitud[_muProdKey(empresa, consecutivo)] || [];
+  // Agrupa las líneas de salida por Remisión.
+  var porRem = {};
+  var remOrder = [];
+  salidas.forEach(function(re) {
+    var rem = (re.Remision || '').trim();
+    if (!rem) return;
+    if (!porRem[rem]) { porRem[rem] = { Remision: rem, Empresa: re.Empresa || '', Planta: re.Planta || '', Fecha: re.Fecha || '', Estado: re.Estado || 'Pendiente', lineas: [], granel: 0 }; remOrder.push(rem); }
+    porRem[rem].lineas.push(re);
+    porRem[rem].granel += Number(re.Cantidad) || 0;
+  });
+  var ingresado = 0;
+  var gruposSalida = remOrder.map(function(rem) {
+    var g = porRem[rem];
+    var rets = muProdRetornosPorRem[rem] || [];
+    g.retornos = rets;
+    g.ingresado = rets.reduce(function(s, r) { return s + (Number(r.Cantidad) || 0); }, 0);
+    ingresado += g.ingresado;
+    return g;
+  });
+  return {
+    solicitado: solicitado,
+    ingresado: ingresado,
+    pendiente: Math.max(0, solicitado - ingresado),
+    gruposSalida: gruposSalida
+  };
 }
 
 function _buildOCsLegalizadasMu(ordenes) {
@@ -375,6 +496,8 @@ function groupMuestras(rows) {
 function applyMuFilters() {
   var fResp = document.getElementById('f-responsable').value;
   var fMun = document.getElementById('f-municipio').value;
+  var fTipoEl = document.getElementById('f-tipo');
+  var fTipo = fTipoEl ? fTipoEl.value : '';
   var fEst = document.getElementById('f-estado').value;
   var fApr = document.getElementById('f-aprobacion').value;
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
@@ -382,6 +505,7 @@ function applyMuFilters() {
   filteredMu = allMuestras.filter(function(r) {
     if (fResp && r.Responsable !== fResp) return false;
     if (fMun && r.Municipio !== fMun) return false;
+    if (fTipo && (r.Tipo_Solicitud || 'Despacho') !== fTipo) return false;
     if (fEst && r.Estado !== fEst) return false;
     if (fApr && (r.Estado_Aprobacion || 'Por aprobar') !== fApr) return false;
     if (fTxt) {
@@ -406,6 +530,8 @@ function applyMuFilters() {
 function clearMuestraFilters() {
   document.getElementById('f-responsable').value = '';
   document.getElementById('f-municipio').value = '';
+  var _fTipo = document.getElementById('f-tipo');
+  if (_fTipo) _fTipo.value = '';
   document.getElementById('f-estado').value = '';
   document.getElementById('f-aprobacion').value = '';
   document.getElementById('f-txt').value = '';
@@ -414,6 +540,8 @@ function clearMuestraFilters() {
 
 document.getElementById('f-responsable').addEventListener('change', applyMuFilters);
 document.getElementById('f-municipio').addEventListener('change', applyMuFilters);
+var _fTipoEl = document.getElementById('f-tipo');
+if (_fTipoEl) _fTipoEl.addEventListener('change', applyMuFilters);
 document.getElementById('f-estado').addEventListener('change', applyMuFilters);
 document.getElementById('f-aprobacion').addEventListener('change', applyMuFilters);
 document.getElementById('f-txt').addEventListener('input', debounce(applyMuFilters, 300));
@@ -425,9 +553,15 @@ function updateMuStats() {
   var despachadas = 0;
   var pendientes = 0;
   var porAprobar = 0;
+  var produccion = 0;
   var totalProd = 0;
   allGrouped.forEach(function(r) {
     if ((r.Estado_Aprobacion || 'Por aprobar') === 'Por aprobar') porAprobar++;
+    if (esOrdenProduccion(r)) {
+      // Las órdenes de producción no despachan; cuentan aparte hasta cerrarse.
+      if (r.Estado !== 'Producida') produccion++;
+      return;
+    }
     if (r.Estado === 'Despachada') despachadas++;
     else pendientes++;
   });
@@ -436,6 +570,8 @@ function updateMuStats() {
   document.getElementById('s-por-aprobar').textContent = porAprobar;
   document.getElementById('s-despachadas').textContent = despachadas;
   document.getElementById('s-pendientes').textContent = pendientes;
+  var _sProd = document.getElementById('s-produccion');
+  if (_sProd) _sProd.textContent = produccion;
   document.getElementById('s-productos').textContent = totalProd;
 }
 
@@ -506,9 +642,15 @@ function renderMuTable() {
   document.getElementById('row-ct').textContent = '(' + groupedMu.length + ' solicitud' + (groupedMu.length !== 1 ? 'es' : '') + ')';
 
   tbody.innerHTML = groupedMu.map(function(r) {
+    var esProd = esOrdenProduccion(r);
     var estadoBadge = r.Estado === 'Despachada'
       ? '<span class="badge b-ent">Despachada</span>'
+      : r.Estado === 'Producida'
+      ? '<span class="badge b-ent">Producida</span>'
       : '<span class="badge b-rec">Pendiente</span>';
+    var tipoBadge = esProd
+      ? ' <span class="badge b-par" title="Orden de producción de muestras: la planta las produce e ingresan al inventario de la empresa. No se despacha a un cliente.">🏭 Producción</span>'
+      : '';
 
     var apr = r.Estado_Aprobacion || 'Por aprobar';
     var aprBadge;
@@ -546,7 +688,7 @@ function renderMuTable() {
 
     return '<tr style="cursor:pointer"' + (apaRows.length && !soloLectura ? ' class="row-apartada"' : '') + ' onclick="viewMuestra(' + r.id + ')">' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
-      '<td>' + escHtml(r.Consecutivo || '—') + apaBadge + '</td>' +
+      '<td>' + escHtml(r.Consecutivo || '—') + tipoBadge + apaBadge + '</td>' +
       '<td>' + fmtDate(r.Fecha_Solicitud) + '</td>' +
       '<td>' + escHtml(r.Responsable || '—') + '</td>' +
       '<td>' + escHtml(r.Municipio || '—') + '</td>' +
@@ -625,32 +767,46 @@ async function viewMuestra(id) {
   }
   aprBox += '</div>';
 
+  var esProd = esOrdenProduccion(r);
+
   var html = aprBox +
+    (esProd
+      ? '<div style="background:#f5f3ff;border:1px solid #ddd6fe;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:0.82rem;color:#5b21b6">' +
+        '<strong>🏭 Orden de producción de muestras.</strong> La planta produce estas muestras y <strong>ingresan</strong> al inventario de ' +
+        escHtml(EMPRESAS_SIGLA[r.Empresa] || r.Empresa || '') + '. Se gestiona con una salida a producción del granel y su retorno — no se despacha a un cliente.' +
+        '</div>'
+      : '') +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem">' +
     field('Empresa', EMPRESAS_SIGLA[r.Empresa] || r.Empresa) +
     field('Fecha Solicitud', fmtDate(r.Fecha_Solicitud)) +
     field('Responsable', r.Responsable) +
-    field('Departamento', r.Departamento) +
-    field('Municipio', r.Municipio) +
-    field('Tipo de Cultivo', r.Tipo_Cultivo) +
-    field('Solicitante', r.Solicitante) +
+    field(esProd ? 'Solicitante' : 'Departamento', esProd ? r.Solicitante : r.Departamento) +
+    (esProd ? '' : field('Municipio', r.Municipio)) +
+    (esProd ? '' : field('Tipo de Cultivo', r.Tipo_Cultivo)) +
+    (esProd ? '' : field('Solicitante', r.Solicitante)) +
     field('Quien Autoriza', r.Autoriza) +
     field('Estado', r.Estado) +
-    field('Fecha Aplicación', fmtDate(r.Fecha_Aplicacion)) +
-    field('Fecha Seguimiento', fmtDate(r.Fecha_Seguimiento)) +
+    (esProd ? '' : field('Fecha Aplicación', fmtDate(r.Fecha_Aplicacion))) +
+    (esProd ? '' : field('Fecha Seguimiento', fmtDate(r.Fecha_Seguimiento))) +
     '</div>' +
+    (esProd ? '' :
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem;background:#f0fdf4;padding:12px 14px;border-radius:8px;border:1px solid #bbf7d0">' +
     editField('N° Remisión', 'mu-view-remision', 'text', remVal, '(Auto al despachar)') +
     (AUTH.canAutoConsec() ? '<label style="font-size:0.72rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:3px;margin-top:2px"><input type="checkbox" id="mu-view-remision-auto" checked onchange="var el=document.getElementById(\'mu-view-remision\');if(this.checked){el.readOnly=true;el.style.background=\'#f0f4f8\';el.placeholder=\'(Auto al despachar)\';el.value=\'\';}else{el.readOnly=false;el.style.background=\'\';el.placeholder=\'N° remisión\';}">Auto</label>' : '') +
     editField('Fecha Despacho', 'mu-view-fecha-despacho', 'date', fDespachoVal, '') +
-    '</div>';
+    '</div>');
 
   if (r.Objetivo) {
     html += '<div style="margin-bottom:14px"><div style="font-weight:700;font-size:0.78rem;color:#4a5568;text-transform:uppercase;margin-bottom:4px">Objetivo</div>' +
       '<div style="font-size:0.85rem;color:#2d3748;background:#f7fafc;padding:10px 14px;border-radius:6px">' + escHtml(r.Objetivo) + '</div></div>';
   }
 
-  if (sameConsec.length) {
+  if (sameConsec.length && esProd) {
+    // Sin motor de asignación: las órdenes de producción no despachan.
+    muAsig = null;
+    muViewWorkingLines = [];
+    html += _muProduccionPanelHtml(r, emp, consec, aprEstado, sameConsec);
+  } else if (sameConsec.length) {
     var despachoDisabled = aprEstado !== 'Aprobada';
     muViewEmpresa = emp;
     muViewWorkingLines = sameConsec.map(function(x) {
@@ -724,6 +880,11 @@ async function viewMuestra(id) {
   document.getElementById('view-mu-body').innerHTML = html;
   var _muViewRem = document.getElementById('mu-view-remision');
   if (_muViewRem) { _muViewRem.readOnly = true; _muViewRem.style.background = '#f0f4f8'; }
+  // Las órdenes de producción no llevan remisión de cliente.
+  var _btnExpRem = document.getElementById('btn-mu-export-remision');
+  var _btnSendRem = document.getElementById('btn-mu-send-remision');
+  if (_btnExpRem) _btnExpRem.style.display = esProd ? 'none' : '';
+  if (_btnSendRem && esProd) _btnSendRem.style.display = 'none';
   document.getElementById('view-mu-overlay').classList.add('show');
   loadMuAdjuntos(emp, consec);
   initMuDropzone();
@@ -738,11 +899,139 @@ async function viewMuestra(id) {
       if (_cMu) NOTIF.verificarBtn(_btnSol, 'muestras', _cMu);
       else { _btnSol.disabled = false; _btnSol.style.opacity = ''; _btnSol.style.cursor = ''; _btnSol.textContent = '📨 Enviar Solicitud'; }
     }
-    if (_btnRem) {
+    if (_btnRem && !esProd) {
       _btnRem.disabled = false; _btnRem.style.opacity = ''; _btnRem.style.cursor = '';
       _btnRem.textContent = '📨 Enviar Remisión';
       if (_remMu) NOTIF.verificarBtn(_btnRem, 'muestras', _cMu + ' · Rem ' + _remMu);
     }
+  }
+}
+
+// ── Sub-flujo: orden de producción de muestras ──
+
+// Badge de estado de la orden. Mismo criterio que estadoSalida() de reenvases.js:
+//  'Producida' persistido → cerrada; si hay salidas con retorno → 'Parcial';
+//  si no → 'Pendiente'.
+function _muProduccionEstado(r, tot) {
+  if (r.Estado === 'Producida') return 'Producida';
+  var hayRetornos = tot.gruposSalida.some(function(g) { return (g.retornos || []).length > 0; });
+  return hayRetornos ? 'Parcial' : 'Pendiente';
+}
+function _muProduccionBadge(est) {
+  var color = est === 'Producida' ? '#1e8449' : est === 'Parcial' ? '#b9770e' : '#c0392b';
+  return '<span style="background:' + color + ';color:#fff;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px">' + est + '</span>';
+}
+
+function _muProduccionPanelHtml(r, emp, consec, aprEstado, sameConsec) {
+  var tot = _muProduccionTotales(emp, consec);
+  var est = _muProduccionEstado(r, tot);
+  var puedeEditar = AUTH.canEdit && AUTH.canEdit();
+  var aprobada = aprEstado === 'Aprobada';
+  var argsEst = "'" + escHtml((emp || '').replace(/'/g, "\\'")) + "','" + escHtml(String(consec || '').replace(/'/g, "\\'")) + "','" + escHtml(String(r.Estado || 'Pendiente')) + "'";
+
+  var botones = '';
+  if (puedeEditar && aprobada && r.Estado !== 'Producida') {
+    botones += '<button onclick="crearSalidaProduccionMuestra(' + r.id + ')" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">🏭 Crear salida a producción</button>';
+  }
+  if (puedeEditar && aprobada) {
+    botones += ' <button onclick="toggleEstadoProduccionMuestra(' + argsEst + ')" style="background:' + (r.Estado === 'Producida' ? '#718096' : '#1e8449') + ';color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">' + (r.Estado === 'Producida' ? '🔓 Reabrir orden' : '🔒 Cerrar orden') + '</button>';
+  }
+  if (!aprobada) {
+    botones = '<span style="font-size:0.78rem;color:#92400e">Aprueba la orden para poder gestionarla.</span>';
+  }
+
+  // Tabla de productos pedidos (solo lectura).
+  var prodRows = sameConsec.map(function(x) {
+    return '<tr><td>' + escHtml(x.Producto || '—') + '</td><td>' + escHtml(x.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right;font-weight:700">' + (Number(x.Cantidad) || 0).toLocaleString('es-CO') + '</td>' +
+      '<td style="white-space:nowrap">' +
+        (puedeEditar && r.Estado !== 'Producida' ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' : '') +
+        (AUTH.canDelete() && r.Estado !== 'Producida' ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') +
+      '</td></tr>';
+  }).join('');
+
+  // Salidas a producción vinculadas + sus retornos.
+  var salidasHtml;
+  if (!tot.gruposSalida.length) {
+    salidasHtml = '<div class="empty" style="padding:14px">Sin salidas a producción todavía. Usa «Crear salida a producción» para enviar el granel a la planta.</div>';
+  } else {
+    salidasHtml = tot.gruposSalida.map(function(g) {
+      var linkSalida = 'reenvases.html?salida=' + encodeURIComponent(g.Remision);
+      var retRows = (g.retornos || []).length
+        ? g.retornos.map(function(l) {
+            return '<tr><td style="font-size:0.76rem;white-space:nowrap">' + fmtDate(l.Fecha) + '</td>' +
+              '<td style="font-size:0.76rem">' + escHtml(l.Remision_Destino || '—') + '</td>' +
+              '<td>' + escHtml(l.Producto || '—') + '</td><td>' + escHtml(l.Presentacion || '—') + '</td>' +
+              '<td style="text-align:right;font-weight:700">' + (Number(l.Cantidad) || 0).toLocaleString('es-CO') + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="5"><div class="empty" style="padding:10px">Sin ingresos de retorno todavía.</div></td></tr>';
+      var btnRetorno = (AUTH.canEdit && AUTH.canEdit() && g.Estado !== 'Cerrada')
+        ? '<button onclick="registrarRetornoProduccionMuestra(\'' + escHtml(g.Remision).replace(/&#39;/g, "\\'") + '\')" style="background:#27ae60;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:700">📥 Registrar retorno</button>'
+        : '';
+      return '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+          '<div style="font-weight:700;font-size:0.82rem"><a href="' + linkSalida + '" style="color:#7c3aed;text-decoration:none">🏭 ' + escHtml(g.Remision) + '</a>' +
+            ' <span style="font-weight:400;color:#718096;font-size:0.78rem">· ' + escHtml(g.Planta || '—') + ' · granel ' + g.granel.toLocaleString('es-CO') + '</span>' +
+            (g.Estado === 'Cerrada' ? ' <span style="font-size:0.72rem;color:#718096">(salida cerrada)</span>' : '') +
+          '</div>' + btnRetorno +
+        '</div>' +
+        '<div style="overflow-x:auto"><table style="font-size:0.8rem;width:100%"><thead><tr style="background:#f7fafc">' +
+          '<th>Fecha</th><th>N° Remisión</th><th>Producto</th><th>Presentación</th><th style="text-align:right">Ingresó</th>' +
+        '</tr></thead><tbody>' + retRows + '</tbody></table></div>' +
+      '</div>';
+    }).join('');
+  }
+
+  return '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<div style="font-weight:700;font-size:0.86rem;color:#2d3748">🏭 Producción de muestras ' + _muProduccionBadge(est) + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' + botones + '</div>' +
+    '</div>' +
+    '<div style="overflow-x:auto;margin-bottom:14px"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc">' +
+      '<th>Producto</th><th>Presentación</th><th style="text-align:right">Cantidad pedida</th><th></th>' +
+    '</tr></thead><tbody>' + prodRows + '</tbody></table></div>' +
+    '<div style="font-weight:700;font-size:0.82rem;color:#2d3748;margin-bottom:8px">📥 Salidas a producción y retornos</div>' +
+    salidasHtml +
+    '<div style="text-align:right;font-size:0.86rem;margin-top:4px;color:#2d3748">' +
+      'Solicitado <strong>' + tot.solicitado.toLocaleString('es-CO') + '</strong> · ' +
+      'Ingresado <strong>' + tot.ingresado.toLocaleString('es-CO') + '</strong> · ' +
+      'Pendiente <strong>' + tot.pendiente.toLocaleString('es-CO') + '</strong> ' +
+      '<span style="color:#a0aec0;font-weight:400">(unidades de muestra)</span>' +
+    '</div>' +
+  '</div>';
+}
+
+function crearSalidaProduccionMuestra(id) {
+  var r = allMuestras.filter(function(x) { return x.id === id; })[0];
+  if (!r) return;
+  if ((r.Estado_Aprobacion || 'Por aprobar') !== 'Aprobada') {
+    showToast('La orden debe estar aprobada antes de crear la salida a producción.', '#e67e22');
+    return;
+  }
+  window.location.href = 'reenvases.html?muestra_id=' + encodeURIComponent(id);
+}
+
+function registrarRetornoProduccionMuestra(remision) {
+  if (!remision) return;
+  window.location.href = 'ingresos.html?reenvase=' + encodeURIComponent(remision);
+}
+
+async function toggleEstadoProduccionMuestra(empresa, consecutivo, estadoActual) {
+  var nuevo = estadoActual === 'Producida' ? 'Pendiente' : 'Producida';
+  if (nuevo === 'Producida') {
+    var tot = _muProduccionTotales(empresa, consecutivo);
+    if (tot.ingresado <= 0 && !confirm('Aún no hay ingresos de retorno para esta orden. ¿Cerrarla de todas formas?')) return;
+    if (tot.ingresado > 0 && tot.pendiente > 0 &&
+        !confirm('Faltan ' + tot.pendiente + ' unidades por ingresar. ¿Cerrar la orden como producida?')) return;
+  }
+  try {
+    var res = await apiPost({ action: 'editarEstadoProduccionMuestra', Empresa: empresa, Consecutivo: consecutivo, Estado: nuevo });
+    if (!res.ok) throw new Error(res.error || 'Error al cambiar el estado');
+    showToast(nuevo === 'Producida' ? '🔒 Orden cerrada como producida' : '🔓 Orden reabierta');
+    closeViewMu();
+    await loadMuestras();
+  } catch (err) {
+    showToast('❌ ' + err.message, '#e74c3c');
   }
 }
 
@@ -1529,6 +1818,26 @@ async function onEmpresaChange() {
   document.getElementById('mu-consecutivo').value = await getNextConsecutivo(empresa);
 }
 
+// Ajusta el modal según el tipo de solicitud. En "Orden de producción" no hay
+// despacho a cliente: se ocultan Fecha de despacho y N° Remisión, y el
+// Solicitante se sugiere como "Mercadeo".
+function onMuTipoChange() {
+  var sel = document.getElementById('mu-tipo-solicitud');
+  var esProd = sel && sel.value === 'Produccion';
+  var hint = document.getElementById('mu-tipo-hint');
+  if (hint) hint.style.display = esProd ? '' : 'none';
+  var fdWrap = document.getElementById('mu-fecha-despacho-wrap');
+  var remWrap = document.getElementById('mu-remision-wrap');
+  if (fdWrap) fdWrap.style.display = esProd ? 'none' : '';
+  if (remWrap) remWrap.style.display = esProd ? 'none' : '';
+  var linesTitle = document.getElementById('mu-lines-title');
+  if (linesTitle) linesTitle.textContent = esProd ? '📦 Productos a producir (presentación de muestra)' : '📦 Productos solicitados';
+  if (esProd && !muEditId) {
+    var solEl = document.getElementById('mu-solicitante');
+    if (solEl && !solEl.value.trim()) solEl.value = 'Mercadeo';
+  }
+}
+
 async function openNewMuestra() {
   muEditId = null;
   document.getElementById('mu-modal-title').textContent = '🧪 Nueva Solicitud de Muestras';
@@ -1568,6 +1877,9 @@ async function openNewMuestra() {
   document.getElementById('mu-estado').value = 'Pendiente';
   var _optDespNew = document.querySelector('#mu-estado option[value="Despachada"]');
   if (_optDespNew) { _optDespNew.disabled = true; _optDespNew.title = 'Requiere aprobación previa'; }
+  var _selTipoNew = document.getElementById('mu-tipo-solicitud');
+  if (_selTipoNew) { _selTipoNew.value = 'Despacho'; _selTipoNew.disabled = false; _selTipoNew.title = ''; }
+  onMuTipoChange();
   document.getElementById('mu-objetivo').value = '';
   document.getElementById('mu-observaciones').value = '';
 
@@ -1622,6 +1934,15 @@ async function editMuestra(id) {
   document.getElementById('mu-autoriza').value = r.Autoriza || '';
   document.getElementById('mu-estado').value = r.Estado || 'Pendiente';
   var aprEstadoEdit = r.Estado_Aprobacion || 'Por aprobar';
+  var _selTipoEd = document.getElementById('mu-tipo-solicitud');
+  if (_selTipoEd) {
+    _selTipoEd.value = r.Tipo_Solicitud || 'Despacho';
+    // El tipo se congela una vez aprobada / tramitada.
+    var _lockTipo = aprEstadoEdit === 'Aprobada' || r.Estado === 'Despachada' || r.Estado === 'Producida';
+    _selTipoEd.disabled = _lockTipo;
+    _selTipoEd.title = _lockTipo ? 'El tipo no se cambia después de aprobar la solicitud' : '';
+  }
+  onMuTipoChange();
   var _optDespEdit = document.querySelector('#mu-estado option[value="Despachada"]');
   var _cantEntEdit = document.getElementById('mu-edit-cant-entregada');
   if (aprEstadoEdit !== 'Aprobada') {
@@ -1815,6 +2136,7 @@ async function saveMuestra() {
         Solicitante: document.getElementById('mu-solicitante').value.trim(),
         Autoriza: document.getElementById('mu-autoriza').value.trim(),
         Estado: estado,
+        Tipo_Solicitud: (document.getElementById('mu-tipo-solicitud') || {}).value || 'Despacho',
         Objetivo: document.getElementById('mu-objetivo').value.trim(),
         Observaciones: document.getElementById('mu-observaciones').value.trim(),
         Producto: producto,
@@ -1918,6 +2240,7 @@ async function saveMuestra() {
       Solicitante: document.getElementById('mu-solicitante').value.trim(),
       Autoriza: document.getElementById('mu-autoriza').value.trim(),
       Estado: document.getElementById('mu-estado').value,
+      Tipo_Solicitud: (document.getElementById('mu-tipo-solicitud') || {}).value || 'Despacho',
       Objetivo: document.getElementById('mu-objetivo').value.trim(),
       Observaciones: document.getElementById('mu-observaciones').value.trim(),
       _generar_remision: document.getElementById('mu-estado').value === 'Despachada' && !document.getElementById('mu-remision').value.trim(),

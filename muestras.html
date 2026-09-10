@@ -116,6 +116,7 @@
     <div class="sc parcial"><div class="num" id="s-por-aprobar">0</div><div class="lbl">Por aprobar</div></div>
     <div class="sc entregado"><div class="num" id="s-despachadas">0</div><div class="lbl">Despachadas</div></div>
     <div class="sc recibido"><div class="num" id="s-pendientes">0</div><div class="lbl">Pendientes</div></div>
+    <div class="sc recibido"><div class="num" id="s-produccion">0</div><div class="lbl">Órdenes de producción</div></div>
     <div class="sc parcial"><div class="num" id="s-productos">0</div><div class="lbl">Productos solicitados</div></div>
   </div>
 
@@ -129,11 +130,20 @@
       <select id="f-municipio"><option value="">Todos</option></select>
     </div>
     <div class="fg">
+      <label>Tipo</label>
+      <select id="f-tipo">
+        <option value="">Todos</option>
+        <option value="Despacho">Para despacho</option>
+        <option value="Produccion">Orden de producción</option>
+      </select>
+    </div>
+    <div class="fg">
       <label>Estado</label>
       <select id="f-estado">
         <option value="">Todos</option>
         <option value="Pendiente">Pendiente</option>
         <option value="Despachada">Despachada</option>
+        <option value="Producida">Producida</option>
       </select>
     </div>
     <div class="fg">
@@ -209,6 +219,17 @@
     </div>
     <div class="mbody" style="flex:1;overflow-y:auto">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="grid-column:1/-1">
+          <label class="ef-label">Tipo de solicitud</label>
+          <select class="ef" id="mu-tipo-solicitud" onchange="onMuTipoChange()">
+            <option value="Despacho">Para despacho a cliente</option>
+            <option value="Produccion">Orden de producción de muestras (Mercadeo)</option>
+          </select>
+          <div id="mu-tipo-hint" style="display:none;font-size:0.74rem;color:#7c3aed;margin-top:4px">
+            La planta produce estas muestras y <strong>ingresan</strong> al inventario de la empresa.
+            Se gestiona con una salida a producción del granel y su retorno — no se despacha a un cliente.
+          </div>
+        </div>
         <div>
           <label class="ef-label">Empresa</label>
           <select class="ef" id="mu-empresa" onchange="onEmpresaChange()">
@@ -223,7 +244,7 @@
           <label class="ef-label">Fecha solicitud</label>
           <input class="ef" id="mu-fecha-solicitud" type="date">
         </div>
-        <div>
+        <div id="mu-fecha-despacho-wrap">
           <label class="ef-label">Fecha de despacho</label>
           <input class="ef" id="mu-fecha-despacho" type="date">
         </div>
@@ -252,14 +273,15 @@
           <label class="ef-label">Fecha seguimiento</label>
           <input class="ef" id="mu-fecha-seguimiento" type="date">
         </div>
-        <div>
+        <div id="mu-remision-wrap">
           <label class="ef-label">N° Remisión</label>
           <input class="ef" id="mu-remision" type="text" placeholder="(Auto al despachar)" readonly style="background:#f0f4f8">
           <label class="auth-autoconsec" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="mu-remision-auto" checked onchange="var el=document.getElementById('mu-remision');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al despachar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
         </div>
         <div>
           <label class="ef-label">Solicitante</label>
-          <input class="ef" id="mu-solicitante" type="text" placeholder="Nombre del solicitante">
+          <input class="ef" id="mu-solicitante" type="text" placeholder="Nombre del solicitante" list="dl-mu-solicitante">
+          <datalist id="dl-mu-solicitante"><option value="Mercadeo"></option></datalist>
         </div>
         <div>
           <label class="ef-label">Quien autoriza</label>
@@ -285,7 +307,7 @@
       <!-- Multi-line product entry (new mode) -->
       <div id="mu-multi-lines">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;border-top:1px solid #e2e8f0;padding-top:14px">
-          <div style="font-weight:700;font-size:0.88rem;color:#2d3748">📦 Productos solicitados</div>
+          <div style="font-weight:700;font-size:0.88rem;color:#2d3748" id="mu-lines-title">📦 Productos solicitados</div>
           <button onclick="addMuLine()" style="background:#8e44ad;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">+ Agregar línea</button>
         </div>
         <div style="overflow-x:auto">
@@ -377,7 +399,7 @@
     <div class="mftr" style="justify-content:flex-end;gap:8px">
       <button class="btn-cancel" onclick="exportarMuestraSolicitudPDF()" style="background:#8e44ad;color:white;border-color:#8e44ad">📄 Exportar Solicitud PDF</button>
       <button class="btn-cancel" onclick="exportarMuestraSolicitudPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f" title="Enviar la solicitud a otro usuario del panel">📨 Enviar Solicitud</button>
-      <button class="btn-cancel" onclick="exportarMuestraRemisionPDF()" style="background:#27ae60;color:white;border-color:#27ae60">📄 Exportar Remisión PDF</button>
+      <button class="btn-cancel" id="btn-mu-export-remision" onclick="exportarMuestraRemisionPDF()" style="background:#27ae60;color:white;border-color:#27ae60">📄 Exportar Remisión PDF</button>
       <button class="btn-cancel auth-edit-only" id="btn-mu-send-remision" onclick="exportarMuestraRemisionPDF({share:true, triggerBtn:this})" style="background:#5b2c6f;color:white;border-color:#5b2c6f;display:none" title="Enviar remisión a otro usuario del panel">📨 Enviar Remisión</button>
       <button class="btn-cancel" onclick="closeViewMu()">Cerrar</button>
     </div>
