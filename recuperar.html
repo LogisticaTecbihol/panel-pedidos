@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Establecer nueva contraseña — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
+<title>Nueva contraseña – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260908z">
+</head>
+<body>
+
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-icon">🔑</div>
+      <h1>Establecer nueva contraseña</h1>
+      <p>Sistema de Gestión Logística</p>
+    </div>
+
+    <!-- Verificando el enlace -->
+    <div id="rc-loading" style="padding:32px 28px;text-align:center;color:#718096;font-size:0.9rem">
+      Verificando el enlace…
+    </div>
+
+    <!-- Formulario -->
+    <form id="rc-form" style="display:none">
+      <div class="login-field">
+        <label for="rc-pass">Nueva contraseña</label>
+        <div style="position:relative">
+          <input type="password" id="rc-pass" required minlength="8" placeholder="••••••••" autocomplete="new-password" style="padding-right:42px;width:100%;box-sizing:border-box">
+          <button type="button" id="rc-toggle" onclick="toggleRcPass()" aria-label="Mostrar contraseña" title="Mostrar contraseña" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1.05rem;padding:4px 6px;color:#4a5568;line-height:1">👁️</button>
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="rc-pass2">Repetir contraseña</label>
+        <input type="password" id="rc-pass2" required minlength="8" placeholder="••••••••" autocomplete="new-password" style="width:100%;box-sizing:border-box">
+      </div>
+      <div id="rc-error" class="login-error"></div>
+      <button type="submit" class="btn-login" id="rc-btn">Guardar contraseña</button>
+    </form>
+
+    <!-- Enlace inválido / expirado -->
+    <div id="rc-errscreen" style="display:none;padding:28px">
+      <div style="font-size:2rem;text-align:center;margin-bottom:10px">⚠️</div>
+      <p id="rc-errscreen-msg" style="color:#4a5568;font-size:0.88rem;text-align:center;margin-bottom:6px">
+        El enlace no es válido o ya expiró.
+      </p>
+      <p style="color:#718096;font-size:0.82rem;text-align:center">
+        Los enlaces de recuperación son de un solo uso y caducan en una hora.
+        Solicita uno nuevo desde la pantalla de inicio de sesión.
+      </p>
+    </div>
+
+    <!-- Éxito -->
+    <div id="rc-ok" style="display:none;padding:28px;text-align:center">
+      <div style="font-size:2rem;margin-bottom:10px">✅</div>
+      <p style="color:#27ae60;font-weight:700;font-size:0.92rem;margin-bottom:4px">Contraseña actualizada</p>
+      <p style="color:#718096;font-size:0.82rem">Te llevamos al inicio de sesión…</p>
+    </div>
+
+    <div class="login-footer">
+      <a href="login.html">← Volver al inicio de sesión</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20260909h"></script>
+<script>
+// Nota: esta página NO carga js/auth.js a propósito: durante el flujo de
+// recuperación existe una sesión temporal y auth.js redirigiría a index.html
+// antes de que el usuario pueda fijar su contraseña.
+
+var _rcForm      = document.getElementById('rc-form');
+var _rcLoading   = document.getElementById('rc-loading');
+var _rcErrScreen = document.getElementById('rc-errscreen');
+var _rcOk        = document.getElementById('rc-ok');
+var _rcError     = document.getElementById('rc-error');
+var _rcBtn       = document.getElementById('rc-btn');
+var _rcSettled   = false;
+
+function _rcShow(el) {
+  [_rcLoading, _rcForm, _rcErrScreen, _rcOk].forEach(function(x) { x.style.display = 'none'; });
+  el.style.display = el === _rcForm ? '' : 'block';
+}
+
+function _rcShowError(msg) {
+  if (msg) document.getElementById('rc-errscreen-msg').textContent = msg;
+  _rcShow(_rcErrScreen);
+}
+
+function toggleRcPass() {
+  var b = document.getElementById('rc-toggle');
+  var vis = document.getElementById('rc-pass').type === 'text';
+  document.getElementById('rc-pass').type  = vis ? 'password' : 'text';
+  document.getElementById('rc-pass2').type = vis ? 'password' : 'text';
+  b.textContent = vis ? '👁️' : '🙈';
+  b.title = vis ? 'Mostrar contraseña' : 'Ocultar contraseña';
+  b.setAttribute('aria-label', b.title);
+}
+
+// 1) ¿El enlace llegó con un error explícito? (#error=...&error_description=...)
+var _rcHash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+if (_rcHash.get('error') || _rcHash.get('error_code')) {
+  _rcSettled = true;
+  var _d = _rcHash.get('error_description');
+  _rcShowError(_d ? decodeURIComponent(_d.replace(/\+/g, ' ')) : null);
+} else {
+  // 2) Esperar a que Supabase establezca la sesión de recuperación desde la URL.
+  _sb.auth.onAuthStateChange(function(event, session) {
+    if (_rcSettled) return;
+    if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+      _rcSettled = true;
+      _rcShow(_rcForm);
+    }
+  });
+
+  var _rcTries = 0;
+  (function _rcCheck() {
+    _sb.auth.getSession().then(function(r) {
+      if (_rcSettled) return;
+      if (r.data && r.data.session) {
+        _rcSettled = true;
+        _rcShow(_rcForm);
+        return;
+      }
+      if (++_rcTries > 24) {   // ~6 s
+        _rcSettled = true;
+        _rcShowError(null);
+        return;
+      }
+      setTimeout(_rcCheck, 250);
+    });
+  })();
+}
+
+_rcForm.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  _rcError.textContent = '';
+  var p1 = document.getElementById('rc-pass').value;
+  var p2 = document.getElementById('rc-pass2').value;
+
+  if (p1.length < 8) { _rcError.textContent = 'La contraseña debe tener al menos 8 caracteres'; return; }
+  if (p1 !== p2)     { _rcError.textContent = 'Las contraseñas no coinciden'; return; }
+
+  _rcBtn.disabled = true;
+  _rcBtn.textContent = 'Guardando…';
+
+  var res = await _sb.auth.updateUser({ password: p1 });
+
+  if (res.error) {
+    var m = res.error.message || '';
+    if (/different from the old password/i.test(m)) {
+      _rcError.textContent = 'La nueva contraseña debe ser distinta de la anterior';
+    } else if (/should be at least/i.test(m) || /weak/i.test(m)) {
+      _rcError.textContent = 'La contraseña es demasiado débil. Usa al menos 8 caracteres con letras y números.';
+    } else if (/Auth session missing/i.test(m) || /session_not_found/i.test(m)) {
+      _rcShowError('La sesión de recuperación expiró. Solicita un enlace nuevo.');
+      return;
+    } else {
+      _rcError.textContent = m;
+    }
+    _rcBtn.disabled = false;
+    _rcBtn.textContent = 'Guardar contraseña';
+    return;
+  }
+
+  try { await _sb.auth.signOut(); } catch (_e) {}
+  _rcShow(_rcOk);
+  setTimeout(function() { location.replace('login.html'); }, 2500);
+});
+</script>
+</body>
+</html>

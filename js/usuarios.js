@@ -480,7 +480,7 @@ async function resetUserPassword(userId, email) {
   if (!email) { showToast('No se encontró el email del usuario', '#e74c3c'); return; }
   try {
     var res = await _sb.auth.resetPasswordForEmail(email, {
-      redirectTo: location.origin + location.pathname.replace('usuarios.html', 'index.html')
+      redirectTo: location.origin + location.pathname.replace('usuarios.html', 'recuperar.html')
     });
     if (res.error) throw new Error(res.error.message);
     showToast('🔑 Email de recuperación enviado a ' + email);

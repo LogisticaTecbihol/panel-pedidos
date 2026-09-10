@@ -92,13 +92,13 @@ async function doReset(e) {
     return;
   }
   var res = await _sb.auth.resetPasswordForEmail(email, {
-    redirectTo: location.origin + location.pathname.replace('login.html', 'index.html')
+    redirectTo: location.origin + location.pathname.replace('login.html', 'recuperar.html')
   });
   if (res.error) {
     msgEl.textContent = res.error.message;
     msgEl.className = 'reset-msg error';
   } else {
-    msgEl.textContent = 'Se envió un enlace de recuperación a ' + email;
+    msgEl.textContent = 'Te enviamos un enlace a ' + email + '. Ábrelo para crear una contraseña nueva (caduca en 1 hora).';
     msgEl.className = 'reset-msg success';
   }
 }
