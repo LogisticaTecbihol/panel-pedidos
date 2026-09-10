@@ -916,9 +916,11 @@ async function loadFromAPI() {
       var cantE = Number(p.Cant_Entregada) || 0;
       var cantP = Number(p.Cant_Pendiente) || 0;
       var cantQ = Number(p.Cantidad) || 0;
+      // Sólo se rellena Cantidad cuando NO viene informada (datos antiguos sin
+      // cantidad). Si viene informada y es MENOR que lo ya entregado NO se infla:
+      // es una inconsistencia real (posible doble despacho) que debe verse y no
+      // ocultarse — el candado de BD impide que se produzcan nuevas.
       if (cantQ === 0 && (cantE + cantP) > 0) {
-        p.Cantidad = cantE + cantP;
-      } else if (cantQ > 0 && cantQ < cantE) {
         p.Cantidad = cantE + cantP;
       }
       return p;
@@ -2799,11 +2801,29 @@ function removeEntrega(lineIdx, entIdx) {
 
 // ── Wrapper: confirmación contabilidad → guardar ──
 var _pendingContab = null;
+// Candado anti doble-envío: el botón "Guardar cambios y enviar" no se
+// deshabilitaba hasta bien dentro de guardarTodo (después del diálogo de
+// contabilidad + generar remisión + resolver comercial), así que un 2º clic
+// lanzaba un guardarTodo concurrente que corrompía detailWorkingLines
+// (p. ej. GREEN #80: línea con Cant_Entregada=120 sobre 60 y remisión duplicada).
+var _guardadoEnCurso = false;
 async function guardarYEnviar() {
   if (activeIdx === null) return;
   var c = consecs[activeIdx];
   if (!c) return;
+  if (_guardadoEnCurso) return;                       // ya hay un guardado corriendo
+  _guardadoEnCurso = true;
+  var _btnGuardar = document.getElementById('btn-confirmar');
+  if (_btnGuardar) _btnGuardar.disabled = true;       // deshabilitar YA, sin esperar awaits internos
+  try {
+    await _guardarYEnviarCore(c);
+  } finally {
+    _guardadoEnCurso = false;
+    if (_btnGuardar) _btnGuardar.disabled = false;    // en éxito el modal ya cerró; en error deja reintentar
+  }
+}
 
+async function _guardarYEnviarCore(c) {
   // Solo se envía el paquete a contabilidad cuando este guardado emite
   // una remisión al cliente, es decir cuando hay entregas directas
   // pendientes (asignaciones desde la misma empresa del pedido). Si solo
@@ -2962,53 +2982,60 @@ async function guardarTodo() {
     return;
   }
 
-  // Volcar SOLO las entregas directas al buffer _entregas para que
-  // el resto del flujo (Cant_Entregada, Remisiones, Estado_Entrega,
-  // PDF de remisión) opere únicamente sobre lo que realmente se
-  // entrega al cliente. Los traslados no cuentan como entrega hasta
-  // que la OC se legalice y se registre la entrega desde la empresa
-  // del pedido en una sesión posterior.
+  // Volcar SOLO las entregas directas para que el resto del flujo
+  // (Cant_Entregada, Remisiones, Estado_Entrega, PDF de remisión) opere
+  // únicamente sobre lo que realmente se entrega al cliente. Los traslados
+  // no cuentan como entrega hasta que la OC se legalice y se registre la
+  // entrega desde la empresa del pedido en una sesión posterior.
+  //
+  // Se calcula sobre una copia local (_mergePorIdx) y NO se muta dl._entregas
+  // hasta DESPUÉS de persistir con éxito: así reintentar guardarTodo sobre el
+  // mismo modal (p. ej. tras un error de red) es idempotente y no puede
+  // duplicar la entrega ni inflar Cant_Entregada.
+  var _nuevasPorIdx = {};
   entregas.forEach(function(ent) {
-    var dl = detailWorkingLines[ent._idx];
-    if (!dl) return;
-    if (!dl._entregas) dl._entregas = [];
-    dl._entregas.push({
+    (_nuevasPorIdx[ent._idx] || (_nuevasPorIdx[ent._idx] = [])).push({
       remision: ent.remision,
       cantidad: ent.cantidad,
       fecha: ent.fecha,
       empresa_stock: ent.empresa_stock
     });
   });
+  var _mergePorIdx = detailWorkingLines.map(function(l, i) {
+    return (l && l._entregas ? l._entregas.slice() : []).concat(_nuevasPorIdx[i] || []);
+  });
 
   var entregadaExcedida = false;
-  detailWorkingLines.forEach(function(l) {
-    var entries = l._entregas || [];
+  detailWorkingLines.forEach(function(l, i) {
+    var entries = _mergePorIdx[i];
     l.Cant_Entregada = entries.reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
     l.Remisiones = formatEntregas(entries);
     var maxDate = '';
     entries.forEach(function(e) { if (e.fecha && e.fecha > maxDate) maxDate = e.fecha; });
     if (maxDate) l.Fecha_Ult_Entrega = maxDate;
     l.Cant_Pendiente = Math.max(0, (Number(l.Cantidad) || 0) - l.Cant_Entregada);
-    if (l.Cant_Entregada > l.Cantidad) entregadaExcedida = true;
+    if (l.Cant_Entregada > (Number(l.Cantidad) || 0) + 1e-6) entregadaExcedida = true;
   });
   if (entregadaExcedida) { showToast('La cantidad total de entregas supera la pedida', '#e74c3c'); return; }
 
   if (rem && entregas.length === 0) {
-    detailWorkingLines.forEach(function(l) {
-      if ((Number(l.Cant_Entregada) || 0) > 0 && (l._entregas || []).some(function(e) { return !(e.remision || '').trim(); })) {
-        l._entregas.forEach(function(e) {
+    detailWorkingLines.forEach(function(l, i) {
+      var entries = _mergePorIdx[i];
+      if ((Number(l.Cant_Entregada) || 0) > 0 && entries.some(function(e) { return !(e.remision || '').trim(); })) {
+        entries.forEach(function(e) {
           if (!(e.remision || '').trim()) e.remision = rem;
         });
-        l.Remisiones = formatEntregas(l._entregas);
+        l.Remisiones = formatEntregas(entries);
       }
     });
   }
 
-  detailWorkingLines.forEach(function(l) {
+  detailWorkingLines.forEach(function(l, i) {
     var pedida = Number(l.Cantidad) || 0;
     var entregada = Number(l.Cant_Entregada) || 0;
+    var _ent = _mergePorIdx[i] || [];
     if (pedida > 0 && entregada >= pedida) {
-      var todasRemision = (l._entregas || []).length > 0 && (l._entregas || []).every(function(e) { return (e.remision || '').trim() !== ''; });
+      var todasRemision = _ent.length > 0 && _ent.every(function(e) { return (e.remision || '').trim() !== ''; });
       l.Estado_Entrega = todasRemision ? 'Entregado' : 'Alistado';
     } else if (entregada > 0) {
       l.Estado_Entrega = 'Parcial';
@@ -3081,6 +3108,15 @@ async function guardarTodo() {
     if (entregas.length > 0 || solicitudesCompra.length > 0) {
       await persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs);
     }
+
+    // Persistido OK: recién ahora se consolida el buffer local en dl._entregas
+    // y se descartan las asignaciones pendientes, para que un reintento o un
+    // 2º "Guardar" sobre este mismo modal no vuelva a registrar nada.
+    detailWorkingLines.forEach(function(dl, i) {
+      if (!dl) return;
+      dl._entregas = _mergePorIdx[i];
+      dl._asignaciones = [];
+    });
 
     // Consumir el apartado que respalda cada entrega directa: pasa a
     // 'Consumido' (o baja su cantidad) para que el descuento de Kardex
