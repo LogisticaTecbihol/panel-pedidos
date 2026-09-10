@@ -1014,6 +1014,8 @@ async function saveIngreso() {
     return;
   }
 
+  if (!empresa_destino) { showToast('Selecciona la empresa destino', '#e74c3c'); return; }
+
   readIngLines();
   var validLines = ingLineas.filter(function(l) { return l.Producto && l.Cantidad > 0; });
   if (!validLines.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }
