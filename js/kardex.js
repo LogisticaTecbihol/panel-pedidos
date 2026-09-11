@@ -2983,6 +2983,9 @@ function renderExistencias() {
   var mostrar = document.getElementById('ex-f-mostrar').value;
   var empresaSel = document.getElementById('ex-f-empresa').value;
 
+  var notaEmp = document.getElementById('ex-nota-empresa');
+  if (notaEmp) notaEmp.style.display = empresaSel ? 'block' : 'none';
+
   var empresasAll = _empresasExistView();
   var empresasView = empresaSel
     ? empresasAll.filter(function(e) { return e.value === empresaSel; })
@@ -3116,8 +3119,8 @@ function renderExistTable(empresasView) {
     headerCols += '<th style="text-align:right;min-width:90px">' + e.sigla + '</th>';
   });
   if (showTotal) headerCols += '<th style="text-align:right;min-width:90px;background:#edf2f7;font-weight:800">TOTAL</th>';
-  headerCols += '<th style="text-align:right;min-width:90px;background:#fff7ed;color:#b45309;font-weight:800" title="Stock apartado a pedidos sin remisionar">APARTADO</th>';
-  headerCols += '<th style="text-align:right;min-width:90px;background:#f0fdf4;color:#15803d;font-weight:800" title="Disponible neto = existencia física − apartado">DISP. NETO</th>';
+  headerCols += '<th style="text-align:right;min-width:90px;background:#fff7ed;color:#b45309;font-weight:800" title="Stock apartado a pedidos sin remisionar. Es el total de TODO el holding para este producto, no solo de la empresa filtrada.">APARTADO</th>';
+  headerCols += '<th style="text-align:right;min-width:90px;background:#f0fdf4;color:#15803d;font-weight:800" title="Disponible neto = existencia física − apartado, sumando TODAS las empresas del holding para este producto (no solo la empresa filtrada).">DISP. NETO</th>';
   thead.innerHTML = headerCols;
 
   var tbody = document.getElementById('t-body-ex');
