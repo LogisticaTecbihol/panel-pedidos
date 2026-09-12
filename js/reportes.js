@@ -1563,11 +1563,14 @@ function _buildRemisionesInner() {
   devoluciones.forEach(function(d) {
     var empNombre = d.Empresa || '';
     if (fEmp && empNombre !== fEmp) return;
+    // Cant_Entregada = cantidad realmente devuelta/tramitada (editable, ≤ Cantidad
+    // solicitada); es la misma que usa kardex.js para calcular el movimiento real.
+    var cantReal = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
     var remIngreso = String(d.Remision_Ingreso || d.Remision || '').trim();
     if (remIngreso) {
       if (!fTxt || remIngreso.toLowerCase().indexOf(fTxt) >= 0 || getSigla(empNombre).toLowerCase().indexOf(fTxt) >= 0) {
         var keyIng = empNombre + '||' + remIngreso + '||Devolución (Ingreso)';
-        _addRemision(map, keyIng, empNombre, remIngreso, 'Dev. Ingreso', 'Dev. ' + (d.Consecutivo || ''), (d.Producto || '') + ' (' + (d.Presentacion || '') + ')', d.Cantidad, d.Fecha_Ingreso || d.Fecha_Devolucion || d.Fecha);
+        _addRemision(map, keyIng, empNombre, remIngreso, 'Dev. Ingreso', 'Dev. ' + (d.Consecutivo || ''), (d.Producto || '') + ' (' + (d.Presentacion || '') + ')', cantReal, d.Fecha_Ingreso || d.Fecha_Devolucion || d.Fecha);
         empresasSet[getSigla(empNombre)] = true;
         totalLineas++;
       }
@@ -1576,7 +1579,7 @@ function _buildRemisionesInner() {
     if (remSalida) {
       if (!fTxt || remSalida.toLowerCase().indexOf(fTxt) >= 0 || getSigla(empNombre).toLowerCase().indexOf(fTxt) >= 0) {
         var keySal = empNombre + '||' + remSalida + '||Devolución (Salida)';
-        _addRemision(map, keySal, empNombre, remSalida, 'Dev. Salida', 'Dev. ' + (d.Consecutivo || ''), (d.Producto || '') + ' (' + (d.Presentacion || '') + ')', d.Cantidad, d.Fecha_Salida || d.Fecha);
+        _addRemision(map, keySal, empNombre, remSalida, 'Dev. Salida', 'Dev. ' + (d.Consecutivo || ''), (d.Producto || '') + ' (' + (d.Presentacion || '') + ')', cantReal, d.Fecha_Salida || d.Fecha);
         empresasSet[getSigla(empNombre)] = true;
         totalLineas++;
       }
