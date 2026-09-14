@@ -324,7 +324,7 @@ function renderCamTable() {
         '<button onclick="viewCamDetail(\''+keyEsc+'\')" title="Ver detalle" style="background:#3498db;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📋 Ver</button>' +
         gestionarBtn +
         (AUTH.canEdit() && camScope !== 'tramitadas' ? '<button onclick="openEditCamGroup(\''+keyEsc+'\')" title="Editar" style="background:#8e44ad;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">✏️</button>' : '') +
-        (AUTH.canDelete() && camScope !== 'tramitadas' ? '<button class="btn-del" onclick="openDeleteCamGroup(\''+keyEsc+'\')" title="Eliminar">🗑️</button>' : '') +
+        (AUTH.canDeleteIn('cambios') && camScope !== 'tramitadas' ? '<button class="btn-del" onclick="openDeleteCamGroup(\''+keyEsc+'\')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');

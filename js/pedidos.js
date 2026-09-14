@@ -1711,7 +1711,7 @@ function renderTable() {
           (lineCount === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
         '</button>' +
         (AUTH.canEdit() && pedidoScope === 'activos' ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' : '') +
-        (AUTH.canDelete() && pedidoScope === 'activos' ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
+        (AUTH.canDeleteIn('pedidos') && pedidoScope === 'activos' ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
         (AUTH.canToggleBloqueoCartera() && (pedidoScope === 'activos' || bloqCartera) && est2 !== 'Anulado'
           ? '<button onclick="toggleBloqueoCartera(' + idx + ')" title="' + (bloqCartera ? 'Liberar el pedido del bloqueo por cartera' : 'Bloquear el pedido por cartera') + '" '
             + 'style="border:1px solid ' + (bloqCartera ? '#16a34a' : '#dc2626') + ';background:' + (bloqCartera ? '#f0fdf4' : '#fef2f2') + ';color:' + (bloqCartera ? '#15803d' : '#b91c1c') + ';border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.78rem;font-weight:700;white-space:nowrap">'

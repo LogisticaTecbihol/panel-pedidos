@@ -704,7 +704,7 @@ function renderMuTable() {
         (AUTH.canEdit() && !soloLectura ? '<button class="btn-edit" onclick="editMuestra(' + r.id + ')">✏️</button> ' : '') +
         // 'comercial' solo ve sus propias solicitudes (RLS), así que puede borrarlas;
         // el backend igual lo restringe a responsable_id / creado_por = auth.uid().
-        ((AUTH.canDelete() || AUTH.isComercial()) && !soloLectura ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)).replace(/&#39;/g, "\\'") + '\')">🗑️</button>' : '') +
+        ((AUTH.canDeleteIn('muestras') || AUTH.isComercial()) && !soloLectura ? '<button class="btn-del" onclick="deleteSolicitud(\'' + escHtml((r.Empresa || '') + '||' + (r.Consecutivo || r.id)).replace(/&#39;/g, "\\'") + '\')">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 }
@@ -846,7 +846,7 @@ async function viewMuestra(id) {
         '<td><input type="number" min="0" class="ef mu-view-cant-ent" data-id="' + x.id + '" data-i="' + i + '" value="' + cantEnt + '"' + inpDis + ' style="width:70px;text-align:right;padding:4px 6px;font-size:0.82rem' + (despachoDisabled ? ';background:#f1f5f9;color:#94a3b8' : '') + '"' + (despachoDisabled ? '' : ' readonly tabindex="-1" title="Se calcula desde las asignaciones"') + '></td>' +
         (despachoDisabled ? '' : '<td class="mu-asig-td" data-i="' + i + '" style="min-width:220px">' + muAsig.renderCell(i, x) + '</td>') +
         '<td style="white-space:nowrap">' + (AUTH.canEdit() ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' : '') +
-        (AUTH.canDelete() ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') + '</td></tr>';
+        (AUTH.canDeleteIn('muestras') ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') + '</td></tr>';
     });
     html += '<tbody id="mu-view-new-lines"></tbody></table></div>';
     if (AUTH.canEdit() && !despachoDisabled) {
@@ -946,7 +946,7 @@ function _muProduccionPanelHtml(r, emp, consec, aprEstado, sameConsec) {
       '<td style="text-align:right;font-weight:700">' + (Number(x.Cantidad) || 0).toLocaleString('es-CO') + '</td>' +
       '<td style="white-space:nowrap">' +
         (puedeEditar && r.Estado !== 'Producida' ? '<button class="btn-edit" onclick="closeViewMu();editMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">✏️</button> ' : '') +
-        (AUTH.canDelete() && r.Estado !== 'Producida' ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') +
+        (AUTH.canDeleteIn('muestras') && r.Estado !== 'Producida' ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') +
       '</td></tr>';
   }).join('');
 

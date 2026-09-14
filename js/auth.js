@@ -290,6 +290,15 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'admin';
   }
 
+  // Módulos donde, además de 'admin', el rol 'gerente_iaso' también puede
+  // borrar (el RLS de estas tablas ya lo permite, scope por empresa asignada).
+  var GERENTE_IASO_DELETE_MODULES = ['pedidos', 'devoluciones', 'cambios', 'muestras'];
+
+  function canDeleteIn(modulo) {
+    if (canDelete()) return true;
+    return !!(_profile && _profile.rol === 'gerente_iaso' && GERENTE_IASO_DELETE_MODULES.indexOf(modulo) >= 0);
+  }
+
   function canApprove() {
     if (!_profile) return false;
     if (_profile.rol === 'admin') return true;
@@ -370,6 +379,7 @@ var AUTH = (function() {
     logout: logout,
     canEdit: canEdit,
     canDelete: canDelete,
+    canDeleteIn: canDeleteIn,
     canApprove: canApprove,
     canApproveOC: canApproveOC,
     canManageUsers: canManageUsers,
