@@ -940,6 +940,16 @@ async function loadFromAPI() {
     renderTable();
     initDespachosTab();
 
+    // La mayoría de los pedidos de gerente_iaso (IASO) terminan en Histórico
+    // (ya entregados/cerrados); abrir ahí por defecto en la primera carga
+    // evita que la pestaña "Activos" luzca casi vacía. No se repite en
+    // recargas posteriores (tras guardar/eliminar) para no pisar la pestaña
+    // que el usuario haya elegido.
+    if (!_initialTabSet) {
+      _initialTabSet = true;
+      if (AUTH.isGerenteIaso() && typeof switchPedidoTab === 'function') switchPedidoTab('historico');
+    }
+
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
     if (typeof applyDeepLinkFilters === 'function') applyDeepLinkFilters();
@@ -1448,6 +1458,7 @@ function populateFilters() {
 // Ámbito de la vista de órdenes: 'activos' (Recibido/Parcial + Estado 2 Abierto o
 // Bloqueado por cartera) o 'historico' (el resto, solo consulta)
 var pedidoScope = 'activos';
+var _initialTabSet = false;
 
 function esPedidoActivo(c) {
   var st = c._cStatus || 'Recibido';
