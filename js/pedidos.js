@@ -699,6 +699,44 @@ function _ocsLegalizadasDe(c) {
   var mk = _keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
   return arr.filter(function(g) { return !g._pedKey || g._pedKey === mk; });
 }
+
+// Igual que _ocsLegalizadasDe(c), pero consultando OrdenesCompra en vivo
+// en vez de la foto en memoria (ocsLegalizadasPorPedido), que solo se
+// refresca en el loadFromAPI() completo de esta pestaña. Sin esto, si la
+// OC de traslado se legaliza en la pestaña de Órdenes segundos antes de
+// despachar el pedido en esta pestaña, el paquete se arma con la versión
+// vieja de la OC (todavía "Abierta", sin remisión) y contabilidad se
+// queda sin ese documento aunque en la base ya estuviera legalizada
+// antes del despacho (caso real: IASO-RS-0059, 2026-09-15 — legalizada
+// a las 15:51:10, pedido despachado a las 15:51:32).
+//
+// Se usa justo antes de armar el paquete (descarga y envío a
+// contabilidad); _ocsLegalizadasDe(c) sigue siendo la fuente para los
+// badges de la tabla, donde no vale la pena pagar el round-trip.
+async function _ocsLegalizadasDeFresco(c) {
+  var refPedido = String(c.Nombre_Empresa || '') + ' #' + String(c.Consecutivo || '');
+  try {
+    var res = await _sb.from('OrdenesCompra')
+      .select('id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,pedido_id,Bonificado')
+      .eq('Tipo', 'Traslado')
+      .eq('Ref_Pedido', refPedido);
+    if (res.error) throw new Error(res.error.message);
+    var mk = _keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+    var byConsec = {};
+    (res.data || []).forEach(function(oc) {
+      if (!String(oc.Remision || '').trim() && !String(oc.Remision_Origen || '').trim()) return;
+      var pk = _pedKeyPorId(oc.pedido_id);
+      if (pk && pk !== mk) return; // pertenece a otro pedido con el mismo empresa+consecutivo
+      var consec = String(oc.Consecutivo || '');
+      (byConsec[consec] || (byConsec[consec] = [])).push(oc);
+    });
+    return Object.keys(byConsec).map(function(k) { return byConsec[k]; });
+  } catch (e) {
+    console.error('_ocsLegalizadasDeFresco (uso foto en memoria como respaldo)', e);
+    return _ocsLegalizadasDe(c);
+  }
+}
+
 // Renderiza la sección de solicitudes de compra pendientes dentro
 // del modal detalle. Se oculta si no hay OCs abiertas para ese
 // pedido. Fuente de verdad: solicitudesCompraPorPedido (indexado
@@ -3200,7 +3238,7 @@ async function guardarTodo() {
       var _pkgSigla = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || 'EMP';
       var _pedidoPkgData = _dataPedidoDesdeModal(c, detailWorkingLines);
       _pedidoPkgData.total = hdr.Total_Orden;
-      var _ocGroupsPkg = _ocsLegalizadasDe(c);
+      var _ocGroupsPkg = await _ocsLegalizadasDeFresco(c);
 
       try {
         var _dlDoc = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, {});
@@ -5662,7 +5700,7 @@ function _buildRemisionesAgrupadas() {
   return arr;
 }
 
-function _exportarRemisionEspecifica(rem, opts) {
+async function _exportarRemisionEspecifica(rem, opts) {
   opts = opts || {};
   if (activeIdx == null) return;
   if (!rem || !rem.remision || !String(rem.remision).trim()) {
@@ -5699,7 +5737,7 @@ function _exportarRemisionEspecifica(rem, opts) {
   };
   var sig = (typeof getSigla === 'function' ? getSigla(c.Nombre_Empresa) : '') || '';
   var dataPedidoPkg = _dataPedidoDesdeModal(c);
-  var ocGroupsPkg = _ocsLegalizadasDe(c);
+  var ocGroupsPkg = await _ocsLegalizadasDeFresco(c);
 
   if (opts.share) {
     if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
