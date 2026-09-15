@@ -722,6 +722,7 @@ function _dataDevSolicitud(ctx) {
     right_fields: right,
     entregas: entregas,
     qty_header: 'Cantidad',
+    show_valores: true,
     copies: [''],
     hide_signatures: true,
     file_prefix: 'Solicitud_Devolucion'

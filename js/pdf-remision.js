@@ -319,6 +319,7 @@ function _drawRemisionCopy(doc, data, palette) {
 
   var lastColHeader = data.last_col_header || 'Bonif.';
   var useObs = lastColHeader === 'Observaciones';
+  var showValores = !!data.show_valores;
 
   var tableBody = (data.entregas || []).map(function(p, i) {
     var prodName = String(p.producto || '');
@@ -337,18 +338,32 @@ function _drawRemisionCopy(doc, data, palette) {
       var esBonif = (p.bonificado || '') === 'Si' || (p.bonificado || '') === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
       lastVal = esBonif ? 'Sí' : 'No';
     }
-    return [
+    var row = [
       i + 1,
       prodName,
       presName,
-      Number(p.cantidad) || 0,
-      lastVal
+      Number(p.cantidad) || 0
     ];
+    if (showValores) {
+      row.push(fmtMoney(p.valor_unitario));
+      row.push(fmtMoney(p.valor_total));
+    }
+    row.push(lastVal);
+    return row;
   });
 
-  var colStyles = useObs
-    ? { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 60 }, 2: { halign: 'center', cellWidth: 32 }, 3: { halign: 'center', cellWidth: 28 }, 4: { cellWidth: 52 } }
-    : { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 82 }, 2: { halign: 'center', cellWidth: 40 }, 3: { halign: 'center', cellWidth: 32 }, 4: { halign: 'center', cellWidth: 18 } };
+  var tableHead = ['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada'];
+  if (showValores) tableHead.push('Valor Unit.', 'Valor Total');
+  tableHead.push(lastColHeader);
+
+  var colStyles;
+  if (showValores) {
+    colStyles = { 0: { halign: 'center', cellWidth: 8 }, 1: { cellWidth: 52 }, 2: { halign: 'center', cellWidth: 24 }, 3: { halign: 'center', cellWidth: 18 }, 4: { halign: 'right', cellWidth: 24 }, 5: { halign: 'right', cellWidth: 26 }, 6: { halign: 'center', cellWidth: 14 } };
+  } else if (useObs) {
+    colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 60 }, 2: { halign: 'center', cellWidth: 32 }, 3: { halign: 'center', cellWidth: 28 }, 4: { cellWidth: 52 } };
+  } else {
+    colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 82 }, 2: { halign: 'center', cellWidth: 40 }, 3: { halign: 'center', cellWidth: 32 }, 4: { halign: 'center', cellWidth: 18 } };
+  }
 
   // Con firmas reservamos ~28 mm al pie de CADA página: así la tabla nunca
   // invade la zona de firmas y la última página siempre lleva al menos una
@@ -357,7 +372,7 @@ function _drawRemisionCopy(doc, data, palette) {
 
   doc.autoTable({
     startY: pageTopY,
-    head: [['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada', lastColHeader]],
+    head: [tableHead],
     body: tableBody,
     theme: 'grid',
     headStyles: { fillColor: accent, fontSize: 7, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.2 },
