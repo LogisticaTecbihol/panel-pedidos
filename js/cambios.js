@@ -144,6 +144,29 @@ function closeCamClientAC() {
 }
 
 // ── Product autocomplete for cambio lines ──
+// Se posiciona con position:fixed y se cuelga de document.body para que la
+// lista no quede recortada por los contenedores overflow-x:auto de las
+// tablas ni por el scroll interno del modal (.mbody).
+function _positionAcDropdownCam(inp, list) {
+  var rect = inp.getBoundingClientRect();
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var width = rect.width;
+  var left = Math.min(rect.left, vw - width - 8);
+  if (left < 8) left = 8;
+  list.style.left = left + 'px';
+  list.style.width = width + 'px';
+  var spaceBelow = vh - rect.bottom - 12;
+  var spaceAbove = rect.top - 12;
+  if (spaceBelow < 160 && spaceAbove > spaceBelow) {
+    list.style.top = '';
+    list.style.bottom = (vh - rect.top + 4) + 'px';
+    list.style.maxHeight = Math.max(Math.min(350, spaceAbove), 100) + 'px';
+  } else {
+    list.style.bottom = '';
+    list.style.top = (rect.bottom + 4) + 'px';
+    list.style.maxHeight = Math.max(Math.min(350, spaceBelow), 100) + 'px';
+  }
+}
 function buildCamProdSearch(cls, idx) {
   var inp = document.querySelector('.'+cls+'[data-line="'+idx+'"]');
   if (!inp) return;
@@ -167,7 +190,7 @@ function buildCamProdSearch(cls, idx) {
     if (!matches.length) return;
     var list = document.createElement('div');
     list.className = 'autocomplete-list cam-prod-ac';
-    list.style.cssText = 'position:absolute;z-index:100;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:350px;overflow-y:auto;width:100%;left:0;top:100%';
+    list.style.cssText = 'position:fixed;z-index:2000;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);overflow-y:auto';
     matches.slice(0,25).forEach(function(p) {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8;display:flex;justify-content:space-between';
@@ -181,15 +204,16 @@ function buildCamProdSearch(cls, idx) {
       item.addEventListener('mouseout', function() { this.style.background='white'; });
       list.appendChild(item);
     });
-    var wrapper = inp.parentElement;
-    wrapper.style.position = 'relative';
-    wrapper.appendChild(list);
+    document.body.appendChild(list);
+    _positionAcDropdownCam(inp, list);
   });
   inp.addEventListener('blur', function() { setTimeout(closeCamProdAC, 150); });
 }
 function closeCamProdAC() {
   document.querySelectorAll('.cam-prod-ac').forEach(function(el) { el.remove(); });
 }
+window.addEventListener('scroll', closeCamProdAC, true);
+window.addEventListener('resize', closeCamProdAC);
 
 // ── Filters ──
 var camFiltersAttached = false;

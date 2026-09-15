@@ -851,6 +851,30 @@ var deleteDevGroupIds = null;
 // ── Product search/autocomplete ──
 var activeAutocompleteDev = null;
 
+// Se posiciona con position:fixed y se cuelga de document.body para que la
+// lista no quede recortada por los contenedores overflow-x:auto de las
+// tablas ni por el scroll interno del modal (.mbody).
+function _positionAcDropdownDev(inp, list, minWidth) {
+  var rect = inp.getBoundingClientRect();
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var width = Math.max(rect.width, minWidth || 0);
+  var left = Math.min(rect.left, vw - width - 8);
+  if (left < 8) left = 8;
+  list.style.left = left + 'px';
+  list.style.width = width + 'px';
+  var spaceBelow = vh - rect.bottom - 12;
+  var spaceAbove = rect.top - 12;
+  if (spaceBelow < 160 && spaceAbove > spaceBelow) {
+    list.style.top = '';
+    list.style.bottom = (vh - rect.top + 4) + 'px';
+    list.style.maxHeight = Math.max(Math.min(320, spaceAbove), 100) + 'px';
+  } else {
+    list.style.bottom = '';
+    list.style.top = (rect.bottom + 4) + 'px';
+    list.style.maxHeight = Math.max(Math.min(320, spaceBelow), 100) + 'px';
+  }
+}
+
 function buildProductSearchDev(lineIdx) {
   var inp = document.querySelector('.dev-prod-search[data-line="' + lineIdx + '"]');
   if (!inp) return;
@@ -879,7 +903,7 @@ function buildProductSearchDev(lineIdx) {
 
     var list = document.createElement('div');
     list.className = 'autocomplete-list';
-    list.style.cssText = 'position:absolute;z-index:100;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:320px;overflow-y:auto;width:100%;min-width:460px;left:0;top:100%';
+    list.style.cssText = 'position:fixed;z-index:2000;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);overflow-y:auto';
 
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
@@ -899,9 +923,8 @@ function buildProductSearchDev(lineIdx) {
       list.appendChild(item);
     });
 
-    var wrapper = inp.parentElement;
-    wrapper.style.position = 'relative';
-    wrapper.appendChild(list);
+    document.body.appendChild(list);
+    _positionAcDropdownDev(inp, list, 460);
     activeAutocompleteDev = list;
   });
 
@@ -914,6 +937,8 @@ function closeAllAutocompleteDev() {
   document.querySelectorAll('.autocomplete-list').forEach(function(el) { el.remove(); });
   activeAutocompleteDev = null;
 }
+window.addEventListener('scroll', closeAllAutocompleteDev, true);
+window.addEventListener('resize', closeAllAutocompleteDev);
 
 // ── Render line rows in modal ──
 function updateDevTotal() {
@@ -1710,7 +1735,7 @@ function buildTramitarProductSearch(lineIdx) {
 
     var list = document.createElement('div');
     list.className = 'autocomplete-list';
-    list.style.cssText = 'position:absolute;z-index:100;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:320px;overflow-y:auto;width:100%;min-width:300px;left:0;top:100%';
+    list.style.cssText = 'position:fixed;z-index:2000;background:white;border:1px solid #cbd5e0;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);overflow-y:auto';
 
     matches.slice(0, 15).forEach(function(p) {
       var item = document.createElement('div');
@@ -1730,9 +1755,8 @@ function buildTramitarProductSearch(lineIdx) {
       list.appendChild(item);
     });
 
-    var wrapper = inp.parentElement;
-    wrapper.style.position = 'relative';
-    wrapper.appendChild(list);
+    document.body.appendChild(list);
+    _positionAcDropdownDev(inp, list, 300);
     activeAutocompleteDev = list;
   });
 
