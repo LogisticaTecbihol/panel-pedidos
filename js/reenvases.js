@@ -1348,16 +1348,30 @@ async function saveReenvase() {
     if (!producto) { showToast('Ingresa el producto', '#e74c3c'); return; }
     if (!cantidad) { showToast('Ingresa la cantidad', '#e74c3c'); return; }
 
+    var reEditRow = allReenvases.filter(function(x) { return x.id === reEditId; })[0];
+    var bodegaEdit = document.getElementById('re-bodega').value;
+    var remEdit = ((reEditRow && reEditRow.Remision) || '').trim();
+    if (remEdit) {
+      var hermanoOtraBodega = allReenvases.filter(function(x) {
+        return x.id !== reEditId && ((x.Remision || '').trim() === remEdit) && (x.Empresa || '') === empresa;
+      }).find(function(x) { return normBodegaRe(x.Bodega) !== normBodegaRe(bodegaEdit); });
+      if (hermanoOtraBodega) {
+        showToast('Esta remisión (' + remEdit + ') ya tiene líneas en bodega "' +
+          (isBodegaBuenos(hermanoOtraBodega.Bodega) ? 'Productos Buenos' : 'Producto No Conforme') +
+          '". No se puede mezclar bodegas en el mismo consecutivo — registra este producto en una salida nueva.', '#e74c3c');
+        return;
+      }
+    }
+
     btn.disabled = true;
     btn.textContent = '⏳ Guardando...';
 
-    var reEditRow = allReenvases.filter(function(x) { return x.id === reEditId; })[0];
     try {
       var result = await apiPost({
         action: 'editarReenvase', row: reEditId,
         Empresa: empresa, Empresa_Destino: empresaDestino, Planta: planta, Producto: producto, Presentacion: presentacion,
         Cantidad: cantidad, Remision: remision, Fecha: fecha,
-        Observaciones: observaciones, Bodega: document.getElementById('re-bodega').value,
+        Observaciones: observaciones, Bodega: bodegaEdit,
         _remision_existente: !!(reEditRow && (reEditRow.Remision || '').trim()),
         _remision_destino_existente: !!(reEditRow && (reEditRow.Remision_Destino || '').trim()),
       });
