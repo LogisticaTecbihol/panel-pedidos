@@ -699,22 +699,38 @@ var NOTIF = (function() {
   function verificarBtn() {
   }
 
-  async function confirmarEnvioContabilidad(empresa, modulo) {
-    if (!empresa || AUTO_CONTAB_MODS.indexOf(modulo) < 0) return { confirmed: true, contabIds: [] };
+  // Resuelve los contactos de contabilidad activos de una empresa, sin
+  // mostrar ningún diálogo. Usado tanto por confirmarEnvioContabilidad
+  // (que sí pregunta antes de guardar) como por avisos automáticos
+  // disparados desde otro flujo (ej. legalización tardía de una OC de
+  // traslado en ordenes.js).
+  async function resolverContabilidad(empresa) {
+    if (!empresa) return { contabIds: [], contabNames: '' };
     if (!_uid && typeof AUTH !== 'undefined' && AUTH.getUser) {
-      var u = AUTH.getUser(); if (u) _uid = u.id;
+      var u0 = AUTH.getUser(); if (u0) _uid = u0.id;
     }
     var sigla = (typeof getSigla === 'function') ? getSigla(empresa) : empresa;
     var contabMap = await _loadContabilidadMap();
     var contabIds = (contabMap[sigla] || []).filter(function(id) { return id !== _uid; });
-    if (!contabIds.length) return { confirmed: true, contabIds: [] };
+    if (!contabIds.length) return { contabIds: [], contabNames: '' };
 
     var dir = await _loadDirectorio();
     var contabUsers = dir.filter(function(u) { return contabIds.indexOf(u.id) >= 0 && u.activo; });
-    if (!contabUsers.length) return { confirmed: true, contabIds: [] };
+    if (!contabUsers.length) return { contabIds: [], contabNames: '' };
 
-    var names = contabUsers.map(function(u) { return u.nombre || u.email; }).join(', ');
-    var ids = contabUsers.map(function(u) { return u.id; });
+    return {
+      contabIds: contabUsers.map(function(u) { return u.id; }),
+      contabNames: contabUsers.map(function(u) { return u.nombre || u.email; }).join(', ')
+    };
+  }
+
+  async function confirmarEnvioContabilidad(empresa, modulo) {
+    if (!empresa || AUTO_CONTAB_MODS.indexOf(modulo) < 0) return { confirmed: true, contabIds: [] };
+    var sigla = (typeof getSigla === 'function') ? getSigla(empresa) : empresa;
+    var resuelto = await resolverContabilidad(empresa);
+    if (!resuelto.contabIds.length) return { confirmed: true, contabIds: [] };
+    var names = resuelto.contabNames;
+    var ids = resuelto.contabIds;
 
     return new Promise(function(resolve) {
       _injectStyles();
@@ -796,7 +812,8 @@ var NOTIF = (function() {
     fueEnviada: fueEnviada,
     verificarBtn: verificarBtn,
     confirmarEnvioContabilidad: confirmarEnvioContabilidad,
-    enviarPDFContabilidad: enviarPDFContabilidad
+    enviarPDFContabilidad: enviarPDFContabilidad,
+    resolverContabilidad: resolverContabilidad
   };
 })();
 

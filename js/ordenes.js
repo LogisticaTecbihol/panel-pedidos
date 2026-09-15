@@ -80,7 +80,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,Bonificado,creado_por,num_factura_destino,fecha_factura_destino,num_factura_origen,fecha_factura_origen' });
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,Bonificado,creado_por,num_factura_destino,fecha_factura_destino,num_factura_origen,fecha_factura_origen,pedido_id' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {
@@ -242,6 +242,53 @@ function _grupoOC(row) {
     if (String(r.Ref_Pedido || '').trim() !== refPed) return false;
     return true;
   });
+}
+
+// Si una OC de traslado se legaliza DESPUÉS de que el pedido que la
+// originó ya se despachó, el paquete que se envió automático a
+// contabilidad en ese momento no pudo incluir esta remisión de traslado
+// porque todavía no existía (caso real: IASO-RS-0059, 2026-09-15 — la
+// OC RESO->IASO se legalizó ~2h40 después del despacho). Este helper
+// detecta ese caso y reenvía la remisión de traslado recién legalizada
+// como complemento, para que contabilidad no se quede sin ella.
+//
+// No hace nada (y no debe hacerlo) si el pedido todavía no se ha
+// despachado: en ese caso el envío automático normal de pedidos.js ya
+// va a incluir este traslado cuando se registre la entrega.
+async function _avisarContabilidadTrasladoTardio(pedidoId, ocRow) {
+  try {
+    var chk = await _sb.rpc('pedido_estado_despacho', { p_pedido_id: pedidoId });
+    if (chk.error) { console.error('pedido_estado_despacho', chk.error); return; }
+    var info = (chk.data || [])[0];
+    if (!info || !info.ya_despachado) return;
+
+    var r = null;
+    for (var i = 0; i < ordenes.length; i++) if (ordenes[i].__row === ocRow) { r = ordenes[i]; break; }
+    if (!r) return;
+    if (typeof generarRemisionesTrasladoPDF !== 'function') return;
+    if (typeof NOTIF === 'undefined' || !NOTIF.resolverContabilidad || !NOTIF.enviarPDFContabilidad) return;
+
+    // generarRemisionesTrasladoPDF toma el encabezado (Remision/Remision_Origen)
+    // de ocs[0]. Si la OC tiene varios productos y sus hermanas aún no se han
+    // legalizado individualmente, deben quedar sin Remision — así que `r`
+    // (la línea que sí se acaba de legalizar) va primero.
+    var grupo = _grupoOC(r);
+    var idx = grupo.indexOf(r);
+    if (idx > 0) { grupo.splice(idx, 1); grupo.unshift(r); }
+
+    var built = generarRemisionesTrasladoPDF(grupo, { return_doc: true, contabilidad: true });
+    if (!built || !built.doc) return;
+
+    var contab = await NOTIF.resolverContabilidad(info.empresa);
+    if (!contab.contabIds.length) return;
+
+    await NOTIF.enviarPDFContabilidad(built.doc, {
+      modulo: 'ordenes', referencia: r.Consecutivo,
+      titulo: 'Complemento traslado OC ' + r.Consecutivo + ' — Pedido ' + info.empresa + ' #' + info.consecutivo,
+      docLabel: 'Remisión de traslado (complemento tardío)',
+      contabIds: contab.contabIds, contabNames: contab.contabNames
+    });
+  } catch (e) { console.error('Aviso tardío contabilidad (traslado) error', e); }
 }
 
 // Handlers de los botones "descargar solicitud" y "descargar
@@ -860,7 +907,11 @@ async function saveOC() {
       if (result.remision_destino) toastOC.push('RE: ' + result.remision_destino);
       if (result.remision_origen) toastOC.push('RS: ' + result.remision_origen);
       showToast(toastOC.join(' · '));
+      var _avisoRow = editOrden.__row;
+      var _avisoPedidoId = (esLegalizar && String(editOrden.Tipo || '').toLowerCase() === 'traslado')
+        ? editOrden.pedido_id : null;
       await loadOrdenes();
+      if (_avisoPedidoId) _avisarContabilidadTrasladoTardio(_avisoPedidoId, _avisoRow);
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');
       btn.disabled = false;
