@@ -385,6 +385,7 @@ function createAsignacionEngine(config) {
           Observaciones: obsGrupo,
           creado_por: uid
         };
+        if (opts.linkField) ocRow[opts.linkField] = (sol.row != null ? sol.row : null);
         var ocRes = await _sb.from('OrdenesCompra').insert(ocRow);
         if (ocRes.error) throw new Error('OC solicitud compra: ' + ocRes.error.message);
       }

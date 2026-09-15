@@ -86,7 +86,7 @@ function _muKeySC(empresa, consecutivo) {
   return String(empresa || '').toLowerCase().trim() + '||' + String(consecutivo == null ? '' : consecutivo).trim();
 }
 
-function _buildMuApartadosMaps(muRows, pedRows) {
+function _buildMuApartadosMaps(muRows, pedRows, ocAbiertaRows) {
   muApartadosPorSolicitud = {};
   muApartadosPorLinea = {};
   muApartadosPorProdEmp = {};
@@ -108,6 +108,30 @@ function _buildMuApartadosMaps(muRows, pedRows) {
       _esMuestra: true, id: a.muestra_id, empresa: a.empresa_muestra, consecutivo: a.consecutivo,
       titular: a.responsable || a.solicitante || '', empresa_stock: a.empresa_stock,
       cantidad: cant, fecha: a.fecha_aplicacion || a.fecha_despacho || ''
+    });
+  });
+  // OC de Traslado "Abierta" (solicitud de compra a otra empresa) que aún
+  // no se legaliza: reserva stock igual que un apartado, pero vive en
+  // OrdenesCompra (no en apartados_muestra) — sin esto era invisible en la
+  // solicitud y nada impedía repetir el "Apartar" varias veces.
+  (ocAbiertaRows || []).forEach(function(oc) {
+    var cant = Number(oc.Cantidad) || 0;
+    if (cant <= 0 || oc.muestra_id == null) return;
+    var ref = _parseMuestraRef(oc.Ref_Pedido);
+    var empMu = ref ? ref.empresa : (oc.Empresa_Destino || '');
+    var consecMu = ref ? ref.consecutivo : '';
+    var kS = _muKeySC(empMu, consecMu);
+    (muApartadosPorSolicitud[kS] || (muApartadosPorSolicitud[kS] = [])).push({
+      muestra_id: oc.muestra_id, producto: oc.Producto, presentacion: oc.Presentacion || '',
+      empresa_stock: oc.Empresa_Origen, cantidad: cant, _esOC: true, _ocConsecutivo: oc.Consecutivo
+    });
+    (muApartadosPorLinea[oc.muestra_id] || (muApartadosPorLinea[oc.muestra_id] = [])).push({
+      empresa_stock: oc.Empresa_Origen, cantidad: cant, _esOC: true, _ocConsecutivo: oc.Consecutivo
+    });
+    var kEoc = _normProdMu(oc.Producto) + '||' + String(oc.Empresa_Origen || '').toLowerCase().trim();
+    (muApartadosPorProdEmp[kEoc] || (muApartadosPorProdEmp[kEoc] = [])).push({
+      _esMuestra: true, _esOC: true, id: oc.muestra_id, empresa: empMu, consecutivo: consecMu,
+      titular: '', empresa_stock: oc.Empresa_Origen, cantidad: cant, fecha: oc.Fecha || ''
     });
   });
   (pedRows || []).forEach(function(a) {
@@ -294,7 +318,7 @@ async function loadMuestras() {
   var results = await Promise.all([
     apiGet('getMuestras'),
     apiGet('getOrdenesCompra', {
-      columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido'
+      columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,muestra_id'
     }).catch(function() { return { ok: true, ordenes: [] }; }),
     apiGet('getApartadosMuestra', {
       columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_despacho,fecha_aplicacion'
@@ -323,10 +347,16 @@ async function loadMuestras() {
   }
 
   allMuestras = res.muestras || [];
-  ocsLegalizadasPorMuestra = _buildOCsLegalizadasMu((ocData && ocData.ok && ocData.ordenes) || []);
+  var ocRowsAll = (ocData && ocData.ok && ocData.ordenes) || [];
+  ocsLegalizadasPorMuestra = _buildOCsLegalizadasMu(ocRowsAll);
+  var ocAbiertasMu = ocRowsAll.filter(function(oc) {
+    return String(oc.Tipo || '').toLowerCase() === 'traslado' &&
+      String(oc.Estado || '') === 'Abierta' && oc.muestra_id != null;
+  });
   _buildMuApartadosMaps(
     (results[2] && results[2].apartados) || [],
-    (results[3] && results[3].apartados) || []
+    (results[3] && results[3].apartados) || [],
+    ocAbiertasMu
   );
   _buildMuProduccionMaps(
     (results[4] && results[4].reenvases) || [],
@@ -1149,7 +1179,8 @@ async function saveEntregas() {
       var refLabel = (muViewEmpresa || '') + ' Muestra #' + ((head && head.Consecutivo) || '');
       await muAsig.persistirOCSolicitudes(solicitudesCompra, {
         fecha: fechaDespacho,
-        refLabel: refLabel
+        refLabel: refLabel,
+        linkField: 'muestra_id'
       });
     }
 
@@ -1288,13 +1319,20 @@ function _muApartadoCellHtml(i, l) {
   if (apas.length) {
     var rows = apas.map(function(a) {
       var sig = getSigla(a.empresa_stock);
+      var etiqueta = a._esOC
+        ? '🔒 ' + a.cantidad + ' ud reservadas · ' + escHtml(sig) + ' · OC ' + escHtml(a._ocConsecutivo || '') + ' pendiente de legalizar'
+        : '🔒 ' + a.cantidad + ' ud apartadas · ' + escHtml(sig);
+      var btnAccion = a._esOC
+        ? '<span style="color:#7c4a03;font-size:0.7rem;font-style:italic">legalizar en Órdenes para poder emitir la entrega</span>'
+        : '<button type="button" onclick="emitirEntregaMuestraApartado(' + i + ',\'' + escHtml(String(a.empresa_stock)).replace(/'/g, "\\'") + '\',' + a.cantidad + ')" ' +
+            'style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Emitir entrega</button>';
       return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">' +
-        '<span style="font-weight:700">🔒 ' + a.cantidad + ' ud apartadas · ' + escHtml(sig) + '</span>' +
-        '<button type="button" onclick="emitirEntregaMuestraApartado(' + i + ',\'' + escHtml(String(a.empresa_stock)).replace(/'/g, "\\'") + '\',' + a.cantidad + ')" ' +
-          'style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Emitir entrega</button>' +
+        '<span style="font-weight:700">' + etiqueta + '</span>' +
+        btnAccion +
         (puede
           ? '<button type="button" onclick="descomprometerLineaMuestra(' + i + ',\'' + escHtml(String(a.empresa_stock)).replace(/'/g, "\\'") + '\',' + a.cantidad + ')" ' +
-              'style="background:#fffbeb;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Liberar</button>'
+              'style="background:#fffbeb;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">' +
+              (a._esOC ? 'Anular solicitud de compra' : 'Liberar') + '</button>'
           : '') +
       '</div>';
     }).join('');
@@ -1394,7 +1432,7 @@ async function apartarMuestraSinDespachar() {
       var refLabel = (muViewEmpresa || '') + ' Muestra #' + (head.Consecutivo || '');
       var fecha = document.getElementById('mu-view-fecha-despacho').value ||
                   new Date().toISOString().slice(0, 10);
-      await muAsig.persistirOCSolicitudes(solicitudesCompra, { fecha: fecha, refLabel: refLabel });
+      await muAsig.persistirOCSolicitudes(solicitudesCompra, { fecha: fecha, refLabel: refLabel, linkField: 'muestra_id' });
     }
     showToast('🔒 Stock apartado' + (solicitudesCompra.length ? ' · solicitud(es) de compra creada(s)' : '') + '. La solicitud sigue en Pendientes.');
     if (solicitudesCompra.length) {
