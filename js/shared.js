@@ -568,6 +568,7 @@ async function _apiPostCore(body) {
           Cantidad: prod.cantidad || 0, Valor_Unitario: prod.valor_unitario || 0,
           Valor_Total: prod.valor_total || 0, Total_Orden: body.total_orden || 0,
           Archivo_Fuente: body.archivo_fuente || '', Estado: 'recibido',
+          Cant_Entregada: 0, Cant_Pendiente: prod.cantidad || 0, Estado_Entrega: 'Recibido',
           ID_Cliente: idCl || '', ID_Comercial: idCm || '', ID_Producto: idPr || '',
           Observaciones: body.observaciones || '', Estado_2: 'Abierto',
           Bonificado: prod.bonificado || '',
