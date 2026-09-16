@@ -2959,8 +2959,17 @@ function calcularExistencias() {
   var stillExists = empresasView.some(function(e) { return e.value === prevEmp; });
   selEmp.value = stillExists ? prevEmp : '';
 
+  var selProd = document.getElementById('ex-f-buscar');
+  var prevProd = selProd.value;
+  var prodNames = existData.map(function(row) { return row.producto; });
+  selProd.innerHTML = '<option value="">— Todos —</option>' +
+    prodNames.map(function(p) {
+      return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>';
+    }).join('');
+  selProd.value = prodNames.indexOf(prevProd) >= 0 ? prevProd : '';
+
   if (!existFiltersAttached) {
-    document.getElementById('ex-f-buscar').addEventListener('input', debounce(renderExistencias, 300));
+    document.getElementById('ex-f-buscar').addEventListener('change', renderExistencias);
     document.getElementById('ex-f-mostrar').addEventListener('change', renderExistencias);
     document.getElementById('ex-f-empresa').addEventListener('change', renderExistencias);
     document.getElementById('ex-f-corte').addEventListener('change', calcularExistencias);
@@ -2979,7 +2988,7 @@ function clearExistFilters() {
 }
 
 function renderExistencias() {
-  var buscar = (document.getElementById('ex-f-buscar').value || '').toLowerCase().trim();
+  var buscar = document.getElementById('ex-f-buscar').value;
   var mostrar = document.getElementById('ex-f-mostrar').value;
   var empresaSel = document.getElementById('ex-f-empresa').value;
 
@@ -3002,7 +3011,7 @@ function renderExistencias() {
   }
 
   existFiltered = existData.filter(function(row) {
-    if (buscar && row.producto.toLowerCase().indexOf(buscar) < 0) return false;
+    if (buscar && row.producto !== buscar) return false;
     var totalView = 0;
     empresasView.forEach(function(e) { totalView += _existEmpVal(row, e.value); });
     row._totalView = totalView;
