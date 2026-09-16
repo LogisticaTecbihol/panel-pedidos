@@ -232,10 +232,11 @@ function bcRenderResumen() {
     var bKey = _bcBodegaKey(r);
     var gKey = r.Nombre_Empresa + '||' + bKey + '||' + (r.Producto || '') + '||' + (r.Presentacion || '');
     if (!groups[gKey]) {
-      groups[gKey] = { empresa: r.Nombre_Empresa, bodegaKey: bKey, producto: r.Producto || '', presentacion: r.Presentacion || '', cant: 0, pedidos: {} };
+      groups[gKey] = { empresa: r.Nombre_Empresa, bodegaKey: bKey, producto: r.Producto || '', presentacion: r.Presentacion || '', cant: 0, pedidos: {}, municipios: {} };
     }
     groups[gKey].cant += Number(r.Cant_Entregada) || 0;
     groups[gKey].pedidos[r.Nombre_Empresa + '||' + r.Consecutivo + '||' + r.Cliente] = true;
+    groups[gKey].municipios[(r.Municipio || '').trim() || '—'] = true;
   });
 
   var arr = Object.values(groups);
@@ -255,7 +256,7 @@ function bcRenderResumen() {
   document.getElementById('bc-row-ct-resumen').textContent = '(' + arr.length + ' producto(s) × bodega)';
 
   if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">No hay datos con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">No hay datos con los filtros seleccionados.</div></td></tr>';
     document.getElementById('bc-foot-resumen').innerHTML = '';
     return;
   }
@@ -264,9 +265,11 @@ function bcRenderResumen() {
   var grandTotal = 0;
   arr.forEach(function(g, i) {
     var k = g.empresa + '||' + g.bodegaKey;
+    var municipios = Object.keys(g.municipios).sort().join(', ');
     html += '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClass(g.empresa) + '">' + escHtml(getSigla(g.empresa)) + '</span></td>' +
       '<td>' + escHtml(_bcBodegaLabel(g.bodegaKey)) + '</td>' +
+      '<td>' + escHtml(municipios) + '</td>' +
       '<td>' + escHtml(g.producto) + '</td>' +
       '<td>' + escHtml(g.presentacion) + '</td>' +
       '<td class="money">' + Object.keys(g.pedidos).length + '</td>' +
@@ -279,7 +282,7 @@ function bcRenderResumen() {
     if (nextKey !== k) {
       var st = bodSubtot[k];
       html += '<tr style="background:#f7fafc;font-weight:700">' +
-        '<td colspan="4" style="text-align:right">Subtotal ' + escHtml(getSigla(g.empresa)) + ' · ' + escHtml(_bcBodegaLabel(g.bodegaKey)) + '</td>' +
+        '<td colspan="5" style="text-align:right">Subtotal ' + escHtml(getSigla(g.empresa)) + ' · ' + escHtml(_bcBodegaLabel(g.bodegaKey)) + '</td>' +
         '<td class="money">' + Object.keys(st.pedidos).length + '</td>' +
         '<td class="money">' + _fmtNum.format(st.cant) + '</td>' +
       '</tr>';
@@ -288,7 +291,7 @@ function bcRenderResumen() {
 
   tbody.innerHTML = html;
   document.getElementById('bc-foot-resumen').innerHTML =
-    '<td colspan="4" style="text-align:right">Total</td><td></td><td class="money">' + _fmtNum.format(grandTotal) + '</td>';
+    '<td colspan="5" style="text-align:right">Total</td><td></td><td class="money">' + _fmtNum.format(grandTotal) + '</td>';
 }
 
 // ── Init ───────────────────────────────────────────────────────
