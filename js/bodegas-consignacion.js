@@ -248,33 +248,37 @@ function bcRenderListado() {
 }
 
 function bcRenderResumen() {
-  var groups = {}; // empresa||bodega||producto||presentacion
+  var groups = {}; // empresa||bodega||municipio||producto||presentacion
   bcFiltered.forEach(function(r) {
     var bKey = _bcBodegaKey(r);
-    var gKey = r.Nombre_Empresa + '||' + bKey + '||' + (r.Producto || '') + '||' + (r.Presentacion || '');
+    // Normalizado (mayúsculas) para que variantes de mayúsculas del mismo
+    // municipio (ej. "Chicoral" / "CHICORAL") no se abran en filas separadas.
+    var muni = (r.Municipio || '').trim().toUpperCase() || '(vacío)';
+    var gKey = r.Nombre_Empresa + '||' + bKey + '||' + muni + '||' + (r.Producto || '') + '||' + (r.Presentacion || '');
     if (!groups[gKey]) {
-      groups[gKey] = { empresa: r.Nombre_Empresa, bodegaKey: bKey, producto: r.Producto || '', presentacion: r.Presentacion || '', cant: 0, pedidos: {}, municipios: {} };
+      groups[gKey] = { empresa: r.Nombre_Empresa, bodegaKey: bKey, municipio: muni, producto: r.Producto || '', presentacion: r.Presentacion || '', cant: 0, pedidos: {} };
     }
     groups[gKey].cant += Number(r.Cant_Entregada) || 0;
     groups[gKey].pedidos[r.Nombre_Empresa + '||' + r.Consecutivo + '||' + r.Cliente] = true;
-    groups[gKey].municipios[(r.Municipio || '').trim() || '—'] = true;
   });
 
   var arr = Object.values(groups);
   arr.sort(function(a, b) {
-    return (getSigla(a.empresa) + '|' + a.bodegaKey + '|' + a.producto).localeCompare(getSigla(b.empresa) + '|' + b.bodegaKey + '|' + b.producto, 'es');
+    return (getSigla(a.empresa) + '|' + a.bodegaKey + '|' + a.municipio + '|' + a.producto)
+      .localeCompare(getSigla(b.empresa) + '|' + b.bodegaKey + '|' + b.municipio + '|' + b.producto, 'es');
   });
 
-  var bodSubtot = {}; // empresa||bodega -> { cant, pedidos:{} }
+  // Subtotal por Bodega + Municipio (nivel aparte de cada uno, como se pidió).
+  var subtot = {}; // empresa||bodega||municipio -> { cant, pedidos:{} }
   arr.forEach(function(g) {
-    var k = g.empresa + '||' + g.bodegaKey;
-    if (!bodSubtot[k]) bodSubtot[k] = { cant: 0, pedidos: {} };
-    bodSubtot[k].cant += g.cant;
-    Object.keys(g.pedidos).forEach(function(p) { bodSubtot[k].pedidos[p] = true; });
+    var k = g.empresa + '||' + g.bodegaKey + '||' + g.municipio;
+    if (!subtot[k]) subtot[k] = { cant: 0, pedidos: {} };
+    subtot[k].cant += g.cant;
+    Object.keys(g.pedidos).forEach(function(p) { subtot[k].pedidos[p] = true; });
   });
 
   var tbody = document.getElementById('bc-body-resumen');
-  document.getElementById('bc-row-ct-resumen').textContent = '(' + arr.length + ' producto(s) × bodega)';
+  document.getElementById('bc-row-ct-resumen').textContent = '(' + arr.length + ' producto(s) × bodega × municipio)';
 
   if (!arr.length) {
     tbody.innerHTML = '<tr><td colspan="7"><div class="empty">No hay datos con los filtros seleccionados.</div></td></tr>';
@@ -285,12 +289,11 @@ function bcRenderResumen() {
   var html = '';
   var grandTotal = 0;
   arr.forEach(function(g, i) {
-    var k = g.empresa + '||' + g.bodegaKey;
-    var municipios = Object.keys(g.municipios).sort().join(', ');
+    var k = g.empresa + '||' + g.bodegaKey + '||' + g.municipio;
     html += '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClass(g.empresa) + '">' + escHtml(getSigla(g.empresa)) + '</span></td>' +
       '<td>' + escHtml(_bcBodegaLabel(g.bodegaKey)) + '</td>' +
-      '<td>' + escHtml(municipios) + '</td>' +
+      '<td>' + escHtml(g.municipio) + '</td>' +
       '<td>' + escHtml(g.producto) + '</td>' +
       '<td>' + escHtml(g.presentacion) + '</td>' +
       '<td class="money">' + Object.keys(g.pedidos).length + '</td>' +
@@ -299,11 +302,11 @@ function bcRenderResumen() {
     grandTotal += g.cant;
 
     var next = arr[i + 1];
-    var nextKey = next ? (next.empresa + '||' + next.bodegaKey) : null;
+    var nextKey = next ? (next.empresa + '||' + next.bodegaKey + '||' + next.municipio) : null;
     if (nextKey !== k) {
-      var st = bodSubtot[k];
+      var st = subtot[k];
       html += '<tr style="background:#f7fafc;font-weight:700">' +
-        '<td colspan="5" style="text-align:right">Subtotal ' + escHtml(getSigla(g.empresa)) + ' · ' + escHtml(_bcBodegaLabel(g.bodegaKey)) + '</td>' +
+        '<td colspan="5" style="text-align:right">Subtotal ' + escHtml(getSigla(g.empresa)) + ' · ' + escHtml(_bcBodegaLabel(g.bodegaKey)) + ' · ' + escHtml(g.municipio) + '</td>' +
         '<td class="money">' + Object.keys(st.pedidos).length + '</td>' +
         '<td class="money">' + _fmtNum.format(st.cant) + '</td>' +
       '</tr>';
