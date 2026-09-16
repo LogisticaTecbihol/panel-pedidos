@@ -1135,13 +1135,15 @@ function buildTopComerciales(orders) {
 
   var tbody = document.getElementById('tb-comerciales');
   if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
     return;
   }
 
   tbody.innerHTML = arr.map(function(r) {
     var pct = r.vPed > 0 ? Math.round((r.vEnt / r.vPed) * 100) : 0;
     var penColor = pct >= 75 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#e74c3c';
+    var pctCumpl = r.vPed > 0 ? Math.round(((r.vEnt + r.vCer) / r.vPed) * 100) : 0;
+    var cumplColor = pctCumpl >= 75 ? '#27ae60' : pctCumpl >= 40 ? '#e67e22' : '#e74c3c';
     return '<tr data-href="pedidos.html?buscar=' + encodeURIComponent(r.comercial) + '" onclick="dGoto(this)">' +
       '<td style="font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.comercial) + '">' + escHtml(r.comercial) + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
@@ -1149,6 +1151,7 @@ function buildTopComerciales(orders) {
       '<td class="money" style="color:#27ae60">' + dMoneyM(r.vEnt) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + penColor + '">' + dMoneyM(r.vPen) + '</td>' +
       '<td class="money" style="color:#718096">' + dMoneyM(r.vCer) + '</td>' +
+      '<td class="money" style="font-weight:700;color:' + cumplColor + '">' + pctCumpl + '%</td>' +
     '</tr>';
   }).join('');
 }
