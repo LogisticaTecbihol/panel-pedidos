@@ -173,7 +173,7 @@ function bcClearFilters() {
 
 function bcSwitchTab(tab) {
   bcTab = tab;
-  ['listado', 'resumen'].forEach(function(t) {
+  ['listado', 'resumen', 'admin'].forEach(function(t) {
     var panel = document.getElementById('bc-panel-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
     var btn = document.getElementById('bc-tab-' + t);
@@ -318,7 +318,100 @@ function bcRenderResumen() {
     '<td colspan="5" style="text-align:right">Total</td><td></td><td class="money">' + _fmtNum.format(grandTotal) + '</td>';
 }
 
+// ── Administrar bodegas (catálogo BodegasConsignacion) ──────────
+// Sección aditiva: alimenta el selector "Bodega destino" del botón
+// "🚚 Nuevo Traslado" en Pedidos. No participa del Listado/Resumen de
+// arriba, que sigue detectando traslados por _bcCalifica() (sin cambios).
+var bcCatalogo = [];
+
+async function bcLoadCatalogo() {
+  var res = await apiGet('getBodegasConsignacion');
+  bcCatalogo = res.ok ? (res.bodegas || []) : [];
+  bcRenderAdmin();
+}
+
+function bcRenderAdmin() {
+  var tbody = document.getElementById('bc-body-admin');
+  if (!tbody) return;
+  document.getElementById('bc-row-ct-admin').textContent = '(' + bcCatalogo.length + ' bodega(s))';
+
+  if (!bcCatalogo.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Sin bodegas registradas en el catálogo.</div></td></tr>';
+    return;
+  }
+
+  var rows = [].concat(bcCatalogo).sort(function(a, b) {
+    return (getSigla(a.Nombre_Empresa) + '|' + a.Nombre).localeCompare(getSigla(b.Nombre_Empresa) + '|' + b.Nombre, 'es');
+  });
+
+  tbody.innerHTML = rows.map(function(b) {
+    return '<tr>' +
+      '<td><span class="sigla-badge ' + getSiglaClass(b.Nombre_Empresa) + '">' + escHtml(getSigla(b.Nombre_Empresa)) + '</span></td>' +
+      '<td>' + escHtml(b.Nombre || '') + '</td>' +
+      '<td>' + escHtml(b.Municipio || '—') + '</td>' +
+      '<td>' + escHtml(b.Departamento || '—') + '</td>' +
+      '<td>' + (b.Activo === false ? '<span style="color:#a0aec0">Inactiva</span>' : '<span style="color:#27ae60;font-weight:600">Activa</span>') + '</td>' +
+      '<td><button class="btn-dl auth-edit-only" style="padding:3px 10px;font-size:0.76rem" onclick="bcAbrirModalBodega(' + b.id + ')">✏️ Editar</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function bcAbrirModalBodega(id) {
+  var b = id ? bcCatalogo.find(function(x) { return x.id === id; }) : null;
+  document.getElementById('bc-modal-titulo').textContent = b ? '✏️ Editar bodega' : '➕ Nueva bodega';
+  document.getElementById('bc-m-id').value = b ? b.id : '';
+  populateEmpresaSelect('bc-m-empresa');
+  document.getElementById('bc-m-empresa').value = b ? (b.Nombre_Empresa || '') : '';
+  document.getElementById('bc-m-nombre').value = b ? (b.Nombre || '') : '';
+  document.getElementById('bc-m-municipio').value = b ? (b.Municipio || '') : '';
+  document.getElementById('bc-m-departamento').value = b ? (b.Departamento || '') : '';
+  document.getElementById('bc-m-direccion').value = b ? (b.Direccion || '') : '';
+  document.getElementById('bc-m-activo').checked = b ? (b.Activo !== false) : true;
+  document.getElementById('bc-modal-overlay').classList.add('show');
+}
+
+function bcCerrarModalBodega() {
+  document.getElementById('bc-modal-overlay').classList.remove('show');
+}
+
+async function bcGuardarBodega() {
+  var empresa = document.getElementById('bc-m-empresa').value;
+  var nombre = document.getElementById('bc-m-nombre').value.trim();
+  if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
+  if (!nombre) { showToast('Ingresa el nombre de la bodega', '#e74c3c'); return; }
+
+  var btn = document.getElementById('bc-m-btn-guardar');
+  btn.disabled = true;
+  btn.textContent = '⏳ Guardando...';
+  try {
+    var res = await apiPost({
+      action: 'guardarBodegaConsignacion',
+      id: document.getElementById('bc-m-id').value || null,
+      nombre_empresa: empresa,
+      nombre: nombre,
+      municipio: document.getElementById('bc-m-municipio').value.trim(),
+      departamento: document.getElementById('bc-m-departamento').value.trim(),
+      direccion: document.getElementById('bc-m-direccion').value.trim(),
+      activo: document.getElementById('bc-m-activo').checked
+    });
+    if (!res.ok) throw new Error(res.error || 'Error al guardar');
+    bcCerrarModalBodega();
+    showToast('✅ Bodega guardada');
+    await bcLoadCatalogo();
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✓ Guardar';
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────
 if (typeof document !== 'undefined' && document.getElementById('load-zone') && !window.__BC_TEST) {
   loadBodegasConsignacion();
+  if (typeof _authReady !== 'undefined') {
+    _authReady.then(function() { bcLoadCatalogo(); }).catch(function() {});
+  } else {
+    bcLoadCatalogo();
+  }
 }

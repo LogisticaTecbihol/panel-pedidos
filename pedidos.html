@@ -223,6 +223,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort" onclick="clearSort()" title="Quitar todos los ordenamientos">✕ Limpiar orden</button>
         <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
+        <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevoTraslado()" style="background:#d35400">🚚 Nuevo Traslado</button>
         <button class="btn-dl auth-admin-only accion-escritura" onclick="document.getElementById('file-upload').click()" style="background:#27ae60;display:none">📥 Cargar Pedido</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
         <button class="btn-dl auth-admin-only accion-escritura" onclick="document.getElementById('client-import-file').click()" style="background:#8e44ad;display:none">📋 Importar Clientes</button>
@@ -326,8 +327,11 @@
         <div style="color:#7f1d1d;font-size:0.82rem;margin-top:4px;line-height:1.4">No se puede registrar entrega de producto mientras el pedido esté bloqueado por cartera. Coordina con el área de Cartera para liberarlo y luego cambia el campo <strong>Estado</strong> del pedido.</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
-        <div><label class="ef-label">Cliente</label><input class="ef" id="md-cliente" type="text"></div>
-        <div><label class="ef-label">NIT</label><input class="ef" id="md-nit" type="text"></div>
+        <div id="md-cliente-wrap"><label class="ef-label">Cliente</label><input class="ef" id="md-cliente" type="text"></div>
+        <div id="md-bodega-destino-wrap" style="display:none"><label class="ef-label">Bodega destino</label>
+          <select class="ef" id="md-bodega-destino" onchange="_aplicarBodegaDestino('md')"><option value="">— Seleccionar —</option></select>
+        </div>
+        <div id="md-nit-wrap"><label class="ef-label">NIT</label><input class="ef" id="md-nit" type="text"></div>
         <div><label class="ef-label">Sucursal</label><input class="ef" id="md-sucursal" type="text" list="dl-sucursal" placeholder="Seleccionar sucursal"></div>
         <div><label class="ef-label">Fecha Pedido</label><input class="ef" id="md-fecha-pedido" type="date"></div>
         <div><label class="ef-label">Fecha Compromiso</label><input class="ef" id="md-compromiso" type="date" title="Fecha prometida de entrega al cliente"></div>
@@ -336,8 +340,8 @@
         <div><label class="ef-label">Departamento</label><input class="ef" id="md-departamento" type="text"></div>
         <div><label class="ef-label">Teléfono</label><input class="ef" id="md-telefono" type="text"></div>
         <div><label class="ef-label">Dirección de Envío</label><input class="ef" id="md-direccion" type="text"></div>
-        <div><label class="ef-label">Plazo de Pago</label><input class="ef" id="md-plazo" type="text"></div>
-        <div><label class="ef-label">Precio Facturación</label>
+        <div id="md-plazo-wrap"><label class="ef-label">Plazo de Pago</label><input class="ef" id="md-plazo" type="text"></div>
+        <div id="md-precio-wrap"><label class="ef-label">Precio Facturación</label>
           <select class="ef" id="md-precio">
             <option value="">-- Seleccionar --</option>
             <option value="Dealer">Dealer</option>
@@ -346,9 +350,9 @@
             <option value="Otro">Otro</option>
           </select>
         </div>
-        <div><label class="ef-label">Facturar a nombre de</label><input class="ef" id="md-facturar-a" type="text"></div>
-        <div><label class="ef-label">NIT Adicional</label><input class="ef" id="md-nit-adicional" type="text"></div>
-        <div><label class="ef-label">Pedido en Consignación</label>
+        <div id="md-facturar-a-wrap"><label class="ef-label">Facturar a nombre de</label><input class="ef" id="md-facturar-a" type="text"></div>
+        <div id="md-nit-adicional-wrap"><label class="ef-label">NIT Adicional</label><input class="ef" id="md-nit-adicional" type="text"></div>
+        <div id="md-consignacion-wrap"><label class="ef-label">Pedido en Consignación</label>
           <select class="ef" id="md-consignacion">
             <option value="No">No</option>
             <option value="Sí">Sí</option>
@@ -521,8 +525,11 @@
     </div>
     <div class="mbody" style="flex:1;overflow-y:auto">
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-        <div><label class="ef-label">Cliente</label><input class="ef" id="ed-cliente" type="text"></div>
-        <div><label class="ef-label">NIT</label><input class="ef" id="ed-nit" type="text"></div>
+        <div id="ed-cliente-wrap"><label class="ef-label">Cliente</label><input class="ef" id="ed-cliente" type="text"></div>
+        <div id="ed-bodega-destino-wrap" style="display:none"><label class="ef-label">Bodega destino</label>
+          <select class="ef" id="ed-bodega-destino" onchange="_aplicarBodegaDestino('ed')"><option value="">— Seleccionar —</option></select>
+        </div>
+        <div id="ed-nit-wrap"><label class="ef-label">NIT</label><input class="ef" id="ed-nit" type="text"></div>
         <div><label class="ef-label">Sucursal</label><input class="ef" id="ed-sucursal" type="text" list="dl-sucursal" placeholder="Seleccionar sucursal"></div>
         <div><label class="ef-label">Fecha Pedido</label><input class="ef" id="ed-fecha" type="date"></div>
         <div><label class="ef-label">Fecha Compromiso</label><input class="ef" id="ed-compromiso" type="date" title="Fecha prometida de entrega al cliente"></div>
@@ -530,8 +537,8 @@
         <div><label class="ef-label">Municipio</label><input class="ef" id="ed-municipio" type="text"></div>
         <div><label class="ef-label">Departamento</label><input class="ef" id="ed-departamento" type="text"></div>
         <div><label class="ef-label">Teléfono</label><input class="ef" id="ed-telefono" type="text"></div>
-        <div><label class="ef-label">Plazo de Pago</label><input class="ef" id="ed-plazo" type="text"></div>
-        <div><label class="ef-label">Precio Facturación</label>
+        <div id="ed-plazo-wrap"><label class="ef-label">Plazo de Pago</label><input class="ef" id="ed-plazo" type="text"></div>
+        <div id="ed-precio-wrap"><label class="ef-label">Precio Facturación</label>
           <select class="ef" id="ed-precio">
             <option value="">-- Seleccionar --</option>
             <option value="Dealer">Dealer</option>
@@ -540,9 +547,9 @@
             <option value="Otro">Otro</option>
           </select>
         </div>
-        <div><label class="ef-label">Facturar a nombre de</label><input class="ef" id="ed-facturar-a" type="text"></div>
-        <div><label class="ef-label">NIT Adicional</label><input class="ef" id="ed-nit-adicional" type="text"></div>
-        <div><label class="ef-label">Pedido en Consignación</label>
+        <div id="ed-facturar-a-wrap"><label class="ef-label">Facturar a nombre de</label><input class="ef" id="ed-facturar-a" type="text"></div>
+        <div id="ed-nit-adicional-wrap"><label class="ef-label">NIT Adicional</label><input class="ef" id="ed-nit-adicional" type="text"></div>
+        <div id="ed-consignacion-wrap"><label class="ef-label">Pedido en Consignación</label>
           <select class="ef" id="ed-consignacion">
             <option value="No">No</option>
             <option value="Sí">Sí</option>
@@ -690,8 +697,8 @@
   <div class="modal-box" style="max-width:100%;height:100vh;border-radius:0;display:flex;flex-direction:column">
     <div class="mhdr" style="background:linear-gradient(135deg,#1a5276,#2980b9)">
       <div style="flex:1">
-        <h2>✏️ Nuevo Pedido Manual</h2>
-        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Ingresa los datos del pedido directamente</div>
+        <h2 id="nv-titulo">✏️ Nuevo Pedido Manual</h2>
+        <div id="nv-subtitulo" style="font-size:0.78rem;opacity:0.85;margin-top:4px">Ingresa los datos del pedido directamente</div>
       </div>
       <button class="btn-close" onclick="closeNuevo()">✕</button>
     </div>
@@ -715,14 +722,20 @@
           <label class="ef-label">Fecha Compromiso *</label>
           <input class="ef" id="nv-compromiso" type="date" title="Fecha prometida de entrega al cliente — se calcula automáticamente, puedes ajustarla">
         </div>
-        <div>
+        <div id="nv-cliente-wrap">
           <label class="ef-label">Cliente *</label>
           <input class="ef" id="nv-cliente" type="text" placeholder="Nombre del cliente">
           <div id="nv-cupo-info" style="display:none;margin-top:4px;font-size:0.72rem;padding:4px 8px;border-radius:4px;background:#eaf2f8;color:#1a5276">
             <span id="nv-cupo-text"></span>
           </div>
         </div>
-        <div>
+        <div id="nv-bodega-destino-wrap" style="display:none">
+          <label class="ef-label">Bodega destino *</label>
+          <select class="ef" id="nv-bodega-destino">
+            <option value="">— Seleccionar —</option>
+          </select>
+        </div>
+        <div id="nv-nit-wrap">
           <label class="ef-label">NIT</label>
           <input class="ef" id="nv-nit" type="text" placeholder="NIT o identificación">
         </div>
@@ -752,12 +765,12 @@
           <label class="ef-label">Departamento</label>
           <input class="ef" id="nv-departamento" type="text" placeholder="Departamento">
         </div>
-        <div>
+        <div id="nv-plazo-wrap">
           <label class="ef-label">Plazo de Pago</label>
           <input class="ef" id="nv-plazo" type="text" list="dl-plazo" placeholder="Seleccionar o digitar">
           <datalist id="dl-plazo"></datalist>
         </div>
-        <div>
+        <div id="nv-precio-wrap">
           <label class="ef-label">Precio Facturación</label>
           <select class="ef" id="nv-precio">
             <option value="">-- Seleccionar --</option>
@@ -767,15 +780,15 @@
             <option value="Otro">Otro</option>
           </select>
         </div>
-        <div>
+        <div id="nv-facturar-a-wrap">
           <label class="ef-label">Facturar a nombre de</label>
           <input class="ef" id="nv-facturar-a" type="text" placeholder="Igual al cliente por defecto">
         </div>
-        <div>
+        <div id="nv-nit-adicional-wrap">
           <label class="ef-label">NIT Adicional</label>
           <input class="ef" id="nv-nit-adicional" type="text" placeholder="NIT adicional">
         </div>
-        <div>
+        <div id="nv-consignacion-wrap">
           <label class="ef-label">Pedido en Consignación</label>
           <select class="ef" id="nv-consignacion">
             <option value="No" selected>No</option>
@@ -876,12 +889,12 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260916b"></script>
+<script src="js/shared.js?v=20260916c"></script>
 <script src="js/auth.js?v=20260916a"></script>
 <script src="js/notificaciones.js?v=20260831b"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
 <script src="js/existencias.js?v=20260909h"></script>
 <script src="js/pdf-remision.js?v=20260915"></script>
-<script src="js/pedidos.js?v=20260914a"></script>
+<script src="js/pedidos.js?v=20260916a"></script>
 </body>
 </html>

@@ -1859,6 +1859,9 @@ async function openDetail(idx) {
   document.getElementById('md-consignacion').value = c.Consignacion || 'No';
   document.getElementById('md-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('md', c.Nombre_Empresa);
+  var _mdEsTraslado = !!c.Bodega_Consignacion_Id;
+  _toggleTrasladoFields('md', _mdEsTraslado);
+  if (_mdEsTraslado) populateBodegaDestinoSelect('md', c.Nombre_Empresa, c.Bodega_Consignacion_Id);
   document.getElementById('md-estado2').value = derivedEstado2(lines);
   _gateEstado2Select(document.getElementById('md-estado2'), derivedEstado2(lines));
 
@@ -3121,6 +3124,7 @@ async function guardarTodo() {
     Sucursal: document.getElementById('md-sucursal').value.trim(),
     Consignacion: document.getElementById('md-consignacion').value,
     Bodega_Facturacion: document.getElementById('md-bodega-facturacion').value,
+    Bodega_Consignacion_Id: document.getElementById('md-bodega-destino').value || null,
     Total_Orden: detailWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('md-estado2').value,
     Nombre_Empresa: c.Nombre_Empresa,
@@ -3606,6 +3610,9 @@ async function openEdit(idx) {
   document.getElementById('ed-consignacion').value = c.Consignacion || 'No';
   document.getElementById('ed-bodega-facturacion').value = _normBodegaFacturacion(c.Bodega_Facturacion || '');
   _toggleBodegaField('ed', c.Nombre_Empresa);
+  var _edEsTraslado = !!c.Bodega_Consignacion_Id;
+  _toggleTrasladoFields('ed', _edEsTraslado);
+  if (_edEsTraslado) populateBodegaDestinoSelect('ed', c.Nombre_Empresa, c.Bodega_Consignacion_Id);
   document.getElementById('ed-estado2').value = derivedEstado2(getLinesFor(c));
   _gateEstado2Select(document.getElementById('ed-estado2'), derivedEstado2(getLinesFor(c)));
   document.getElementById('btn-saveEdit').disabled = false;
@@ -3787,6 +3794,7 @@ async function saveEdit() {
     Sucursal: document.getElementById('ed-sucursal').value.trim(),
     Consignacion: document.getElementById('ed-consignacion').value,
     Bodega_Facturacion: document.getElementById('ed-bodega-facturacion').value,
+    Bodega_Consignacion_Id: document.getElementById('ed-bodega-destino').value || null,
     Total_Orden: editWorkingLines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0),
     Estado_2: document.getElementById('ed-estado2').value,
   };
@@ -4320,6 +4328,7 @@ async function confirmDelete() {
 var clientesCache = null;
 var productosCache = null;
 var listaPreciosCache = null;
+var bodegasConsignacionCache = null;
 var clienteAC = null;
 var nitAC = null;
 var nlProdAC = null;
@@ -4685,6 +4694,73 @@ function _toggleBodegaField(prefix, empresa) {
   }
 }
 
+// ── Traslados a bodega en consignación ──
+// Reutilizan el modal de Nuevo Pedido: Consignacion queda fija en 'Sí',
+// el campo Cliente se reemplaza por un selector del catálogo
+// BodegasConsignacion (por empresa) y se ocultan los campos de
+// facturación porque no hay un tercero a quien facturar. El nombre de
+// la bodega elegida se copia igual a Cliente/Sucursal para que
+// js/bodegas-consignacion.js siga detectándolo sin cambios.
+var _nvEsTraslado = false;
+
+async function _loadBodegasConsignacionCache() {
+  if (bodegasConsignacionCache) return bodegasConsignacionCache;
+  var res = await apiGet('getBodegasConsignacion');
+  bodegasConsignacionCache = (res.ok ? res.bodegas : []) || [];
+  return bodegasConsignacionCache;
+}
+
+function _toggleTrasladoFields(prefix, esTraslado) {
+  ['nit', 'plazo', 'precio', 'facturar-a', 'nit-adicional', 'consignacion'].forEach(function(suf) {
+    var wrap = document.getElementById(prefix + '-' + suf + '-wrap');
+    if (wrap) wrap.style.display = esTraslado ? 'none' : '';
+  });
+  var clienteWrap = document.getElementById(prefix + '-cliente-wrap');
+  var bodegaWrap = document.getElementById(prefix + '-bodega-destino-wrap');
+  if (clienteWrap) clienteWrap.style.display = esTraslado ? 'none' : '';
+  if (bodegaWrap) bodegaWrap.style.display = esTraslado ? '' : 'none';
+}
+
+async function populateBodegaDestinoSelect(prefix, empresa, selectedId) {
+  var sel = document.getElementById(prefix + '-bodega-destino');
+  if (!sel) return;
+  var bodegas = await _loadBodegasConsignacionCache();
+  var opciones = bodegas.filter(function(b) {
+    return b.Activo !== false && (b.Nombre_Empresa || '') === (empresa || '');
+  });
+  sel.innerHTML = '<option value="">— Seleccionar —</option>' + opciones.map(function(b) {
+    return '<option value="' + b.id + '">' + escHtml(b.Nombre) + '</option>';
+  }).join('');
+  sel.value = selectedId ? String(selectedId) : '';
+}
+
+function _aplicarBodegaDestino(prefix) {
+  var sel = document.getElementById(prefix + '-bodega-destino');
+  if (!sel) return;
+  var bodega = (bodegasConsignacionCache || []).find(function(b) { return String(b.id) === String(sel.value); });
+  if (!bodega) return;
+  var set = function(suf, val) {
+    var el = document.getElementById(prefix + '-' + suf);
+    if (el) el.value = val || '';
+  };
+  set('cliente', bodega.Nombre);
+  set('sucursal', bodega.Nombre);
+  set('municipio', bodega.Municipio);
+  set('departamento', bodega.Departamento);
+  set('direccion', bodega.Direccion);
+}
+
+async function openNuevoTraslado() {
+  await openNuevoPedido();
+  _nvEsTraslado = true;
+  document.getElementById('nv-titulo').textContent = '🚚 Nuevo Traslado a Bodega';
+  document.getElementById('nv-subtitulo').textContent = 'Registra el envío de mercancía a una bodega propia en consignación (no se factura a un tercero)';
+  document.getElementById('btn-guardar-nuevo').textContent = '🚚 Guardar traslado';
+  document.getElementById('nv-consignacion').value = 'Sí';
+  _toggleTrasladoFields('nv', true);
+  await populateBodegaDestinoSelect('nv', document.getElementById('nv-empresa').value, '');
+}
+
 async function openNuevoPedido() {
   document.getElementById('nv-empresa').value = '';
   document.getElementById('nv-consecutivo').value = '';
@@ -4730,6 +4806,11 @@ async function openNuevoPedido() {
   document.getElementById('nv-dup-warn').style.display = 'none';
   document.getElementById('btn-guardar-nuevo').disabled = false;
   document.getElementById('btn-guardar-nuevo').textContent = '✏️ Guardar pedido';
+  _nvEsTraslado = false;
+  document.getElementById('nv-titulo').textContent = '✏️ Nuevo Pedido Manual';
+  document.getElementById('nv-subtitulo').textContent = 'Ingresa los datos del pedido directamente';
+  document.getElementById('nv-bodega-destino').innerHTML = '<option value="">— Seleccionar —</option>';
+  _toggleTrasladoFields('nv', false);
   nuevoProductos = [{ producto:'', presentacion:'', cantidad:0, valor_unitario:0, valor_total:0, bonificado:'' }];
   populateComercialSelect('');
   var nvEmpSel = document.getElementById('nv-empresa');
@@ -4740,9 +4821,13 @@ async function openNuevoPedido() {
     _toggleBodegaField('nv', nvEmpSel.value);
     document.getElementById('nv-bodega-facturacion').removeAttribute('data-edited');
     _reapplyPreciosNuevo();
+    if (_nvEsTraslado) populateBodegaDestinoSelect('nv', nvEmpSel.value, '');
   };
   document.getElementById('nv-bodega-facturacion').onchange = function() {
     this.setAttribute('data-edited', '1');
+  };
+  document.getElementById('nv-bodega-destino').onchange = function() {
+    _aplicarBodegaDestino('nv');
   };
   var nvPrecioEl = document.getElementById('nv-precio');
   nvPrecioEl.oninput = function() { _reapplyPreciosNuevo(); _toggleNvProductos(); };
@@ -5097,7 +5182,10 @@ async function guardarNuevoPedido() {
   if (!AUTH.isAdmin() && fecha < today()) { showToast('La fecha del pedido no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!compromiso) { showToast('Indica la fecha de compromiso', '#e74c3c'); return; }
   if (compromiso < fecha) { showToast('La fecha de compromiso no puede ser anterior a la del pedido', '#e74c3c'); return; }
-  if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
+  if (_nvEsTraslado && !document.getElementById('nv-bodega-destino').value) {
+    showToast('Selecciona la bodega destino', '#e74c3c'); return;
+  }
+  if (!cliente) { showToast(_nvEsTraslado ? 'Selecciona la bodega destino' : 'Ingresa el nombre del cliente', '#e74c3c'); return; }
   if (getSigla(empresa) === 'PARCELAR' && !document.getElementById('nv-bodega-facturacion').value) {
     showToast('Selecciona la Bodega de Facturación', '#e74c3c'); return;
   }
@@ -5147,6 +5235,7 @@ async function guardarNuevoPedido() {
       nit_adicional: document.getElementById('nv-nit-adicional').value.trim(),
       consignacion: document.getElementById('nv-consignacion').value,
       bodega_facturacion: document.getElementById('nv-bodega-facturacion').value,
+      bodega_consignacion_id: _nvEsTraslado ? (document.getElementById('nv-bodega-destino').value || null) : null,
       total_orden: totalOrden,
       observaciones: document.getElementById('nv-observaciones').value.trim(),
       productos: productosValidos.map(function(p) {

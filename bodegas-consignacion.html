@@ -90,6 +90,7 @@
   <div class="filters" style="gap:6px;padding-bottom:0;border:none">
     <button class="btn-export tab-btn" id="bc-tab-listado" onclick="bcSwitchTab('listado')" style="background:#1a5276">📋 Listado</button>
     <button class="btn-export tab-btn" id="bc-tab-resumen" onclick="bcSwitchTab('resumen')" style="background:#718096">📦 Resumen por bodega</button>
+    <button class="btn-export tab-btn auth-edit-only" id="bc-tab-admin" onclick="bcSwitchTab('admin')" style="background:#718096">🗂️ Administrar bodegas</button>
   </div>
 
   <!-- PANEL: Listado -->
@@ -136,6 +137,25 @@
     </div>
   </div>
 
+  <!-- PANEL: Administrar bodegas (catálogo usado por "🚚 Nuevo Traslado" en Pedidos) -->
+  <div id="bc-panel-admin" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>🗂️ Catálogo de bodegas en consignación <span id="bc-row-ct-admin" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-dl auth-edit-only" onclick="bcAbrirModalBodega()">➕ Nueva bodega</button>
+      </div>
+      <p style="font-size:0.76rem;color:#718096;margin:0 0 10px">Este catálogo alimenta el selector "Bodega destino" del botón "🚚 Nuevo Traslado" en el módulo Pedidos. No afecta el Listado/Resumen de arriba, que sigue detectando traslados por "Pedido en consignación" = Sí.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Empresa</th><th>Nombre</th><th>Municipio</th><th>Departamento</th><th>Estado</th><th></th></tr>
+          </thead>
+          <tbody id="bc-body-admin"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <p style="font-size:0.74rem;color:#a0aec0;margin-top:12px">
     Muestra los pedidos del módulo Pedidos con "Pedido en consignación" = Sí, más excepciones agregadas a mano aunque ese campo diga "No":
     de IASO, <strong>cualquier cliente cuyo nombre empiece con "Bodega "</strong> (ej. Bodega COATOL, Bodega Espinal); de PARCELAR, cliente <strong>Carlos Andres Ramirez</strong>, y <strong>Bodega Villeta</strong> / <strong>Bodega Didimo Cubillos</strong> (por su Bodega de Facturación).
@@ -145,12 +165,56 @@
 
 </div>
 
+<!-- MODAL: Nueva/Editar bodega (catálogo BodegasConsignacion) -->
+<div class="overlay" id="bc-modal-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="bc-modal-titulo">➕ Nueva bodega</h2></div>
+      <button class="btn-close" onclick="bcCerrarModalBodega()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="bc-m-id">
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Empresa *</label>
+        <select class="ef" id="bc-m-empresa"><option value="">— Seleccionar —</option></select>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Nombre *</label>
+        <input class="ef" id="bc-m-nombre" type="text" placeholder="Ej: Bodega COATOL">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Municipio</label>
+        <input class="ef" id="bc-m-municipio" type="text">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Departamento</label>
+        <input class="ef" id="bc-m-departamento" type="text">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Dirección</label>
+        <input class="ef" id="bc-m-direccion" type="text">
+      </div>
+      <div style="margin-bottom:4px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;font-weight:600;color:#4a5568">
+          <input type="checkbox" id="bc-m-activo" checked style="width:16px;height:16px;cursor:pointer"> Bodega activa
+        </label>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="bcCerrarModalBodega()">Cancelar</button>
+        <button class="btn-confirm" id="bc-m-btn-guardar" onclick="bcGuardarBodega()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260916b"></script>
+<script src="js/shared.js?v=20260916c"></script>
 <script src="js/auth.js?v=20260916a"></script>
 <script src="js/notificaciones.js?v=20260828b"></script>
-<script src="js/bodegas-consignacion.js?v=20260916a"></script>
+<script src="js/bodegas-consignacion.js?v=20260916c"></script>
 </body>
 </html>

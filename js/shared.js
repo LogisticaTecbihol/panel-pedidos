@@ -350,6 +350,11 @@ async function apiGet(action, opts) {
         source: 'ClientesUnicos'
       };
     }
+    if (action === 'getBodegasConsignacion') {
+      var res = await _sb.from('BodegasConsignacion').select(cols).order('Nombre_Empresa').order('Nombre');
+      if (res.error) return { ok: false, error: res.error.message, bodegas: [] };
+      return { ok: true, bodegas: res.data };
+    }
     if (action === 'getProductos') {
       var res = await _sb.from('Productos').select(cols);
       if (res.error) return { ok: true, productos: [] };
@@ -525,6 +530,25 @@ async function _apiPostCore(body) {
       return res.data;
     }
 
+    if (action === 'guardarBodegaConsignacion') {
+      var bcPayload = {
+        Nombre_Empresa: body.nombre_empresa || '',
+        Nombre: body.nombre || '',
+        Municipio: body.municipio || '',
+        Departamento: body.departamento || '',
+        Direccion: body.direccion || '',
+        Activo: body.activo !== false
+      };
+      if (body.id) {
+        var resBcU = await _sb.from('BodegasConsignacion').update(bcPayload).eq('id', body.id);
+        if (resBcU.error) return { ok: false, error: resBcU.error.message };
+      } else {
+        var resBcI = await _sb.from('BodegasConsignacion').insert(bcPayload);
+        if (resBcI.error) return { ok: false, error: resBcI.error.message };
+      }
+      return { ok: true };
+    }
+
     if (action === 'agregarPedido') {
       // Bloqueo por estado del cliente: no se registran pedidos para
       // clientes 'Inactivo' o 'Bloqueado por cartera' (maestro ClientesUnicos).
@@ -577,6 +601,7 @@ async function _apiPostCore(body) {
           Consignacion: body.consignacion || 'No',
           Bodega_Facturacion: body.bodega_facturacion || '',
           Sucursal: body.sucursal || '',
+          Bodega_Consignacion_Id: body.bodega_consignacion_id || null,
           comercial_id: body.comercial_id || null,
           creado_por: _uid()
         });
