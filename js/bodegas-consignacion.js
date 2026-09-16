@@ -93,7 +93,7 @@ async function loadBodegasConsignacion() {
     if (typeof _authReady !== 'undefined') { try { await _authReady; } catch (e) {} }
 
     var res = await apiGet('getPedidos', {
-      columns: 'Nombre_Empresa,Consecutivo,Cliente,Sucursal,Bodega_Facturacion,Fecha_Pedido,Producto,Presentacion,Cantidad,Cant_Entregada,Estado_Entrega,Estado_2,Consignacion'
+      columns: 'Nombre_Empresa,Consecutivo,Cliente,Sucursal,Bodega_Facturacion,Municipio,Fecha_Pedido,Producto,Presentacion,Cantidad,Cant_Entregada,Estado_Entrega,Estado_2,Consignacion'
     });
     if (!res.ok) throw new Error(res.error || 'No se pudo cargar Pedidos');
 
@@ -200,7 +200,7 @@ function bcRenderListado() {
   document.getElementById('bc-row-ct-listado').textContent = '(' + bcFiltered.length + ' línea(s))';
 
   if (!bcFiltered.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="empty">No hay pedidos en consignación con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12"><div class="empty">No hay pedidos en consignación con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
@@ -213,6 +213,7 @@ function bcRenderListado() {
       '<td><span class="sigla-badge ' + getSiglaClass(r.Nombre_Empresa) + '">' + escHtml(getSigla(r.Nombre_Empresa)) + '</span></td>' +
       '<td>' + escHtml(_bcBodegaLabel(_bcBodegaKey(r))) + '</td>' +
       '<td>' + escHtml(r.Cliente || '—') + '</td>' +
+      '<td>' + escHtml(r.Municipio || '—') + '</td>' +
       '<td style="font-weight:700;text-align:center">' + escHtml(r.Consecutivo || '') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha_Pedido) + '</td>' +
       '<td>' + escHtml(r.Producto || '') + '</td>' +
