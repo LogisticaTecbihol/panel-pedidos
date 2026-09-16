@@ -1095,20 +1095,26 @@ function buildDevoluciones(dev, orders, fEmp) {
 function buildTopComerciales(orders) {
   var map = {};
   var sinComercial = 0, sinPrecio = 0;
-  var totPed = 0, totPen = 0;
+  var totPed = 0, totPen = 0, totCer = 0;
 
   orders.forEach(function(o) {
     sinPrecio += o.lineasSinPrecio;
     var com = o.comercial;
     if (!com) { sinComercial++; return; }
-    if (!map[com]) map[com] = { comercial: com, ordenes: 0, vPed: 0, vEnt: 0, vPen: 0 };
+    if (!map[com]) map[com] = { comercial: com, ordenes: 0, vPed: 0, vEnt: 0, vPen: 0, vCer: 0 };
     var m = map[com];
+    // Recibido + Cerrado = se cerró sin entregarse (Entregado ya queda en 0
+    // para estas líneas) — no cuenta como Entregado ni como Pendiente, así
+    // que se aparta aquí para que Pedido = Entregado + Pendiente + Cerrado.
+    var vCerrado = (o.status === 'Recibido' && o.estado2 === 'Cerrado') ? (o.valorPedido - o.valorEntregado) : 0;
     m.ordenes++;
     m.vPed += o.valorPedido;
     m.vEnt += o.valorEntregado;
     m.vPen += o.valorPendiente;
+    m.vCer += vCerrado;
     totPed += o.valorPedido;
     totPen += o.valorPendiente;
+    totCer += vCerrado;
   });
 
   var arr = Object.values(map);
@@ -1116,11 +1122,11 @@ function buildTopComerciales(orders) {
   arr = arr.slice(0, 10);
 
   var subEl = document.getElementById('com-sub');
-  if (subEl) subEl.textContent = 'Pedido ' + dMoneyM(totPed) + ' · pendiente ' + dMoneyM(totPen);
+  if (subEl) subEl.textContent = 'Pedido ' + dMoneyM(totPed) + ' · pendiente ' + dMoneyM(totPen) + ' · cerrado s/entregar ' + dMoneyM(totCer);
 
   var notaEl = document.getElementById('com-nota');
   if (notaEl) {
-    var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). Por eso no cuadra con Pedido − Entregado.'];
+    var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). "Cerrado s/entregar" = pedidos Recibido + Cerrado (se cerraron sin despacharse). Aun así, otros estados (Parcial+Cerrado, Bloqueado por cartera) pueden dejar un residuo fuera de las tres columnas.'];
     if (sinPrecio > 0) notas.push('⚠️ ' + sinPrecio.toLocaleString('es-CO') + ' línea(s) sin precio no suman al valor');
     if (sinComercial > 0) notas.push(sinComercial.toLocaleString('es-CO') + ' orden(es) sin comercial asignado');
     notaEl.textContent = notas.join(' · ');
@@ -1129,7 +1135,7 @@ function buildTopComerciales(orders) {
 
   var tbody = document.getElementById('tb-comerciales');
   if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
     return;
   }
 
@@ -1142,6 +1148,7 @@ function buildTopComerciales(orders) {
       '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.vPed) + '</td>' +
       '<td class="money" style="color:#27ae60">' + dMoneyM(r.vEnt) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + penColor + '">' + dMoneyM(r.vPen) + '</td>' +
+      '<td class="money" style="color:#718096">' + dMoneyM(r.vCer) + '</td>' +
     '</tr>';
   }).join('');
 }
