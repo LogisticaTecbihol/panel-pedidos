@@ -6603,12 +6603,22 @@ function renderDespachos() {
     renderDespHeader();
     var buscarEl = document.getElementById('desp-f-buscar');
     var empresaEl = document.getElementById('desp-f-empresa');
+    var desdeEl = document.getElementById('desp-f-desde');
+    var hastaEl = document.getElementById('desp-f-hasta');
     var buscar = (buscarEl ? buscarEl.value : '').toLowerCase().trim();
     var empresa = empresaEl ? empresaEl.value : '';
+    var desde = desdeEl ? desdeEl.value : '';
+    var hasta = hastaEl ? hastaEl.value : '';
 
     var total = despachosData.length;
     var filtered = despachosData.filter(function(d) {
       if (empresa && d.empresa !== empresa) return false;
+      if (desde || hasta) {
+        var f10 = String(d.fecha || '').slice(0, 10);
+        if (!f10) return false;
+        if (desde && f10 < desde) return false;
+        if (hasta && f10 > hasta) return false;
+      }
       if (buscar) {
         var fac = _despFacturaMap[d.remision] || {};
         var txt = (d.cliente + ' ' + d.remision + ' ' + d.consecutivo + ' ' + (fac.num_factura || '')).toLowerCase();
@@ -6619,7 +6629,7 @@ function renderDespachos() {
     despachosFiltered = applySortDesp(filtered);
 
     var countEl = document.getElementById('desp-count');
-    if (empresa || buscar) {
+    if (empresa || buscar || desde || hasta) {
       countEl.textContent = '(' + despachosFiltered.length + ' de ' + total + ' remisiones)';
     } else {
       countEl.textContent = '(' + despachosFiltered.length + ' remisiones)';

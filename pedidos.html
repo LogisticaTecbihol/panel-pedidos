@@ -271,6 +271,8 @@
             <option value="">— Todas —</option>
           </select>
           <input type="text" id="desp-f-buscar" placeholder="Buscar cliente o remisión…" oninput="renderDespachos()" style="padding:5px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem;width:200px">
+          <input type="date" id="desp-f-desde" title="Fecha de la remisión — desde" onchange="renderDespachos()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+          <input type="date" id="desp-f-hasta" title="Fecha de la remisión — hasta" onchange="renderDespachos()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
           <button class="btn-dl" onclick="exportDespachosExcel()" style="background:#217346">📊 Exportar Excel</button>
         </div>
       </div>
