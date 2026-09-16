@@ -2,20 +2,26 @@
 // Bodegas en Consignación
 //
 // Vista de solo lectura sobre Pedidos. Incluye filas cuyo campo
-// Consignacion = 'Si'/'Sí', MÁS tres excepciones pedidas a mano
+// Consignacion = 'Si'/'Sí', MÁS cuatro excepciones pedidas a mano
 // (esos pedidos tienen Consignacion = 'No' en el dato, pero son
 // bodegas en consignación reales que no quedaron marcadas así):
 //   - IASO, cliente "Bodega COATOL" (cualquier variante de mayúsculas).
 //   - PARCELAR, Bodega_Facturacion = 'Bodega Villeta'.
 //   - PARCELAR, Bodega_Facturacion = 'Bodega Didimo Cubillos'.
+//   - PARCELAR, cliente "Carlos Andres Ramirez" (varias variantes de
+//     nombre en el dato — "CARLOS RAMIREZ" / "carlos andres ramirez
+//     bonilla" — mismo NIT 80282454; se matchea por nombre).
 // Ver _bcCalifica().
 //
 // La "bodega" normalmente es el campo Sucursal del pedido (el sitio
 // del cliente donde queda la mercancía) — no existe una tabla propia
-// de bodegas, así que se deriva de los datos ya cargados. Para las
-// dos excepciones de PARCELAR, la bodega real es Bodega_Facturacion,
-// no Sucursal (que ahí es solo la ubicación del cliente que compró,
-// no la bodega de consignación). Ver _bcBodegaKey().
+// de bodegas, así que se deriva de los datos ya cargados. Para
+// Bodega Villeta / Bodega Didimo Cubillos la bodega real es
+// Bodega_Facturacion, no Sucursal (que ahí es solo la ubicación del
+// cliente que compró). Para COATOL y Carlos Ramirez, Sucursal y
+// Bodega_Facturacion vienen vacíos o genéricos ("Bodega Principal",
+// el mismo que usa cualquier pedido normal) — ahí la bodega es el
+// propio cliente. Ver _bcBodegaKey().
 //
 // "Cant. ingresada" = Cant_Entregada: solo lo que ya se despachó
 // físicamente hacia esa bodega cuenta como ingreso a su inventario;
@@ -35,12 +41,20 @@ function _bcEsConsignacion(v) {
   return s === 'Si' || s === 'Sí';
 }
 
-// Pedidos con Consignacion='Sí', más las 3 excepciones pedidas a mano
+function _bcClienteContiene(cliente, palabras) {
+  var c = (cliente || '').toUpperCase();
+  return palabras.every(function(p) { return c.indexOf(p) >= 0; });
+}
+function _bcEsClienteCoatol(cliente) { return _bcClienteContiene(cliente, ['COATOL']); }
+function _bcEsClienteCarlosRamirez(cliente) { return _bcClienteContiene(cliente, ['CARLOS', 'RAMIREZ']); }
+
+// Pedidos con Consignacion='Sí', más las 4 excepciones pedidas a mano
 // (empresa + cliente/bodega de facturación puntuales) aunque digan 'No'.
 function _bcCalifica(p) {
   if (_bcEsConsignacion(p.Consignacion)) return true;
   var sigla = getSigla(p.Nombre_Empresa);
-  if (sigla === 'IASO' && (p.Cliente || '').toUpperCase().indexOf('COATOL') >= 0) return true;
+  if (sigla === 'IASO' && _bcEsClienteCoatol(p.Cliente)) return true;
+  if (sigla === 'PARCELAR' && _bcEsClienteCarlosRamirez(p.Cliente)) return true;
   if (sigla === 'PARCELAR' && BC_BODEGAS_FACTURACION_PARCELAR.indexOf((p.Bodega_Facturacion || '').trim()) >= 0) return true;
   return false;
 }
@@ -48,10 +62,11 @@ function _bcCalifica(p) {
 function _bcBodegaKey(r) {
   var sigla = getSigla(r.Nombre_Empresa);
   if (sigla === 'PARCELAR') {
+    if (_bcEsClienteCarlosRamirez(r.Cliente)) return 'Carlos Ramirez';
     var bf = (r.Bodega_Facturacion || '').trim();
     if (BC_BODEGAS_FACTURACION_PARCELAR.indexOf(bf) >= 0) return bf;
   }
-  if (sigla === 'IASO' && (r.Cliente || '').toUpperCase().indexOf('COATOL') >= 0) return 'Bodega COATOL';
+  if (sigla === 'IASO' && _bcEsClienteCoatol(r.Cliente)) return 'Bodega COATOL';
   return (r.Sucursal || '').trim() || BC_SIN_BODEGA;
 }
 function _bcBodegaLabel(key) { return key === BC_SIN_BODEGA ? '(Sin bodega)' : key; }
