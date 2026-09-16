@@ -1651,11 +1651,17 @@ function renderTable() {
   var totalRows = rows.length;
   var totalPages = Math.ceil(totalRows / pageSize) || 1;
   if (currentPage > totalPages) currentPage = totalPages;
-  if (pedidoScope === 'historico') {
-    var sumaTotalOrden = rows.reduce(function(s, c) { return s + (Number(c.Total_Orden) || 0); }, 0);
-    document.getElementById('row-ct').textContent = '(' + totalRows + ' mostradas · Total: ' + fmtMoney(sumaTotalOrden) + ')';
-  } else {
-    document.getElementById('row-ct').textContent = '(' + totalRows + ' mostradas)';
+  document.getElementById('row-ct').textContent = '(' + totalRows + ' mostradas)';
+
+  var histTotalCard = document.getElementById('s-hist-total-card');
+  if (histTotalCard) {
+    if (pedidoScope === 'historico') {
+      var sumaTotalOrden = rows.reduce(function(s, c) { return s + (Number(c.Total_Orden) || 0); }, 0);
+      document.getElementById('s-hist-total').textContent = fmtMoney(sumaTotalOrden);
+      histTotalCard.style.display = '';
+    } else {
+      histTotalCard.style.display = 'none';
+    }
   }
   var ordTitle = document.getElementById('ord-title');
   if (ordTitle) ordTitle.textContent = pedidoScope === 'historico' ? 'Histórico de pedidos (consulta)' : 'Órdenes activas';
