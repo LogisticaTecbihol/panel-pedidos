@@ -12,7 +12,8 @@ var NOTIF = (function() {
     muestras:     '🧪 Muestra',
     ordenes:      '🛒 Orden de compra',
     ingresos:     '📦 Ingreso',
-    reenvases:    '🔃 Reenvase'
+    reenvases:    '🔃 Reenvase',
+    reportes:     '📈 Reporte'
   };
 
   var _uid = null;
