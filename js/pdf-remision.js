@@ -463,6 +463,28 @@ function _ocFmtDate(v) {
   return s;
 }
 
+// Interpreta OrdenesCompra.Ref_Pedido para saber si la OC nació de un
+// Pedido, una Muestra o un Cambio (Devoluciones no genera OCs de traslado).
+// Las tres rutas comparten el helper de asignación de inventario, que
+// guarda el origen como "<Empresa> [Muestra|Cambio] #<Consecutivo>"
+// (pedidos.js:3396, muestras.js:73, cambios.js:1051); sin esas palabras
+// clave se asume Pedido.
+function _ocOrigenInfo(ref) {
+  var s = String(ref || '').trim();
+  if (!s) return null;
+  var m = s.match(/^(.+)\s+Muestra\s+#(.+)$/i);
+  if (m) return { tipo: 'Muestra', empresa: m[1].trim(), consecutivo: m[2].trim() };
+  m = s.match(/^(.+)\s+Cambio\s+#(.+)$/i);
+  if (m) return { tipo: 'Cambio', empresa: m[1].trim(), consecutivo: m[2].trim() };
+  m = s.match(/^(.+)\s+#(.+)$/);
+  if (m) return { tipo: 'Pedido', empresa: m[1].trim(), consecutivo: m[2].trim() };
+  return null;
+}
+function _ocOrigenLabel(ref) {
+  var info = _ocOrigenInfo(ref);
+  return info ? (info.tipo + ' #' + info.consecutivo) : '';
+}
+
 // Construye la lista de "entregas" (productos) para las tablas
 // PDF a partir del grupo de OCs. Cada fila = un producto.
 function _ocProductosParaPDF(ocs) {
@@ -506,7 +528,7 @@ function generarSolicitudOCPDF(ocs) {
       ['Empresa Destino', siglaDest + (hdr.Empresa_Destino && siglaDest !== hdr.Empresa_Destino ? ' · ' + hdr.Empresa_Destino : '')],
       ['Empresa Origen', siglaOrig + (hdr.Empresa_Origen && siglaOrig !== hdr.Empresa_Origen ? ' · ' + hdr.Empresa_Origen : '')],
       ['Tipo', hdr.Tipo || 'Compra'],
-      ['Ref. Pedido', hdr.Ref_Pedido || '—'],
+      ['Origen', _ocOrigenLabel(hdr.Ref_Pedido) || (hdr.Ref_Pedido || '—')],
     ],
     right_fields: [
       ['Fecha OC', _ocFmtDate(hdr.Fecha)],
@@ -600,6 +622,7 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
   var entregas = _ocProductosParaPDF(ocs);
   var fechaFmt = _ocFmtDate(hdr.Fecha);
   var genStamp = new Date().toLocaleString('es-CO');
+  var origenLabel = _ocOrigenLabel(hdr.Ref_Pedido);
 
   // Cada página lleva el membrete de la empresa dueña de su número
   // de remisión (ver comentario del encabezado de la función).
@@ -625,6 +648,7 @@ function generarRemisionesTrasladoPDF(ocs, opts) {
       ['Departamento', infoDestino.departamento || '—'],
     ];
     if (String(hdr.Bodega || '').trim()) r.push(['Bodega', hdr.Bodega]);
+    if (origenLabel) r.push(['Origen', origenLabel]);
     return r;
   }
 
