@@ -22,6 +22,7 @@ var AUTH = (function() {
     { key: 'reportes',     label: '📈 Reportes' },
     { key: 'dashboard',    label: '📊 Dashboard' },
     { key: 'reabastecimiento', label: '🔄 Reabastecimiento' },
+    { key: 'bodegas_consignacion', label: '🏬 Bodegas en Consignación' },
     { key: 'muestras_aprobar',       label: '✅ Aprobar solicitudes de muestras' },
     { key: 'ordenes_aprobar',        label: '✅ Aprobar órdenes de compra' },
     { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' },

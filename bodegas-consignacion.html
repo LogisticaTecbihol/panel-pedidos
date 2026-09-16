@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Bodegas en Consignación — ingresos a bodegas de clientes — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏬</text></svg>">
+<title>Bodegas en Consignación – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260908z">
+</head>
+<body data-modulo="bodegas_consignacion">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>🏬 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="reabastecimiento.html" data-modulo="reabastecimiento">🔄 Reabastecimiento</a>
+    <a href="bodegas-consignacion.html" data-modulo="bodegas_consignacion" class="active">🏬 Bodegas en Consignación</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando pedidos en consignación</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadBodegasConsignacion()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc total"><div class="num" id="bc-s-bodegas">0</div><div class="lbl">Bodegas</div></div>
+    <div class="sc recibido"><div class="num" id="bc-s-pedidos">0</div><div class="lbl">Pedidos en consignación</div></div>
+    <div class="sc entregado"><div class="num" id="bc-s-uds">0</div><div class="lbl">Unidades ingresadas</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg">
+      <label>Empresa</label>
+      <select id="bc-f-empresa"><option value="">Todas</option></select>
+    </div>
+    <div class="fg">
+      <label>Bodega</label>
+      <select id="bc-f-bodega"><option value="">Todas</option></select>
+    </div>
+    <button onclick="bcClearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
+  </div>
+  <div id="bc-nota" style="display:none;margin:-8px 0 16px;font-size:0.76rem;color:#a0aec0"></div>
+
+  <!-- Tabs -->
+  <div class="filters" style="gap:6px;padding-bottom:0;border:none">
+    <button class="btn-export tab-btn" id="bc-tab-listado" onclick="bcSwitchTab('listado')" style="background:#1a5276">📋 Listado</button>
+    <button class="btn-export tab-btn" id="bc-tab-resumen" onclick="bcSwitchTab('resumen')" style="background:#718096">📦 Resumen por bodega</button>
+  </div>
+
+  <!-- PANEL: Listado -->
+  <div id="bc-panel-listado">
+    <div class="card">
+      <div class="card-head">
+        <h3>📋 Pedidos en consignación <span id="bc-row-ct-listado" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-dl" onclick="loadBodegasConsignacion()">🔄 Actualizar datos</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Empresa</th><th>Bodega</th><th>Cliente</th><th>Pedido</th><th>Fecha pedido</th>
+              <th>Producto</th><th>Presentación</th>
+              <th style="text-align:right">Cant. pedida</th><th style="text-align:right">Cant. ingresada</th>
+              <th>Estado</th><th>Estado 2</th>
+            </tr>
+          </thead>
+          <tbody id="bc-body-listado"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL: Resumen por bodega -->
+  <div id="bc-panel-resumen" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>📦 Ingresos acumulados por bodega <span id="bc-row-ct-resumen" style="font-weight:400;color:#718096"></span></h3>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Empresa</th><th>Bodega</th><th>Producto</th><th>Presentación</th>
+              <th style="text-align:right">Pedidos</th><th style="text-align:right">Cant. ingresada</th>
+            </tr>
+          </thead>
+          <tbody id="bc-body-resumen"></tbody>
+          <tfoot><tr id="bc-foot-resumen" style="background:#f0f4f8;font-weight:800"></tr></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size:0.74rem;color:#a0aec0;margin-top:12px">
+    Muestra los pedidos del módulo Pedidos con "Pedido en consignación" = Sí. La "bodega" es el campo Sucursal del pedido.
+    "Cant. ingresada" = Cant. Entregada (lo que ya se despachó físicamente hacia esa bodega); lo pedido pero aún no despachado no suma todavía.
+  </p>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20260909h"></script>
+<script src="js/auth.js?v=20260916a"></script>
+<script src="js/notificaciones.js?v=20260828b"></script>
+<script src="js/bodegas-consignacion.js?v=20260916a"></script>
+</body>
+</html>
