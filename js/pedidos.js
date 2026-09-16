@@ -4758,6 +4758,7 @@ async function openNuevoTraslado() {
   document.getElementById('btn-guardar-nuevo').textContent = '🚚 Guardar traslado';
   document.getElementById('nv-consignacion').value = 'Sí';
   _toggleTrasladoFields('nv', true);
+  _toggleNvProductos();
   await populateBodegaDestinoSelect('nv', document.getElementById('nv-empresa').value, '');
 }
 
@@ -5062,7 +5063,7 @@ document.getElementById('ed-sucursal').addEventListener('change', function() { _
 
 function _toggleNvProductos() {
   var precio = (document.getElementById('nv-precio').value || '').trim();
-  var disabled = !precio;
+  var disabled = !precio && !_nvEsTraslado;
   var wrap = document.querySelector('#nuevo-overlay .prod-wrap');
   if (wrap) {
     wrap.style.opacity = disabled ? '0.45' : '';
