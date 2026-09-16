@@ -1651,7 +1651,12 @@ function renderTable() {
   var totalRows = rows.length;
   var totalPages = Math.ceil(totalRows / pageSize) || 1;
   if (currentPage > totalPages) currentPage = totalPages;
-  document.getElementById('row-ct').textContent = '(' + totalRows + ' mostradas)';
+  if (pedidoScope === 'historico') {
+    var sumaTotalOrden = rows.reduce(function(s, c) { return s + (Number(c.Total_Orden) || 0); }, 0);
+    document.getElementById('row-ct').textContent = '(' + totalRows + ' mostradas · Total: ' + fmtMoney(sumaTotalOrden) + ')';
+  } else {
+    document.getElementById('row-ct').textContent = '(' + totalRows + ' mostradas)';
+  }
   var ordTitle = document.getElementById('ord-title');
   if (ordTitle) ordTitle.textContent = pedidoScope === 'historico' ? 'Histórico de pedidos (consulta)' : 'Órdenes activas';
 
