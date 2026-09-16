@@ -137,9 +137,9 @@
   </div>
 
   <p style="font-size:0.74rem;color:#a0aec0;margin-top:12px">
-    Muestra los pedidos del módulo Pedidos con "Pedido en consignación" = Sí, más cuatro excepciones agregadas a mano aunque ese campo diga "No":
-    cliente <strong>Bodega COATOL</strong> de IASO, cliente <strong>Carlos Andres Ramirez</strong> de PARCELAR, y <strong>Bodega Villeta</strong> / <strong>Bodega Didimo Cubillos</strong> de PARCELAR (por su Bodega de Facturación).
-    La "bodega" es el campo Sucursal del pedido, salvo Bodega Villeta / Bodega Didimo Cubillos (usan la Bodega de Facturación) y Bodega COATOL / Carlos Ramirez (el propio cliente es la bodega).
+    Muestra los pedidos del módulo Pedidos con "Pedido en consignación" = Sí, más excepciones agregadas a mano aunque ese campo diga "No":
+    de IASO, <strong>cualquier cliente cuyo nombre empiece con "Bodega "</strong> (ej. Bodega COATOL, Bodega Espinal); de PARCELAR, cliente <strong>Carlos Andres Ramirez</strong>, y <strong>Bodega Villeta</strong> / <strong>Bodega Didimo Cubillos</strong> (por su Bodega de Facturación).
+    La "bodega" es el campo Sucursal del pedido, salvo Bodega Villeta / Bodega Didimo Cubillos (usan la Bodega de Facturación) y los clientes "Bodega X" de IASO / Carlos Ramirez (el propio cliente es la bodega; "Bodega Espinal" se funde con el cubo "ESPINAL" que ya alimentan otros clientes por Sucursal).
     "Cant. ingresada" = Cant. Entregada (lo que ya se despachó físicamente hacia esa bodega); lo pedido pero aún no despachado no suma todavía.
   </p>
 

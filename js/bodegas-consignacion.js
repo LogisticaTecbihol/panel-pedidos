@@ -2,10 +2,12 @@
 // Bodegas en Consignación
 //
 // Vista de solo lectura sobre Pedidos. Incluye filas cuyo campo
-// Consignacion = 'Si'/'Sí', MÁS cuatro excepciones pedidas a mano
-// (esos pedidos tienen Consignacion = 'No' en el dato, pero son
-// bodegas en consignación reales que no quedaron marcadas así):
-//   - IASO, cliente "Bodega COATOL" (cualquier variante de mayúsculas).
+// Consignacion = 'Si'/'Sí', MÁS excepciones pedidas a mano (esos
+// pedidos tienen Consignacion = 'No' en el dato, pero son bodegas
+// en consignación reales que no quedaron marcadas así):
+//   - IASO, cualquier cliente cuyo nombre empiece con "Bodega "
+//     (cubre COATOL, Espinal, y cualquier "Bodega X" que aparezca
+//     después — mismo criterio, sin tener que agregar cada una a mano).
 //   - PARCELAR, Bodega_Facturacion = 'Bodega Villeta'.
 //   - PARCELAR, Bodega_Facturacion = 'Bodega Didimo Cubillos'.
 //   - PARCELAR, cliente "Carlos Andres Ramirez" (varias variantes de
@@ -18,10 +20,17 @@
 // de bodegas, así que se deriva de los datos ya cargados. Para
 // Bodega Villeta / Bodega Didimo Cubillos la bodega real es
 // Bodega_Facturacion, no Sucursal (que ahí es solo la ubicación del
-// cliente que compró). Para COATOL y Carlos Ramirez, Sucursal y
-// Bodega_Facturacion vienen vacíos o genéricos ("Bodega Principal",
-// el mismo que usa cualquier pedido normal) — ahí la bodega es el
-// propio cliente. Ver _bcBodegaKey().
+// cliente que compró). Para los clientes "Bodega X" de IASO y para
+// Carlos Ramirez, Sucursal y Bodega_Facturacion vienen vacíos o
+// genéricos ("Bodega Principal", el mismo que usa cualquier pedido
+// normal) — ahí la bodega es el propio cliente, PERO con dos casos ya
+// verificados que se funden con un cubo que ya existía por Sucursal:
+// "Bodega Espinal"/"BODEGA ESPINAL" (con o sin Sucursal=ESPINAL) cae
+// en el mismo cubo "ESPINAL" que ya alimentan otros clientes (ej.
+// AGROEXPORT) que sí traen Sucursal=ESPINAL. "Bodega COATOL" no tenía
+// ningún cubo previo, así que queda como "Bodega COATOL". Cualquier
+// "Bodega X" nueva que no sea ninguna de las dos cae por defecto en
+// "Bodega " + el nombre, igual que COATOL. Ver _bcBodegaKey().
 //
 // "Cant. ingresada" = Cant_Entregada: solo lo que ya se despachó
 // físicamente hacia esa bodega cuenta como ingreso a su inventario;
@@ -45,15 +54,21 @@ function _bcClienteContiene(cliente, palabras) {
   var c = (cliente || '').toUpperCase();
   return palabras.every(function(p) { return c.indexOf(p) >= 0; });
 }
-function _bcEsClienteCoatol(cliente) { return _bcClienteContiene(cliente, ['COATOL']); }
 function _bcEsClienteCarlosRamirez(cliente) { return _bcClienteContiene(cliente, ['CARLOS', 'RAMIREZ']); }
 
-// Pedidos con Consignacion='Sí', más las 4 excepciones pedidas a mano
+// Cliente cuyo nombre empieza con "Bodega " (ej. "Bodega COATOL",
+// "BODEGA ESPINAL", "Bodega Espinal") — el patrón que usa IASO para
+// registrar clientes que en realidad son bodegas en consignación.
+function _bcEsClienteBodegaIaso(cliente) {
+  return /^BODEGA\s+\S/.test((cliente || '').trim().toUpperCase());
+}
+
+// Pedidos con Consignacion='Sí', más las excepciones pedidas a mano
 // (empresa + cliente/bodega de facturación puntuales) aunque digan 'No'.
 function _bcCalifica(p) {
   if (_bcEsConsignacion(p.Consignacion)) return true;
   var sigla = getSigla(p.Nombre_Empresa);
-  if (sigla === 'IASO' && _bcEsClienteCoatol(p.Cliente)) return true;
+  if (sigla === 'IASO' && _bcEsClienteBodegaIaso(p.Cliente)) return true;
   if (sigla === 'PARCELAR' && _bcEsClienteCarlosRamirez(p.Cliente)) return true;
   if (sigla === 'PARCELAR' && BC_BODEGAS_FACTURACION_PARCELAR.indexOf((p.Bodega_Facturacion || '').trim()) >= 0) return true;
   return false;
@@ -66,7 +81,13 @@ function _bcBodegaKey(r) {
     var bf = (r.Bodega_Facturacion || '').trim();
     if (BC_BODEGAS_FACTURACION_PARCELAR.indexOf(bf) >= 0) return bf;
   }
-  if (sigla === 'IASO' && _bcEsClienteCoatol(r.Cliente)) return 'Bodega COATOL';
+  if (sigla === 'IASO' && _bcEsClienteBodegaIaso(r.Cliente)) {
+    var cliUp = (r.Cliente || '').trim().toUpperCase();
+    // Ya existía un cubo "ESPINAL" alimentado por Sucursal — se funde con él.
+    if (cliUp.indexOf('ESPINAL') >= 0) return 'ESPINAL';
+    var sufijo = (r.Cliente || '').trim().replace(/^BODEGA\s+/i, '').trim();
+    return 'Bodega ' + (sufijo || cliUp).toUpperCase();
+  }
   return (r.Sucursal || '').trim() || BC_SIN_BODEGA;
 }
 function _bcBodegaLabel(key) { return key === BC_SIN_BODEGA ? '(Sin bodega)' : key; }
