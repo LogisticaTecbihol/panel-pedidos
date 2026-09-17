@@ -223,7 +223,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort" onclick="clearSort()" title="Quitar todos los ordenamientos">✕ Limpiar orden</button>
         <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
-        <button class="btn-dl auth-admin-only accion-escritura" onclick="openNuevoTraslado()" style="background:#d35400" title="En pruebas: visible solo para admin hasta afinar el proceso">🚚 Nuevo Traslado</button>
+        <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevoTraslado()" style="background:#d35400">🚚 Nuevo Traslado</button>
         <button class="btn-dl auth-admin-only accion-escritura" onclick="document.getElementById('file-upload').click()" style="background:#27ae60;display:none">📥 Cargar Pedido</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
         <button class="btn-dl auth-admin-only accion-escritura" onclick="document.getElementById('client-import-file').click()" style="background:#8e44ad;display:none">📋 Importar Clientes</button>
