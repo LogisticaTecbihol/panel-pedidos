@@ -589,6 +589,11 @@ var detailWorkingLines = [];
 // True mientras el modal de detalle muestra un pedido "Bloqueado por cartera":
 // se veta el registro de entregas de producto.
 var _detailBloqueadoCartera = false;
+// True mientras el modal de detalle muestra un pedido con Estado = "Anulado".
+// Es informativo: hace que CADA mención de remisión en las líneas se marque
+// como anulada (además de la marca independiente por remisión registrada en
+// Reportes → Remisiones Anuladas). No bloquea botones ni campos.
+var _detailPedidoAnulado = false;
 // Snapshot de existencias para el modal de detalle (empresa origen del stock)
 var existSnapshot = null;
 
@@ -1879,9 +1884,11 @@ async function openDetail(idx) {
   _gateEstado2Select(document.getElementById('md-estado2'), derivedEstado2(lines));
 
   // Pedido anulado: aviso puramente informativo (no bloquea botones ni
-  // campos, a diferencia del bloqueo por cartera).
+  // campos, a diferencia del bloqueo por cartera). Cascada a cada mención
+  // de remisión en las líneas (ver renderEntregasHTML / renderFacturaRemisiones).
+  _detailPedidoAnulado = derivedEstado2(lines) === 'Anulado';
   var _anulBanner = document.getElementById('md-anulado');
-  if (_anulBanner) _anulBanner.style.display = derivedEstado2(lines) === 'Anulado' ? 'block' : 'none';
+  if (_anulBanner) _anulBanner.style.display = _detailPedidoAnulado ? 'block' : 'none';
 
   // Pedido bloqueado por cartera: se avisa en un banner y NO se permite
   // registrar entrega de producto (se ocultan la barra de entrega y los
@@ -1950,8 +1957,12 @@ async function openDetail(idx) {
       var prodEsc = prodLimpio.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
       var presEsc = (l.Presentacion||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
       var lockBadge = lockEntregado ? '<div style="font-size:0.68rem;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;padding:2px 6px;border-radius:4px;margin-top:2px;font-weight:600">🔒 Solo administrador puede modificar</div>' : '';
+      var lineTieneRemision = (l._entregas || []).some(function(e) { return e.remision && e.remision.trim(); });
       var lineRemAnulada = (l._entregas || []).some(function(e) { return e.remision && remAnuladasSet[e.remision]; });
-      var lineAnuladaBadge = lineRemAnulada ? ' <span class="badge" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" title="La remisión de esta línea está registrada en Reportes → Remisiones Anuladas">⛔ Anulada</span>' : '';
+      var lineAnulMotivos = [];
+      if (lineTieneRemision && _detailPedidoAnulado) lineAnulMotivos.push('el pedido está marcado como Anulado');
+      if (lineRemAnulada) lineAnulMotivos.push('su remisión está registrada en Reportes → Remisiones Anuladas');
+      var lineAnuladaBadge = lineAnulMotivos.length ? ' <span class="badge" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" title="' + escHtml('Anulada: ' + lineAnulMotivos.join(' y ')) + '">⛔ Anulada</span>' : '';
       return '<tr>' +
         '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
         '<td class="sticky-prod"><input class="ef md-prod" data-i="' + i + '" type="text" value="' + prodEsc + '" style="min-width:260px;font-weight:700' + lockStyle + '"' + lockAttr + '></td>' +
@@ -2174,9 +2185,13 @@ function renderEntregasHTML(lineIdx, entregas) {
     var ff = facData.fecha_factura || '';
     if (nf && ff) parts.push('<span style="color:#3730a3;font-weight:700">Fac: ' + escHtml(nf) + '</span>');
     var remAnulada = !!(remTxt && remAnuladasSet[remTxt]);
-    var anuladaTag = remAnulada ? ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Remisión anulada</span>' : '';
-    return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:' + (remAnulada ? '#fef2f2' : '#f7fafc') + ';padding:2px 6px;border-radius:4px;border:1px solid ' + (remAnulada ? '#fecaca' : '#e2e8f0') + '">' +
-      '<span style="flex:1' + (remAnulada ? ';text-decoration:line-through;text-decoration-color:#fca5a5' : '') + '">' + parts.join(' · ') + '</span>' + anuladaTag +
+    var pedAnulado = !!(remTxt && _detailPedidoAnulado);
+    var anyAnulada = remAnulada || pedAnulado;
+    var anuladaTag = '';
+    if (pedAnulado) anuladaTag += ' <span style="color:#dc2626;font-weight:700" title="El pedido está marcado como Anulado">🚫 Pedido anulado</span>';
+    if (remAnulada) anuladaTag += ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Remisión anulada</span>';
+    return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:' + (anyAnulada ? '#fef2f2' : '#f7fafc') + ';padding:2px 6px;border-radius:4px;border:1px solid ' + (anyAnulada ? '#fecaca' : '#e2e8f0') + '">' +
+      '<span style="flex:1' + (anyAnulada ? ';text-decoration:line-through;text-decoration-color:#fca5a5' : '') + '">' + parts.join(' · ') + '</span>' + anuladaTag +
       '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>' +
     '</div>';
   }).join('');
@@ -2225,8 +2240,12 @@ function renderFacturaRemisiones() {
     var prodsText = r.productos.join(', ');
     var facturado = nf && ff;
     var remAnulada = !!remAnuladasSet[rem];
-    var anuladaTag = remAnulada ? ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Anulada</span>' : '';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:' + (remAnulada ? '#fef2f2' : facturado ? '#eef2ff' : '#f7fafc') + ';border:1px solid ' + (remAnulada ? '#fecaca' : facturado ? '#c7d2fe' : '#e2e8f0') + ';border-radius:6px;flex-wrap:wrap">' +
+    var pedAnulado = !!_detailPedidoAnulado;
+    var anyAnulada = remAnulada || pedAnulado;
+    var anuladaTag = '';
+    if (pedAnulado) anuladaTag += ' <span style="color:#dc2626;font-weight:700" title="El pedido está marcado como Anulado">🚫 Pedido anulado</span>';
+    if (remAnulada) anuladaTag += ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Remisión anulada</span>';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:' + (anyAnulada ? '#fef2f2' : facturado ? '#eef2ff' : '#f7fafc') + ';border:1px solid ' + (anyAnulada ? '#fecaca' : facturado ? '#c7d2fe' : '#e2e8f0') + ';border-radius:6px;flex-wrap:wrap">' +
       '<div style="flex:1;min-width:200px">' +
         '<div style="font-weight:700;font-size:0.8rem;color:#1a5276">Rem: ' + escHtml(rem) + (fechaFmt ? ' <span style="font-weight:400;color:#718096">· ' + escHtml(fechaFmt) + '</span>' : '') + anuladaTag + '</div>' +
         '<div style="font-size:0.7rem;color:#718096;margin-top:2px">' + escHtml(prodsText) + '</div>' +
@@ -3663,6 +3682,7 @@ document.getElementById('edit-overlay').addEventListener('click', function(e) { 
 
 function renderEditLines() {
   var tbody = document.getElementById('ed-lines');
+  var _edPedidoAnulado = derivedEstado2(editWorkingLines) === 'Anulado';
   tbody.innerHTML = editWorkingLines.map(function(l, i) {
     var locked = (Number(l.Cant_Entregada)||0) > 0;
     var lockEntregado = norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin();
@@ -3678,8 +3698,12 @@ function renderEditLines() {
     var bonif = (l.Bonificado || '').trim();
     var esBonif = bonif === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
     var _edEntregas = parseEntregas(l.Remisiones, Number(l.Cant_Entregada) || 0, l.Fecha_Ult_Entrega);
+    var edTieneRemision = _edEntregas.some(function(e) { return e.remision && e.remision.trim(); });
     var edRemAnulada = _edEntregas.some(function(e) { return e.remision && remAnuladasSet[e.remision]; });
-    var edAnuladaTag = edRemAnulada ? '<div style="font-size:0.66rem;color:#b91c1c;font-weight:700;margin-top:2px;white-space:nowrap" title="Remisión registrada en Reportes → Remisiones Anuladas">⛔ Anulada</div>' : '';
+    var edAnulMotivos = [];
+    if (edTieneRemision && _edPedidoAnulado) edAnulMotivos.push('el pedido está Anulado');
+    if (edRemAnulada) edAnulMotivos.push('registrada en Reportes → Remisiones Anuladas');
+    var edAnuladaTag = edAnulMotivos.length ? '<div style="font-size:0.66rem;color:#b91c1c;font-weight:700;margin-top:2px;white-space:nowrap" title="' + escHtml(edAnulMotivos.join(' y ')) + '">⛔ Anulada</div>' : '';
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
       '<td><input class="ef ed-prod" data-i="' + i + '" type="text" value="' + prod + '" style="min-width:260px' + (locked || lockEntregado ? ';background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
