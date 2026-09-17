@@ -1950,6 +1950,8 @@ async function openDetail(idx) {
       var prodEsc = prodLimpio.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
       var presEsc = (l.Presentacion||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
       var lockBadge = lockEntregado ? '<div style="font-size:0.68rem;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;padding:2px 6px;border-radius:4px;margin-top:2px;font-weight:600">🔒 Solo administrador puede modificar</div>' : '';
+      var lineRemAnulada = (l._entregas || []).some(function(e) { return e.remision && remAnuladasSet[e.remision]; });
+      var lineAnuladaBadge = lineRemAnulada ? ' <span class="badge" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" title="La remisión de esta línea está registrada en Reportes → Remisiones Anuladas">⛔ Anulada</span>' : '';
       return '<tr>' +
         '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
         '<td class="sticky-prod"><input class="ef md-prod" data-i="' + i + '" type="text" value="' + prodEsc + '" style="min-width:260px;font-weight:700' + lockStyle + '"' + lockAttr + '></td>' +
@@ -1958,7 +1960,7 @@ async function openDetail(idx) {
         '<td><input class="ef md-cant" data-i="' + i + '" type="number" min="0" value="' + pedida + '" style="width:70px;text-align:right' + (lockEntregado || lockCant ? ';background:#f7fafc;opacity:0.7' : '') + '"' + (lockEntregado || lockCant ? ' disabled' : '') + (lockEntregado || lockCant ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
         '<td><input class="ef md-ent" data-i="' + i + '" data-saved="' + entregada + '" type="number" value="' + entregada + '" style="width:70px;text-align:right;color:#27ae60;font-weight:700;background:#f0fff4" readonly tabindex="-1" title=""></td>' +
         '<td class="money"><span class="pend-tag ' + (pendiente > 0 ? 'pend' : 'ok') + '" id="md-pend-' + i + '">' + pendiente + '</span></td>' +
-        '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + escHtml(estL) + '</span>' + lockBadge +
+        '<td style="min-width:280px"><span class="badge ' + badgeL + '">' + escHtml(estL) + '</span>' + lineAnuladaBadge + lockBadge +
           '<div class="entregas-wrap" data-i="' + i + '">' + renderEntregasHTML(i, l._entregas || []) + '</div>' +
         '</td>' +
         '<td><input class="ef md-vuni" data-i="' + i + '" type="number" min="0" value="' + vUnit + '" style="width:90px;text-align:right' + lockStyle + '"' + lockAttr + (lockEntregado ? '' : ' oninput="updateDetailLine(' + i + ')"') + '></td>' +
@@ -3675,6 +3677,9 @@ function renderEditLines() {
     var vUnit = Number(l.Valor_Unitario) || 0;
     var bonif = (l.Bonificado || '').trim();
     var esBonif = bonif === 'Sí' || textoTieneBonif || (vUnit > 0 && vUnit < 10);
+    var _edEntregas = parseEntregas(l.Remisiones, Number(l.Cant_Entregada) || 0, l.Fecha_Ult_Entrega);
+    var edRemAnulada = _edEntregas.some(function(e) { return e.remision && remAnuladasSet[e.remision]; });
+    var edAnuladaTag = edRemAnulada ? '<div style="font-size:0.66rem;color:#b91c1c;font-weight:700;margin-top:2px;white-space:nowrap" title="Remisión registrada en Reportes → Remisiones Anuladas">⛔ Anulada</div>' : '';
     return '<tr>' +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
       '<td><input class="ef ed-prod" data-i="' + i + '" type="text" value="' + prod + '" style="min-width:260px' + (locked || lockEntregado ? ';background:#f7fafc' : '') + (lockEntregado ? ';opacity:0.7' : '') + '"' + disAttr + '></td>' +
@@ -3683,7 +3688,7 @@ function renderEditLines() {
       '<td><input class="ef ed-cant" data-i="' + i + '" type="number" min="0" value="' + (l.Cantidad||0) + '" style="width:80px;text-align:right' + cantDisBg + '"' + cantDisAttr + (lockEntregado || lockCant ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
       '<td><input class="ef ed-vuni" data-i="' + i + '" type="number" min="0" value="' + (l.Valor_Unitario||0) + '" style="width:100px;text-align:right' + disBg + '"' + disAttr + (lockEntregado ? '' : ' oninput="updateLineTotal(' + i + ')"') + '></td>' +
       '<td><input class="ef ed-vtot" data-i="' + i + '" type="number" value="' + (l.Valor_Total||0) + '" style="width:100px;text-align:right;background:#f7fafc" readonly></td>' +
-      '<td><input class="ef ed-rem" data-i="' + i + '" type="text" value="' + (l.Remisiones||'').replace(/"/g,'&quot;') + '" placeholder="' + (locked ? 'Ej: REM-001' : '') + '" style="width:120px;font-size:0.78rem' + disBg + '"' + disAttr + '></td>' +
+      '<td><input class="ef ed-rem" data-i="' + i + '" type="text" value="' + (l.Remisiones||'').replace(/"/g,'&quot;') + '" placeholder="' + (locked ? 'Ej: REM-001' : '') + '" style="width:120px;font-size:0.78rem' + disBg + '"' + disAttr + '>' + edAnuladaTag + '</td>' +
       '<td style="text-align:center">' +
         (lockEntregado
           ? '<span style="font-size:0.85rem;color:#92400e" title="Entregado — solo administrador puede modificar">🔒</span>'
