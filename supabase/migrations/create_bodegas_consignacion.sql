@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS public."BodegasConsignacion" (
 
 CREATE UNIQUE INDEX IF NOT EXISTS bodegas_consignacion_empresa_nombre_uq
   ON public."BodegasConsignacion" ("Nombre_Empresa", "Nombre");
+-- NOTA: reemplazado por bodegas_consignacion_empresa_nombre_municipio_uq,
+-- ver fix_bodegas_consignacion_uq_incluye_municipio.sql (2026-09-17).
 
 COMMENT ON TABLE public."BodegasConsignacion" IS
   'Catálogo de bodegas en consignación por empresa, usado por el flujo "Nuevo Traslado" de pedidos.html.';
