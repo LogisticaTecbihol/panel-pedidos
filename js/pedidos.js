@@ -617,6 +617,12 @@ var apartadosPorPedido = {};
 var apartadosPorProdEmp = {};
 var apartadosPorLinea = {};
 
+// Remisiones anuladas (registro manual en Reportes → "Registrar remisión
+// anulada", tabla RemisionesAnuladas). Mismo criterio que usan Kardex y
+// Existencias: por N° de remisión, sin distinguir empresa ni producto.
+// Se reconstruye en cada loadFromAPI().
+var remAnuladasSet = {};
+
 function _buildApartadosMaps(rows, muRows) {
   apartadosPorPedido = {};
   apartadosPorProdEmp = {};
@@ -872,7 +878,9 @@ async function loadFromAPI() {
     var apartadosMuPromise = apiGet('getApartadosMuestra', {
       columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_aplicacion'
     }).catch(function() { return { ok: true, apartados: [] }; });
-    var results = await Promise.all([pedidosPromise, ordenesPromise, apartadosPromise, apartadosMuPromise]);
+    var remAnuladasPromise = apiGet('getRemisionesAnuladas', { columns: 'Remision' })
+      .catch(function() { return { ok: true, remisionesAnuladas: [] }; });
+    var results = await Promise.all([pedidosPromise, ordenesPromise, apartadosPromise, apartadosMuPromise, remAnuladasPromise]);
     var data = results[0];
     var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
@@ -881,6 +889,11 @@ async function loadFromAPI() {
       (results[2] && results[2].apartados) || [],
       (results[3] && results[3].apartados) || []
     );
+    remAnuladasSet = {};
+    ((results[4] && results[4].remisionesAnuladas) || []).forEach(function(ra) {
+      var r = String(ra.Remision || '').trim();
+      if (r) remAnuladasSet[r] = true;
+    });
     // solicitudesCompraPorPedido / ocsLegalizadasPorPedido se arman más abajo,
     // DESPUÉS de poblar `pedidos` y `_pedidoPorId` (los necesitan para resolver
     // OrdenesCompra.pedido_id → cliente y no cruzar pedidos #N° distintos).
@@ -1865,6 +1878,11 @@ async function openDetail(idx) {
   document.getElementById('md-estado2').value = derivedEstado2(lines);
   _gateEstado2Select(document.getElementById('md-estado2'), derivedEstado2(lines));
 
+  // Pedido anulado: aviso puramente informativo (no bloquea botones ni
+  // campos, a diferencia del bloqueo por cartera).
+  var _anulBanner = document.getElementById('md-anulado');
+  if (_anulBanner) _anulBanner.style.display = derivedEstado2(lines) === 'Anulado' ? 'block' : 'none';
+
   // Pedido bloqueado por cartera: se avisa en un banner y NO se permite
   // registrar entrega de producto (se ocultan la barra de entrega y los
   // selectores de asignación; el guardado de entregas queda vetado).
@@ -2153,8 +2171,10 @@ function renderEntregasHTML(lineIdx, entregas) {
     var nf = facData.num_factura || '';
     var ff = facData.fecha_factura || '';
     if (nf && ff) parts.push('<span style="color:#3730a3;font-weight:700">Fac: ' + escHtml(nf) + '</span>');
-    return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:#f7fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0">' +
-      '<span style="flex:1">' + parts.join(' · ') + '</span>' +
+    var remAnulada = !!(remTxt && remAnuladasSet[remTxt]);
+    var anuladaTag = remAnulada ? ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Remisión anulada</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:' + (remAnulada ? '#fef2f2' : '#f7fafc') + ';padding:2px 6px;border-radius:4px;border:1px solid ' + (remAnulada ? '#fecaca' : '#e2e8f0') + '">' +
+      '<span style="flex:1' + (remAnulada ? ';text-decoration:line-through;text-decoration-color:#fca5a5' : '') + '">' + parts.join(' · ') + '</span>' + anuladaTag +
       '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>' +
     '</div>';
   }).join('');
@@ -2202,9 +2222,11 @@ function renderFacturaRemisiones() {
     var fechaFmt = r.fecha ? formatDateShort(r.fecha) : '';
     var prodsText = r.productos.join(', ');
     var facturado = nf && ff;
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:' + (facturado ? '#eef2ff' : '#f7fafc') + ';border:1px solid ' + (facturado ? '#c7d2fe' : '#e2e8f0') + ';border-radius:6px;flex-wrap:wrap">' +
+    var remAnulada = !!remAnuladasSet[rem];
+    var anuladaTag = remAnulada ? ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Anulada</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:' + (remAnulada ? '#fef2f2' : facturado ? '#eef2ff' : '#f7fafc') + ';border:1px solid ' + (remAnulada ? '#fecaca' : facturado ? '#c7d2fe' : '#e2e8f0') + ';border-radius:6px;flex-wrap:wrap">' +
       '<div style="flex:1;min-width:200px">' +
-        '<div style="font-weight:700;font-size:0.8rem;color:#1a5276">Rem: ' + escHtml(rem) + (fechaFmt ? ' <span style="font-weight:400;color:#718096">· ' + escHtml(fechaFmt) + '</span>' : '') + '</div>' +
+        '<div style="font-weight:700;font-size:0.8rem;color:#1a5276">Rem: ' + escHtml(rem) + (fechaFmt ? ' <span style="font-weight:400;color:#718096">· ' + escHtml(fechaFmt) + '</span>' : '') + anuladaTag + '</div>' +
         '<div style="font-size:0.7rem;color:#718096;margin-top:2px">' + escHtml(prodsText) + '</div>' +
       '</div>' +
       '<div style="display:flex;gap:6px;align-items:center">' +
@@ -6629,8 +6651,21 @@ function renderDespHeader() {
 
 async function buildDespachos() {
   var remMap = {};
+  // Estado_2 del pedido y "Remisión anulada" (RemisionesAnuladas) son dos
+  // señales independientes: un pedido puede estar Anulado sin que nadie haya
+  // registrado sus remisiones en Reportes, o viceversa. Se muestran por
+  // separado para que el usuario vea cuál de las dos falta.
+  var _pedAnuladoCache = {};
+  function _pedidoAnulado(p) {
+    var k = keyOf(p.Nombre_Empresa, p.Consecutivo, p.Cliente);
+    if (!(k in _pedAnuladoCache)) {
+      _pedAnuladoCache[k] = derivedEstado2(_linesIndex[k] || [p]) === 'Anulado';
+    }
+    return _pedAnuladoCache[k];
+  }
   pedidos.forEach(function(p) {
     if (!p.Remisiones) return;
+    var pedAnulado = _pedidoAnulado(p);
     var segs = String(p.Remisiones).split(',');
     segs.forEach(function(s) {
       var parts = s.split('|');
@@ -6644,8 +6679,13 @@ async function buildDespachos() {
           consecutivo: p.Consecutivo || '',
           cliente: p.Cliente || '',
           remision: rem,
-          fecha: fecha
+          fecha: fecha,
+          pedidoAnulado: pedAnulado,
+          remisionAnulada: !!remAnuladasSet[rem]
         };
+      } else {
+        if (pedAnulado) remMap[key].pedidoAnulado = true;
+        if (remAnuladasSet[rem]) remMap[key].remisionAnulada = true;
       }
     });
   });
@@ -6757,10 +6797,14 @@ function renderDespachos() {
       var fechaFacCell = canEdit
         ? '<input type="date" value="' + ff + '" data-rem="' + remEsc + '" class="desp-fac-fecha" onchange="onDespFacturaChange(this)" style="width:130px;font-size:0.78rem;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px">'
         : '<span style="font-size:0.78rem">' + (ff ? formatDateShort(ff) : '—') + '</span>';
-      return '<tr>' +
+      var anulTags = '';
+      if (d.pedidoAnulado) anulTags += ' <span style="display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:0px 6px;border-radius:9px;font-size:0.68rem;font-weight:700" title="El pedido de esta remisión está marcado como Anulado">🚫 Pedido anulado</span>';
+      if (d.remisionAnulada) anulTags += ' <span style="display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:0px 6px;border-radius:9px;font-size:0.68rem;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — excluida del Kardex">⛔ Remisión anulada</span>';
+      var rowCls = (d.pedidoAnulado || d.remisionAnulada) ? ' class="row-bloqueada-cartera"' : '';
+      return '<tr' + rowCls + '>' +
         '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
         '<td style="font-size:0.82rem;font-weight:600">' + escHtml(sig) + '</td>' +
-        '<td style="font-size:0.82rem">' + escHtml(d.remision) + '</td>' +
+        '<td style="font-size:0.82rem">' + escHtml(d.remision) + anulTags + '</td>' +
         '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(d.cliente) + '">' + escHtml(d.cliente) + '</td>' +
         '<td style="font-size:0.82rem">' + fechaFmt + '</td>' +
         '<td style="text-align:center;font-size:0.9rem">' + badge + '</td>' +
@@ -6791,6 +6835,9 @@ function exportDespachosExcel() {
   var data = rows.map(function(d) {
     var key = adjuntoKey(d.empresa, d.consecutivo, d.cliente);
     var fac = _despFacturaMap[d.remision] || {};
+    var anulLabels = [];
+    if (d.pedidoAnulado) anulLabels.push('Pedido anulado');
+    if (d.remisionAnulada) anulLabels.push('Remisión anulada');
     return {
       'Empresa': getSigla(d.empresa) || d.empresa || '',
       'Remisión': d.remision || '',
@@ -6800,13 +6847,14 @@ function exportDespachosExcel() {
       'Adjuntos': adjuntosIndex[key] ? 'Sí' : 'No',
       'Adjuntado por': (adjuntosUploaders[key] || []).join(', '),
       'N° Factura': fac.num_factura || '',
-      'Fecha Factura': fechaCell(fac.fecha_factura)
+      'Fecha Factura': fechaCell(fac.fecha_factura),
+      'Anulado': anulLabels.join(' + ')
     };
   });
 
   var ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
-    {wch:12},{wch:14},{wch:30},{wch:14},{wch:12},{wch:10},{wch:24},{wch:14},{wch:14}
+    {wch:12},{wch:14},{wch:30},{wch:14},{wch:12},{wch:10},{wch:24},{wch:14},{wch:14},{wch:26}
   ];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Despachos');
