@@ -1058,8 +1058,8 @@ async function saveGestionarCam() {
       try {
         var camLines = cambios.filter(function(r) { return gestionarCamIds.indexOf(r.__row || r.id) >= 0; });
         var head = camLines.length ? camLines[0] : {};
-        var cambiarLines = camLines.filter(function(l) { return l.Tipo === 'Cambiar'; });
-        var entregarLines = camLines.filter(function(l) { return l.Tipo === 'Entregar'; });
+        var cambiarLines = camLines.filter(function(l) { return l.Tipo_Linea === 'CAMBIAR'; });
+        var entregarLines = camLines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
         var jsPDFDoc = null;
         if (_finalRemIngC) {
           var srcIng = cambiarLines.length ? cambiarLines : camLines;
