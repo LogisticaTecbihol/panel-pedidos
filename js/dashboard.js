@@ -520,11 +520,11 @@ function buildDashboard() {
   buildTiempos(cur.orders, fEmp, fDesde, fHasta);
   buildTopDemora(cur.orders);
   buildEntregas(cur.orders);
-  buildEmpresas(cur.orders);
+  buildEmpresas(cur.orders, fEmp);
   buildTopProductos(cur.ped);
   buildTopClientes(cur.orders, fEmp);
   buildDevoluciones(cur.dev, cur.orders, fEmp);
-  buildTopComerciales(cur.orders);
+  buildTopComerciales(cur.orders, fEmp);
   buildInventario(cur.ped, fEmp);
   buildResumenModulos(cur.orders, cur.dev, cur.ing, cur.oc, cur.mue, cur.ree, cur.cam, fEmp);
   buildExactitudInventario(fEmp);
@@ -858,7 +858,7 @@ function renderSegBar(data, total) {
 }
 
 // ── 3. Pedidos por Empresa ──
-function buildEmpresas(orders) {
+function buildEmpresas(orders, fEmp) {
   var empMap = {};
   orders.forEach(function(o) {
     if (!empMap[o.sigla]) empMap[o.sigla] = { ordenes: 0, uds: 0 };
@@ -873,17 +873,31 @@ function buildEmpresas(orders) {
 
   document.getElementById('emp-sub').textContent = empArr.length + ' empresas';
 
+  // Tendencia mensual (últimos 12 meses) por empresa — histórico completo,
+  // independiente del filtro Desde/Hasta (mismo criterio que "Top clientes").
+  var pedHist = fEmp ? dPedidos.filter(function(p) { return p.Nombre_Empresa === fEmp; }) : dPedidos;
+  var ordersHist = dBuildOrders(pedHist);
+  var trend = dTrend12mByKey(ordersHist, function(o) { return o.sigla || null; });
+
   var html = '<div class="hbar-chart">';
   empArr.forEach(function(e) {
     var pct = maxVal > 0 ? Math.max(3, (e.uds / maxVal) * 100) : 3;
     var color = EMP_COLORS[e.sigla] || '#718096';
+    var serieMes = trend.byKey[e.sigla] || {};
+    var serieValor = trend.meses.map(function(m) { return serieMes[m] ? serieMes[m].valor : 0; });
+    var serieUds = trend.meses.map(function(m) { return serieMes[m] ? serieMes[m].uds : 0; });
     html += '<div class="hbar-row">' +
       '<div class="hbar-label">' + escHtml(e.sigla) + '</div>' +
       '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + color + '">' + e.ordenes + ' ord</div></div>' +
       '<div class="hbar-value">' + e.uds.toLocaleString('es-CO') + ' uds</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">' +
+        dSparklineCell(trend.meses, serieValor, '#1a5276', dMoneyM, 60, 20) +
+        dSparklineCell(trend.meses, serieUds, '#27ae60', function(v) { return v.toLocaleString('es-CO') + ' uds'; }, 60, 20) +
+      '</div>' +
     '</div>';
   });
   html += '</div>';
+  html += '<div style="padding:8px 2px 0;font-size:0.72rem;color:#a0aec0">Tendencia (12m): $ pedido y uds por mes · ▲/▼/→ compara el último mes vs. el anterior.</div>';
 
   document.getElementById('chart-empresas').innerHTML = html;
 }
@@ -1058,26 +1072,37 @@ function dUltimos12Meses() {
   return out;
 }
 
-// Serie mensual ($ valor y uds) por cliente, últimos 12 meses — SIEMPRE sobre
-// el histórico completo (independiente del filtro Desde/Hasta del dashboard,
-// igual criterio que "Pedidos por mes"). ordersRef ya viene filtrado por
-// empresa; resolveKey aplica la misma fusión de NIT que el ranking histórico.
-function dClienteTrend12m(ordersRef, resolveKey) {
+// Serie mensual ($ valor y uds) últimos 12 meses, agrupada por una key
+// arbitraria — SIEMPRE sobre el histórico completo (independiente del
+// filtro Desde/Hasta del dashboard, igual criterio que "Pedidos por mes").
+// keyFn(order) → string de agrupación, o null/'' para excluir la orden.
+// Usado por la tendencia de "Top clientes", "Top comerciales" y "Empresas".
+function dTrend12mByKey(ordersRef, keyFn) {
   var meses = dUltimos12Meses();
   var desdeMes = meses[0];
-  var byClient = {};
+  var byKey = {};
   ordersRef.forEach(function(o) {
     var mes = String(o.fechaPedido || '').slice(0, 7);
     if (!dEsMes(mes) || mes < desdeMes) return;
-    var r = dClienteKey(o.nit, o.cliente);
-    if (!r.nombre || r.nombre === '—') return;
-    var key = resolveKey(r.key);
-    if (!byClient[key]) byClient[key] = {};
-    if (!byClient[key][mes]) byClient[key][mes] = { valor: 0, uds: 0 };
-    byClient[key][mes].valor += o.valorPedido;
-    byClient[key][mes].uds += o.cantPedida;
+    var key = keyFn(o);
+    if (!key) return;
+    if (!byKey[key]) byKey[key] = {};
+    if (!byKey[key][mes]) byKey[key][mes] = { valor: 0, uds: 0 };
+    byKey[key][mes].valor += o.valorPedido;
+    byKey[key][mes].uds += o.cantPedida;
   });
-  return { meses: meses, byClient: byClient };
+  return { meses: meses, byKey: byKey };
+}
+
+// Tendencia por cliente: resolveKey aplica la misma fusión de NIT que el
+// ranking histórico de "Top clientes".
+function dClienteTrend12m(ordersRef, resolveKey) {
+  var t = dTrend12mByKey(ordersRef, function(o) {
+    var r = dClienteKey(o.nit, o.cliente);
+    if (!r.nombre || r.nombre === '—') return null;
+    return resolveKey(r.key);
+  });
+  return { meses: t.meses, byClient: t.byKey };
 }
 
 // Mini gráfico de tendencia (SVG inline, sin dependencias) — línea + punto final.
@@ -1112,10 +1137,10 @@ function dTrendBadge(serie) {
 }
 
 // Sparkline + señalización de tendencia + tooltip (title) con el detalle mes a mes.
-function dSparklineCell(meses, serie, color, fmt) {
+function dSparklineCell(meses, serie, color, fmt, w, h) {
   var tip = meses.map(function(m, i) { return dMesLbl(m) + ': ' + fmt(serie[i]); }).join('\n');
   return '<span title="' + escHtml(tip) + '" style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">' +
-    dSparkline(serie, color) + dTrendBadge(serie) +
+    dSparkline(serie, color, w, h) + dTrendBadge(serie) +
   '</span>';
 }
 
@@ -1219,7 +1244,7 @@ function buildDevoluciones(dev, orders, fEmp) {
 }
 
 // ── 7. Top Comerciales (pedidos y valor por comercial) ──
-function buildTopComerciales(orders) {
+function buildTopComerciales(orders, fEmp) {
   var map = {};
   var sinComercial = 0, sinPrecio = 0;
   var totPed = 0, totPen = 0, totCer = 0;
@@ -1256,23 +1281,35 @@ function buildTopComerciales(orders) {
     var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). "Cerrado s/entregar" = pedidos Recibido + Cerrado (se cerraron sin despacharse). Aun así, otros estados (Parcial+Cerrado, Bloqueado por cartera) pueden dejar un residuo fuera de las tres columnas.'];
     if (sinPrecio > 0) notas.push('⚠️ ' + sinPrecio.toLocaleString('es-CO') + ' línea(s) sin precio no suman al valor');
     if (sinComercial > 0) notas.push(sinComercial.toLocaleString('es-CO') + ' orden(es) sin comercial asignado');
+    notas.push('Las columnas "Tend." muestran los últimos 12 meses (histórico, no el período filtrado); ▲/▼/→ compara el último mes vs. el anterior.');
     notaEl.textContent = notas.join(' · ');
     notaEl.style.display = notas.length ? 'block' : 'none';
   }
 
   var tbody = document.getElementById('tb-comerciales');
   if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
     return;
   }
+
+  // Tendencia mensual (últimos 12 meses) por comercial — histórico completo,
+  // independiente del filtro Desde/Hasta (mismo criterio que "Top clientes").
+  var pedHist = fEmp ? dPedidos.filter(function(p) { return p.Nombre_Empresa === fEmp; }) : dPedidos;
+  var ordersHist = dBuildOrders(pedHist);
+  var trend = dTrend12mByKey(ordersHist, function(o) { return o.comercial || null; });
 
   tbody.innerHTML = arr.map(function(r) {
     var pct = r.vPed > 0 ? Math.round((r.vEnt / r.vPed) * 100) : 0;
     var penColor = pct >= 75 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#e74c3c';
     var pctCumpl = r.vPed > 0 ? Math.round(((r.vEnt + r.vCer) / r.vPed) * 100) : 0;
     var cumplColor = pctCumpl >= 75 ? '#27ae60' : pctCumpl >= 40 ? '#e67e22' : '#e74c3c';
+    var serieMes = trend.byKey[r.comercial] || {};
+    var serieValor = trend.meses.map(function(m) { return serieMes[m] ? serieMes[m].valor : 0; });
+    var serieUds = trend.meses.map(function(m) { return serieMes[m] ? serieMes[m].uds : 0; });
     return '<tr data-href="pedidos.html?buscar=' + encodeURIComponent(r.comercial) + '" onclick="dGoto(this)">' +
-      '<td style="font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.comercial) + '">' + escHtml(r.comercial) + '</td>' +
+      '<td style="font-weight:600;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.comercial) + '">' + escHtml(r.comercial) + '</td>' +
+      '<td>' + dSparklineCell(trend.meses, serieValor, '#1a5276', dMoneyM, 64, 20) + '</td>' +
+      '<td>' + dSparklineCell(trend.meses, serieUds, '#27ae60', function(v) { return v.toLocaleString('es-CO') + ' uds'; }, 64, 20) + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
       '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.vPed) + '</td>' +
       '<td class="money" style="color:#27ae60">' + dMoneyM(r.vEnt) + '</td>' +
