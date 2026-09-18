@@ -317,7 +317,7 @@ async function loadDashboard() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total' }),
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),
@@ -332,7 +332,13 @@ async function loadDashboard() {
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');
 
     dPedidos = (results[0].pedidos || []).filter(function(p) {
-      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente';
+      // Excluye encabezados repetidos y los traslados a bodegas en
+      // consignación creados por el botón "Nuevo Traslado" (Bodega_Consignacion_Id
+      // apunta al catálogo del módulo Bodegas en Consignación) — no son ventas
+      // a cliente final, así que no deben inflar KPIs, Top clientes/comerciales,
+      // OTD, etc. Solo mira el enlace explícito al catálogo, no heurísticas
+      // sobre datos históricos: de ahora en adelante, no retroactivo.
+      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente' && !p.Bodega_Consignacion_Id;
     }).map(function(p) {
       if (!p.Cant_Entregada && p.Cant_Entregada !== 0) {
         p.Cant_Entregada = 0;
