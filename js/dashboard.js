@@ -35,6 +35,14 @@ function dEsBodegaIasoExcluida(p) {
   return !!DASH_IASO_CLIENTES_BODEGA[(p.Cliente || '').trim().toUpperCase()];
 }
 
+// Campo "Pedido en Consignación" (columna Consignacion) marcado explícitamente
+// en 'Sí' — el dato histórico también trae 'Si' sin tilde. Retroactivo, igual
+// que dEsBodegaIasoExcluida: cualquier empresa, no solo IASO.
+function dEsPedidoConsignacionExplicito(p) {
+  var v = (p.Consignacion || '').trim();
+  return v === 'Si' || v === 'Sí';
+}
+
 // Rango de fechas por defecto al abrir el dashboard (fecha del pedido — desde).
 var DASH_DEFAULT_DESDE = '2026-07-01';
 
@@ -329,7 +337,7 @@ async function loadDashboard() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id' }),
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),
@@ -344,14 +352,17 @@ async function loadDashboard() {
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');
 
     dPedidos = (results[0].pedidos || []).filter(function(p) {
-      // Excluye encabezados repetidos, los traslados a bodegas en consignación
-      // creados por el botón "Nuevo Traslado" (Bodega_Consignacion_Id apunta al
-      // catálogo del módulo Bodegas en Consignación — solo de ahora en
-      // adelante, no retroactivo) y, para IASO, los pedidos históricos cuyo
-      // cliente es "Bodega COATOL" / "Bodega Espinal" (dEsBodegaIasoExcluida,
-      // sí retroactivo). Ninguno de estos son ventas a cliente final, así que
-      // no deben inflar KPIs, Top clientes/comerciales, OTD, etc.
-      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente' && !p.Bodega_Consignacion_Id && !dEsBodegaIasoExcluida(p);
+      // Excluye encabezados repetidos y los pedidos que son bodegas en
+      // consignación (no ventas a cliente final, así que no deben inflar
+      // KPIs, Top clientes/comerciales, OTD, etc.):
+      //  - Bodega_Consignacion_Id: traslado creado con el botón "Nuevo
+      //    Traslado" — solo de ahora en adelante, no retroactivo.
+      //  - dEsBodegaIasoExcluida: "Bodega COATOL"/"Bodega Espinal" de IASO —
+      //    retroactivo.
+      //  - dEsPedidoConsignacionExplicito: campo "Pedido en Consignación" =
+      //    Sí — retroactivo, cualquier empresa.
+      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente'
+        && !p.Bodega_Consignacion_Id && !dEsBodegaIasoExcluida(p) && !dEsPedidoConsignacionExplicito(p);
     }).map(function(p) {
       if (!p.Cant_Entregada && p.Cant_Entregada !== 0) {
         p.Cant_Entregada = 0;
