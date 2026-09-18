@@ -445,7 +445,8 @@ function renderDevTable() {
       // Solo en la lista de Tramitadas: permitir COMPLETAR la remisión que falta
       var _hasInT = !!(r.Remision_Ingreso || r.Remision);
       var _hasOutT = !!r.Remision_Salida;
-      tramitarBtn = (esTramitada && (!_hasInT || !_hasOutT))
+      // Las devoluciones de muestras (Muestra_Id) son solo de ingreso: nunca tienen "lado salida" que completar.
+      tramitarBtn = (esTramitada && (!_hasInT || !_hasOutT) && r.Muestra_Id == null)
         ? '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Registrar la remisión que falta" style="background:#e67e22;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Completar</button>'
         : '';
     } else {
@@ -609,7 +610,7 @@ function viewDevDetail(key) {
   // Botón para completar la remisión faltante (solo si ya está tramitada y falta un lado)
   var btnCompletarDev = document.getElementById('btn-dev-completar');
   if (btnCompletarDev) {
-    btnCompletarDev.style.display = (AUTH.canEdit() && allTramitada && (!hasIn || !hasOut))
+    btnCompletarDev.style.display = (AUTH.canEdit() && allTramitada && (!hasIn || !hasOut) && r.Muestra_Id == null)
       ? 'inline-block' : 'none';
   }
 

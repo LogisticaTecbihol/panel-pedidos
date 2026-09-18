@@ -279,7 +279,11 @@ async function apiGet(action, opts) {
       return { ok: true, ingresos: _addRow(ingData) };
     }
     if (action === 'getDevoluciones') {
-      var res = await _fetchAllRows('Devoluciones', cols);
+      // Solo las devoluciones de muestras (Muestra_Id no nulo) — para el
+      // detalle de Muestras (usa el índice parcial idx_devoluciones_muestra_id).
+      var res = await _fetchAllRows('Devoluciones', cols, function(q) {
+        return (opts && opts.muestraOnly) ? q.not('Muestra_Id', 'is', null) : q;
+      });
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, devoluciones: _addRow(_filterGerenteIaso(res.data, 'Empresa')) };
     }
@@ -939,6 +943,43 @@ async function _apiPostCore(body) {
         if (res.error) return { ok: false, error: res.error.message };
       }
       return { ok: true, updated: lineas.length, nuevas_added: nuevasAdded, remision_ingreso: remIngDev, remision_salida: remSalDev };
+    }
+
+    // Devolución de muestras NO utilizadas: vuelven a "Productos Buenos" de la
+    // empresa. Se registra directamente TRAMITADA (la mercancía ya llegó) con su
+    // remisión de ingreso (RE) — automática o manual. kardex.js / existencias.js
+    // ya cuentan una Devolución tramitada como ENTRADA de la empresa; el tope
+    // "devuelto ≤ despachado" lo hace cumplir el trigger fn_devoluciones_no_sobre_muestra.
+    if (action === 'registrarDevolucionMuestra') {
+      var lineasDM = (body.lineas || []).filter(function(l) { return l.muestra_id && Number(l.Cantidad) > 0; });
+      if (!lineasDM.length) return { ok: false, error: 'No hay cantidades a devolver' };
+      var empDM = (body.Empresa || '').trim();
+      if (!empDM) return { ok: false, error: 'Falta la empresa' };
+      var remDM = (body.Remision || '').trim();
+      if (!remDM) remDM = await _genRem(empDM, 'ENTRADA');
+      var nowDM = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      var rowsDM = lineasDM.map(function(l) {
+        var cantDM = Number(l.Cantidad) || 0;
+        return {
+          Fecha: body.Fecha || '', Empresa: empDM, Consecutivo: body.Consecutivo || '',
+          Vendedor: body.Vendedor || '', Cliente: body.Cliente || '',
+          Municipio: body.Municipio || '', Departamento: body.Departamento || '',
+          Producto: l.Producto || '', Presentacion: l.Presentacion || '',
+          Cantidad: cantDM, Cant_Entregada: cantDM,
+          Valor_Unitario: 0, Valor_Total: 0,
+          Motivo: body.Motivo || 'Devolución de muestra no utilizada',
+          Observaciones: body.Observaciones || '',
+          Estado: 'Tramitada', Fecha_Registro: nowDM,
+          Remision: remDM, Remision_Ingreso: remDM,
+          Bodega_Ingreso: 'Productos Buenos',
+          Fecha_Devolucion: body.Fecha || '', Fecha_Ingreso: body.Fecha || '',
+          Muestra_Id: l.muestra_id, Muestra_Ref: body.Muestra_Ref || '',
+          creado_por: _uid(), modificado_por: _uid()
+        };
+      });
+      var resDM = await _sb.from('Devoluciones').insert(rowsDM);
+      if (resDM.error) return { ok: false, error: resDM.error.message };
+      return { ok: true, added: rowsDM.length, remision: remDM };
     }
 
     if (action === 'eliminarDevolucion') {

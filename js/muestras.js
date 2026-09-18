@@ -69,6 +69,12 @@ var pedApartadosPorProdEmp = {};
 var muProdSalidasPorSolicitud = {};
 var muProdRetornosPorRem = {};
 
+// Devoluciones de muestras no utilizadas (Devoluciones.Muestra_Id = id de la
+// línea de SolicitudMuestras). Se reconstruye en cada loadMuestras().
+//   muDevPorLinea[id de la línea] = [ filas de Devoluciones no anuladas ]
+var muDevPorLinea = {};
+var muDevCtx = null;   // contexto del modal "Registrar devolución"
+
 function _muMuestraRef(empresa, consecutivo) {
   return String(empresa || '').trim() + ' Muestra #' + String(consecutivo == null ? '' : consecutivo).trim();
 }
@@ -338,7 +344,13 @@ async function loadMuestras() {
     apiGet('getIngresos', {
       columns: 'id,Fecha,Reenvase_Ref,Producto,Presentacion,Cantidad,Remision_Destino,Empresa_Destino',
       reenvaseRefOnly: true
-    }).catch(function() { return { ok: true, ingresos: [] }; })
+    }).catch(function() { return { ok: true, ingresos: [] }; }),
+    // Devoluciones de muestras no utilizadas. Si Muestra_Id aún no existe
+    // (migración sin aplicar) degrada sin romper.
+    apiGet('getDevoluciones', {
+      columns: 'id,Empresa,Fecha,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Estado,Remision,Remision_Ingreso,Fecha_Ingreso,Fecha_Devolucion,Bodega_Ingreso,Muestra_Id,Muestra_Ref',
+      muestraOnly: true
+    }).catch(function() { return { ok: true, devoluciones: [] }; })
   ]);
   var res = results[0];
   var ocData = results[1];
@@ -365,6 +377,7 @@ async function loadMuestras() {
     (results[4] && results[4].reenvases) || [],
     (results[5] && results[5].ingresos) || []
   );
+  _buildMuDevMaps((results[6] && results[6].devoluciones) || []);
   loadZone.style.display = 'none';
   main.style.display = 'block';
   populateMuFilters();
@@ -885,6 +898,7 @@ async function viewMuestra(id) {
     if (AUTH.canEdit() && !despachoDisabled) {
       html += '<div style="margin-top:8px"><button onclick="addMuViewLine()" style="background:#d35400;color:white;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:700">+ Agregar línea</button></div>';
     }
+    html += _muDevolucionesPanelHtml(sameConsec);
   }
 
   if (r.Observaciones) {
@@ -938,6 +952,299 @@ async function viewMuestra(id) {
       if (_remMu) NOTIF.verificarBtn(_btnRem, 'muestras', _cMu + ' · Rem ' + _remMu);
     }
   }
+}
+
+// ── Devolución de muestras no utilizadas ──
+//
+// La muestra despachada ya generó una SALIDA "Muestras" en el Kardex. Si no se
+// usó y regresa, se registra una fila de Devoluciones ya TRAMITADA (bodega
+// Productos Buenos, remisión de ingreso RE) ligada a la línea de la muestra
+// (Devoluciones.Muestra_Id). kardex.js / existencias.js la cuentan solos como
+// ENTRADA de la empresa. Puede haber devoluciones parciales: lo devuelto nunca
+// supera lo despachado (trigger fn_devoluciones_no_sobre_muestra).
+
+function _buildMuDevMaps(rows) {
+  muDevPorLinea = {};
+  (rows || []).forEach(function(d) {
+    if (d.Muestra_Id == null) return;
+    if (String(d.Estado || '').toLowerCase() === 'anulado') return;
+    (muDevPorLinea[d.Muestra_Id] = muDevPorLinea[d.Muestra_Id] || []).push(d);
+  });
+}
+
+// Una línea solo mueve stock (y por tanto solo se puede devolver) si tiene
+// cantidad entregada y remisión de salida — mismo criterio que kardex.js.
+function _muLineaDespachada(x) {
+  return (Number(x.Cant_Entregada) || 0) > 0 && String(x.Remision || '').trim() !== '';
+}
+function _muDevueltoLinea(x) {
+  return (muDevPorLinea[x.id] || []).reduce(function(s, d) { return s + (Number(d.Cant_Entregada) || 0); }, 0);
+}
+function _muDisponibleDevolver(x) {
+  return _muLineaDespachada(x) ? Math.max(0, (Number(x.Cant_Entregada) || 0) - _muDevueltoLinea(x)) : 0;
+}
+
+function _muDevolucionesPanelHtml(lines) {
+  var visibles = lines.filter(function(x) { return _muLineaDespachada(x) || (muDevPorLinea[x.id] || []).length; });
+  if (!visibles.length) return '';
+  var puede = !!(AUTH.canDevolverMuestra && AUTH.canDevolverMuestra());
+  var hayDisp = visibles.some(function(x) { return _muDisponibleDevolver(x) > 0; });
+
+  var filas = visibles.map(function(x) {
+    var desp = Number(x.Cant_Entregada) || 0;
+    var dev = _muDevueltoLinea(x);
+    return '<tr><td>' + escHtml(x.Producto || '—') + '</td><td>' + escHtml(x.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right">' + desp.toLocaleString('es-CO') + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + (dev > 0 ? '#b9770e' : '#a0aec0') + '">' + dev.toLocaleString('es-CO') + '</td>' +
+      '<td style="text-align:right;font-weight:700">' + (desp - dev).toLocaleString('es-CO') + '</td></tr>';
+  }).join('');
+
+  // Devoluciones registradas, agrupadas por remisión de ingreso.
+  var grupos = {}, orden = [];
+  visibles.forEach(function(x) {
+    (muDevPorLinea[x.id] || []).forEach(function(d) {
+      var rem = String(d.Remision_Ingreso || d.Remision || '').trim();
+      var fecha = d.Fecha_Ingreso || d.Fecha_Devolucion || d.Fecha || '';
+      var k = rem + '||' + fecha;
+      if (!grupos[k]) { grupos[k] = { rem: rem, fecha: fecha, filas: [] }; orden.push(k); }
+      grupos[k].filas.push(d);
+    });
+  });
+  var listaHtml = '';
+  if (orden.length) {
+    listaHtml = '<div style="font-weight:700;font-size:0.76rem;color:#4a5568;text-transform:uppercase;margin:12px 0 4px">Devoluciones registradas</div>' +
+      '<div style="overflow-x:auto"><table style="font-size:0.8rem;width:100%"><thead><tr style="background:#f7fafc"><th>Fecha</th><th>Remisión de ingreso</th><th>Productos devueltos</th><th style="text-align:right">Total</th><th></th></tr></thead><tbody>' +
+      orden.map(function(k) {
+        var g = grupos[k];
+        var tot = g.filas.reduce(function(s, d) { return s + (Number(d.Cant_Entregada) || 0); }, 0);
+        var det = g.filas.map(function(d) {
+          return escHtml((d.Producto || '') + (d.Presentacion ? ' ' + d.Presentacion : '')) + ' × <strong>' + (Number(d.Cant_Entregada) || 0).toLocaleString('es-CO') + '</strong>';
+        }).join('<br>');
+        return '<tr><td style="white-space:nowrap">' + fmtDate(g.fecha) + '</td>' +
+          '<td style="font-weight:700">' + escHtml(g.rem || '—') + '</td><td>' + det + '</td>' +
+          '<td style="text-align:right;font-weight:700">' + tot.toLocaleString('es-CO') + '</td>' +
+          '<td>' + (g.rem ? '<button class="btn-edit" data-rem="' + escHtml(g.rem) + '" data-fecha="' + escHtml(g.fecha) + '" onclick="descargarPdfDevMuestra(this.dataset.rem,this.dataset.fecha)" title="Descargar la remisión de ingreso" style="font-size:0.75rem;padding:3px 8px">📄 PDF</button>' : '') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  var boton = '';
+  if (puede) {
+    boton = hayDisp
+      ? '<button onclick="openMuDevolucion()" style="background:#c0392b;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">↩️ Registrar devolución</button>'
+      : '<span style="font-size:0.78rem;color:#718096">Todo lo despachado ya fue devuelto.</span>';
+  }
+
+  return '<div style="border-top:1px solid #e2e8f0;margin-top:18px;padding-top:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+      '<div><div style="font-weight:700;font-size:0.84rem;color:#2d3748">↩️ Devolución de muestras no utilizadas</div>' +
+      '<div style="font-size:0.74rem;color:#718096">Lo devuelto ingresa a Productos Buenos de ' + escHtml(EMPRESAS_SIGLA[visibles[0].Empresa] || visibles[0].Empresa || '') + ' con remisión de ingreso.</div></div>' +
+      boton +
+    '</div>' +
+    '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f7fafc"><th>Producto</th><th>Presentación</th><th style="text-align:right">Despachado</th><th style="text-align:right">Devuelto</th><th style="text-align:right">Neto</th></tr></thead><tbody>' +
+    filas + '</tbody></table></div>' + listaHtml +
+  '</div>';
+}
+
+function openMuDevolucion() {
+  var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+  if (!head) { showToast('Solicitud no encontrada.', '#e74c3c'); return; }
+  var consec = head.Consecutivo || '';
+  var emp = head.Empresa || '';
+  var lineas = allMuestras.filter(function(x) {
+    return x.Consecutivo === consec && consec && (x.Empresa || '') === emp && _muDisponibleDevolver(x) > 0;
+  }).map(function(x) {
+    var desp = Number(x.Cant_Entregada) || 0;
+    var dev = _muDevueltoLinea(x);
+    return { id: x.id, Producto: x.Producto || '', Presentacion: x.Presentacion || '', desp: desp, dev: dev, disp: desp - dev };
+  });
+  if (!lineas.length) { showToast('No hay unidades pendientes de devolver.', '#e67e22'); return; }
+  muDevCtx = { head: head, lineas: lineas };
+
+  document.getElementById('mu-dev-meta').innerHTML =
+    '<span>📋 Solicitud #' + escHtml(consec) + '</span>' +
+    '<span>' + escHtml(EMPRESAS_SIGLA[emp] || emp) + '</span>' +
+    '<span>👤 ' + escHtml(head.Responsable || '—') + '</span>';
+
+  var fechaEl = document.getElementById('mu-dev-fecha');
+  fechaEl.value = today();
+  fechaEl.min = AUTH.isAdmin() ? '' : today();
+
+  var remEl = document.getElementById('mu-dev-remision');
+  remEl.value = ''; remEl.readOnly = true; remEl.style.background = '#f0f4f8'; remEl.placeholder = '(Auto al guardar)';
+  var autoEl = document.getElementById('mu-dev-remision-auto');
+  if (autoEl) autoEl.checked = true;
+  document.getElementById('mu-dev-obs').value = '';
+
+  var tbody = document.getElementById('mu-dev-lines');
+  tbody.innerHTML = lineas.map(function(l, i) {
+    return '<tr><td style="font-weight:600">' + escHtml(l.Producto || '—') + '</td><td>' + escHtml(l.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right">' + l.desp.toLocaleString('es-CO') + '</td>' +
+      '<td style="text-align:right;color:#b9770e">' + l.dev.toLocaleString('es-CO') + '</td>' +
+      '<td style="text-align:right;font-weight:700">' + l.disp.toLocaleString('es-CO') + '</td>' +
+      '<td><input class="ef mu-dev-cant" data-i="' + i + '" type="number" min="0" max="' + l.disp + '" step="1" placeholder="0" style="width:90px;text-align:right"></td></tr>';
+  }).join('');
+  // Tope: nunca más de lo disponible en esa línea.
+  tbody.oninput = function(e) {
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains('mu-dev-cant')) return;
+    var l = muDevCtx && muDevCtx.lineas[Number(t.dataset.i)];
+    if (!l) return;
+    var v = Math.floor(Number(t.value) || 0);
+    if (v < 0) v = 0;
+    if (v > l.disp) v = l.disp;
+    if (t.value !== '' && String(v) !== t.value) t.value = String(v);
+  };
+
+  var btn = document.getElementById('btn-save-mu-dev');
+  btn.disabled = false;
+  btn.textContent = '✓ Registrar devolución y enviar';
+  document.getElementById('mu-dev-overlay').classList.add('show');
+}
+
+function muDevLlenarTodo() {
+  if (!muDevCtx) return;
+  document.querySelectorAll('.mu-dev-cant').forEach(function(inp) {
+    var l = muDevCtx.lineas[Number(inp.dataset.i)];
+    if (l) inp.value = String(l.disp);
+  });
+}
+
+function closeMuDevolucion() {
+  document.getElementById('mu-dev-overlay').classList.remove('show');
+  muDevCtx = null;
+}
+document.getElementById('mu-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeMuDevolucion(); });
+
+function _muDevPdfData(head, lineas, remision, fecha, extra) {
+  var consec = head.Consecutivo || '';
+  return Object.assign({
+    empresa: head.Empresa || '',
+    consecutivo: consec,
+    doc_title: 'REMISION DE INGRESO',
+    ref_label: 'Devolucion de muestra',
+    date_label: 'Fecha remision',
+    fecha_entrega: fecha || '',
+    remision: remision,
+    left_fields: [['Solicitante', head.Solicitante || ''], ['Responsable', head.Responsable || ''],
+                  ['Municipio', head.Municipio || ''], ['Departamento', head.Departamento || '']],
+    right_fields: [['Solicitud', 'Muestra #' + consec], ['Bodega', 'Productos Buenos']],
+    entregas: lineas.map(function(l) {
+      return { producto: l.Producto || '', presentacion: l.Presentacion || '', cantidad: Number(l.cantidad) || 0,
+               valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+    }).filter(function(p) { return p.cantidad > 0; }),
+    qty_header: 'Cant. Devuelta',
+    file_prefix: 'Remision_Ingreso_Devolucion_Muestra'
+  }, extra || {});
+}
+
+async function saveMuDevolucion() {
+  if (!muDevCtx) return;
+  var head = muDevCtx.head;
+  var consec = head.Consecutivo || '';
+  var emp = head.Empresa || '';
+
+  var fecha = document.getElementById('mu-dev-fecha').value;
+  if (!fecha) { showToast('Selecciona la fecha de la devolución', '#e74c3c'); return; }
+  if (!AUTH.isAdmin() && fecha < today()) { showToast('La fecha no puede ser anterior a hoy', '#e74c3c'); return; }
+
+  var autoEl = document.getElementById('mu-dev-remision-auto');
+  var auto = !autoEl || autoEl.checked;
+  var remManual = auto ? '' : document.getElementById('mu-dev-remision').value.trim();
+  if (!auto && !remManual) { showToast('Ingresa el N° de remisión o marca Auto', '#e74c3c'); return; }
+
+  var sel = [];
+  var excede = null;
+  document.querySelectorAll('.mu-dev-cant').forEach(function(inp) {
+    var l = muDevCtx.lineas[Number(inp.dataset.i)];
+    var v = Math.floor(Number(inp.value) || 0);
+    if (!l || v <= 0) return;
+    if (v > l.disp) excede = l.Producto;
+    sel.push({ muestra_id: l.id, Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: v });
+  });
+  if (excede) { showToast('La cantidad devuelta de "' + excede + '" supera lo pendiente de devolver', '#e74c3c'); return; }
+  if (!sel.length) { showToast('Ingresa la cantidad a devolver de al menos una línea', '#e67e22'); return; }
+
+  // Igual que Tramitar en Devoluciones: confirma el envío del PDF a contabilidad.
+  var pendingContab = null;
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var conf = await NOTIF.confirmarEnvioContabilidad(emp, 'devoluciones');
+    if (!conf.confirmed) return;
+    pendingContab = conf;
+  }
+
+  var btn = document.getElementById('btn-save-mu-dev');
+  btn.disabled = true;
+  btn.textContent = '⏳ Guardando...';
+
+  try {
+    var result = await apiPost({
+      action: 'registrarDevolucionMuestra',
+      Empresa: emp,
+      Fecha: fecha,
+      Consecutivo: 'M-' + consec,
+      Vendedor: head.Responsable || '',
+      Cliente: 'Muestra #' + consec,
+      Municipio: head.Municipio || '',
+      Departamento: head.Departamento || '',
+      Motivo: 'Devolución de muestra no utilizada',
+      Observaciones: document.getElementById('mu-dev-obs').value.trim(),
+      Remision: remManual,
+      Muestra_Ref: _muMuestraRef(emp, consec),
+      lineas: sel
+    });
+    if (!result.ok) throw new Error(result.error || 'Error al registrar la devolución');
+    var rem = result.remision || remManual;
+
+    if (pendingContab && pendingContab.contabIds && pendingContab.contabIds.length && rem &&
+        typeof NOTIF !== 'undefined' && typeof generarRemisionPDF === 'function') {
+      try {
+        var r = generarRemisionPDF(_muDevPdfData(head, sel.map(function(l) {
+          return { Producto: l.Producto, Presentacion: l.Presentacion, cantidad: l.Cantidad };
+        }), rem, fecha, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
+        if (r) {
+          await NOTIF.enviarPDFContabilidad(r.doc, {
+            modulo: 'devoluciones', referencia: 'M-' + consec + ' · RE ' + rem,
+            titulo: 'Remisión devolución de muestra — Solicitud #' + consec,
+            docLabel: 'Remisión',
+            contabIds: pendingContab.contabIds, contabNames: pendingContab.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
+    }
+
+    var idVista = muViewingId;
+    closeMuDevolucion();
+    showToast('✅ Devolución registrada' + (rem ? ' · RE: ' + rem : ''));
+    await loadMuestras();
+    if (idVista != null) viewMuestra(idVista);
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+    btn.disabled = false;
+    btn.textContent = '✓ Registrar devolución y enviar';
+  }
+}
+
+// PDF (descarga) de la remisión de ingreso de una devolución ya registrada.
+function descargarPdfDevMuestra(rem, fecha) {
+  var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+  if (!head) return;
+  if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF || typeof generarRemisionPDF !== 'function') {
+    showToast('El generador de PDF aún no está listo. Intenta de nuevo en unos segundos.', '#e67e22');
+    return;
+  }
+  var consec = head.Consecutivo || '';
+  var emp = head.Empresa || '';
+  var lineas = [];
+  allMuestras.forEach(function(x) {
+    if (x.Consecutivo !== consec || !consec || (x.Empresa || '') !== emp) return;
+    (muDevPorLinea[x.id] || []).forEach(function(d) {
+      var dRem = String(d.Remision_Ingreso || d.Remision || '').trim();
+      var dFecha = d.Fecha_Ingreso || d.Fecha_Devolucion || d.Fecha || '';
+      if (dRem === rem && dFecha === fecha) lineas.push({ Producto: d.Producto, Presentacion: d.Presentacion, cantidad: d.Cant_Entregada });
+    });
+  });
+  if (!lineas.length) { showToast('No se encontraron líneas para esa remisión.', '#e67e22'); return; }
+  generarRemisionPDF(_muDevPdfData(head, lineas, rem, fecha, { copies: ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD'] }));
 }
 
 // ── Sub-flujo: orden de producción de muestras ──

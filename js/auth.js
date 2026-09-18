@@ -244,6 +244,14 @@ var AUTH = (function() {
     return _profile.rol === 'admin' || _profile.rol === 'remisionador';
   }
 
+  // Quién registra la devolución de muestras no utilizadas (vuelven a
+  // Productos Buenos con remisión de ingreso). Coincide con quienes RLS deja
+  // insertar en "Devoluciones" y ven el módulo de Muestras.
+  function canDevolverMuestra() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'remisionador';
+  }
+
   function isComercial() {
     return _profile && _profile.rol === 'comercial';
   }
@@ -386,6 +394,7 @@ var AUTH = (function() {
     canManageUsers: canManageUsers,
     isAdmin: isAdmin,
     canAutoConsec: canAutoConsec,
+    canDevolverMuestra: canDevolverMuestra,
     isComercial: isComercial,
     isGerenteIaso: isGerenteIaso,
     isDespachador: isDespachador,

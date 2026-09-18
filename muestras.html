@@ -407,6 +407,55 @@
   </div>
 </div>
 
+<!-- DEVOLUCIÓN DE MUESTRAS NO UTILIZADAS -->
+<div class="overlay" id="mu-dev-overlay">
+  <div class="modal-box" style="max-width:720px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1">
+        <h2>↩️ Devolución de muestras no utilizadas</h2>
+        <div class="meta" id="mu-dev-meta"></div>
+      </div>
+      <button class="btn-close" onclick="closeMuDevolucion()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="font-size:0.8rem;color:#4a5568;background:#f0fdf4;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;margin-bottom:14px">
+        Las unidades devueltas ingresan a <strong>Productos Buenos</strong> de la empresa y generan una <strong>remisión de ingreso</strong>. Puedes devolver solo una parte; el resto queda pendiente.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:14px">
+        <div>
+          <label class="ef-label">Fecha de la devolución *</label>
+          <input class="ef" id="mu-dev-fecha" type="date">
+        </div>
+        <div>
+          <label class="ef-label">N° Remisión de ingreso</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input class="ef" id="mu-dev-remision" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8;flex:1">
+            <label class="auth-autoconsec" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="mu-dev-remision-auto" checked onchange="var el=document.getElementById('mu-dev-remision');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión';}">Auto</label>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-weight:700;font-size:0.84rem;color:#2d3748">📦 Cantidad a devolver por producto</div>
+        <button type="button" onclick="muDevLlenarTodo()" style="background:#edf2f7;color:#2d3748;border:1px solid #cbd5e0;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700">Devolver todo lo pendiente</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="font-size:0.82rem;width:100%">
+          <thead><tr style="background:#f7fafc"><th>Producto</th><th>Presentación</th><th style="text-align:right">Despachado</th><th style="text-align:right">Ya devuelto</th><th style="text-align:right">Pendiente</th><th style="width:110px">A devolver</th></tr></thead>
+          <tbody id="mu-dev-lines"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px">
+        <label class="ef-label">Observaciones</label>
+        <textarea class="ef" id="mu-dev-obs" rows="2" placeholder="Opcional" style="resize:vertical;width:100%"></textarea>
+      </div>
+    </div>
+    <div class="mftr" style="justify-content:flex-end;gap:12px">
+      <button class="btn-cancel" onclick="closeMuDevolucion()">Cancelar</button>
+      <button class="btn-confirm" id="btn-save-mu-dev" onclick="saveMuDevolucion()" style="background:#c0392b">✓ Registrar devolución y enviar</button>
+    </div>
+  </div>
+</div>
+
 <!-- REJECT MODAL -->
 <div class="overlay" id="reject-mu-overlay">
   <div class="modal-box" style="max-width:480px">
@@ -439,13 +488,13 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260918e"></script>
-<script src="js/auth.js?v=20260916a"></script>
+<script src="js/shared.js?v=20260918f"></script>
+<script src="js/auth.js?v=20260918a"></script>
 <script src="js/notificaciones.js?v=20260831b"></script>
 <script src="js/colombia-geo.js"></script>
 <script src="js/pdf-remision.js?v=20260915"></script>
 <script src="js/existencias.js?v=20260909h"></script>
 <script src="js/asignacion-inventario.js?v=20260909g"></script>
-<script src="js/muestras.js?v=20260918a"></script>
+<script src="js/muestras.js?v=20260918b"></script>
 </body>
 </html>
