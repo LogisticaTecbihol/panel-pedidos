@@ -409,7 +409,7 @@ function buildMovimientos() {
         fecha: oc.Fecha || '',
         tipo: 'Salida',
         modulo: 'Órdenes de Compra',
-        remision: rem,
+        remision: String(oc.Remision_Origen || '').trim() || rem,
         referencia: 'OC ' + (oc.Consecutivo || '') + ' — Hacia ' + getSiglaKx(oc.Empresa_Destino),
         empresa: oc.Empresa_Origen,
         producto: oc.Producto,
