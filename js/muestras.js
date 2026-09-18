@@ -496,6 +496,13 @@ function _buildOCsLegalizadasMu(ordenes) {
 // ── Filters ──
 
 function populateMuFilters() {
+  // Empresa: mismas opciones que el resto de módulos (respeta las empresas del
+  // usuario). Se conserva la selección al recargar los datos.
+  var selEmp = document.getElementById('f-empresa');
+  var prevEmp = selEmp.value;
+  populateEmpresaSelect('f-empresa', 'Todas');
+  selEmp.value = prevEmp;
+
   var responsables = {};
   var municipios = {};
   allMuestras.forEach(function(r) {
@@ -540,6 +547,7 @@ function groupMuestras(rows) {
 }
 
 function applyMuFilters() {
+  var fEmp = document.getElementById('f-empresa').value.trim();
   var fResp = document.getElementById('f-responsable').value;
   var fMun = document.getElementById('f-municipio').value;
   var fTipoEl = document.getElementById('f-tipo');
@@ -549,6 +557,7 @@ function applyMuFilters() {
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
 
   filteredMu = allMuestras.filter(function(r) {
+    if (fEmp && String(r.Empresa || '').trim() !== fEmp) return false;
     if (fResp && r.Responsable !== fResp) return false;
     if (fMun && r.Municipio !== fMun) return false;
     if (fTipo && (r.Tipo_Solicitud || 'Despacho') !== fTipo) return false;
@@ -574,6 +583,7 @@ function applyMuFilters() {
 }
 
 function clearMuestraFilters() {
+  document.getElementById('f-empresa').value = '';
   document.getElementById('f-responsable').value = '';
   document.getElementById('f-municipio').value = '';
   var _fTipo = document.getElementById('f-tipo');
@@ -584,6 +594,7 @@ function clearMuestraFilters() {
   applyMuFilters();
 }
 
+document.getElementById('f-empresa').addEventListener('change', applyMuFilters);
 document.getElementById('f-responsable').addEventListener('change', applyMuFilters);
 document.getElementById('f-municipio').addEventListener('change', applyMuFilters);
 var _fTipoEl = document.getElementById('f-tipo');
