@@ -1101,10 +1101,22 @@ function dSparkline(values, color, w, h) {
   '</svg>';
 }
 
-// Sparkline + tooltip (title) con el detalle mes a mes.
+// Señalización ▲/▼/→ del último mes vs. el anterior (mismo cálculo que los
+// deltas de los KPI: dDelta). null si el mes anterior es 0 (sin base de
+// comparación — cliente nuevo o sin compras ese mes).
+function dTrendBadge(serie) {
+  var d = dDelta(serie[serie.length - 1], serie[serie.length - 2], true);
+  if (!d) return '';
+  var color = d.cls === 'up' ? '#27ae60' : (d.cls === 'down' ? '#e74c3c' : '#a0aec0');
+  return '<span style="font-size:0.7rem;font-weight:700;color:' + color + ';white-space:nowrap">' + d.arrow + ' ' + d.txt + '</span>';
+}
+
+// Sparkline + señalización de tendencia + tooltip (title) con el detalle mes a mes.
 function dSparklineCell(meses, serie, color, fmt) {
   var tip = meses.map(function(m, i) { return dMesLbl(m) + ': ' + fmt(serie[i]); }).join('\n');
-  return '<span title="' + escHtml(tip) + '">' + dSparkline(serie, color) + '</span>';
+  return '<span title="' + escHtml(tip) + '" style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">' +
+    dSparkline(serie, color) + dTrendBadge(serie) +
+  '</span>';
 }
 
 // ── 5. Top Clientes ──
