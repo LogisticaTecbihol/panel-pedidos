@@ -13,8 +13,7 @@
 //   - PARCELAR, cliente "Carlos Andres Ramirez" (varias variantes de
 //     nombre en el dato — "CARLOS RAMIREZ" / "carlos andres ramirez
 //     bonilla" — mismo NIT 80282454; se matchea por nombre).
-// Ver _bcCalifica() (en js/shared.js — también la usa el Dashboard para
-// excluir estos pedidos de sus métricas de ventas).
+// Ver _bcCalifica().
 //
 // La "bodega" normalmente es el campo Sucursal del pedido (el sitio
 // del cliente donde queda la mercancía) — no existe una tabla propia
@@ -38,12 +37,42 @@
 // lo pedido pero aún pendiente de despacho no suma todavía.
 // ══════════════════════════════════════════════════════════════
 
-var bcRows = [];       // líneas de Pedidos que califican (ver _bcCalifica, en shared.js)
+var bcRows = [];       // líneas de Pedidos que califican (ver _bcCalifica)
 var bcFiltered = [];
 var bcTab = 'listado';
 var bcFiltersAttached = false;
 var _fmtNum = new Intl.NumberFormat('es-CO');
 var BC_SIN_BODEGA = '__SIN_BODEGA__';
+var BC_BODEGAS_FACTURACION_PARCELAR = ['Bodega Villeta', 'Bodega Didimo Cubillos'];
+
+function _bcEsConsignacion(v) {
+  var s = (v || '').trim();
+  return s === 'Si' || s === 'Sí';
+}
+
+function _bcClienteContiene(cliente, palabras) {
+  var c = (cliente || '').toUpperCase();
+  return palabras.every(function(p) { return c.indexOf(p) >= 0; });
+}
+function _bcEsClienteCarlosRamirez(cliente) { return _bcClienteContiene(cliente, ['CARLOS', 'RAMIREZ']); }
+
+// Cliente cuyo nombre empieza con "Bodega " (ej. "Bodega COATOL",
+// "BODEGA ESPINAL", "Bodega Espinal") — el patrón que usa IASO para
+// registrar clientes que en realidad son bodegas en consignación.
+function _bcEsClienteBodegaIaso(cliente) {
+  return /^BODEGA\s+\S/.test((cliente || '').trim().toUpperCase());
+}
+
+// Pedidos con Consignacion='Sí', más las excepciones pedidas a mano
+// (empresa + cliente/bodega de facturación puntuales) aunque digan 'No'.
+function _bcCalifica(p) {
+  if (_bcEsConsignacion(p.Consignacion)) return true;
+  var sigla = getSigla(p.Nombre_Empresa);
+  if (sigla === 'IASO' && _bcEsClienteBodegaIaso(p.Cliente)) return true;
+  if (sigla === 'PARCELAR' && _bcEsClienteCarlosRamirez(p.Cliente)) return true;
+  if (sigla === 'PARCELAR' && BC_BODEGAS_FACTURACION_PARCELAR.indexOf((p.Bodega_Facturacion || '').trim()) >= 0) return true;
+  return false;
+}
 
 function _bcBodegaKey(r) {
   var sigla = getSigla(r.Nombre_Empresa);

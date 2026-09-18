@@ -33,41 +33,6 @@ function _esEmpresaHolding(nombre) {
   return EMPRESAS_HOLDING.some(function(e) { return e.value === (nombre || '').trim() || e.sigla === (nombre || '').trim(); });
 }
 
-// ── Bodegas en Consignación: qué pedido "es" una bodega en consignación ──
-// Fuente única de verdad (usada por bodegas-consignacion.js Y por el
-// Dashboard para excluir estos pedidos de las métricas de ventas). Ver
-// bodegas-consignacion.js para el detalle de cada excepción.
-var BC_BODEGAS_FACTURACION_PARCELAR = ['Bodega Villeta', 'Bodega Didimo Cubillos'];
-
-function _bcEsConsignacion(v) {
-  var s = (v || '').trim();
-  return s === 'Si' || s === 'Sí';
-}
-
-function _bcClienteContiene(cliente, palabras) {
-  var c = (cliente || '').toUpperCase();
-  return palabras.every(function(p) { return c.indexOf(p) >= 0; });
-}
-function _bcEsClienteCarlosRamirez(cliente) { return _bcClienteContiene(cliente, ['CARLOS', 'RAMIREZ']); }
-
-// Cliente cuyo nombre empieza con "Bodega " (ej. "Bodega COATOL",
-// "BODEGA ESPINAL", "Bodega Espinal") — el patrón que usa IASO para
-// registrar clientes que en realidad son bodegas en consignación.
-function _bcEsClienteBodegaIaso(cliente) {
-  return /^BODEGA\s+\S/.test((cliente || '').trim().toUpperCase());
-}
-
-// Pedidos con Consignacion='Sí', más las excepciones pedidas a mano
-// (empresa + cliente/bodega de facturación puntuales) aunque digan 'No'.
-function _bcCalifica(p) {
-  if (_bcEsConsignacion(p.Consignacion)) return true;
-  var sigla = getSigla(p.Nombre_Empresa);
-  if (sigla === 'IASO' && _bcEsClienteBodegaIaso(p.Cliente)) return true;
-  if (sigla === 'PARCELAR' && _bcEsClienteCarlosRamirez(p.Cliente)) return true;
-  if (sigla === 'PARCELAR' && BC_BODEGAS_FACTURACION_PARCELAR.indexOf((p.Bodega_Facturacion || '').trim()) >= 0) return true;
-  return false;
-}
-
 // ── Categorías de producto por proveedor ──
 // Se usa en Reportes (Valorización) y en el Dashboard (ventas por categoría).
 // La detección es por nombre exacto normalizado (mayúsculas, espacios simples).

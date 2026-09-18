@@ -317,7 +317,7 @@ async function loadDashboard() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Sucursal,Bodega_Facturacion,Consignacion' }),
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),
@@ -332,11 +332,7 @@ async function loadDashboard() {
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');
 
     dPedidos = (results[0].pedidos || []).filter(function(p) {
-      // Excluye encabezados repetidos y los pedidos que son traslados a
-      // bodegas en consignación (mismo criterio que bodegas-consignacion.js:
-      // _bcCalifica, en shared.js) — no son ventas a cliente final, así que
-      // no deben inflar KPIs, Top clientes/comerciales, OTD, etc.
-      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente' && !_bcCalifica(p);
+      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente';
     }).map(function(p) {
       if (!p.Cant_Entregada && p.Cant_Entregada !== 0) {
         p.Cant_Entregada = 0;
