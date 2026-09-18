@@ -738,6 +738,15 @@ async function saveCambio() {
 
   var validEntregar = camLineasEntregar.filter(function(l) { return l.Producto; });
 
+  if (validCambiar.some(function(l) { return !(Number(l.Cantidad) > 0); })) {
+    showToast('Ingresa una cantidad mayor a 0 en cada línea de "Mercancía a cambiar"', '#e74c3c');
+    return;
+  }
+  if (validEntregar.some(function(l) { return !(Number(l.Cantidad) > 0); })) {
+    showToast('Ingresa una cantidad mayor a 0 en cada línea de "Mercancía a entregar"', '#e74c3c');
+    return;
+  }
+
   var btn = document.getElementById('btn-save-cam');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
@@ -1063,13 +1072,13 @@ async function saveGestionarCam() {
         var jsPDFDoc = null;
         if (_finalRemIngC) {
           var srcIng = cambiarLines.length ? cambiarLines : camLines;
-          var _eIng = srcIng.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0; });
+          var _eIng = srcIng.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0 || p.producto; });
           var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',head.Estado||'Pendiente']], entregas:_eIng, qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
           if (rI) jsPDFDoc = rI.doc;
         }
         if (_finalRemSalC) {
           var srcSal = entregarLines.length ? entregarLines : cambiarLines;
-          var _eSal = srcSal.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0; });
+          var _eSal = srcSal.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0 || p.producto; });
           var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',head.Estado||'Pendiente']], entregas:_eSal, qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
           if (jsPDFDoc) optsS._doc = jsPDFDoc;
           var rS = generarRemisionPDF(optsS);
