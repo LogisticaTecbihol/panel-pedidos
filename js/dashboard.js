@@ -522,7 +522,7 @@ function buildDashboard() {
   buildEntregas(cur.orders);
   buildEmpresas(cur.orders);
   buildTopProductos(cur.ped);
-  buildTopClientes(cur.orders);
+  buildTopClientes(cur.orders, fEmp);
   buildDevoluciones(cur.dev, cur.orders, fEmp);
   buildTopComerciales(cur.orders);
   buildInventario(cur.ped, fEmp);
@@ -968,7 +968,11 @@ function dClienteKey(nit, nombrePedido) {
 // (caso típico: un pedido trae el NIT sin dígito de verificación y otro con él).
 // NO fusiona NITs de igual longitud que difieren en algún dígito — eso es un
 // error de captura y debe verse como dos filas.
-function _mergeDvGroups(map) {
+// redirects (opcional): si se pasa un objeto, se le registra other.key → base.key
+// por cada fusión, para que quien haya agrupado OTRO subconjunto de órdenes con
+// las mismas keys "crudas" (p.ej. dResolveDvKey) pueda aplicar la misma fusión
+// sin recalcularla.
+function _mergeDvGroups(map, redirects) {
   var gs = Object.keys(map).map(function(k) { return map[k]; })
     .filter(function(g) { return g.nd && g.nd.length >= 8; })
     .sort(function(a, b) { return a.nd.length - b.nd.length; });
@@ -983,9 +987,45 @@ function _mergeDvGroups(map) {
         base.fromMaster = base.fromMaster || other.fromMaster;
         other._merged = true;
         delete map[other.key];
+        if (redirects) redirects[other.key] = base.key;
       }
     });
   });
+}
+
+// Calcula la fusión DV (misma regla que _mergeDvGroups) sobre un conjunto de
+// órdenes de REFERENCIA (el histórico completo del cliente) y devuelve una
+// función rawKey → key final. Se usa para que el ranking histórico de "top
+// clientes" y cualquier otro recorte (período filtrado, ventana de meses del
+// sparkline de tendencia) agrupen SIEMPRE al mismo cliente bajo la misma key,
+// aunque ese recorte por sí solo no tenga ambas variantes de NIT para fusionar.
+function dResolveDvKey(ordersRef) {
+  var map = {}, redirects = {};
+  ordersRef.forEach(function(o) {
+    var r = dClienteKey(o.nit, o.cliente);
+    if (!r.nombre || r.nombre === '—') return;
+    if (!map[r.key]) map[r.key] = { key: r.key, nd: r.nd, fromMaster: r.fromMaster, uds: 0, valor: 0, ordenes: 0, empresas: {} };
+  });
+  _mergeDvGroups(map, redirects);
+  return function(rawKey) { return redirects[rawKey] || rawKey; };
+}
+
+// Consolida un conjunto de órdenes por cliente usando una identidad ya
+// resuelta (dResolveDvKey) en vez de recalcular la fusión DV localmente.
+function dGroupByResolvedKey(orders, resolveKey) {
+  var map = {};
+  orders.forEach(function(o) {
+    var r = dClienteKey(o.nit, o.cliente);
+    if (!r.nombre || r.nombre === '—') return;
+    var key = resolveKey(r.key);
+    var m = map[key] || (map[key] = { key: key, cliente: r.nombre, uds: 0, valor: 0, ordenes: 0, empresas: {} });
+    m.uds += o.cantPedida;
+    m.valor += o.valorPedido;
+    m.ordenes++;
+    m.empresas[o.sigla] = true;
+    if (r.fromMaster) m.cliente = r.nombre;
+  });
+  return map;
 }
 
 // Agrupa órdenes por cliente único: consolida por identificación (dClienteKey)
@@ -1007,29 +1047,104 @@ function dClientesConsolidados(orders) {
   return Object.keys(map).map(function(k) { return map[k]; });
 }
 
-// ── 5. Top Clientes (consolidado por identificación; ranking por valor $) ──
-function buildTopClientes(orders) {
-  var arr = dClientesConsolidados(orders);
-  // Ranking por valor $; el volumen en uds queda como columna de contexto.
-  arr.sort(function(a, b) { return b.valor - a.valor; });
-  arr = arr.slice(0, 10);
+// Últimos 12 meses (incluye el actual), como ['2025-10', ..., '2026-09'].
+function dUltimos12Meses() {
+  var out = [];
+  var base = new Date(); base.setDate(1);
+  for (var i = 11; i >= 0; i--) {
+    var dt = new Date(base.getFullYear(), base.getMonth() - i, 1);
+    out.push(dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'));
+  }
+  return out;
+}
+
+// Serie mensual ($ valor y uds) por cliente, últimos 12 meses — SIEMPRE sobre
+// el histórico completo (independiente del filtro Desde/Hasta del dashboard,
+// igual criterio que "Pedidos por mes"). ordersRef ya viene filtrado por
+// empresa; resolveKey aplica la misma fusión de NIT que el ranking histórico.
+function dClienteTrend12m(ordersRef, resolveKey) {
+  var meses = dUltimos12Meses();
+  var desdeMes = meses[0];
+  var byClient = {};
+  ordersRef.forEach(function(o) {
+    var mes = String(o.fechaPedido || '').slice(0, 7);
+    if (!dEsMes(mes) || mes < desdeMes) return;
+    var r = dClienteKey(o.nit, o.cliente);
+    if (!r.nombre || r.nombre === '—') return;
+    var key = resolveKey(r.key);
+    if (!byClient[key]) byClient[key] = {};
+    if (!byClient[key][mes]) byClient[key][mes] = { valor: 0, uds: 0 };
+    byClient[key][mes].valor += o.valorPedido;
+    byClient[key][mes].uds += o.cantPedida;
+  });
+  return { meses: meses, byClient: byClient };
+}
+
+// Mini gráfico de tendencia (SVG inline, sin dependencias) — línea + punto final.
+// Parte siempre de 0 (no del mínimo de la serie) para no exagerar variaciones.
+function dSparkline(values, color, w, h) {
+  w = w || 84; h = h || 24;
+  if (!values.some(function(v) { return v > 0; })) {
+    return '<span style="color:#cbd5e0;font-size:0.72rem">sin datos</span>';
+  }
+  var max = Math.max.apply(null, values) || 1;
+  var n = values.length;
+  var pts = values.map(function(v, i) {
+    var x = n > 1 ? (i / (n - 1)) * w : w / 2;
+    var y = h - 2 - (v / max) * (h - 4);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+  var last = pts[pts.length - 1].split(',');
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">' +
+    '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2.3" fill="' + color + '"/>' +
+  '</svg>';
+}
+
+// Sparkline + tooltip (title) con el detalle mes a mes.
+function dSparklineCell(meses, serie, color, fmt) {
+  var tip = meses.map(function(m, i) { return dMesLbl(m) + ': ' + fmt(serie[i]); }).join('\n');
+  return '<span title="' + escHtml(tip) + '">' + dSparkline(serie, color) + '</span>';
+}
+
+// ── 5. Top Clientes ──
+// Ranking ESTABLE por valor $ histórico (no cambia al mover el filtro
+// Desde/Hasta) + tendencia mensual (últimos 12 meses) de $ y uds por cliente.
+// Las columnas $ Pedido / Uds / Ord. siguen mostrando el período filtrado.
+function buildTopClientes(orders, fEmp) {
+  var pedHist = fEmp ? dPedidos.filter(function(p) { return p.Nombre_Empresa === fEmp; }) : dPedidos;
+  var ordersHist = dBuildOrders(pedHist);
+
+  var top = dClientesConsolidados(ordersHist)
+    .sort(function(a, b) { return b.valor - a.valor; })
+    .slice(0, 10);
+
+  var resolveKey = dResolveDvKey(ordersHist);
+  var periodo = dGroupByResolvedKey(orders, resolveKey);
+  var trend = dClienteTrend12m(ordersHist, resolveKey);
 
   var tbody = document.getElementById('tb-clientes');
-  if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
+  if (!top.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
     return;
   }
 
-  tbody.innerHTML = arr.map(function(r) {
+  tbody.innerHTML = top.map(function(r) {
+    var p = periodo[r.key];
     var empTags = Object.keys(r.empresas).sort().map(function(s) {
       var color = EMP_COLORS[s] || '#718096';
       return '<span class="sigla-badge" style="background:' + color + '20;color:' + color + '">' + escHtml(s) + '</span>';
     }).join(' ');
+    var serieMes = trend.byClient[r.key] || {};
+    var serieValor = trend.meses.map(function(m) { return serieMes[m] ? serieMes[m].valor : 0; });
+    var serieUds = trend.meses.map(function(m) { return serieMes[m] ? serieMes[m].uds : 0; });
     return '<tr data-href="clientes.html?buscar=' + encodeURIComponent(r.cliente) + '" onclick="dGoto(this)">' +
-      '<td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
-      '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.valor) + '</td>' +
-      '<td class="money">' + r.uds.toLocaleString('es-CO') + '</td>' +
-      '<td class="money">' + r.ordenes + '</td>' +
+      '<td style="font-weight:600;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.cliente) + '</td>' +
+      '<td>' + dSparklineCell(trend.meses, serieValor, '#1a5276', dMoneyM) + '</td>' +
+      '<td>' + dSparklineCell(trend.meses, serieUds, '#27ae60', function(v) { return v.toLocaleString('es-CO') + ' uds'; }) + '</td>' +
+      '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(p ? p.valor : 0) + '</td>' +
+      '<td class="money">' + (p ? p.uds : 0).toLocaleString('es-CO') + '</td>' +
+      '<td class="money">' + (p ? p.ordenes : 0) + '</td>' +
       '<td>' + empTags + '</td>' +
     '</tr>';
   }).join('');
