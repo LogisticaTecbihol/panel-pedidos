@@ -23,6 +23,18 @@ var SIGLAS = {
 var EMP_COLORS = { PARCELAR: '#2980b9', GREEN: '#27ae60', RESO: '#e67e22', IASO: '#8e44ad', IAS: '#c0392b' };
 function dGetSigla(n) { return SIGLAS[(n || '').trim()] || n || '—'; }
 
+// IASO: "Bodega COATOL" y "Bodega Espinal" (cualquier variante de mayúsculas/
+// minúsculas) son bodegas en consignación registradas como cliente en vez de
+// traslado — se excluyen del dashboard de forma retroactiva (pedidos ya
+// existentes incluidos), a diferencia del filtro por Bodega_Consignacion_Id
+// (que solo aplica hacia adelante). Pedido a mano, no heurística general de
+// "cualquier Bodega X": solo estos dos clientes puntuales.
+var DASH_IASO_CLIENTES_BODEGA = { 'BODEGA COATOL': 1, 'BODEGA ESPINAL': 1 };
+function dEsBodegaIasoExcluida(p) {
+  if (dGetSigla(p.Nombre_Empresa) !== 'IASO') return false;
+  return !!DASH_IASO_CLIENTES_BODEGA[(p.Cliente || '').trim().toUpperCase()];
+}
+
 // Rango de fechas por defecto al abrir el dashboard (fecha del pedido — desde).
 var DASH_DEFAULT_DESDE = '2026-07-01';
 
@@ -332,13 +344,14 @@ async function loadDashboard() {
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');
 
     dPedidos = (results[0].pedidos || []).filter(function(p) {
-      // Excluye encabezados repetidos y los traslados a bodegas en
-      // consignación creados por el botón "Nuevo Traslado" (Bodega_Consignacion_Id
-      // apunta al catálogo del módulo Bodegas en Consignación) — no son ventas
-      // a cliente final, así que no deben inflar KPIs, Top clientes/comerciales,
-      // OTD, etc. Solo mira el enlace explícito al catálogo, no heurísticas
-      // sobre datos históricos: de ahora en adelante, no retroactivo.
-      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente' && !p.Bodega_Consignacion_Id;
+      // Excluye encabezados repetidos, los traslados a bodegas en consignación
+      // creados por el botón "Nuevo Traslado" (Bodega_Consignacion_Id apunta al
+      // catálogo del módulo Bodegas en Consignación — solo de ahora en
+      // adelante, no retroactivo) y, para IASO, los pedidos históricos cuyo
+      // cliente es "Bodega COATOL" / "Bodega Espinal" (dEsBodegaIasoExcluida,
+      // sí retroactivo). Ninguno de estos son ventas a cliente final, así que
+      // no deben inflar KPIs, Top clientes/comerciales, OTD, etc.
+      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente' && !p.Bodega_Consignacion_Id && !dEsBodegaIasoExcluida(p);
     }).map(function(p) {
       if (!p.Cant_Entregada && p.Cant_Entregada !== 0) {
         p.Cant_Entregada = 0;
