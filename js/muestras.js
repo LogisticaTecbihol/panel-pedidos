@@ -141,6 +141,9 @@ function _buildMuApartadosMaps(muRows, pedRows, ocAbiertaRows) {
     var kE = _normProdMu(a.producto) + '||' + String(a.empresa_stock || '').toLowerCase().trim();
     (pedApartadosPorProdEmp[kE] || (pedApartadosPorProdEmp[kE] = [])).push({
       _esMuestra: false, id: a.pedido_id, empresa: a.empresa_pedido, consecutivo: a.consecutivo,
+      // Identidad del pedido = empresa + consecutivo + cliente (el N° se numera por
+      // comercial: dos clientes pueden compartirlo). Se usa para deduplicar.
+      _pedKey: _muKeySC(a.empresa_pedido, a.consecutivo) + '||' + String(a.cliente || '').toLowerCase().trim(),
       titular: a.cliente || '', empresa_stock: a.empresa_stock, cantidad: cant,
       Plazo_Pago: a.plazo_pago || '', Precio_Facturacion: a.precio_facturacion || '',
       Fecha_Compromiso: a.fecha_compromiso || '', Bonificado: a.bonificado || ''
@@ -1355,7 +1358,7 @@ function _muApartadoCellHtml(i, l) {
             if (k.indexOf(prodKey + '||') !== 0) return;
             (idx[k] || []).forEach(function(r) {
               if (r._esMuestra && _muKeySC(r.empresa, r.consecutivo) === thisKey) return;
-              var vk = (r._esMuestra ? 'M' : 'P') + '|' + _muKeySC(r.empresa, r.consecutivo) + '|' + norm(r.empresa_stock);
+              var vk = (r._esMuestra ? 'M|' + _muKeySC(r.empresa, r.consecutivo) : 'P|' + r._pedKey) + '|' + norm(r.empresa_stock);
               if (vistos[vk]) return; vistos[vk] = 1;
               comp.push(r);
             });

@@ -614,10 +614,12 @@ var _pedidoPorId = {};
 
 // Apartados de stock activos (tabla apartados_pedido, estado='Activo').
 // Se reconstruyen en cada loadFromAPI().
-//   apartadosPorPedido[_keySC(empresa, consecutivo)] = [{pedido_id, producto,
+//   apartadosPorPedido[_keyPed(empresa, consecutivo, cliente)] = [{pedido_id, producto,
 //     empresa_stock, cantidad, presentacion}]  → badge en la fila y "Descomprometer"
 //   apartadosPorProdEmp[_normProdSel(producto) + '||' + norm(empresa_stock)] =
-//     [{pedido_id, empresa_pedido, consecutivo, cliente, cantidad}]  → panel de prioridad
+//     [{pedido_id, _pedKey, empresa_pedido, consecutivo, cliente, cantidad}]  → panel de prioridad
+// Se indexan con _keyPed (cliente incluido), NO con (empresa, consecutivo): el N° se
+// numera por comercial y dos clientes pueden compartirlo.
 var apartadosPorPedido = {};
 var apartadosPorProdEmp = {};
 var apartadosPorLinea = {};
@@ -628,6 +630,13 @@ var apartadosPorLinea = {};
 // Se reconstruye en cada loadFromAPI().
 var remAnuladasSet = {};
 
+// _keyPed del pedido al que pertenece un apartado. Se resuelve por pedido_id
+// (exacto, vía _pedidoPorId) y solo si la línea no se encuentra cae al cliente
+// guardado en el apartado. Requiere _pedidoPorId ya poblado.
+function _apartadoPedKey(a) {
+  return _pedKeyPorId(a.pedido_id) || _keyPed(a.empresa_pedido, a.consecutivo, a.cliente);
+}
+
 function _buildApartadosMaps(rows, muRows) {
   apartadosPorPedido = {};
   apartadosPorProdEmp = {};
@@ -636,14 +645,14 @@ function _buildApartadosMaps(rows, muRows) {
     if (String(a.estado || '') !== 'Activo') return;
     var cant = Number(a.cantidad) || 0;
     if (cant <= 0) return;
-    var kP = _keySC(a.empresa_pedido, a.consecutivo);
+    var kP = _apartadoPedKey(a);
     (apartadosPorPedido[kP] || (apartadosPorPedido[kP] = [])).push({
       pedido_id: a.pedido_id, producto: a.producto, presentacion: a.presentacion || '',
       empresa_stock: a.empresa_stock, cantidad: cant, bonificado: a.bonificado || ''
     });
     var kE = _normProdSel(a.producto) + '||' + norm(a.empresa_stock);
     (apartadosPorProdEmp[kE] || (apartadosPorProdEmp[kE] = [])).push({
-      pedido_id: a.pedido_id, empresa_pedido: a.empresa_pedido, consecutivo: a.consecutivo,
+      pedido_id: a.pedido_id, _pedKey: kP, empresa_pedido: a.empresa_pedido, consecutivo: a.consecutivo,
       cliente: a.cliente || '', cantidad: cant, empresa_stock: a.empresa_stock,
       bonificado: a.bonificado || '', _esMuestra: false
     });
@@ -890,10 +899,10 @@ async function loadFromAPI() {
     var ocData = results[1];
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
     var allOCs = (ocData && ocData.ok && ocData.ordenes) || [];
-    _buildApartadosMaps(
-      (results[2] && results[2].apartados) || [],
-      (results[3] && results[3].apartados) || []
-    );
+    // Los mapas de apartados se arman más abajo, DESPUÉS de poblar `_pedidoPorId`
+    // (indexan cada apartado por su pedido exacto, cliente incluido).
+    var apartadosRows = (results[2] && results[2].apartados) || [];
+    var apartadosMuRows = (results[3] && results[3].apartados) || [];
     remAnuladasSet = {};
     ((results[4] && results[4].remisionesAnuladas) || []).forEach(function(ra) {
       var r = String(ra.Remision || '').trim();
@@ -989,6 +998,7 @@ async function loadFromAPI() {
     // pueden compartir empresa+consecutivo: el N° se numera por comercial).
     _pedidoPorId = {};
     pedidos.forEach(function(p) { if (p.__row != null) _pedidoPorId[p.__row] = p; });
+    _buildApartadosMaps(apartadosRows, apartadosMuRows);
     solicitudesCompraPorPedido = _buildSolicitudesMap(allOCs);
     ocsLegalizadasPorPedido = _buildOCsLegalizadasMap(allOCs);
 
@@ -1234,24 +1244,16 @@ async function toggleBloqueoCartera(idx) {
 
 // ── Apartados de stock: descomprometer + prioridad ──────────────────
 
-// Busca el consec agrupado por (empresa, consecutivo).
-function _consecLookup(empresa, consecutivo) {
-  var key = _keySC(empresa, consecutivo);
-  for (var i = 0; i < consecs.length; i++) {
-    if (_keySC(consecs[i].Nombre_Empresa, consecs[i].Consecutivo) === key) return consecs[i];
-  }
-  return null;
-}
-
 // Otros pedidos que reservan (producto, empresa_stock), enriquecidos con
-// plazo / precio / fecha de compromiso y ordenados con los MEJORES
-// CANDIDATOS A LIBERAR primero (cmpPrioridadLiberacion). excludeKey = el
-// _keySC del pedido actual (se omite de la lista).
+// plazo / precio / fecha de compromiso (de la línea exacta, por pedido_id) y
+// ordenados con los MEJORES CANDIDATOS A LIBERAR primero
+// (cmpPrioridadLiberacion). excludeKey = el _keyPed del pedido actual (se omite
+// de la lista). Las muestras no llevan _pedKey, así que nunca se excluyen.
 function _apartadoCompetencia(producto, empresaStock, excludeKey) {
   var k = _normProdSel(producto) + '||' + norm(empresaStock);
   var out = [];
   (apartadosPorProdEmp[k] || []).forEach(function(r) {
-    if (_keySC(r.empresa_pedido, r.consecutivo) === excludeKey) return;
+    if (r._pedKey === excludeKey) return;
     if (r._esMuestra) {
       out.push({
         _esMuestra: true, muestra_id: r.muestra_id,
@@ -1262,7 +1264,7 @@ function _apartadoCompetencia(producto, empresaStock, excludeKey) {
       });
       return;
     }
-    var c = _consecLookup(r.empresa_pedido, r.consecutivo);
+    var c = _pedidoPorId[r.pedido_id] || null;
     out.push({
       pedido_id: r.pedido_id,
       empresa_pedido: r.empresa_pedido,
@@ -1284,7 +1286,7 @@ function _apartadoCompetencia(producto, empresaStock, excludeKey) {
 async function descomprometerPedido(idx) {
   var c = consecs[idx];
   if (!c) return;
-  var key = _keySC(c.Nombre_Empresa, c.Consecutivo);
+  var key = _keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
   var apaList = apartadosPorPedido[key] || [];
   if (!apaList.length) { showToast('Este pedido no tiene stock apartado', '#e67e22'); return; }
 
@@ -1324,10 +1326,20 @@ async function descomprometerPedido(idx) {
 //   pedidoId / empresaStock: null = liberación TOTAL del pedido.
 async function _liberarApartados(c, pedidoId, empresaStock, motivo) {
   try {
+    // Liberación total: se acota a las líneas de ESTE pedido (cliente incluido).
+    // Empresa + consecutivo no bastan: otro cliente puede compartir el N° y sus
+    // apartados / OC de traslado no deben tocarse.
+    var pedidoIds = null;
+    if (pedidoId == null) {
+      pedidoIds = getLinesFor(c).map(function(l) { return l.__row; })
+        .filter(function(id) { return id != null; });
+      if (!pedidoIds.length) throw new Error('No se pudieron identificar las líneas del pedido');
+    }
     var r = await apiPost({
       action: 'liberarApartadosPedido',
       empresa: c.Nombre_Empresa,
       consecutivo: c.Consecutivo,
+      pedido_ids: pedidoIds,
       pedido_id: (pedidoId != null ? pedidoId : null),
       empresa_stock: (empresaStock != null ? empresaStock : null),
       motivo: motivo || ''
@@ -1709,7 +1721,7 @@ function renderTable() {
     var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
     var bloqCartera = est2 === 'Bloqueado por cartera';
     var otd = c._cOtd || { clase: 'sin_compromiso', dias: null };
-    var _apaListRow = apartadosPorPedido[_keySC(c.Nombre_Empresa, c.Consecutivo)] || [];
+    var _apaListRow = apartadosPorPedido[_keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente)] || [];
     var _trCls = [];
     if (modPend) _trCls.push('row-modificada');
     if (bloqCartera) _trCls.push('row-bloqueada-cartera');
@@ -2369,14 +2381,14 @@ function _competenciaApartadoHtml(l, empresaPedido) {
   if (netoTotal >= pend) return '';
 
   var thisKey = (activeIdx != null && consecs[activeIdx])
-    ? _keySC(consecs[activeIdx].Nombre_Empresa, consecs[activeIdx].Consecutivo) : '';
+    ? _keyPed(consecs[activeIdx].Nombre_Empresa, consecs[activeIdx].Consecutivo, consecs[activeIdx].Cliente) : '';
   // reunir competencia sobre TODAS las empresas donde hay apartado de este producto
   var vistos = {}, comp = [];
   Object.keys(apartadosPorProdEmp).forEach(function(k) {
     if (k.indexOf(prodStock + '||') !== 0) return;
     (apartadosPorProdEmp[k] || []).forEach(function(r) {
-      if (_keySC(r.empresa_pedido, r.consecutivo) === thisKey) return;
-      var vk = (r._esMuestra ? 'M|' : 'P|') + _keySC(r.empresa_pedido, r.consecutivo) + '||' + norm(r.empresa_stock);
+      if (r._pedKey === thisKey) return;
+      var vk = (r._esMuestra ? 'M|' + _keySC(r.empresa_pedido, r.consecutivo) : 'P|' + r._pedKey) + '||' + norm(r.empresa_stock);
       if (vistos[vk]) return; vistos[vk] = 1;
       if (r._esMuestra) {
         comp.push({
@@ -2388,7 +2400,7 @@ function _competenciaApartadoHtml(l, empresaPedido) {
         });
         return;
       }
-      var c = _consecLookup(r.empresa_pedido, r.consecutivo);
+      var c = _pedidoPorId[r.pedido_id] || null;
       comp.push({
         pedido_id: r.pedido_id, empresa_pedido: r.empresa_pedido, consecutivo: r.consecutivo,
         cliente: r.cliente || (c && c.Cliente) || '', cantidad: r.cantidad,

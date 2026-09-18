@@ -674,7 +674,10 @@ async function _apiPostCore(body) {
         p_consecutivo: String(body.consecutivo || ''),
         p_pedido_id: (body.pedido_id != null ? body.pedido_id : null),
         p_empresa_stock: (body.empresa_stock != null ? body.empresa_stock : null),
-        p_motivo: body.motivo || ''
+        p_motivo: body.motivo || '',
+        // Ids de las líneas del pedido exacto (cliente incluido): evita que
+        // otro cliente con el mismo N° de pedido sea liberado/anulado también.
+        p_pedido_ids: (Array.isArray(body.pedido_ids) && body.pedido_ids.length ? body.pedido_ids : null)
       });
       if (res.error) return { ok: false, error: res.error.message };
       return res.data || { ok: true };
