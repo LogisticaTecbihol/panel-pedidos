@@ -1954,8 +1954,8 @@ function addDiasHabiles(iso, n) {
 // Clasifica una orden frente a su fecha de compromiso.
 //   o = { fechaCompromiso, fechaUltEntrega, completa (bool), estado2 }
 //   → { clase, dias }
-//     clase: 'sin_compromiso' | 'a_tiempo' | 'tarde' | 'en_plazo' | 'atrasado'
-//     dias : tarde/atrasado → días de atraso (>0); a_tiempo/en_plazo → holgura (>=0); sin_compromiso → null
+//     clase: 'sin_compromiso' | 'a_tiempo' | 'tarde' | 'en_plazo' | 'atrasado' | 'cerrado_sin_entregar'
+//     dias : tarde/atrasado → días de atraso (>0); a_tiempo/en_plazo → holgura (>=0); sin_compromiso/cerrado_sin_entregar → null
 function _otdClasificar(o) {
   o = o || {};
   var comp = _isoDia(o.fechaCompromiso);
@@ -1966,6 +1966,12 @@ function _otdClasificar(o) {
     var d = _calDias(comp, ult);
     return d > 0 ? { clase: 'tarde', dias: d } : { clase: 'a_tiempo', dias: -d };
   }
+  // Cerrado sin entregar: se cerró administrativamente (Estado_2 = Cerrado en
+  // todas las líneas) sin llegar a Entregado/Facturado. Ya no está "abierta"
+  // en el sentido que mide el cumplimiento de entregas, así que se excluye de
+  // atrasado/en_plazo (igual que Anulado) en vez de arrastrar para siempre un
+  // atraso creciente sobre un pedido que el negocio ya dio por cerrado.
+  if (o.estado2 === 'Cerrado') return { clase: 'cerrado_sin_entregar', dias: null };
   var dh = _calDias(comp, today());
   return dh > 0 ? { clase: 'atrasado', dias: dh } : { clase: 'en_plazo', dias: -dh };
 }

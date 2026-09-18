@@ -1858,7 +1858,8 @@ var cumplData = [];
 var cumplSort = { col: 'atraso', dir: 'desc' };
 var _cumpEstadoLabels = {
   a_tiempo: '🟢 A tiempo', tarde: '🔴 Tarde',
-  atrasado: '🔴 Atrasado', en_plazo: '🕓 En plazo', sin_compromiso: '— Sin compromiso'
+  atrasado: '🔴 Atrasado', en_plazo: '🕓 En plazo', sin_compromiso: '— Sin compromiso',
+  cerrado_sin_entregar: '⚪ Cerrado s/entregar'
 };
 
 function buildCumplimiento() {
@@ -1885,8 +1886,11 @@ function buildCumplimiento() {
 
   cumplData = Object.keys(map).map(function(k) {
     var o = map[k];
+    // mismo criterio que pedidos.js:derivedEstado2 / dashboard.js:dDerivedEstado2
+    var vals2 = o.lines.map(function(l) { return (l.Estado_2 || 'Abierto').trim(); });
     var estado2 = 'Abierto';
-    if (o.lines.some(function(l) { return (l.Estado_2 || '').trim() === 'Anulado'; })) estado2 = 'Anulado';
+    if (vals2.indexOf('Anulado') >= 0) estado2 = 'Anulado';
+    else if (vals2.every(function(v) { return v === 'Cerrado'; })) estado2 = 'Cerrado';
     var completa = o.lines.every(function(l) {
       var e = norm(l.Estado_Entrega);
       return e === 'entregado' || e === 'facturado';
