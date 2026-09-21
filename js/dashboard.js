@@ -226,6 +226,7 @@ function dDerivedEstado2(lines) {
   if (!lines.length) return 'Abierto';
   var vals = lines.map(function(l) { return (l.Estado_2 || 'Abierto').trim(); });
   if (vals.indexOf('Anulado') >= 0) return 'Anulado';
+  if (vals.indexOf('Pendiente de aprobación') >= 0) return 'Pendiente de aprobación';
   if (vals.indexOf('Bloqueado por cartera') >= 0) return 'Bloqueado por cartera';
   if (vals.indexOf('Entregado por proveedor') >= 0) return 'Entregado por proveedor';
   if (vals.every(function(v) { return v === 'Cerrado'; })) return 'Cerrado';
@@ -234,7 +235,7 @@ function dDerivedEstado2(lines) {
 }
 
 // mismo criterio que reportes.js:buildReport para "producto pendiente"
-var D_ESTADOS_NO_PENDIENTE = { 'Anulado': 1, 'Alistado': 1, 'Cerrado': 1, 'Bloqueado por cartera': 1, 'Entregado por proveedor': 1 };
+var D_ESTADOS_NO_PENDIENTE = { 'Anulado': 1, 'Alistado': 1, 'Cerrado': 1, 'Bloqueado por cartera': 1, 'Pendiente de aprobación': 1, 'Entregado por proveedor': 1 };
 function dLineaPendiente(p) {
   if (D_ESTADOS_NO_PENDIENTE[(p.Estado_2 || 'Abierto').trim()]) return false;
   return (Number(p.Cant_Pendiente) || 0) > 0;
@@ -829,12 +830,13 @@ function buildKPIsMoney(orders, ped, dev, fEmp, fDesde, fHasta, prev) {
 
 // ── 2. Estado de Entregas ──
 function buildEntregas(orders) {
-  var b = { recibidos: 0, parciales: 0, entregados: 0, alistados: 0, cerrados: 0, anulados: 0, bloqueados: 0, entProv: 0 };
+  var b = { recibidos: 0, parciales: 0, entregados: 0, alistados: 0, cerrados: 0, anulados: 0, bloqueados: 0, pendAprob: 0, entProv: 0 };
 
   orders.forEach(function(o) {
     switch (o.estado2) {
       case 'Anulado': b.anulados++; return;
       case 'Bloqueado por cartera': b.bloqueados++; return;
+      case 'Pendiente de aprobación': b.pendAprob++; return;
       case 'Entregado por proveedor': b.entProv++; return;
       case 'Cerrado': b.cerrados++; return;
       case 'Alistado': b.alistados++; return;
@@ -856,6 +858,7 @@ function buildEntregas(orders) {
     { label: 'Cerrados', val: b.cerrados, color: '#1565c0' },
     { label: 'Ent. proveedor', val: b.entProv, color: '#00695c' },
     { label: 'Bloqueados', val: b.bloqueados, color: '#e65100' },
+    { label: 'Pend. aprobación', val: b.pendAprob, color: '#d97706' },
     { label: 'Anulados', val: b.anulados, color: '#e74c3c' },
   ];
 

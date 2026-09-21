@@ -31,7 +31,7 @@ var REAB_DEFAULTS = {
 // Estados de Estado_2 que NO cuentan como pendiente (igual que buildPlanta de reportes.js).
 var REAB_ESTADO2_EXCLUIR = {
   'anulado': 1, 'alistado': 1, 'cerrado': 1,
-  'bloqueado por cartera': 1, 'entregado por proveedor': 1
+  'bloqueado por cartera': 1, 'pendiente de aprobación': 1, 'entregado por proveedor': 1
 };
 
 // ── Normalización de producto ───────────────────────────────────

@@ -277,6 +277,14 @@ var AUTH = (function() {
     return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'cartera';
   }
 
+  // Quién puede aprobar/rechazar el pedido de un cliente nuevo
+  // (Estado_2 = 'Pendiente de aprobación'). Solo Cartera y administración; el
+  // backend lo hace cumplir con la RPC resolver_aprobacion_pedido + un trigger.
+  function canApproveNuevoCliente() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'cartera';
+  }
+
   // Quién puede "Descomprometer" (liberar stock apartado de un pedido).
   // El backend lo hace cumplir en la RPC liberar_apartados_pedido.
   // NO se usa canEdit(): incluye comercial/remisionador/contabilidad, que
@@ -400,6 +408,7 @@ var AUTH = (function() {
     isDespachador: isDespachador,
     isCartera: isCartera,
     canToggleBloqueoCartera: canToggleBloqueoCartera,
+    canApproveNuevoCliente: canApproveNuevoCliente,
     canDescomprometer: canDescomprometer,
     canUploadAdjuntos: canUploadAdjuntos,
     hasCompany: hasCompany,

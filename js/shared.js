@@ -651,6 +651,19 @@ async function _apiPostCore(body) {
       return res.data || { ok: true };
     }
 
+    // Aprobar / rechazar el pedido de un cliente nuevo (Estado_2 =
+    // 'Pendiente de aprobación'). La RPC valida el rol (admin/cartera) y resuelve
+    // todas las líneas pendientes del pedido; rechazar exige motivo.
+    if (action === 'resolverAprobacionPedido') {
+      var res = await _sb.rpc('resolver_aprobacion_pedido', {
+        p_pedido_ids: body.pedido_ids || [],
+        p_aprobar: !!body.aprobar,
+        p_nota: body.nota || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+
     // Bloquear al cliente (ClientesUnicos.Estado) por NIT — opcional, lo
     // ofrece el panel de Pedidos tras bloquear un pedido por cartera.
     if (action === 'bloquearClientePorNit') {

@@ -220,7 +220,7 @@ function buildReport() {
     var pend = Number(p.Cant_Pendiente) || 0;
     if (pend <= 0) return false;
     var est2 = (p.Estado_2 || 'Abierto').trim();
-    if (est2 === 'Anulado' || est2 === 'Alistado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera' || est2 === 'Entregado por proveedor') return false;
+    if (est2 === 'Anulado' || est2 === 'Alistado' || est2 === 'Cerrado' || est2 === 'Bloqueado por cartera' || est2 === 'Pendiente de aprobación' || est2 === 'Entregado por proveedor') return false;
     if (!_rptEmpOK(p.Nombre_Empresa)) return false;
     if (fEmp && p.Nombre_Empresa !== fEmp) return false;
     if (fCom && p.Comercial !== fCom) return false;
@@ -390,7 +390,7 @@ function switchTab(tab) {
 //
 // Agregado por producto (mismo criterio de normalización que Kardex):
 //   Pendiente total = suma de Cant_Pendiente en líneas con
-//     Cant_Pendiente>0 y Estado_2 NO en {Anulado,Cerrado,Bloqueado}.
+//     Cant_Pendiente>0 y Estado_2 NO en {Anulado,Cerrado,Bloqueado,Pendiente de aprobación}.
 //   Existencia holding = suma de existSnapshot.saldos[prod] por empresa.
 //   Traslados pend. aprobar = suma de OrdenesCompra con Tipo='Traslado',
 //     Remision vacía y Estado NO 'Anulada' para ese producto.
@@ -456,7 +456,7 @@ function buildPlanta() {
     if (pend <= 0) return;
     var est2 = (p.Estado_2 || 'Abierto').trim();
     var est2L = est2.toLowerCase();
-    if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera' || est2L === 'entregado por proveedor') return;
+    if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera' || est2L === 'pendiente de aprobación' || est2L === 'entregado por proveedor') return;
     var rawEst = (p.Estado_Entrega || '').trim().toLowerCase() || 'recibido';
     if (rawEst === 'recibido' && est2L === 'cerrado') return;
     if (!_rptEmpOK(p.Nombre_Empresa)) return;
@@ -859,7 +859,7 @@ function buildValorizacion() {
     if (pend <= 0) return;
     var est2 = (p.Estado_2 || 'Abierto').trim();
     var est2L = est2.toLowerCase();
-    if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera' || est2L === 'entregado por proveedor') return;
+    if (est2L === 'anulado' || est2L === 'alistado' || est2L === 'cerrado' || est2L === 'bloqueado por cartera' || est2L === 'pendiente de aprobación' || est2L === 'entregado por proveedor') return;
     if (!_rptEmpOK(p.Nombre_Empresa)) return;
     if (fEmp && p.Nombre_Empresa !== fEmp) return;
     if (fCom && p.Comercial !== fCom) return;

@@ -203,6 +203,18 @@ tbody tr.row-bloqueada-cartera:hover > td { background: #fee2e2; }
 /* Si además está modificado, la marca de cartera manda en la barra lateral */
 tbody tr.row-bloqueada-cartera.row-modificada > td:first-child { box-shadow: inset 4px 0 0 #dc2626; }
 
+/* ── Pedidos pendientes de aprobación de Cartera (cliente nuevo) ── */
+tbody tr.row-pendiente-aprobacion > td { background: #fffbeb; }
+tbody tr.row-pendiente-aprobacion > td:first-child { box-shadow: inset 4px 0 0 #d97706; }
+tbody tr.row-pendiente-aprobacion:hover > td { background: #fef3c7; }
+tbody tr.row-pendiente-aprobacion.row-modificada > td:first-child,
+tbody tr.row-pendiente-aprobacion.row-atrasada > td:first-child { box-shadow: inset 4px 0 0 #d97706; }
+.btn-aprobar-pedido, .btn-rechazar-pedido {
+  border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 0.8rem; font-weight: 700; white-space: nowrap;
+}
+.btn-aprobar-pedido  { border: 1px solid #16a34a; background: #f0fdf4; color: #15803d; }
+.btn-rechazar-pedido { border: 1px solid #dc2626; background: #fef2f2; color: #b91c1c; }
+
 /* ── Pedidos atrasados (abiertos que pasaron su fecha de compromiso) ── */
 tbody tr.row-atrasada > td { background: #fff4ed; }
 tbody tr.row-atrasada > td:first-child { box-shadow: inset 4px 0 0 #ea580c; }
@@ -318,6 +330,7 @@ tbody tr:last-child td { border-bottom: none; }
 .b-cerrado   { background: #e3f2fd; color: #1565c0; }
 .b-anulado   { background: #fce4ec; color: #c62828; }
 .b-bloqueado { background: #fff3e0; color: #e65100; }
+.b-pendiente-aprob { background: #fef3c7; color: #92400e; }
 .b-entregado-prov { background: #e0f2f1; color: #00695c; }
 
 /* ── ACTION BUTTONS ── */

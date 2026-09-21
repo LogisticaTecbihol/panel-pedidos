@@ -589,6 +589,14 @@ var detailWorkingLines = [];
 // True mientras el modal de detalle muestra un pedido "Bloqueado por cartera":
 // se veta el registro de entregas de producto.
 var _detailBloqueadoCartera = false;
+// True mientras el modal de detalle muestra un pedido "Pendiente de aprobación"
+// (primer pedido de un cliente nuevo). También activa _detailBloqueadoCartera:
+// mismo veto de trámite (entregas, apartados, solicitudes de compra), distinto
+// mensaje.
+var _detailPendienteAprobacion = false;
+function _txtVetoTramite() {
+  return _detailPendienteAprobacion ? 'pendiente de aprobación de Cartera' : 'bloqueado por cartera';
+}
 // True mientras el modal de detalle muestra un pedido con Estado = "Anulado".
 // Es informativo: hace que CADA mención de remisión en las líneas se marque
 // como anulada (además de la marca independiente por remisión registrada en
@@ -1157,6 +1165,7 @@ function derivedEstado2(lines) {
   if (!lines.length) return 'Abierto';
   var vals = lines.map(function(l) { return (l.Estado_2 || 'Abierto').trim(); });
   if (vals.indexOf('Anulado') >= 0) return 'Anulado';
+  if (vals.indexOf('Pendiente de aprobación') >= 0) return 'Pendiente de aprobación';
   if (vals.indexOf('Bloqueado por cartera') >= 0) return 'Bloqueado por cartera';
   if (vals.indexOf('Entregado por proveedor') >= 0) return 'Entregado por proveedor';
   var allCerrado = vals.every(function(v) { return v === 'Cerrado'; });
@@ -1182,7 +1191,19 @@ function _gateEstado2Select(sel, actual) {
     optAli.hidden = !esAli;
     optAli.disabled = !esAli;
   }
-  if (actual === 'Bloqueado por cartera') {
+  // "Pendiente de aprobación" solo se resuelve con los botones ✅/❌ (RPC
+  // resolver_aprobacion_pedido); nunca es una opción elegible a mano.
+  var optPend = sel.querySelector('option[value="Pendiente de aprobación"]');
+  if (optPend) {
+    var esPend = actual === 'Pendiente de aprobación';
+    optPend.hidden = !esPend;
+    optPend.disabled = !esPend;
+  }
+  if (actual === 'Pendiente de aprobación') {
+    if (opt) { opt.hidden = true; opt.disabled = true; }
+    sel.disabled = true;
+    sel.title = 'Pedido de cliente nuevo: lo aprueba o rechaza Cartera o administración (botones ✅/❌)';
+  } else if (actual === 'Bloqueado por cartera') {
     if (opt) { opt.hidden = false; opt.disabled = false; }
     sel.disabled = true;
     sel.title = 'El bloqueo por cartera se gestiona con el botón 🔒/🔓 de la lista de pedidos';
@@ -1197,6 +1218,10 @@ function _gateEstado2Select(sel, actual) {
 async function toggleBloqueoCartera(idx) {
   var c = consecs[idx];
   if (!c) return;
+  if ((c._cEstado2 || 'Abierto') === 'Pendiente de aprobación') {
+    showToast('⏳ Pedido pendiente de aprobación: apruébalo o recházalo primero', '#e67e22');
+    return;
+  }
   var bloqueado = (c._cEstado2 || 'Abierto') === 'Bloqueado por cartera';
   var bloquear = !bloqueado;
   var msg = bloquear
@@ -1240,6 +1265,56 @@ async function toggleBloqueoCartera(idx) {
   } catch (err) {
     showToast('❌ ' + (err.message || err), '#e74c3c');
   }
+}
+
+// ── Aprobación del pedido de un cliente nuevo ───────────────────────
+// El primer pedido manual de un cliente que aún no está en el maestro nace con
+// Estado_2 = 'Pendiente de aprobación' (lo fija un trigger en la BD). Solo
+// Cartera o administración lo aprueban (→ Abierto) o lo rechazan (→ Anulado, con
+// motivo) vía la RPC resolver_aprobacion_pedido.
+async function resolverAprobacionPedido(idx, aprobar, desdeDetalle) {
+  var c = consecs[idx];
+  if (!c) return;
+  var ids = getLinesFor(c).map(function(l) { return l.__row; })
+    .filter(function(id) { return id != null; });
+  if (!ids.length) { showToast('❌ No se pudieron identificar las líneas del pedido', '#e74c3c'); return; }
+  var nota = '';
+  var ref = '#' + c.Consecutivo + ' (' + (c.Cliente || '') + ')';
+  if (aprobar) {
+    if (!confirm('¿APROBAR el pedido ' + ref + '?\n\nEs el primer pedido de un cliente nuevo. Al aprobarlo queda en "Abierto" y se le podrá dar trámite.')) return;
+  } else {
+    nota = prompt('RECHAZAR el pedido ' + ref + '.\n\nQuedará ANULADO. Escribe el motivo del rechazo:');
+    if (nota === null) return;
+    nota = nota.trim();
+    if (!nota) { showToast('Indica el motivo del rechazo', '#e74c3c'); return; }
+  }
+  try {
+    var r = await apiPost({ action: 'resolverAprobacionPedido', pedido_ids: ids, aprobar: aprobar, nota: nota });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al actualizar');
+    showToast(aprobar ? '✅ Pedido aprobado: ya se le puede dar trámite' : '❌ Pedido rechazado (Anulado)');
+    if (desdeDetalle) closeModal();
+    await loadFromAPI();
+  } catch (err) {
+    showToast('❌ ' + (err.message || err), '#e74c3c');
+  }
+}
+
+// Botones ✅/❌ del banner del modal de detalle.
+function resolverAprobacionActivo(aprobar) {
+  if (activeIdx === null) return;
+  resolverAprobacionPedido(activeIdx, aprobar, true);
+}
+
+// Rastro de la decisión de Cartera/admin (quién, cuándo, nota) en el detalle.
+function _aprobacionHtml(lines) {
+  var l = (lines || []).filter(function(x) { return x.Aprobacion_Por_Nombre; })[0];
+  if (!l) return '';
+  var cuando = l.Aprobacion_En ? String(l.Aprobacion_En).slice(0, 16).replace('T', ' ') : '';
+  return '<div style="margin-top:6px;font-size:0.76rem;color:#92400e">' +
+    '✔ Aprobación de cliente nuevo resuelta por <strong>' + escHtml(l.Aprobacion_Por_Nombre) + '</strong>' +
+    (cuando ? ' · ' + escHtml(cuando) : '') +
+    (l.Aprobacion_Nota ? ' · ' + escHtml(l.Aprobacion_Nota) : '') +
+  '</div>';
 }
 
 // ── Apartados de stock: descomprometer + prioridad ──────────────────
@@ -1533,7 +1608,7 @@ function esPedidoActivo(c) {
   var e2 = c._cEstado2 || 'Abierto';
   // Los pedidos frenados por cartera siguen siendo gestión activa: se quedan en
   // "Activos" hasta que Cartera los libere o se cierren.
-  var enGestion = e2 === 'Abierto' || e2 === 'Bloqueado por cartera';
+  var enGestion = e2 === 'Abierto' || e2 === 'Bloqueado por cartera' || e2 === 'Pendiente de aprobación';
   return enGestion && (st === 'Recibido' || st === 'Parcial');
 }
 
@@ -1668,7 +1743,7 @@ function renderTable() {
   var sRec = 0, sPar = 0, sEnt = 0;
   consecs.forEach(function(c) {
     var st = c._cStatus || 'Recibido', e2 = c._cEstado2 || 'Abierto';
-    var enGestion = e2 === 'Abierto' || e2 === 'Bloqueado por cartera';
+    var enGestion = e2 === 'Abierto' || e2 === 'Bloqueado por cartera' || e2 === 'Pendiente de aprobación';
     if (st === 'Recibido' && enGestion) sRec++;
     else if (st === 'Parcial' && enGestion) sPar++;
     if (st === 'Entregado' || ((st === 'Recibido' || st === 'Parcial') && e2 === 'Cerrado')) sEnt++;
@@ -1714,19 +1789,21 @@ function renderTable() {
     var pct = c._cPct || 0;
     var lineCount = c._cLines || 0;
     var badge = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : est === 'Alistado' ? 'b-alistado' : est === 'Facturado' ? 'b-fac' : 'b-ent';
-    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
+    var badge2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Pendiente de aprobación' ? 'b-pendiente-aprob' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
     var done = est === 'Entregado' || est === 'Alistado';
     var idx = c._idx;
     var rowKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
     var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
     var bloqCartera = est2 === 'Bloqueado por cartera';
+    var pendAprob = est2 === 'Pendiente de aprobación';
     var otd = c._cOtd || { clase: 'sin_compromiso', dias: null };
     var _apaListRow = apartadosPorPedido[_keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente)] || [];
     var _trCls = [];
     if (modPend) _trCls.push('row-modificada');
     if (bloqCartera) _trCls.push('row-bloqueada-cartera');
+    if (pendAprob) _trCls.push('row-pendiente-aprobacion');
     if (otd.clase === 'atrasado') _trCls.push('row-atrasada');
-    if (_apaListRow.length && !bloqCartera) _trCls.push('row-apartada');
+    if (_apaListRow.length && !bloqCartera && !pendAprob) _trCls.push('row-apartada');
     var trClass = _trCls.length ? ' class="' + _trCls.join(' ') + '"' : '';
     var modBadge = '';
     if (modPend) {
@@ -1791,7 +1868,11 @@ function renderTable() {
         '</button>' +
         (AUTH.canEdit() && pedidoScope === 'activos' ? '<button class="btn-edit" onclick="openEdit(' + idx + ')" title="Editar pedido">✏️</button>' : '') +
         (AUTH.canDeleteIn('pedidos') && pedidoScope === 'activos' ? '<button class="btn-del" onclick="openDelete(' + idx + ')" title="Eliminar pedido">🗑️</button>' : '') +
-        (AUTH.canToggleBloqueoCartera() && (pedidoScope === 'activos' || bloqCartera) && est2 !== 'Anulado'
+        (AUTH.canApproveNuevoCliente() && pendAprob
+          ? '<button class="btn-aprobar-pedido" onclick="resolverAprobacionPedido(' + idx + ', true)" title="Aprobar el pedido de este cliente nuevo">✅ Aprobar</button>'
+            + '<button class="btn-rechazar-pedido" onclick="resolverAprobacionPedido(' + idx + ', false)" title="Rechazar el pedido (queda Anulado)">❌ Rechazar</button>'
+          : '') +
+        (AUTH.canToggleBloqueoCartera() && (pedidoScope === 'activos' || bloqCartera) && est2 !== 'Anulado' && !pendAprob
           ? '<button onclick="toggleBloqueoCartera(' + idx + ')" title="' + (bloqCartera ? 'Liberar el pedido del bloqueo por cartera' : 'Bloquear el pedido por cartera') + '" '
             + 'style="border:1px solid ' + (bloqCartera ? '#16a34a' : '#dc2626') + ';background:' + (bloqCartera ? '#f0fdf4' : '#fef2f2') + ';color:' + (bloqCartera ? '#15803d' : '#b91c1c') + ';border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.78rem;font-weight:700;white-space:nowrap">'
             + (bloqCartera ? '🔓 Liberar' : '🔒 Cartera') + '</button>'
@@ -1905,9 +1986,14 @@ async function openDetail(idx) {
   // Pedido bloqueado por cartera: se avisa en un banner y NO se permite
   // registrar entrega de producto (se ocultan la barra de entrega y los
   // selectores de asignación; el guardado de entregas queda vetado).
-  _detailBloqueadoCartera = derivedEstado2(lines) === 'Bloqueado por cartera';
+  _detailPendienteAprobacion = derivedEstado2(lines) === 'Pendiente de aprobación';
+  _detailBloqueadoCartera = _detailPendienteAprobacion || derivedEstado2(lines) === 'Bloqueado por cartera';
   var _bqBanner = document.getElementById('md-bloqueo-cartera');
-  if (_bqBanner) _bqBanner.style.display = _detailBloqueadoCartera ? 'block' : 'none';
+  if (_bqBanner) _bqBanner.style.display = (_detailBloqueadoCartera && !_detailPendienteAprobacion) ? 'block' : 'none';
+  var _paBanner = document.getElementById('md-pendiente-aprobacion');
+  if (_paBanner) _paBanner.style.display = _detailPendienteAprobacion ? 'block' : 'none';
+  var _paAcc = document.getElementById('md-pend-acciones');
+  if (_paAcc) _paAcc.style.display = (_detailPendienteAprobacion && AUTH.canApproveNuevoCliente()) ? 'flex' : 'none';
   var _bqDelBar = document.getElementById('md-delivery-bar');
   if (_bqDelBar) _bqDelBar.style.display = _detailBloqueadoCartera ? 'none' : '';
 
@@ -1915,7 +2001,7 @@ async function openDetail(idx) {
   var obsText = c.Observaciones || lines.reduce(function(a, l) { return a || l.Observaciones; }, '') || '';
   document.getElementById('m-observaciones').value = obsText ? String(obsText).trim() : '';
   var _mdA = document.getElementById('md-audit');
-  if (_mdA) _mdA.innerHTML = _auditoriaHtml(lines, false);
+  if (_mdA) _mdA.innerHTML = _auditoriaHtml(lines, false) + _aprobacionHtml(lines);
   renderSolicitudesCompraSection(c);
   document.getElementById('m-fecha').value = today();
   document.getElementById('m-remision').value = '';
@@ -2473,7 +2559,7 @@ function renderAsignacionCell(i, l, empresaPedido) {
   // Pedido bloqueado por cartera: no se permite asignar stock / registrar entrega.
   if (_detailBloqueadoCartera) {
     return '<div style="font-size:0.72rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;padding:4px 8px;border-radius:4px;font-weight:700">' +
-             '🚫 Bloqueado por cartera — no se puede registrar entrega' +
+             (_detailPendienteAprobacion ? '⏳ Pendiente de aprobación de Cartera' : '🚫 Bloqueado por cartera') + ' — no se puede registrar entrega' +
            '</div>' +
            '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
   }
@@ -2708,7 +2794,7 @@ function addAsignacion(i) {
   var dl = detailWorkingLines[i];
   if (!dl) return;
   if (_detailBloqueadoCartera) {
-    showToast('🚫 Pedido bloqueado por cartera: no se puede registrar entrega de producto', '#e74c3c');
+    showToast('🚫 Pedido ' + _txtVetoTramite() + ': no se puede registrar entrega de producto', '#e74c3c');
     return;
   }
   var sel = document.querySelector('.asig-empresa[data-i="' + i + '"]');
@@ -2756,7 +2842,7 @@ function removeAsignacion(i, k) {
 function emitirEntregaApartado(i, empresaStock, cant) {
   var dl = detailWorkingLines[i];
   if (!dl) return;
-  if (_detailBloqueadoCartera) { showToast('🚫 Pedido bloqueado por cartera', '#e74c3c'); return; }
+  if (_detailBloqueadoCartera) { showToast('🚫 Pedido ' + _txtVetoTramite(), '#e74c3c'); return; }
   var tope = _pendienteRestante(i);
   var n = Math.min(Number(cant) || 0, tope);
   if (n <= 0) { showToast('La línea ya no tiene pendiente por asignar', '#e67e22'); return; }
@@ -2975,7 +3061,7 @@ async function apartarSinRemisionar() {
   if (activeIdx === null) return;
   var c = consecs[activeIdx];
   if (!c) return;
-  if (_detailBloqueadoCartera) { showToast('🚫 Pedido bloqueado por cartera', '#e74c3c'); return; }
+  if (_detailBloqueadoCartera) { showToast('🚫 Pedido ' + _txtVetoTramite(), '#e74c3c'); return; }
 
   var empPedidoN = norm(c.Nombre_Empresa);
   var items = [];             // apartados misma empresa
@@ -3079,7 +3165,7 @@ async function guardarTodo() {
   // de cambios del encabezado (incluido cambiar el Estado para liberarlo) sí
   // se guardan.
   if (_detailBloqueadoCartera && (entregas.length > 0 || solicitudesCompra.length > 0)) {
-    showToast('🚫 Pedido bloqueado por cartera: no se puede registrar entrega de producto ni solicitudes de compra', '#e74c3c');
+    showToast('🚫 Pedido ' + _txtVetoTramite() + ': no se puede registrar entrega de producto ni solicitudes de compra', '#e74c3c');
     return;
   }
 
@@ -5330,6 +5416,7 @@ async function guardarNuevoPedido() {
     // ahí y queda marcado como "nuevo" en el módulo Clientes. Sin NIT no se
     // crea nada. No bloquea la creación del pedido si algo falla.
     var _nitNuevo = document.getElementById('nv-nit').value.trim();
+    var _pendAprob = false; // el pedido de un cliente nuevo queda pendiente de aprobación (trigger en la BD)
     if (_nitNuevo) {
       try {
         var _cliNuevo = await apiPost({
@@ -5346,7 +5433,7 @@ async function guardarNuevoPedido() {
         });
         if (_cliNuevo && _cliNuevo.ok && _cliNuevo.created) {
           clientesCache = null;
-          showToast('🆕 Cliente nuevo agregado al módulo Clientes');
+          _pendAprob = true;
         }
       } catch (e) { /* no bloquea la creación del pedido */ }
     }
@@ -5376,7 +5463,9 @@ async function guardarNuevoPedido() {
       archivo: 'Ingreso manual'
     });
     closeNuevo();
-    showToast('✅ Pedido creado: ' + (result.added||0) + ' línea(s) agregadas');
+    showToast(_pendAprob
+      ? '⏳ Cliente nuevo: pedido creado y PENDIENTE DE APROBACIÓN de Cartera'
+      : '✅ Pedido creado: ' + (result.added||0) + ' línea(s) agregadas', _pendAprob ? '#d97706' : undefined);
     await loadFromAPI();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -5559,7 +5648,7 @@ function renderDetalle() {
     var est = (p.Estado_Entrega || 'Recibido').trim();
     var est2 = (p.Estado_2 || 'Abierto').trim();
     var badgeEst = norm(est) === 'recibido' ? 'b-rec' : norm(est) === 'parcial' ? 'b-par' : norm(est) === 'alistado' ? 'b-alistado' : 'b-ent';
-    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
+    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Pendiente de aprobación' ? 'b-pendiente-aprob' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
     return '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClass(p.Nombre_Empresa) + '">' + escHtml(getSigla(p.Nombre_Empresa)) + '</span></td>' +
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(p.Cliente||'') + '">' + escHtml(p.Cliente||'—') + '</td>' +

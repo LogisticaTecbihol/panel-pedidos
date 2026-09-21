@@ -578,7 +578,8 @@
       var pendiente = Math.max(0, pedida - entregada);
       var estado2 = (p.Estado_2 || '').toLowerCase();
       if (estado2 === 'cerrado' || estado2 === 'alistado' ||
-          estado2 === 'anulado' || estado2 === 'bloqueado por cartera') return;
+          estado2 === 'anulado' || estado2 === 'bloqueado por cartera' ||
+          estado2 === 'pendiente de aprobación') return;
       if (!comp[prod]) comp[prod] = 0;
       comp[prod] += pendiente;
     });
