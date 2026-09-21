@@ -91,9 +91,9 @@ function applySortIng(rows) {
 async function loadIngresos() {
   await _authReady;
   populateEmpresaSelect('f-emp-orig', 'Todas');
-  populateEmpresaSelect('f-emp-dest', 'Todas');
+  populateEmpresaSelect('f-emp-dest', 'Todas', null, false, true);
   populateEmpresaSelect('ing-empresa-origen');
-  populateEmpresaSelect('ing-empresa-destino');
+  populateEmpresaSelect('ing-empresa-destino', null, null, false, true);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -183,10 +183,13 @@ function openRetornoIngreso(ref, salLines) {
              : /ch[ií]a\s*abago/i.test(planta) ? 'Chia Abago'
              : (planta || '');
   if (origen) { setOrigenValue(origen); onOrigenChange(); }
-  // El producto re-envasado vuelve a la empresa que lo despachó.
-  if (hdr.Empresa) {
+  // El producto re-envasado vuelve a la empresa que lo despachó. Si lo despachó
+  // GRANEL (bidones de segunda), lo reconvertido pertenece a la empresa de la
+  // planta a la que volvió (Mosquera→GREEN, Cachipay→PARCELAR), no a GRANEL.
+  var empRetorno = _esGranel(hdr.Empresa) ? (ORIGEN_EMPRESA[origen] || '') : hdr.Empresa;
+  if (empRetorno) {
     var elDest = document.getElementById('ing-empresa-destino');
-    if (elDest) elDest.value = hdr.Empresa;
+    if (elDest) elDest.value = empRetorno;
   }
   var muRef = (hdr.Muestra_Ref || '').trim();
   if (muRef) {
@@ -851,16 +854,23 @@ function onOrigenChange() {
   if (selVal !== '__otro__') customEl.value = '';
 
   var origen = getOrigenValue();
+  // Destino GRANEL: el bidón de segunda que llega de la planta es un subproducto,
+  // no stock de GREEN/PARCELAR → sin Empresa_Origen (no descuenta a la empresa de
+  // la planta en Kardex ni en Inventario). La planta queda en `Origen`.
+  var esGranelDest = _esGranel(document.getElementById('ing-empresa-destino').value);
   var empresa = ORIGEN_EMPRESA[origen];
-  if (empresa) {
+  if (empresa && !esGranelDest) {
     document.getElementById('ing-empresa-origen').value = empresa;
   }
   var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta' || origen === 'Germisemillas';
-  document.getElementById('ing-empresa-origen-wrap').style.display = esExterno ? 'none' : '';
+  document.getElementById('ing-empresa-origen-wrap').style.display = (esExterno || esGranelDest) ? 'none' : '';
   document.getElementById('ing-remision-origen-wrap').style.display = esExterno ? 'none' : '';
   if (esExterno) {
     document.getElementById('ing-empresa-origen').value = '';
     document.getElementById('ing-remision-origen').value = '';
+  }
+  if (esGranelDest) {
+    document.getElementById('ing-empresa-origen').value = '';
   }
   if (origen === 'Chia Abago') {
     document.getElementById('ing-empresa-destino').value = '';
@@ -973,7 +983,7 @@ async function saveIngreso() {
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
   if (!origen) { showToast('Selecciona el origen', '#e74c3c'); return; }
   var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta' || origen === 'Germisemillas';
-  if (!esExterno && !empresa_origen) { showToast('Selecciona la empresa origen', '#e74c3c'); return; }
+  if (!esExterno && !_esGranel(empresa_destino) && !empresa_origen) { showToast('Selecciona la empresa origen', '#e74c3c'); return; }
   if (!responsable) { showToast('Ingresa el responsable', '#e74c3c'); return; }
 
   var btn = document.getElementById('btn-save-ing');
@@ -1109,7 +1119,8 @@ async function confirmAndSaveIngreso() {
             modulo: 'ingresos', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + _remIng,
             titulo: 'Remisión ingreso #' + _remIng + ' — ' + (origen || ''),
             docLabel: 'Remisión',
-            contabIds: _pendingContabIng.contabIds, contabNames: _pendingContabIng.contabNames
+            contabIds: _pendingContabIng.contabIds, contabNames: _pendingContabIng.contabNames,
+            destinoLabel: _pendingContabIng.destinoLabel
           });
         }
       } catch (e) { console.error('Auto-send contabilidad error', e); }

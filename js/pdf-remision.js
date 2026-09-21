@@ -80,6 +80,13 @@ var _pdfRemisionHeaderInfo = {
     'Parque Agroindustrial Maxiabastos Km. 18, Mosquera,',
     'Cundinamarca - Bod 1301, Via Bogota',
     'Cel: 3174271771 - 3232296718  ·  solucionesintegralesresosas@gmail.com'
+  ],
+  // Bodega GRANEL: membrete genérico (sin NIT ni logo por ahora). Cuando lleguen
+  // los datos reales, basta completar estas líneas y agregar assets/logo_granel.png.
+  GRANEL: [
+    'BODEGA GRANEL',
+    'Bidones de segunda provenientes de las plantas de producción',
+    'Retorno a planta para reconversión a otras presentaciones'
   ]
 };
 
@@ -93,6 +100,7 @@ function _pdfPaletteFor(empresa) {
   sigla = String(sigla).toUpperCase();
   if (sigla === 'PARCELAR') return { accent: [30, 107, 63], light: [220, 235, 225] };
   if (sigla === 'RESO')     return { accent: [26, 55, 100],  light: [219, 229, 245] };
+  if (sigla === 'GRANEL')   return { accent: [194, 65, 12],  light: [254, 226, 200] };
   return { accent: [39, 174, 96], light: [212, 239, 223] };
 }
 

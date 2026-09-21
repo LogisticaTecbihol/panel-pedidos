@@ -1887,6 +1887,7 @@ function _ultimoMovPorProducto(fEmp, tipo) {
   var out = {};
   ((dExist && dExist.kxMovimientos) || []).forEach(function(m) {
     if (m.tipo !== tipo) return;
+    if (_esGranel(m.empresa)) return; // GRANEL no es parte del holding en el dashboard
     if (fEmp && m.empresa !== fEmp) return;
     var k = dNormProd(m.producto), f = String(m.fecha || '').slice(0, 10);
     if (k && f && (!out[k] || f > out[k])) out[k] = f;

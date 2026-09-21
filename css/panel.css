@@ -317,6 +317,7 @@ tbody tr:last-child td { border-bottom: none; }
 .sigla-RESO     { background: #fdebd0; color: #a04000; }
 .sigla-IASO     { background: #e8daef; color: #6c3483; }
 .sigla-IAS      { background: #fde8e8; color: #922b21; }
+.sigla-GRANEL   { background: #ffedd5; color: #c2410c; }
 .sigla-DEFAULT  { background: #e2e8f0; color: #4a5568; }
 
 /* ── STATUS BADGES ── */

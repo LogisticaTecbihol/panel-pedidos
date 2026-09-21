@@ -519,6 +519,11 @@ var NOTIF = (function() {
 
     var users = await _loadUsuarios();
     var seleccion = {};
+    // Remisión de GRANEL: producción queda preseleccionada como destinatario.
+    if (meta.empresa && (typeof _esGranel === 'function') && _esGranel(meta.empresa)) {
+      users.forEach(function(u) { if (u.rol === 'produccion') seleccion[u.id] = true; });
+      btnConfirm.disabled = Object.keys(seleccion).length === 0;
+    }
 
     function render(filter) {
       var f = (filter || '').toLowerCase().trim();
@@ -725,13 +730,38 @@ var NOTIF = (function() {
     };
   }
 
+  // Usuarios activos con rol 'produccion' (destinatarios de las remisiones de la
+  // bodega GRANEL). Excluye al emisor. Sin RPC propia: el directorio ya trae el rol.
+  async function resolverProduccion() {
+    if (!_uid && typeof AUTH !== 'undefined' && AUTH.getUser) {
+      var u0 = AUTH.getUser(); if (u0) _uid = u0.id;
+    }
+    var dir = await _loadDirectorio();
+    var us = dir.filter(function(u) { return u.activo && u.rol === 'produccion' && u.id !== _uid; });
+    return {
+      ids: us.map(function(u) { return u.id; }),
+      names: us.map(function(u) { return u.nombre || u.email; }).join(', ')
+    };
+  }
+
   async function confirmarEnvioContabilidad(empresa, modulo) {
     if (!empresa || AUTO_CONTAB_MODS.indexOf(modulo) < 0) return { confirmed: true, contabIds: [] };
     var sigla = (typeof getSigla === 'function') ? getSigla(empresa) : empresa;
     var resuelto = await resolverContabilidad(empresa);
-    if (!resuelto.contabIds.length) return { confirmed: true, contabIds: [] };
     var names = resuelto.contabNames;
-    var ids = resuelto.contabIds;
+    var ids = resuelto.contabIds.slice();
+    var destinoLabel = 'Contabilidad';
+    // Bodega GRANEL: la remisión también va al usuario de producción.
+    if ((typeof _esGranel === 'function') && _esGranel(empresa)) {
+      var prod = await resolverProduccion();
+      if (!prod.ids.length) {
+        showToast('⚠ No hay un usuario activo con rol Producción: la remisión de GRANEL no se enviará a producción.', '#e67e22');
+      }
+      prod.ids.forEach(function(id) { if (ids.indexOf(id) < 0) ids.push(id); });
+      names = [names, prod.names].filter(Boolean).join(', ');
+      if (prod.ids.length) destinoLabel = resuelto.contabIds.length ? 'Contabilidad + Producción' : 'Producción';
+    }
+    if (!ids.length) return { confirmed: true, contabIds: [] };
 
     return new Promise(function(resolve) {
       _injectStyles();
@@ -748,7 +778,7 @@ var NOTIF = (function() {
             '<div style="font-size:2rem;margin-bottom:12px">📋</div>' +
             '<div style="font-size:0.92rem;color:#2d3748;margin-bottom:8px">Al guardar se enviará automáticamente el PDF a:</div>' +
             '<div style="font-size:1.1rem;font-weight:700;color:#7d3c98;margin-bottom:4px">' + escHtml(names) + '</div>' +
-            '<div style="font-size:0.78rem;color:#718096">(Contabilidad · ' + escHtml(sigla) + ')</div>' +
+            '<div style="font-size:0.78rem;color:#718096">(' + escHtml(destinoLabel) + ' · ' + escHtml(sigla) + ')</div>' +
           '</div>' +
           '<div class="mftr" style="justify-content:center;gap:12px">' +
             '<button class="btn-cancel" id="_contab-no">Cancelar</button>' +
@@ -759,7 +789,7 @@ var NOTIF = (function() {
       function close() { if (ov.parentElement) ov.parentElement.removeChild(ov); }
       ov.querySelector('#_contab-x').addEventListener('click', function() { close(); resolve({ confirmed: false }); });
       ov.querySelector('#_contab-no').addEventListener('click', function() { close(); resolve({ confirmed: false }); });
-      ov.querySelector('#_contab-yes').addEventListener('click', function() { close(); resolve({ confirmed: true, contabIds: ids, contabNames: names }); });
+      ov.querySelector('#_contab-yes').addEventListener('click', function() { close(); resolve({ confirmed: true, contabIds: ids, contabNames: names, destinoLabel: destinoLabel }); });
       ov.addEventListener('click', function(e) { if (e.target === ov) { close(); resolve({ confirmed: false }); } });
     });
   }
@@ -774,6 +804,7 @@ var NOTIF = (function() {
     var ids = meta.contabIds.filter(function(id) { return id !== _uid; });
     if (!ids.length) return { ok: false, error: 'sin destinatarios' };
     var etiqueta = meta.docLabel || 'PDF';
+    var destino = meta.destinoLabel || 'Contabilidad';
     var quien = meta.contabNames ? ' (' + meta.contabNames + ')' : '';
     var manual = meta.accionManual ? ' Reenvíalo manualmente con "' + meta.accionManual + '".' : '';
     try {
@@ -785,15 +816,15 @@ var NOTIF = (function() {
         destinatarios: ids
       });
       if (result && result.ok) {
-        showToast('📨 Contabilidad notificada' + quien + ' · ' + etiqueta, '#8e44ad');
+        showToast('📨 ' + destino + ' notificada' + quien + ' · ' + etiqueta, '#8e44ad');
         return result;
       }
       var det = (result && result.errors && result.errors[0]) ? ' — ' + result.errors[0] : '';
-      showToast('⚠ Contabilidad NO notificada' + quien + ' · ' + etiqueta + det + '.' + manual, '#e74c3c');
+      showToast('⚠ ' + destino + ' NO notificada' + quien + ' · ' + etiqueta + det + '.' + manual, '#e74c3c');
       return result || { ok: false, error: 'sin enviar' };
     } catch (e) {
       console.error('enviarPDFContabilidad error', e);
-      showToast('⚠ Contabilidad NO notificada' + quien + ' · ' + etiqueta + ': ' +
+      showToast('⚠ ' + destino + ' NO notificada' + quien + ' · ' + etiqueta + ': ' +
                 (e && e.message ? e.message : e) + '.' + manual, '#e74c3c');
       return { ok: false, error: (e && e.message) ? e.message : String(e) };
     }
@@ -814,7 +845,8 @@ var NOTIF = (function() {
     verificarBtn: verificarBtn,
     confirmarEnvioContabilidad: confirmarEnvioContabilidad,
     enviarPDFContabilidad: enviarPDFContabilidad,
-    resolverContabilidad: resolverContabilidad
+    resolverContabilidad: resolverContabilidad,
+    resolverProduccion: resolverProduccion
   };
 })();
 

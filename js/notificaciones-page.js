@@ -162,7 +162,7 @@
     var sel = document.getElementById('f-empresa');
     if (!sel) return;
     var prev = sel.value;
-    var siglas = (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : [];
+    var siglas = (typeof EMPRESAS_TODAS !== 'undefined') ? EMPRESAS_TODAS : ((typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : []);
     var found = {};
     _all.forEach(function(r) {
       var text = (r.referencia || '') + ' ' + (r.titulo || '');

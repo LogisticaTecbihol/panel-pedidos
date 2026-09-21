@@ -365,7 +365,7 @@
 
     var fechaCorte = null;
     kxMovimientos.forEach(function(m) {
-      if (m.modulo === 'Saldo Inicial' && m.fecha) {
+      if (m.modulo === 'Saldo Inicial' && m.fecha && !_esGranel(m.empresa)) { // GRANEL no mueve el corte del holding
         if (!fechaCorte || m.fecha < fechaCorte) fechaCorte = m.fecha;
       }
     });

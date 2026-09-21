@@ -58,17 +58,17 @@ async function loadKardex() {
   _ncProcessed = false;
   var kxExtras = ['CHIA ABAGO'];
   var kxAll = true;
-  populateEmpresaSelect('f-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('f-empresa', '— Seleccionar —', kxExtras, kxAll, true);
   populateEmpresaSelect('pp-f-empresa', '— Todas —', kxExtras, kxAll);
   populateEmpresaSelect('nc-f-empresa', '— Seleccionar —', kxExtras, kxAll);
   populateEmpresaSelect('nc-empresa', '— Seleccionar —', kxExtras, kxAll);
   populateEmpresaSelect('ncsi-empresa', '— Seleccionar —', kxExtras, kxAll);
-  populateEmpresaSelect('aj-empresa', '— Seleccionar —', kxExtras, kxAll);
-  populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('aj-empresa', '— Seleccionar —', kxExtras, kxAll, true);
+  populateEmpresaSelect('si-empresa', '— Seleccionar —', kxExtras, kxAll, true);
   populateEmpresaSelect('cm-empresa', '— Seleccionar —', kxExtras, kxAll);
   populateEmpresaSelect('kxnc-f-empresa', '— Seleccionar —', kxExtras, kxAll);
-  populateEmpresaSelect('invf-f-empresa', '— Todas —', kxExtras, kxAll);
-  populateEmpresaSelect('invf-new-empresa', '— Seleccionar —', kxExtras, kxAll);
+  populateEmpresaSelect('invf-f-empresa', '— Todas —', kxExtras, kxAll, true);
+  populateEmpresaSelect('invf-new-empresa', '— Seleccionar —', kxExtras, kxAll, true);
   EMPRESAS_EXIST = (AUTH.isGerenteIaso() || AUTH.isAdmin()) ? EMPRESAS_HOLDING : AUTH.getFilteredEmpresas(EMPRESAS_HOLDING);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
@@ -2849,6 +2849,27 @@ var existData = [];
 var existFiltered = [];
 var existFiltersAttached = false;
 
+// ── Columna GRANEL (bodega de bidones de segunda) en Existencias por Empresa ──
+// Va aparte: NO entra en TOTAL / APARTADO / DISP. NETO (esos son de las 5 empresas
+// del holding). Solo se ve con "Todas las empresas" y para quien tenga GRANEL.
+var existShowGranel = false;
+
+function _granelVisibleKx() {
+  return (typeof AUTH !== 'undefined') &&
+    !!(AUTH.isGerenteIaso() || AUTH.hasCompany('GRANEL'));
+}
+
+function _existGranelVal(row) { return row['GRANEL'] || 0; }
+
+var _GRANEL_TH_STYLE = 'text-align:right;min-width:90px;background:#ffedd5;color:#c2410c;font-weight:800;border-left:2px solid #fdba74';
+var _GRANEL_TH_TITLE = 'Bodega GRANEL (bidones de segunda de las plantas). No suma en TOTAL, APARTADO ni DISP. NETO.';
+
+function _granelTd(val, bold, size) {
+  var color = val > 0 ? '#c2410c' : val < 0 ? '#e74c3c' : '#cbd5e0';
+  return '<td style="text-align:right;font-weight:' + (bold || (val !== 0 ? '700' : '400')) + ';color:' + color +
+    ';background:#fff7ed;font-size:' + (size || '0.84rem') + ';border-left:2px solid #fdba74">' + _fmtNum.format(val) + '</td>';
+}
+
 function debugKardexProducto(filtro) {
   var f = (filtro || '').toUpperCase();
   var encontrados = kxMovimientos.filter(function(m) {
@@ -2889,7 +2910,7 @@ function calcularExistencias() {
 
   var fechaCorte = null;
   kxMovimientos.forEach(function(m) {
-    if (m.modulo === 'Saldo Inicial' && m.fecha) {
+    if (m.modulo === 'Saldo Inicial' && m.fecha && !_esGranel(m.empresa)) { // GRANEL no mueve el corte del holding
       if (!fechaCorte || m.fecha < fechaCorte) fechaCorte = m.fecha;
     }
   });
@@ -2912,6 +2933,8 @@ function calcularExistencias() {
     if (typeof saldos[key][bucket] === 'undefined') {
       saldos[key][bucket] = 0;
     }
+    // Producto con movimiento en alguna empresa del holding (no solo en GRANEL).
+    if (!_esGranel(bucket)) saldos[key]._hold = true;
     if (m.tipo === 'Entrada') {
       saldos[key][bucket] += m.cantidad;
     } else {
@@ -3010,14 +3033,20 @@ function renderExistencias() {
     return row[eValue] || 0;
   }
 
+  // GRANEL: columna aparte, solo con "Todas las empresas" y si el usuario la tiene.
+  existShowGranel = !empresaSel && _granelVisibleKx();
+
   existFiltered = existData.filter(function(row) {
     if (buscar && row.producto !== buscar) return false;
+    // Producto que solo existe en GRANEL: no se muestra si la columna está oculta.
+    if (!row._hold && !existShowGranel) return false;
     var totalView = 0;
     empresasView.forEach(function(e) { totalView += _existEmpVal(row, e.value); });
     row._totalView = totalView;
-    if (mostrar === 'con_stock' && totalView <= 0) return false;
-    if (mostrar === 'sin_stock' && totalView !== 0) return false;
-    if (mostrar === 'negativo' && totalView >= 0) return false;
+    var g = existShowGranel ? _existGranelVal(row) : 0;
+    if (mostrar === 'con_stock' && totalView <= 0 && g <= 0) return false;
+    if (mostrar === 'sin_stock' && (totalView !== 0 || g !== 0)) return false;
+    if (mostrar === 'negativo' && totalView >= 0 && g >= 0) return false;
     return true;
   });
 
@@ -3130,10 +3159,11 @@ function renderExistTable(empresasView) {
   if (showTotal) headerCols += '<th style="text-align:right;min-width:90px;background:#edf2f7;font-weight:800">TOTAL</th>';
   headerCols += '<th style="text-align:right;min-width:90px;background:#fff7ed;color:#b45309;font-weight:800" title="Stock apartado a pedidos sin remisionar. Es el total de TODO el holding para este producto, no solo de la empresa filtrada.">APARTADO</th>';
   headerCols += '<th style="text-align:right;min-width:90px;background:#f0fdf4;color:#15803d;font-weight:800" title="Disponible neto = existencia física − apartado, sumando TODAS las empresas del holding para este producto (no solo la empresa filtrada).">DISP. NETO</th>';
+  if (existShowGranel) headerCols += '<th style="' + _GRANEL_TH_STYLE + '" title="' + _GRANEL_TH_TITLE + '">🛢️ GRANEL</th>';
   thead.innerHTML = headerCols;
 
   var tbody = document.getElementById('t-body-ex');
-  var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0) + 2;
+  var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0) + 2 + (existShowGranel ? 1 : 0);
   if (!existFiltered.length) {
     tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos con los filtros seleccionados.</div></td></tr>';
     document.getElementById('t-foot-ex').innerHTML = '';
@@ -3159,6 +3189,7 @@ function renderExistTable(empresasView) {
     var neto = row._dispNetoTotal != null ? row._dispNetoTotal : ((row._totalView != null ? row._totalView : row._total) - apa);
     html += '<td style="text-align:right;font-weight:' + (apa ? '700' : '400') + ';color:' + (apa ? '#b45309' : '#cbd5e0') + ';background:#fff7ed;font-size:0.84rem">' + _fmtNum.format(apa) + '</td>';
     html += '<td style="text-align:right;font-weight:700;color:' + (neto < 0 ? '#e74c3c' : neto > 0 ? '#15803d' : '#cbd5e0') + ';background:#f0fdf4;font-size:0.84rem">' + _fmtNum.format(neto) + '</td>';
+    if (existShowGranel) html += _granelTd(_existGranelVal(row));
     html += '</tr>';
     return html;
   }
@@ -3182,6 +3213,11 @@ function renderExistTable(empresasView) {
     if (showTotal) h += '<td style="text-align:right;font-weight:800;font-size:0.86rem;background:#e2e8f0">' + _fmtNum.format(gt) + '</td>';
     h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#fff7ed;color:#b45309">' + _fmtNum.format(apaGt) + '</td>';
     h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#f0fdf4;color:' + ((gt - apaGt) < 0 ? '#e74c3c' : '#15803d') + '">' + _fmtNum.format(gt - apaGt) + '</td>';
+    if (existShowGranel) {
+      var gSub = 0;
+      items.forEach(function(row) { gSub += _existGranelVal(row); });
+      h += _granelTd(gSub, '800');
+    }
     h += '</tr>';
     return h;
   }
@@ -3221,11 +3257,12 @@ function renderExistTable(empresasView) {
 
   var totales = {};
   empresasView.forEach(function(e) { totales[e.value] = 0; });
-  var granTotal = 0, apaTotales = 0;
+  var granTotal = 0, apaTotales = 0, granelTotal = 0;
   existFiltered.forEach(function(row) {
     empresasView.forEach(function(e) { totales[e.value] += _existCellVal(row, e.value); });
     granTotal += (row._totalView != null ? row._totalView : row._total);
     apaTotales += (row._apartadoTotal || 0);
+    if (existShowGranel) granelTotal += _existGranelVal(row);
   });
 
   var footHtml = '<td style="position:sticky;left:0;background:#f0f4f8;z-index:1"></td>' +
@@ -3238,6 +3275,7 @@ function renderExistTable(empresasView) {
   if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem">' + _fmtNum.format(granTotal) + '</td>';
   footHtml += '<td style="text-align:right;font-weight:800;color:#b45309;background:#fff7ed;font-size:0.9rem">' + _fmtNum.format(apaTotales) + '</td>';
   footHtml += '<td style="text-align:right;font-weight:800;color:' + ((granTotal - apaTotales) < 0 ? '#e74c3c' : '#15803d') + ';background:#f0fdf4;font-size:0.9rem">' + _fmtNum.format(granTotal - apaTotales) + '</td>';
+  if (existShowGranel) footHtml += _granelTd(granelTotal, '800', '0.9rem');
   document.getElementById('t-foot-ex').innerHTML = footHtml;
 }
 
@@ -3254,6 +3292,8 @@ function exportExistExcel() {
   var hasParcelarCol = empresasView.some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
   var data = [];
   var num = 1;
+  // Columna GRANEL: misma condición que en pantalla (existShowGranel lo fija renderExistencias).
+  var xlGranel = existShowGranel && !empresaSel;
 
   function pushProductRow(row) {
     var obj = { '#': num++, 'Producto': row.producto };
@@ -3262,6 +3302,7 @@ function exportExistExcel() {
     obj['APARTADO'] = row._apartadoTotal || 0;
     obj['DISP. NETO'] = row._dispNetoTotal != null ? row._dispNetoTotal
       : ((row._totalView != null ? row._totalView : row._total) - (row._apartadoTotal || 0));
+    if (xlGranel) obj['GRANEL'] = _existGranelVal(row);
     data.push(obj);
   }
 
@@ -3270,6 +3311,7 @@ function exportExistExcel() {
     empresasView.forEach(function(e) { header[e.sigla] = ''; });
     if (showTotal) header['TOTAL'] = '';
     header['APARTADO'] = ''; header['DISP. NETO'] = '';
+    if (xlGranel) header['GRANEL'] = '';
     data.push(header);
   }
 
@@ -3288,6 +3330,11 @@ function exportExistExcel() {
     if (showTotal) obj['TOTAL'] = gt;
     obj['APARTADO'] = apaGt;
     obj['DISP. NETO'] = gt - apaGt;
+    if (xlGranel) {
+      var gS = 0;
+      items.forEach(function(row) { gS += _existGranelVal(row); });
+      obj['GRANEL'] = gS;
+    }
     data.push(obj);
   }
 
@@ -3897,7 +3944,7 @@ function calcularComparativo() {
 
   var fechaCorteBueno = null;
   kxMovimientos.forEach(function(m) {
-    if (m.modulo === 'Saldo Inicial' && m.fecha) {
+    if (m.modulo === 'Saldo Inicial' && m.fecha && !_esGranel(m.empresa)) {
       if (!fechaCorteBueno || m.fecha < fechaCorteBueno) fechaCorteBueno = m.fecha;
     }
   });
@@ -3922,6 +3969,7 @@ function calcularComparativo() {
 
   kxMovimientos.forEach(function(m) {
     if (!m.producto || !m.empresa) return;
+    if (_esGranel(m.empresa)) return; // GRANEL no tiene Bodega NC: no entra al comparativo
     if (fechaCorteBueno && m.fecha < fechaCorteBueno) return;
     if (corteHasta && m.fecha && m.fecha > corteHasta) return;
     var r = ensureRow(m.producto);
@@ -4527,7 +4575,7 @@ function _computeExistenciasParaEmpresa(empresa, bodega, fechaHasta) {
   var fechaCorteInicial = null;
   movs.forEach(function(m) {
     var esSaldo = esNC ? (m.motivo === 'Saldo_Inicial') : (m.modulo === 'Saldo Inicial');
-    if (esSaldo && m.fecha) {
+    if (esSaldo && m.fecha && !_esGranel(m.empresa)) { // GRANEL no mueve el corte del holding
       if (!fechaCorteInicial || m.fecha < fechaCorteInicial) fechaCorteInicial = m.fecha;
     }
   });

@@ -156,8 +156,25 @@ var EMPRESAS_SIGLA = {
   'GREEN AGROSOLUCIONES DE COLOMBIA SAS': 'GREEN',
   'SOLUCIONES INTEGRALES RESO SAS': 'RESO',
   'INSUMOS AGROPECUARIOS SOSTENIBLES SAS': 'IASO',
-  'INSUMOS AGROPECUARIOS DE LA SABANA SAS': 'IAS'
+  'INSUMOS AGROPECUARIOS DE LA SABANA SAS': 'IAS',
+  'GRANEL': 'GRANEL'
 };
+
+// Bodega GRANEL (bidones de segunda): solo despacha producto terminado de vuelta a
+// una planta de producción; no hace traslados entre empresas.
+function onReEmpresaChange() {
+  var esG = _esGranel(document.getElementById('re-empresa').value);
+  var bod = document.getElementById('re-bodega');
+  var dest = document.getElementById('re-empresa-destino');
+  if (esG) {
+    bod.value = 'Producto Terminado';
+    dest.value = '';
+    var w = document.getElementById('re-remision-destino-wrap');
+    if (w) w.style.display = 'none';
+  }
+  bod.disabled = esG;
+  dest.disabled = esG;
+}
 
 // ── Grouping ──
 
@@ -241,7 +258,7 @@ var SORT_COLS_RE = [
 
 async function loadReenvases() {
   await _authReady;
-  populateEmpresaSelect('re-empresa');
+  populateEmpresaSelect('re-empresa', null, null, false, true);
   populateEmpresaSelect('re-empresa-destino', '— Sin traslado —', ['CHIA ABAGO']);
   var loadZone = document.getElementById('load-zone');
   var main = document.getElementById('main');
@@ -1200,6 +1217,7 @@ async function openNewReenvase() {
   if (_reA) _reA.innerHTML = '';
   reLines = [{ producto: '', presentacion: '', cantidad: 0, observaciones: '' }];
   renderReLines();
+  onReEmpresaChange();
   document.getElementById('re-overlay').classList.add('show');
   await loadProductosCache();
   setupReProdAutocomplete();
@@ -1236,6 +1254,7 @@ async function editReenvase(id) {
   document.getElementById('re-edit-presentacion').value = r.Presentacion || '';
   document.getElementById('re-edit-cantidad').value = r.Cantidad || 0;
   document.getElementById('re-edit-observaciones').value = r.Observaciones || '';
+  onReEmpresaChange();
 
   var _reA = document.getElementById('re-audit');
   if (_reA) {
@@ -1335,6 +1354,7 @@ async function saveReenvase() {
   var remision = document.getElementById('re-remision').value.trim();
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
+  if (_esGranel(empresa) && !/mosquera|cachipay/i.test(planta)) { showToast('GRANEL solo despacha a una planta de producción (Mosquera o Cachipay)', '#e74c3c'); return; }
   if (!planta && !empresaDestino) { showToast('Selecciona la planta de destino o la empresa destino', '#e74c3c'); return; }
   if (empresaDestino && empresaDestino === empresa) { showToast('La empresa destino debe ser diferente a la empresa origen', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
@@ -1489,7 +1509,8 @@ async function confirmAndSaveReenvase() {
           await NOTIF.enviarPDFContabilidad(_cr.doc, {
             modulo: 'reenvases', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + remAutoSalida,
             titulo: 'Remisión salida #' + remAutoSalida, docLabel: 'Remisión',
-            contabIds: _pendingContabRe.contabIds, contabNames: _pendingContabRe.contabNames
+            contabIds: _pendingContabRe.contabIds, contabNames: _pendingContabRe.contabNames,
+            destinoLabel: _pendingContabRe.destinoLabel
           });
         }
       } catch (e) { console.error('Auto-send contabilidad error', e); }

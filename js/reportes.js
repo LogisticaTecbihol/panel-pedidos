@@ -2277,7 +2277,7 @@ function buildLitros() {
   // (igual que "Existencias por Empresa" del Kardex).
   var fechaCorte = null;
   movs.forEach(function(m) {
-    if (m.modulo === 'Saldo Inicial' && m.fecha) {
+    if (m.modulo === 'Saldo Inicial' && m.fecha && !_esGranel(m.empresa)) {
       var f = String(m.fecha).slice(0, 10);
       if (!fechaCorte || f < fechaCorte) fechaCorte = f;
     }
@@ -2310,6 +2310,7 @@ function buildLitros() {
   movs.forEach(function(m) {
     if (!m.empresa) return;
     var emp = String(m.empresa).trim();
+    if (_esGranel(emp)) return; // bodega GRANEL (bidones de segunda) fuera del balance del holding
     if (fEmp && emp !== fEmp) return;
     var cant = Number(m.cantidad) || 0;
     if (cant <= 0) return;

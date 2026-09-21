@@ -20,13 +20,22 @@ var EMPRESAS_HOLDING = [
   { value: 'INSUMOS AGROPECUARIOS DE LA SABANA SAS', sigla: 'IAS' },
 ];
 
+// Bodega GRANEL (bidones de segunda de las plantas). Es una "empresa" en BD
+// (permisos, RLS, consecutivos GRANEL-RE/RS) pero NO forma parte de
+// EMPRESAS_HOLDING: así no aparece en ventas, dashboard ni consolidados.
+// Solo los módulos que la operan la piden con populateEmpresaSelect(..., true).
+var EMPRESA_GRANEL = { value: 'GRANEL', sigla: 'GRANEL' };
+var EMPRESAS_TODAS = EMPRESAS_HOLDING.concat([EMPRESA_GRANEL]);
+
 var SIGLAS = {};
-EMPRESAS_HOLDING.forEach(function(e) { SIGLAS[e.value] = e.sigla; });
+EMPRESAS_TODAS.forEach(function(e) { SIGLAS[e.value] = e.sigla; });
 SIGLAS['INSUMOS AGROPECUARIOS DE LA SABANA SAS '] = 'IAS';
 
 function getSigla(n) { return SIGLAS[(n||'').trim()] || n || '—'; }
 
-var SIGLA_CLASSES = ['PARCELAR','GREEN','RESO','IASO','IAS'];
+function _esGranel(n) { return (n || '').trim().toUpperCase() === 'GRANEL'; }
+
+var SIGLA_CLASSES = ['PARCELAR','GREEN','RESO','IASO','IAS','GRANEL'];
 function getSiglaClass(n) { var s = getSigla(n); return SIGLA_CLASSES.indexOf(s) >= 0 ? 'sigla-'+s : 'sigla-DEFAULT'; }
 
 function _esEmpresaHolding(nombre) {
@@ -141,14 +150,17 @@ async function _genRem(empresa, tipo) {
   return rem;
 }
 
-function populateEmpresaSelect(id, defaultLabel, extras, allAccess) {
+// incluirGranel (opcional): agrega la bodega GRANEL a la lista base. Sigue
+// filtrada por AUTH.getFilteredEmpresas → solo la ve quien la tenga asignada.
+function populateEmpresaSelect(id, defaultLabel, extras, allAccess, incluirGranel) {
   var sel = document.getElementById(id);
   if (!sel) return;
+  var base = incluirGranel ? EMPRESAS_TODAS : EMPRESAS_HOLDING;
   var empresas;
   if (allAccess && typeof AUTH !== 'undefined' && AUTH.isGerenteIaso && AUTH.isGerenteIaso()) {
-    empresas = EMPRESAS_HOLDING;
+    empresas = base;
   } else {
-    empresas = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas) ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING) : EMPRESAS_HOLDING;
+    empresas = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas) ? AUTH.getFilteredEmpresas(base) : base;
   }
   var opts = '<option value="">' + (defaultLabel || '— Seleccionar —') + '</option>';
   empresas.forEach(function(e) {

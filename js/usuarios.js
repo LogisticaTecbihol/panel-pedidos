@@ -107,6 +107,7 @@ function renderUsuariosTable() {
     contabilidad: '<span style="background:#8e44ad;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Contabilidad</span>',
     gerente_iaso: '<span style="background:#1a5276;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Gerente IASO</span>',
     cartera: '<span style="background:#e65100;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Cartera</span>',
+    produccion: '<span style="background:#c2410c;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Producción</span>',
     lector: '<span style="background:#f39c12;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Lector</span>'
   };
 
@@ -187,7 +188,7 @@ function openEditUser(userId) {
 function renderEmpresaChecks(selectedSiglas, codigosPorEmpresa) {
   var codes = codigosPorEmpresa || {};
   var container = document.getElementById('usr-empresas-checks');
-  container.innerHTML = EMPRESAS_HOLDING.map(function(e) {
+  container.innerHTML = EMPRESAS_TODAS.map(function(e) {
     var checked = selectedSiglas.indexOf(e.sigla) >= 0 ? ' checked' : '';
     var code = codes[e.sigla] || '';
     var codeVisible = checked ? '' : ' style="display:none"';
