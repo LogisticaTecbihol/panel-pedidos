@@ -5262,6 +5262,22 @@ async function guardarNuevoPedido() {
   btn.textContent = '⏳ Guardando...';
 
   try {
+    // El N° que muestra el formulario sale de los pedidos cargados en esta
+    // pestaña y puede estar desactualizado: el servidor asigna el definitivo
+    // (RPC generar_consecutivo_pedido) para no repetirlo entre clientes.
+    var nvComercial = document.getElementById('nv-comercial').value.trim();
+    var _rpcPed = await _sb.rpc('generar_consecutivo_pedido', {
+      p_empresa: empresa, p_comercial: nvComercial
+    });
+    if (_rpcPed.error) throw new Error('No se pudo asignar el N° de pedido: ' + _rpcPed.error.message);
+    var _nPed = String(_rpcPed.data == null ? '' : _rpcPed.data).trim();
+    if (!_nPed) throw new Error('No se pudo asignar el N° de pedido (respuesta vacía)');
+    if (_nPed !== String(consecutivo)) {
+      showToast('ℹ️ El N° de pedido cambió de ' + consecutivo + ' a ' + _nPed + ' (otro pedido del comercial ya usaba el ' + consecutivo + ')', '#e67e22');
+      consecutivo = _nPed;
+      document.getElementById('nv-consecutivo').value = _nPed;
+    }
+
     var dupResult = await apiPost({
       action: 'checkDuplicado',
       consecutivo: consecutivo,
@@ -5275,7 +5291,6 @@ async function guardarNuevoPedido() {
 
     var totalOrden = productosValidos.reduce(function(s, p) { return s + (Number(p.valor_total)||0); }, 0);
 
-    var nvComercial = document.getElementById('nv-comercial').value.trim();
     var comercialIdNv = await _resolveComercialId(nvComercial);
     var _geoNv = normalizarMunicipio(document.getElementById('nv-municipio').value.trim(), document.getElementById('nv-departamento').value.trim());
     var result = await apiPost({
