@@ -1224,16 +1224,26 @@ async function toggleBloqueoCartera(idx) {
   }
   var bloqueado = (c._cEstado2 || 'Abierto') === 'Bloqueado por cartera';
   var bloquear = !bloqueado;
-  var msg = bloquear
-    ? '¿Marcar el pedido #' + c.Consecutivo + ' (' + (c.Cliente || '') + ') como BLOQUEADO por cartera?\n\nMientras esté bloqueado no se podrá registrar entrega de producto.'
-    : '¿LIBERAR el pedido #' + c.Consecutivo + ' (' + (c.Cliente || '') + ') del bloqueo por cartera?\n\nQuedará en estado "Abierto".';
-  if (!confirm(msg)) return;
+  // Se actúa sobre las líneas de ESTE pedido (cliente incluido): empresa +
+  // consecutivo no bastan, otro cliente puede compartir el N°.
+  var ids = getLinesFor(c).map(function(l) { return l.__row; })
+    .filter(function(id) { return id != null; });
+  if (!ids.length) { showToast('❌ No se pudieron identificar las líneas del pedido', '#e74c3c'); return; }
+  var obs = '';
+  if (bloquear) {
+    obs = prompt('BLOQUEAR por cartera el pedido #' + c.Consecutivo + ' (' + (c.Cliente || '') + ').\n\nMientras esté bloqueado no se podrá registrar entrega de producto.\n\nEscribe la observación del bloqueo (obligatoria):');
+    if (obs === null) return;
+    obs = obs.trim();
+    if (!obs) { showToast('Indica la observación del bloqueo', '#e74c3c'); return; }
+  } else if (!confirm('¿LIBERAR el pedido #' + c.Consecutivo + ' (' + (c.Cliente || '') + ') del bloqueo por cartera?\n\nQuedará en estado "Abierto". La observación del bloqueo queda guardada como historial.')) {
+    return;
+  }
   try {
     var r = await apiPost({
       action: 'setBloqueoCartera',
-      empresa: c.Nombre_Empresa,
-      consecutivo: c.Consecutivo,
-      bloquear: bloquear
+      pedido_ids: ids,
+      bloquear: bloquear,
+      observacion: obs
     });
     if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al actualizar');
     showToast(bloquear ? '🔒 Pedido bloqueado por cartera' : '🔓 Pedido liberado de cartera');
@@ -1292,6 +1302,7 @@ async function resolverAprobacionPedido(idx, aprobar, desdeDetalle) {
     var r = await apiPost({ action: 'resolverAprobacionPedido', pedido_ids: ids, aprobar: aprobar, nota: nota });
     if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al actualizar');
     showToast(aprobar ? '✅ Pedido aprobado: ya se le puede dar trámite' : '❌ Pedido rechazado (Anulado)');
+    _notifyCreadorAprobacionPedido(c, aprobar, nota);
     if (desdeDetalle) closeModal();
     await loadFromAPI();
   } catch (err) {
@@ -1309,12 +1320,74 @@ function resolverAprobacionActivo(aprobar) {
 function _aprobacionHtml(lines) {
   var l = (lines || []).filter(function(x) { return x.Aprobacion_Por_Nombre; })[0];
   if (!l) return '';
-  var cuando = l.Aprobacion_En ? String(l.Aprobacion_En).slice(0, 16).replace('T', ' ') : '';
+  var cuando = l.Aprobacion_En ? _fmtAudTs(l.Aprobacion_En) : '';
   return '<div style="margin-top:6px;font-size:0.76rem;color:#92400e">' +
     '✔ Aprobación de cliente nuevo resuelta por <strong>' + escHtml(l.Aprobacion_Por_Nombre) + '</strong>' +
     (cuando ? ' · ' + escHtml(cuando) : '') +
     (l.Aprobacion_Nota ? ' · ' + escHtml(l.Aprobacion_Nota) : '') +
   '</div>';
+}
+
+// Observación del bloqueo por cartera (quién, cuándo, por qué). Con
+// `activo` = true es la del bloqueo vigente (va en el banner rojo del detalle);
+// con false es el historial del último bloqueo ya liberado (pie del detalle).
+function _bloqueoObsLinea(lines) {
+  return (lines || []).filter(function(x) { return x.Bloqueo_En || x.Bloqueo_Observacion; })[0] || null;
+}
+function _bloqueoHtml(lines, activo) {
+  var l = _bloqueoObsLinea(lines);
+  if (!l) return '';
+  var quien = l.Bloqueo_Por_Nombre ? ' · bloqueó <strong>' + escHtml(l.Bloqueo_Por_Nombre) + '</strong>' : '';
+  var cuando = l.Bloqueo_En ? ' · ' + escHtml(_fmtAudTs(l.Bloqueo_En)) : '';
+  var obs = escHtml(l.Bloqueo_Observacion || '(sin observación registrada)');
+  if (activo) {
+    return '<div style="font-weight:700;margin-bottom:2px">Observación del bloqueo</div>' +
+      '<div style="white-space:pre-wrap">' + obs + '</div>' +
+      '<div style="font-size:0.74rem;color:#991b1b;margin-top:4px">' + quien.replace(/^ · /, '') + cuando + '</div>';
+  }
+  var lib = l.Desbloqueo_En
+    ? ' · liberó <strong>' + escHtml(l.Desbloqueo_Por_Nombre || '—') + '</strong> · ' + escHtml(_fmtAudTs(l.Desbloqueo_En))
+    : '';
+  return '<div style="margin-top:6px;font-size:0.76rem;color:#7f1d1d">' +
+    '🔓 Último bloqueo por cartera: <em>' + obs + '</em>' + quien + cuando + lib +
+  '</div>';
+}
+
+// Avisos por la campana (NOTIF): no bloquean el flujo si fallan.
+// 1) A todo Cartera y admin cuando nace un pedido pendiente de aprobación.
+async function _notifyAprobadoresClienteNuevo(info) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
+  try {
+    var res = await _sb.rpc('find_aprobadores_cliente_nuevo');
+    var ids = (res.data || []).map(function(r) { return r.usuario_id; });
+    if (!ids.length) return;
+    await NOTIF.notifyUsers({
+      para_ids: ids,
+      modulo: 'pedidos',
+      referencia: String(info.consecutivo || ''),
+      titulo: '⏳ Pedido por aprobar (cliente nuevo): ' + info.sigla + ' #' + info.consecutivo + ' — ' + info.cliente,
+      mensaje: info.nLineas + ' línea(s) · Total: ' + fmtMoney(info.total) + (info.nit ? ' · NIT ' + info.nit : '')
+    });
+  } catch (e) { /* silencioso */ }
+}
+
+// 2) A quien creó el pedido cuando Cartera/admin lo aprueba o rechaza.
+async function _notifyCreadorAprobacionPedido(c, aprobar, nota) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
+  try {
+    var ln = getLinesFor(c).filter(function(l) { return l.creado_por; })[0];
+    if (!ln) return;
+    var ref = getSigla(c.Nombre_Empresa) + ' #' + c.Consecutivo + ' — ' + (c.Cliente || '');
+    await NOTIF.notifyUsers({
+      para_ids: [ln.creado_por],
+      modulo: 'pedidos',
+      referencia: String(c.Consecutivo || ''),
+      titulo: (aprobar ? '✅ Pedido aprobado: ' : '❌ Pedido rechazado: ') + ref,
+      mensaje: aprobar
+        ? 'Cartera aprobó tu pedido de cliente nuevo; ya se le puede dar trámite.'
+        : 'Motivo: ' + (nota || 'sin motivo')
+    });
+  } catch (e) { /* silencioso */ }
 }
 
 // ── Apartados de stock: descomprometer + prioridad ──────────────────
@@ -1796,6 +1869,10 @@ function renderTable() {
     var modPend = isPedidoModificadoPendiente(rowKey, c._ModTs);
     var bloqCartera = est2 === 'Bloqueado por cartera';
     var pendAprob = est2 === 'Pendiente de aprobación';
+    var _bqLn = bloqCartera ? _bloqueoObsLinea(getLinesFor(c)) : null;
+    var bqObsHtml = (_bqLn && _bqLn.Bloqueo_Observacion)
+      ? '<div title="' + escHtml(_bqLn.Bloqueo_Observacion) + '" style="font-size:0.68rem;color:#b91c1c;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">💬 ' + escHtml(_bqLn.Bloqueo_Observacion) + '</div>'
+      : '';
     var otd = c._cOtd || { clase: 'sin_compromiso', dias: null };
     var _apaListRow = apartadosPorPedido[_keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente)] || [];
     var _trCls = [];
@@ -1861,7 +1938,7 @@ function renderTable() {
       '</td>' +
       '<td><div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:' + pct + '%"></div></div><div class="prog-pct">' + pct + '%</div></div></td>' +
       '<td><span class="badge ' + badge + '">' + escHtml(est) + '</span></td>' +
-      '<td><span class="badge ' + badge2 + '">' + escHtml(est2) + '</span></td>' +
+      '<td><span class="badge ' + badge2 + '">' + escHtml(est2) + '</span>' + bqObsHtml + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-ver ' + (done?'done':'') + '" onclick="openDetail(' + idx + ')">' +
           (lineCount === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
@@ -1888,6 +1965,7 @@ function renderTable() {
   renderPagination(totalRows);
   updateAdjuntosBadges();
   _renderOtdBanner();
+  _renderPendAprobBanner();
 
   var detPanel = document.getElementById('panel-detalle');
   if (detPanel && detPanel.style.display !== 'none') renderDetalle();
@@ -1910,6 +1988,26 @@ function _renderOtdBanner() {
   if (porVencer) parts.push(porVencer + ' vence' + (porVencer === 1 ? '' : 'n') + ' en ≤2 días');
   document.getElementById('otd-banner-text').textContent = parts.join(' · ') + ' (vs fecha de compromiso)';
   el.style.display = 'flex';
+}
+
+// Contador para Cartera/admin: pedidos de cliente nuevo esperando aprobación.
+function _renderPendAprobBanner() {
+  var el = document.getElementById('pend-aprob-banner');
+  if (!el) return;
+  if (!AUTH.canApproveNuevoCliente()) { el.style.display = 'none'; return; }
+  var n = consecs.filter(function(c) { return (c._cEstado2 || 'Abierto') === 'Pendiente de aprobación'; }).length;
+  if (!n) { el.style.display = 'none'; return; }
+  document.getElementById('pend-aprob-banner-text').textContent =
+    n + ' pedido' + (n === 1 ? '' : 's') + ' de cliente nuevo pendiente' + (n === 1 ? '' : 's') + ' de aprobación';
+  el.style.display = 'flex';
+}
+
+function _verPendientesAprobacion() {
+  if (pedidoScope !== 'activos' && typeof switchPedidoTab === 'function') switchPedidoTab('activos');
+  var f = document.getElementById('f-est2');
+  if (f) { f.value = 'Pendiente de aprobación'; currentPage = 1; renderTable(); }
+  var tbl = document.getElementById('t-body');
+  if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function _verAtrasados() {
@@ -1990,6 +2088,12 @@ async function openDetail(idx) {
   _detailBloqueadoCartera = _detailPendienteAprobacion || derivedEstado2(lines) === 'Bloqueado por cartera';
   var _bqBanner = document.getElementById('md-bloqueo-cartera');
   if (_bqBanner) _bqBanner.style.display = (_detailBloqueadoCartera && !_detailPendienteAprobacion) ? 'block' : 'none';
+  var _bqObs = document.getElementById('md-bloqueo-obs');
+  if (_bqObs) {
+    var _bqObsHtml = (_detailBloqueadoCartera && !_detailPendienteAprobacion) ? _bloqueoHtml(lines, true) : '';
+    _bqObs.innerHTML = _bqObsHtml;
+    _bqObs.style.display = _bqObsHtml ? 'block' : 'none';
+  }
   var _paBanner = document.getElementById('md-pendiente-aprobacion');
   if (_paBanner) _paBanner.style.display = _detailPendienteAprobacion ? 'block' : 'none';
   var _paAcc = document.getElementById('md-pend-acciones');
@@ -2001,7 +2105,8 @@ async function openDetail(idx) {
   var obsText = c.Observaciones || lines.reduce(function(a, l) { return a || l.Observaciones; }, '') || '';
   document.getElementById('m-observaciones').value = obsText ? String(obsText).trim() : '';
   var _mdA = document.getElementById('md-audit');
-  if (_mdA) _mdA.innerHTML = _auditoriaHtml(lines, false) + _aprobacionHtml(lines);
+  if (_mdA) _mdA.innerHTML = _auditoriaHtml(lines, false) + _aprobacionHtml(lines) +
+    ((_detailBloqueadoCartera && !_detailPendienteAprobacion) ? '' : _bloqueoHtml(lines, false));
   renderSolicitudesCompraSection(c);
   document.getElementById('m-fecha').value = today();
   document.getElementById('m-remision').value = '';
@@ -5436,6 +5541,13 @@ async function guardarNuevoPedido() {
           _pendAprob = true;
         }
       } catch (e) { /* no bloquea la creación del pedido */ }
+    }
+
+    if (_pendAprob) {
+      await _notifyAprobadoresClienteNuevo({
+        sigla: getSigla(empresa), consecutivo: consecutivo, cliente: cliente,
+        nit: _nitNuevo, nLineas: productosValidos.length, total: totalOrden
+      });
     }
 
     await agregarProductosNuevosAlMaestro(productosValidos, empresa);
