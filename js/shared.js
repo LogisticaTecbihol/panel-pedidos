@@ -1906,6 +1906,21 @@ async function _apiPostCore(body) {
       return { ok: true, updated: _idsEst.length };
     }
 
+    // Cupo y plazo de crédito de un cliente (lo fija Cartera al aprobar el primer
+    // pedido de un cliente nuevo). Actúa sobre los registros de ClientesUnicos
+    // dados (los del mismo NIT) y los da por revisados (Cliente_Nuevo = false).
+    // RLS ya permite escribir en ClientesUnicos al rol cartera.
+    if (action === 'setCreditoCliente') {
+      var _idsCred = (body.ids || []).filter(function(x) { return x !== null && x !== undefined && x !== ''; });
+      if (!_idsCred.length) return { ok: true, updated: 0 };
+      var _updCred = { Cliente_Nuevo: false };
+      if (typeof body.cupo === 'string') _updCred.Cupo_Credito = body.cupo.trim();
+      if (typeof body.plazo === 'string') _updCred.Plazo_Pago = body.plazo.trim();
+      var res = await _sb.from('ClientesUnicos').update(_updCred).in('id', _idsCred);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, updated: _idsCred.length };
+    }
+
     if (action === 'eliminarClienteUnico') {
       var res = await _sb.from('ClientesUnicos').delete().eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
@@ -2087,6 +2102,75 @@ function _cmpPlazo(a, b) {
   return String(a).localeCompare(String(b));
 }
 function esContado(plazo) { return _normalizePlazo(plazo) === 'Contado'; }
+
+// ── Cartera: cupo de crédito, NIT base y exposición ───────────────
+// ClientesUnicos.Cupo_Credito es texto libre: "NA" (no aplica), vacío, o una
+// cifra con o sin separadores ("5000000", "5.000.000", "$ 5,000,000").
+// Devuelve { tipo, valor, texto }: 'numero' (valor > 0), 'na' (no aplica),
+// 'texto' (texto sin cifra, p. ej. "BLOQUEADO": se muestra tal cual) o 'vacio'
+// (sin cupo definido, incluye 0).
+function _cupoInfo(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { tipo: 'vacio', valor: null };
+  if (/^n\.?\/?a\.?$/i.test(s) || /no\s+aplica/i.test(s)) return { tipo: 'na', valor: null };
+  if (!/\d/.test(s)) return { tipo: 'texto', valor: null, texto: s };
+  var t = s.replace(/[^\d.,]/g, '');
+  var n;
+  if (/^\d+[.,]\d{1,2}$/.test(t)) n = parseFloat(t.replace(',', '.'));  // "1500000.50"
+  else n = parseInt(t.replace(/\D/g, ''), 10);                          // "5.000.000"
+  if (!isFinite(n) || n <= 0) return { tipo: 'vacio', valor: null };
+  return { tipo: 'numero', valor: n };
+}
+
+// NIT sin dígito de verificación ni separadores, para emparejar el NIT de un
+// pedido con el de su cliente ("900.946.020-2" / "900946020 2" / "9009460202"
+// → "900946020"). Mismas reglas que nit_normalizado (SQL) y clientes.js.
+function _nitBase(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  var sep = /^(.*)[\s.\-](\d)\s*$/.exec(s);
+  var work = (sep ? sep[1] : s).replace(/\D/g, '');
+  if (work.length === 10 && /^[89]/.test(work)) return work.slice(0, 9);
+  return work;
+}
+
+// Valor "abierto" de las líneas de un pedido: lo que aún compromete crédito.
+// Excluye líneas Anuladas y Cerradas. Devuelve { valor, entregado } donde
+// `entregado` es la parte de `valor` ya despachada (Valor_Unitario × Cant_Entregada).
+function _valorAbiertoLineas(lines) {
+  var valor = 0, entregado = 0;
+  (lines || []).forEach(function(l) {
+    var e2 = String(l.Estado_2 || 'Abierto').trim();
+    if (e2 === 'Anulado' || e2 === 'Cerrado') return;
+    var vu = Number(l.Valor_Unitario) || 0;
+    var cant = Number(l.Cantidad) || 0;
+    var v = Number(l.Valor_Total) || (vu * cant);
+    valor += v;
+    entregado += Math.min(v, vu * (Number(l.Cant_Entregada) || 0));
+  });
+  return { valor: valor, entregado: entregado };
+}
+
+// Exposición estimada de un cliente = valor de sus pedidos abiertos a crédito
+// (plazo distinto de Contado) en todas las empresas. NO es saldo por cobrar: el
+// panel no guarda facturas ni pagos. `ordenes`: [{ nitBase, plazo, valor,
+// valorEntregado }] con `valor` = valor abierto (ver _valorAbiertoLineas). Un
+// plazo vacío se cuenta como crédito (criterio conservador). Devuelve
+// { total, entregado, items }: `entregado` es la parte ya despachada sin cerrar.
+function _exposicionCredito(ordenes, nitBase) {
+  var items = [];
+  var total = 0, entregado = 0;
+  if (!nitBase) return { total: 0, entregado: 0, items: items };
+  (ordenes || []).forEach(function(o) {
+    if (o.nitBase !== nitBase) return;
+    if (!(Number(o.valor) > 0)) return;
+    if (esContado(o.plazo)) return;
+    total += Number(o.valor) || 0;
+    entregado += Number(o.valorEntregado) || 0;
+    items.push(o);
+  });
+  return { total: total, entregado: entregado, items: items };
+}
 
 // Rango de "precio de facturación" para el ranking de liberación de
 // apartados: Público es el más protegido, Mayorista el menos.

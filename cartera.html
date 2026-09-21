@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Cartera — aprobaciones y bloqueos de pedidos por crédito — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
+<title>Cartera – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260921e">
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body data-modulo="cartera">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>💳 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="cartera.html" data-modulo="cartera" class="active">💳 Cartera</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="reabastecimiento.html" data-modulo="reabastecimiento">🔄 Reabastecimiento</a>
+    <a href="bodegas-consignacion.html" data-modulo="bodegas_consignacion">🏬 Bodegas en Consignación</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando pedidos y clientes</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadCartera()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc pend-aprob"><div class="num" id="s-aprobar">0</div><div class="lbl">Por aprobar</div><div class="car-sub" id="s-aprobar-val"></div></div>
+    <div class="sc sol-pend"><div class="num" id="s-bloq">0</div><div class="lbl">Bloqueados</div><div class="car-sub" id="s-bloq-val"></div></div>
+    <div class="sc recibido"><div class="num" id="s-antig">0</div><div class="lbl">Días del más antiguo</div><div class="car-sub" id="s-antig-det"></div></div>
+    <div class="sc total"><div class="num" id="s-cli-bloq">0</div><div class="lbl">Clientes bloqueados</div><div class="car-sub" id="s-cli-sin-cupo"></div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="filters" style="gap:6px;padding-bottom:0;border:none">
+    <button class="car-tab" id="tab-aprobar" onclick="carSwitchTab('aprobar')">⏳ Por aprobar <span class="car-tab-ct" id="ct-aprobar">0</span></button>
+    <button class="car-tab" id="tab-bloqueados" onclick="carSwitchTab('bloqueados')">🔒 Bloqueados <span class="car-tab-ct" id="ct-bloqueados">0</span></button>
+    <button class="car-tab" id="tab-resumen" onclick="carSwitchTab('resumen')">📈 Resumen</button>
+  </div>
+
+  <!-- Filtros de las dos colas -->
+  <div class="filters" id="car-filters">
+    <div class="fg"><label>Empresa</label><select id="f-emp" onchange="carRender()"><option value="">Todas</option></select></div>
+    <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="cliente, NIT, N° pedido, comercial…" style="width:260px" oninput="carRender()"></div>
+    <button onclick="carClearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+  </div>
+
+  <!-- PANEL: cola (Por aprobar / Bloqueados) -->
+  <div id="panel-cola">
+    <div class="car-bulk" id="car-bulk" style="display:none">
+      <span id="car-bulk-ct"></span>
+      <span style="flex:1"></span>
+      <button class="btn-aprobar-pedido" id="bulk-aprobar" onclick="carBulk('aprobar')">✅ Aprobar</button>
+      <button class="btn-rechazar-pedido" id="bulk-rechazar" onclick="carBulk('rechazar')">❌ Rechazar</button>
+      <button class="btn-aprobar-pedido" id="bulk-liberar" onclick="carBulk('liberar')">🔓 Liberar</button>
+      <button class="btn-cancel" onclick="carClearSel()">Quitar selección</button>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3 id="cola-titulo">Pedidos <span id="cola-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="carExportCola()">⬇️ Excel</button>
+          <button class="btn-dl" onclick="loadCartera()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr id="cola-head"></tr></thead>
+          <tbody id="cola-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px" id="cola-nota"></p>
+  </div>
+
+  <!-- PANEL: Resumen -->
+  <div id="panel-resumen" style="display:none">
+    <div class="stats" id="res-stats"></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
+        <h3>🔒 Bloqueados por cliente</h3>
+        <button class="btn-dl" onclick="carExportResumen()">⬇️ Excel</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>NIT</th><th>Pedidos</th><th>Valor</th><th>Bloqueado desde</th><th>Estado del cliente</th>
+          </tr></thead>
+          <tbody id="res-bloq-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>🕒 Decisiones de los últimos 30 días</h3></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Fecha</th><th>Decisión</th><th>Pedido</th><th>Cliente</th><th>Valor</th><th>Quién</th><th>Tardó</th><th>Nota</th>
+          </tr></thead>
+          <tbody id="res-dec-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px">
+      Solo se dispone del <strong>último ciclo</strong> de cada pedido (última aprobación y último bloqueo/liberación);
+      si un pedido se bloqueó varias veces, las anteriores no aparecen aquí.
+    </p>
+  </div>
+</div>
+
+<!-- MODAL: Contexto del pedido -->
+<div class="overlay" id="ctx-overlay" onclick="if(isBackdropClick(event))carCloseCtx()">
+  <div class="modal-box" style="max-width:980px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="ctx-titulo">Pedido</h2>
+        <div class="meta" id="ctx-meta"></div>
+      </div>
+      <button class="btn-close" onclick="carCloseCtx()">✕</button>
+    </div>
+    <div class="mbody" id="ctx-body"></div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex;align-items:center;flex-wrap:wrap">
+        <a class="btn-cancel" id="ctx-ver-pedidos" href="pedidos.html" style="text-decoration:none">📋 Abrir en Pedidos</a>
+        <span style="flex:1"></span>
+        <div id="ctx-acciones" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <button class="btn-cancel" onclick="carCloseCtx()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Acción (aprobar / rechazar / bloquear / liberar) -->
+<div class="overlay" id="act-overlay" style="z-index:250">
+  <div class="modal-box" style="max-width:560px">
+    <div class="mhdr" id="act-hdr">
+      <div style="flex:1"><h2 id="act-titulo">Acción</h2><div style="font-size:0.78rem;opacity:0.9" id="act-sub"></div></div>
+      <button class="btn-close" onclick="carCloseAct()">✕</button>
+    </div>
+    <div class="mbody">
+      <div id="act-resumen" style="font-size:0.84rem;color:#2d3748;margin-bottom:12px"></div>
+
+      <div id="act-credito" style="display:none;margin-bottom:12px;padding:12px;border:1px solid #fde68a;background:#fffbeb;border-radius:8px">
+        <div style="font-size:0.8rem;font-weight:700;color:#92400e;margin-bottom:8px">Cliente nuevo: define su crédito (opcional)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><label class="ef-label">Cupo de crédito ($)</label><input class="ef" id="act-cupo" type="text" inputmode="numeric" placeholder="Ej. 5000000, o NA"></div>
+          <div><label class="ef-label">Plazo de pago</label><input class="ef" id="act-plazo" type="text" list="act-plazo-list" placeholder="Contado o N días"><datalist id="act-plazo-list"><option value="Contado"><option value="8 días"><option value="15 días"><option value="30 días"><option value="45 días"><option value="60 días"><option value="90 días"></datalist></div>
+        </div>
+        <div style="font-size:0.72rem;color:#a16207;margin-top:6px">Si lo dejas vacío, el cliente queda como está (sin cupo ni plazo). Se marca como revisado.</div>
+      </div>
+
+      <div id="act-nota-wrap">
+        <label class="ef-label" id="act-nota-label">Nota</label>
+        <textarea class="ef" id="act-nota" rows="3" style="resize:vertical" placeholder=""></textarea>
+      </div>
+
+      <label id="act-cli-wrap" style="display:none;align-items:center;gap:8px;margin-top:12px;font-size:0.84rem;color:#2d3748;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="act-cli-bloq"> Bloquear también al cliente <span style="font-weight:400;color:#718096">(no podrá crear pedidos nuevos)</span>
+      </label>
+      <div id="act-warn" style="display:none;margin-top:10px;font-size:0.8rem;color:#b7791f;background:#fef9e7;border:1px solid #f9e79f;border-radius:6px;padding:8px 10px"></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex;align-items:center">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="carCloseAct()">Cancelar</button>
+        <button class="btn-confirm" id="act-ok" onclick="carConfirmAct()">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Resultado de una acción masiva -->
+<div class="overlay" id="res-overlay" style="z-index:260">
+  <div class="modal-box" style="max-width:560px">
+    <div class="mhdr"><div style="flex:1"><h2 id="resm-titulo">Resultado</h2></div><button class="btn-close" onclick="carCloseRes()">✕</button></div>
+    <div class="mbody" id="resm-body"></div>
+    <div class="mftr"><div class="mftr-btns" style="width:100%;display:flex"><span style="flex:1"></span><button class="btn-confirm" onclick="carCloseRes()">Aceptar</button></div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20260921e"></script>
+<script src="js/auth.js?v=20260921c"></script>
+<script src="js/notificaciones.js?v=20260921d"></script>
+<script src="js/cartera.js?v=20260921a"></script>
+</body>
+</html>

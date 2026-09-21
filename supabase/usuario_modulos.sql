@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS usuario_modulos (
                'lista_precios','reportes','dashboard',
                'muestras_aprobar','ordenes_aprobar',
                'pedidos_editar_cantidad','notificaciones','clientes',
-               'productos','reabastecimiento','bodegas_consignacion'
+               'productos','reabastecimiento','bodegas_consignacion',
+               'cartera'
              )),
   PRIMARY KEY (usuario_id, modulo)
 );

@@ -680,3 +680,42 @@ thead th:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' \2195'; c
 /* ── AUTH VISIBILITY ── */
 .auth-edit-only { display: none; }
 .auth-admin-only { display: none; }
+
+/* ── CARTERA (bandeja de aprobaciones y bloqueos) ── */
+.sc.pend-aprob { border-color: #d97706; }
+.sc.pend-aprob .num { color: #92400e; }
+.sc .car-sub { font-size: 0.74rem; color: #718096; margin-top: 2px; min-height: 1em; }
+.car-tab {
+  background: #718096; color: white; border: none; padding: 8px 18px;
+  border-radius: 8px 8px 0 0; cursor: pointer; font-size: 0.86rem; font-weight: 700;
+}
+.car-tab.active { background: #1a5276; }
+.car-tab-ct { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 10px; background: rgba(255,255,255,0.25); font-size: 0.74rem; text-align: center; }
+.car-bulk {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: #ebf5fb; border: 1px solid #aed6f1; border-radius: 8px;
+  padding: 8px 14px; margin-bottom: 10px; font-size: 0.84rem; font-weight: 700; color: #1a5276;
+}
+.car-dias { font-weight: 700; }
+.car-dias.warn { color: #d97706; }
+.car-dias.alert { color: #dc2626; }
+.car-obs { max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #7f1d1d; font-size: 0.78rem; }
+.car-ctx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+@media (max-width: 760px) { .car-ctx-grid { grid-template-columns: 1fr; } }
+.car-box { border: 1px solid #e2e8f0; border-radius: 9px; padding: 12px 14px; background: #fff; }
+.car-box h4 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; color: #4a5568; margin-bottom: 8px; }
+.car-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 0.82rem; padding: 3px 0; border-bottom: 1px dashed #edf2f7; }
+.car-kv:last-child { border-bottom: none; }
+.car-kv span:first-child { color: #718096; }
+.car-kv span:last-child { font-weight: 600; color: #2d3748; text-align: right; }
+.car-meter { height: 8px; background: #e2e8f0; border-radius: 6px; overflow: hidden; margin: 6px 0 4px; }
+.car-meter > div { height: 100%; border-radius: 6px; }
+.car-meter .ok { background: #27ae60; } .car-meter .mid { background: #f59e0b; } .car-meter .over { background: #dc2626; } .car-meter .none { background: #cbd5e0; }
+.car-pill { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; }
+.car-pill.ok { background: #dcfce7; color: #166534; } .car-pill.mid { background: #fef3c7; color: #92400e; }
+.car-pill.over { background: #fee2e2; color: #991b1b; } .car-pill.none { background: #e2e8f0; color: #4a5568; }
+.car-flag { background: #fef3c7; color: #92400e; border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; margin-bottom: 10px; }
+.car-mini { width: 100%; border-collapse: collapse; font-size: 0.8rem; border: none; }
+.car-mini th { background: #f7fafc; padding: 6px 8px; text-align: left; font-size: 0.72rem; color: #4a5568; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; border-right: none; }
+.car-mini td { padding: 6px 8px; border-bottom: 1px solid #edf2f7; }
+.car-mini tr.actual td { background: #eff6ff; font-weight: 700; }
