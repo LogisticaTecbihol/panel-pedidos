@@ -463,6 +463,11 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, seguimientos: _addRow(res.data) };
     }
+    if (action === 'getActividadesMercadeo') {
+      var res = await _fetchAllRows('ActividadesMercadeo', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, actividades: _addRow(res.data) };
+    }
 
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
@@ -1978,6 +1983,7 @@ async function _apiPostCore(body) {
         Municipio: body.municipio || '',
         Departamento: body.departamento || '',
         Origen: body.origen || 'Evento',
+        Actividad_Id: body.actividad_id || null,
         Autorizacion_Datos: !!body.autorizacion_datos,
         Fecha_Captura: body.fecha_captura || today(),
         Observaciones: body.observaciones || ''
@@ -2003,6 +2009,7 @@ async function _apiPostCore(body) {
         Municipio: body.municipio || '',
         Departamento: body.departamento || '',
         Origen: body.origen || 'Evento',
+        Actividad_Id: body.actividad_id || null,
         Autorizacion_Datos: !!body.autorizacion_datos,
         Observaciones: body.observaciones || ''
       };
@@ -2058,6 +2065,62 @@ async function _apiPostCore(body) {
       if (body.resultado_cierre === 'Convertido') updCie.Valor_Venta = Number(body.valor_venta) || 0;
       if (body.resultado_cierre === 'Perdido') updCie.Motivo_Perdida = String(body.motivo_perdida).trim();
       var res = await _sb.from('Leads').update(updCie).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    // ── CRM de Mercadeo (Actividades) ──
+
+    if (action === 'crearActividad') {
+      var payloadAc = {
+        Nombre: body.nombre || '',
+        Tipo: body.tipo || 'Otro',
+        Empresas: body.empresas || '',
+        Fecha_Solicitud: body.fecha_solicitud || null,
+        Fecha_Inicio: body.fecha_inicio || null,
+        Fecha_Fin: body.fecha_fin || null,
+        Responsable: body.responsable || null,
+        Estado: body.estado || 'Planificada',
+        Objetivo: body.objetivo || '',
+        Presupuesto_Asignado: Number(body.presupuesto_asignado) || 0,
+        Base_Datos_Entregada: !!body.base_datos_entregada,
+        Fecha_Entrega_Base_Datos: body.fecha_entrega_base_datos || null,
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('ActividadesMercadeo').insert(payloadAc).select('id').single();
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, id: res.data && res.data.id };
+    }
+
+    if (action === 'editarActividad') {
+      if (!body.id) return { ok: false, error: 'Falta id de la actividad' };
+      var updAc = {
+        Nombre: body.nombre || '',
+        Tipo: body.tipo || 'Otro',
+        Empresas: body.empresas || '',
+        Fecha_Solicitud: body.fecha_solicitud || null,
+        Fecha_Inicio: body.fecha_inicio || null,
+        Fecha_Fin: body.fecha_fin || null,
+        Responsable: body.responsable || null,
+        Estado: body.estado || 'Planificada',
+        Objetivo: body.objetivo || '',
+        Presupuesto_Asignado: Number(body.presupuesto_asignado) || 0,
+        Base_Datos_Entregada: !!body.base_datos_entregada,
+        Fecha_Entrega_Base_Datos: body.fecha_entrega_base_datos || null,
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('ActividadesMercadeo').update(updAc).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    if (action === 'eliminarActividad') {
+      if (!body.id) return { ok: false, error: 'Falta id de la actividad' };
+      var enUso = await _sb.from('Leads').select('id', { count: 'exact', head: true }).eq('Actividad_Id', body.id);
+      if (!enUso.error && enUso.count > 0) {
+        return { ok: false, error: 'No se puede eliminar: hay ' + enUso.count + ' lead(s) vinculados a esta actividad.' };
+      }
+      var res = await _sb.from('ActividadesMercadeo').delete().eq('id', body.id);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true };
     }

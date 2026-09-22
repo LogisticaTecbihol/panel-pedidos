@@ -69,6 +69,12 @@
     <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
   </div>
 
+  <div class="filters" style="gap:6px;padding-bottom:0;border:none">
+    <button class="car-tab" id="tab-leads" onclick="crmSwitchTab('leads')">🧲 Leads / Embudo</button>
+    <button class="car-tab" id="tab-actividades" onclick="crmSwitchTab('actividades')">🎯 Actividades</button>
+  </div>
+
+  <div id="panel-leads">
   <div class="stats">
     <div class="sc pend-aprob"><div class="num" id="s-nuevos">0</div><div class="lbl">Nuevos este mes</div></div>
     <div class="sc sol-pend"><div class="num" id="s-vencidos">0</div><div class="lbl">Por asignar, vencidos &gt;48h</div></div>
@@ -120,6 +126,48 @@
       </table>
     </div>
   </div>
+  </div>
+
+  <!-- PANEL: Actividades de mercadeo -->
+  <div id="panel-actividades" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Estado</label><select id="fa-estado" onchange="crmRenderActividades()">
+        <option value="">Todos</option>
+        <option value="Planificada">Planificada</option>
+        <option value="En ejecucion">En ejecución</option>
+        <option value="Cerrada">Cerrada</option>
+        <option value="Cancelada">Cancelada</option>
+      </select></div>
+      <div class="fg"><label>Tipo</label><select id="fa-tipo" onchange="crmRenderActividades()">
+        <option value="">Todos</option>
+        <option value="Eventos">Eventos</option>
+        <option value="Digital">Digital</option>
+        <option value="POP">POP</option>
+        <option value="Trade">Trade</option>
+        <option value="Diseño">Diseño</option>
+        <option value="Otro">Otro</option>
+      </select></div>
+      <button onclick="document.getElementById('fa-estado').value='';document.getElementById('fa-tipo').value='';crmRenderActividades()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Actividades <span id="actividades-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" id="btn-nueva-actividad" onclick="crmOpenNuevaActividad()" style="background:#0891b2;color:#fff">➕ Nueva actividad</button>
+          <button class="btn-dl" onclick="loadCRM()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Actividad</th><th>Tipo</th><th>Empresas</th><th>Fechas</th><th>Responsable</th><th>Estado</th>
+            <th style="text-align:right">Presupuesto</th><th style="text-align:right">Leads generados</th><th></th>
+          </tr></thead>
+          <tbody id="actividades-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL: Nuevo / editar lead -->
@@ -144,6 +192,7 @@
           <option value="Digital">Digital</option>
           <option value="Distribuidor">Distribuidor</option>
         </select></div>
+        <div style="grid-column:1 / -1"><label class="ef-label">Actividad de origen (opcional)</label><select class="ef" id="nv-actividad"><option value="">Sin actividad vinculada</option></select></div>
       </div>
       <div style="margin-top:10px"><label class="ef-label">Observaciones</label><textarea class="ef" id="nv-obs" rows="2" style="resize:vertical"></textarea></div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:0.84rem;color:#2d3748;font-weight:600;cursor:pointer">
@@ -207,12 +256,65 @@
   </div>
 </div>
 
+<!-- MODAL: Nueva / editar actividad -->
+<div class="overlay" id="act-overlay" onclick="if(isBackdropClick(event))crmCloseActividad()">
+  <div class="modal-box" style="max-width:640px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="act-titulo">➕ Nueva actividad</h2></div>
+      <button class="btn-close" onclick="crmCloseActividad()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="ac-id" value="">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1 / -1"><label class="ef-label">Nombre *</label><input class="ef" id="ac-nombre" type="text" placeholder="Ej. Día de campo Villavicencio"></div>
+        <div><label class="ef-label">Tipo *</label><select class="ef" id="ac-tipo">
+          <option value="Eventos">Eventos</option>
+          <option value="Digital">Digital</option>
+          <option value="POP">POP</option>
+          <option value="Trade">Trade</option>
+          <option value="Diseño">Diseño</option>
+          <option value="Otro">Otro</option>
+        </select></div>
+        <div><label class="ef-label">Estado</label><select class="ef" id="ac-estado">
+          <option value="Planificada">Planificada</option>
+          <option value="En ejecucion">En ejecución</option>
+          <option value="Cerrada">Cerrada</option>
+          <option value="Cancelada">Cancelada</option>
+        </select></div>
+        <div><label class="ef-label">Responsable</label><select class="ef" id="ac-responsable"><option value="">Sin asignar</option></select></div>
+        <div><label class="ef-label">Presupuesto asignado ($)</label><input class="ef" id="ac-presupuesto" type="text" inputmode="numeric" placeholder="Ej. 2000000"></div>
+        <div><label class="ef-label">Fecha de solicitud</label><input class="ef" id="ac-fecha-sol" type="date"></div>
+        <div></div>
+        <div><label class="ef-label">Fecha de inicio</label><input class="ef" id="ac-fecha-ini" type="date"></div>
+        <div><label class="ef-label">Fecha de fin</label><input class="ef" id="ac-fecha-fin" type="date"></div>
+      </div>
+      <div style="margin-top:10px">
+        <div class="ef-label">Empresas involucradas</div>
+        <div id="ac-empresas-checks" style="display:flex;gap:14px;flex-wrap:wrap;font-size:0.84rem;color:#2d3748"></div>
+      </div>
+      <div style="margin-top:10px"><label class="ef-label">Objetivo</label><textarea class="ef" id="ac-objetivo" rows="2" style="resize:vertical"></textarea></div>
+      <div style="margin-top:10px"><label class="ef-label">Observaciones</label><textarea class="ef" id="ac-obs" rows="2" style="resize:vertical"></textarea></div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:0.84rem;color:#2d3748;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="ac-bd-entregada"> Base de datos de asistentes entregada
+      </label>
+      <div id="ac-bd-fecha-wrap" style="margin-top:8px"><label class="ef-label">Fecha de entrega de la base de datos</label><input class="ef" id="ac-bd-fecha" type="date"></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="crmCloseActividad()">Cancelar</button>
+        <button class="btn-confirm" id="ac-ok" onclick="crmGuardarActividad()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260922a"></script>
+<script src="js/shared.js?v=20260922b"></script>
 <script src="js/auth.js?v=20260922a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
-<script src="js/crm.js?v=20260922a"></script>
+<script src="js/crm.js?v=20260922b"></script>
 </body>
 </html>
