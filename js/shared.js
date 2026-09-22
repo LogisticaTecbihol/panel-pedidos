@@ -452,6 +452,18 @@ async function apiGet(action, opts) {
       return { ok: true, conteos: _addRow(_filterGerenteIaso(all, 'Empresa')) };
     }
 
+    // ── CRM de Mercadeo ──
+    if (action === 'getLeads') {
+      var res = await _fetchAllRows('Leads', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, leads: _addRow(res.data) };
+    }
+    if (action === 'getLeadsSeguimiento') {
+      var res = await _fetchAllRows('LeadsSeguimiento', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, seguimientos: _addRow(res.data) };
+    }
+
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -1952,6 +1964,102 @@ async function _apiPostCore(body) {
       var res = await _sb.from('ClientesUnicos').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, added: rows.length };
+    }
+
+    // ── CRM de Mercadeo (Leads) ──
+
+    if (action === 'crearLead') {
+      var payloadLd = {
+        Nombre_Contacto: body.nombre_contacto || '',
+        Empresa_Contacto: body.empresa_contacto || '',
+        Producto_Interes: body.producto_interes || '',
+        Telefono: body.telefono || '',
+        Correo: body.correo || '',
+        Municipio: body.municipio || '',
+        Departamento: body.departamento || '',
+        Origen: body.origen || 'Evento',
+        Autorizacion_Datos: !!body.autorizacion_datos,
+        Fecha_Captura: body.fecha_captura || today(),
+        Observaciones: body.observaciones || ''
+      };
+      if (body.asignado_a) {
+        payloadLd.Asignado_A = body.asignado_a;
+        payloadLd.Estado = 'Asignado';
+        payloadLd.Fecha_Asignacion = new Date().toISOString();
+      }
+      var res = await _sb.from('Leads').insert(payloadLd).select('id').single();
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, id: res.data && res.data.id };
+    }
+
+    if (action === 'editarLead') {
+      if (!body.id) return { ok: false, error: 'Falta id del lead' };
+      var updLd = {
+        Nombre_Contacto: body.nombre_contacto || '',
+        Empresa_Contacto: body.empresa_contacto || '',
+        Producto_Interes: body.producto_interes || '',
+        Telefono: body.telefono || '',
+        Correo: body.correo || '',
+        Municipio: body.municipio || '',
+        Departamento: body.departamento || '',
+        Origen: body.origen || 'Evento',
+        Autorizacion_Datos: !!body.autorizacion_datos,
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('Leads').update(updLd).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    if (action === 'calificarLead') {
+      if (!body.id || !body.calificacion) return { ok: false, error: 'Faltan datos para calificar' };
+      var updCal = { Calificacion: body.calificacion, Fecha_Calificacion: new Date().toISOString() };
+      var curRes = await _sb.from('Leads').select('Estado').eq('id', body.id).single();
+      if (!curRes.error && curRes.data && curRes.data.Estado === 'Nuevo') updCal.Estado = 'Calificado';
+      var res = await _sb.from('Leads').update(updCal).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    // Asigna el lead a un comercial (RPC-less: RLS ya permite a mercadeo/admin/editor
+    // escribir cualquier lead, y a comercial solo asignarse a sí mismo).
+    if (action === 'asignarLead') {
+      if (!body.id || !body.asignado_a) return { ok: false, error: 'Faltan datos para asignar' };
+      var updAsig = { Asignado_A: body.asignado_a, Fecha_Asignacion: new Date().toISOString(), Estado: 'Asignado' };
+      var res = await _sb.from('Leads').update(updAsig).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    // El trigger touch_lead_on_seguimiento actualiza Fecha_Ultima_Interaccion
+    // y sube el lead a 'En seguimiento' en el primer contacto.
+    if (action === 'registrarSeguimientoLead') {
+      if (!body.lead_id) return { ok: false, error: 'Falta el lead' };
+      var payloadSeg = {
+        Lead_Id: body.lead_id,
+        Tipo: body.tipo || 'Llamada',
+        Fecha: body.fecha || new Date().toISOString(),
+        Resultado: body.resultado || '',
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('LeadsSeguimiento').insert(payloadSeg);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    // Cierra el lead como Convertido (con valor de venta) o Perdido (con motivo).
+    // El CHECK leads_cierre_check de la BD exige uno u otro dato según el caso.
+    if (action === 'cerrarLead') {
+      if (!body.id || !body.resultado_cierre) return { ok: false, error: 'Faltan datos para cerrar' };
+      if (body.resultado_cierre === 'Perdido' && !String(body.motivo_perdida || '').trim()) {
+        return { ok: false, error: 'El motivo de pérdida es obligatorio' };
+      }
+      var updCie = { Estado: 'Cerrado', Resultado_Cierre: body.resultado_cierre, Fecha_Cierre: new Date().toISOString() };
+      if (body.resultado_cierre === 'Convertido') updCie.Valor_Venta = Number(body.valor_venta) || 0;
+      if (body.resultado_cierre === 'Perdido') updCie.Motivo_Perdida = String(body.motivo_perdida).trim();
+      var res = await _sb.from('Leads').update(updCie).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
     }
 
     return { error: 'Accion POST no reconocida: ' + action };

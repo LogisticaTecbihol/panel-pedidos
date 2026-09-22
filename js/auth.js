@@ -28,7 +28,8 @@ var AUTH = (function() {
     { key: 'ordenes_aprobar',        label: '✅ Aprobar órdenes de compra' },
     { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' },
     { key: 'clientes',                  label: '👥 Clientes' },
-    { key: 'notificaciones',          label: '🔔 Notificaciones' }
+    { key: 'notificaciones',          label: '🔔 Notificaciones' },
+    { key: 'crm',                     label: '🧲 CRM de Mercadeo' }
   ];
 
   function init() {

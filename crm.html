@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="CRM de Mercadeo — pipeline de leads — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧲</text></svg>">
+<title>CRM de Mercadeo – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260921e">
+</head>
+<body data-modulo="crm">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>🧲 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="cartera.html" data-modulo="cartera">💳 Cartera</a>
+    <a href="crm.html" data-modulo="crm" class="active">🧲 CRM de Mercadeo</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="reabastecimiento.html" data-modulo="reabastecimiento">🔄 Reabastecimiento</a>
+    <a href="bodegas-consignacion.html" data-modulo="bodegas_consignacion">🏬 Bodegas en Consignación</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando leads</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="loadCRM()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc pend-aprob"><div class="num" id="s-nuevos">0</div><div class="lbl">Nuevos este mes</div></div>
+    <div class="sc sol-pend"><div class="num" id="s-vencidos">0</div><div class="lbl">Por asignar, vencidos &gt;48h</div></div>
+    <div class="sc recibido"><div class="num" id="s-seguimiento">0</div><div class="lbl">En seguimiento</div></div>
+    <div class="sc total"><div class="num" id="s-conversion">—</div><div class="lbl">Conversión (últimos 90 días)</div><div class="car-sub" id="s-conversion-det"></div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg"><label>Estado</label><select id="f-estado" onchange="crmRender()">
+      <option value="">Todos</option>
+      <option value="Nuevo">Nuevo</option>
+      <option value="Calificado">Calificado</option>
+      <option value="Asignado">Asignado</option>
+      <option value="En seguimiento">En seguimiento</option>
+      <option value="Cerrado">Cerrado</option>
+    </select></div>
+    <div class="fg"><label>Origen</label><select id="f-origen" onchange="crmRender()">
+      <option value="">Todos</option>
+      <option value="Evento">Evento</option>
+      <option value="Digital">Digital</option>
+      <option value="Distribuidor">Distribuidor</option>
+    </select></div>
+    <div class="fg"><label>Calificación</label><select id="f-calif" onchange="crmRender()">
+      <option value="">Todas</option>
+      <option value="Caliente">Caliente</option>
+      <option value="Tibio">Tibio</option>
+      <option value="Frio">Frío</option>
+    </select></div>
+    <div class="fg"><label>Asignado a</label><select id="f-asig" onchange="crmRender()"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="nombre, empresa, producto…" style="width:220px" oninput="crmRender()"></div>
+    <button onclick="crmClearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>Leads <span id="leads-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="crmOpenNuevo()" style="background:#0891b2;color:#fff">➕ Nuevo lead</button>
+        <button class="btn-dl" onclick="loadCRM()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Contacto</th><th>Producto de interés</th><th>Origen</th><th>Calificación</th><th>Estado</th>
+          <th>Asignado a</th><th>Captura</th><th>Última interacción</th><th></th>
+        </tr></thead>
+        <tbody id="leads-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Nuevo / editar lead -->
+<div class="overlay" id="nuevo-overlay" onclick="if(isBackdropClick(event))crmCloseNuevo()">
+  <div class="modal-box" style="max-width:620px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="nuevo-titulo">➕ Nuevo lead</h2></div>
+      <button class="btn-close" onclick="crmCloseNuevo()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="nv-id" value="">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label class="ef-label">Nombre del contacto *</label><input class="ef" id="nv-nombre" type="text"></div>
+        <div><label class="ef-label">Empresa / finca</label><input class="ef" id="nv-empresa" type="text"></div>
+        <div><label class="ef-label">Teléfono</label><input class="ef" id="nv-telefono" type="text"></div>
+        <div><label class="ef-label">Correo</label><input class="ef" id="nv-correo" type="email"></div>
+        <div><label class="ef-label">Municipio</label><input class="ef" id="nv-municipio" type="text"></div>
+        <div><label class="ef-label">Departamento</label><input class="ef" id="nv-departamento" type="text"></div>
+        <div><label class="ef-label">Producto de interés</label><input class="ef" id="nv-producto" type="text"></div>
+        <div><label class="ef-label">Origen *</label><select class="ef" id="nv-origen">
+          <option value="Evento">Evento</option>
+          <option value="Digital">Digital</option>
+          <option value="Distribuidor">Distribuidor</option>
+        </select></div>
+      </div>
+      <div style="margin-top:10px"><label class="ef-label">Observaciones</label><textarea class="ef" id="nv-obs" rows="2" style="resize:vertical"></textarea></div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:0.84rem;color:#2d3748;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="nv-autorizacion"> El contacto autorizó el tratamiento de sus datos personales (Ley 1581 de 2012) *
+      </label>
+      <div id="nv-asignar-wrap" style="margin-top:10px">
+        <label class="ef-label">Asignar de una vez a (opcional)</label>
+        <select class="ef" id="nv-asignado"><option value="">Sin asignar todavía</option></select>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="crmCloseNuevo()">Cancelar</button>
+        <button class="btn-confirm" id="nv-ok" onclick="crmGuardarNuevo()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Detalle del lead -->
+<div class="overlay" id="ctx-overlay" onclick="if(isBackdropClick(event))crmCloseCtx()">
+  <div class="modal-box" style="max-width:840px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="ctx-titulo">Lead</h2>
+        <div class="meta" id="ctx-meta"></div>
+      </div>
+      <button class="btn-close" onclick="crmCloseCtx()">✕</button>
+    </div>
+    <div class="mbody" id="ctx-body"></div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex;align-items:center">
+        <button class="btn-cancel" onclick="crmAbrirEditar()">✏️ Editar datos</button>
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="crmCloseCtx()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: cerrar lead (Convertido / Perdido) -->
+<div class="overlay" id="cierre-overlay" style="z-index:260">
+  <div class="modal-box" style="max-width:480px">
+    <div class="mhdr" id="cierre-hdr"><div style="flex:1"><h2 id="cierre-titulo">Cerrar lead</h2></div><button class="btn-close" onclick="crmCloseCierre()">✕</button></div>
+    <div class="mbody">
+      <div id="cierre-campo-valor" style="display:none">
+        <label class="ef-label">Valor estimado de la venta ($)</label>
+        <input class="ef" id="cierre-valor" type="text" inputmode="numeric" placeholder="Ej. 3500000">
+      </div>
+      <div id="cierre-campo-motivo" style="display:none">
+        <label class="ef-label">Motivo de la pérdida (obligatorio)</label>
+        <textarea class="ef" id="cierre-motivo" rows="2" style="resize:vertical"></textarea>
+      </div>
+    </div>
+    <div class="mftr"><div class="mftr-btns" style="width:100%;display:flex">
+      <span style="flex:1"></span>
+      <button class="btn-cancel" onclick="crmCloseCierre()">Cancelar</button>
+      <button class="btn-confirm" id="cierre-ok" onclick="crmConfirmCierre()">Confirmar</button>
+    </div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20260922a"></script>
+<script src="js/auth.js?v=20260922a"></script>
+<script src="js/notificaciones.js?v=20260921d"></script>
+<script src="js/crm.js?v=20260922a"></script>
+</body>
+</html>

@@ -108,6 +108,7 @@ function renderUsuariosTable() {
     gerente_iaso: '<span style="background:#1a5276;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Gerente IASO</span>',
     cartera: '<span style="background:#e65100;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Cartera</span>',
     produccion: '<span style="background:#c2410c;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Producción</span>',
+    mercadeo: '<span style="background:#0891b2;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Mercadeo</span>',
     lector: '<span style="background:#f39c12;color:white;padding:2px 10px;border-radius:12px;font-size:0.74rem;font-weight:700">Lector</span>'
   };
 
