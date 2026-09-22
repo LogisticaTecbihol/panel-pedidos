@@ -72,6 +72,8 @@
   <div class="filters" style="gap:6px;padding-bottom:0;border:none">
     <button class="car-tab" id="tab-leads" onclick="crmSwitchTab('leads')">🧲 Leads / Embudo</button>
     <button class="car-tab" id="tab-actividades" onclick="crmSwitchTab('actividades')">🎯 Actividades</button>
+    <button class="car-tab" id="tab-presupuesto" onclick="crmSwitchTab('presupuesto')">💰 Presupuesto</button>
+    <button class="car-tab" id="tab-indicadores" onclick="crmSwitchTab('indicadores')">📈 Indicadores</button>
   </div>
 
   <div id="panel-leads">
@@ -166,6 +168,54 @@
           <tbody id="actividades-body"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- PANEL: Presupuesto de mercadeo -->
+  <div id="panel-presupuesto" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Empresa</label><select id="fp-empresa" onchange="crmRenderPresupuesto()"><option value="">Todas</option></select></div>
+      <div class="fg"><label>Rubro</label><select id="fp-rubro" onchange="crmRenderPresupuesto()">
+        <option value="">Todos</option>
+        <option value="Eventos">Eventos</option>
+        <option value="Digital">Digital</option>
+        <option value="POP">POP</option>
+        <option value="Trade">Trade</option>
+        <option value="Diseño">Diseño</option>
+        <option value="Otro">Otro</option>
+      </select></div>
+      <button onclick="document.getElementById('fp-empresa').value='';document.getElementById('fp-rubro').value='';crmRenderPresupuesto()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Presupuesto <span id="presupuesto-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" id="btn-nueva-presupuesto" onclick="crmOpenNuevoPresupuesto()" style="background:#0891b2;color:#fff">➕ Nueva línea</button>
+          <button class="btn-dl" onclick="loadCRM()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Empresa</th><th>Rubro</th><th>Periodo</th>
+            <th style="text-align:right">Presupuestado</th><th style="text-align:right">Ejecutado</th><th>% Ejecución</th><th></th>
+          </tr></thead>
+          <tbody id="presupuesto-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL: Indicadores -->
+  <div id="panel-indicadores" style="display:none">
+    <div class="stats" id="ind-stats"></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><h3>Leads por origen (este mes)</h3></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Origen</th><th style="text-align:right">Leads</th></tr></thead><tbody id="ind-origen-body"></tbody></table></div>
+    </div>
+    <div class="card" id="ind-eventos-card">
+      <div class="card-head"><h3>Cumplimiento de anticipación de eventos (15 días)</h3></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Evento</th><th>Solicitado</th><th>Inicio</th><th style="text-align:right">Anticipación</th></tr></thead><tbody id="ind-eventos-body"></tbody></table></div>
     </div>
   </div>
 </div>
@@ -309,12 +359,61 @@
   </div>
 </div>
 
+<!-- MODAL: Nueva / editar línea de presupuesto -->
+<div class="overlay" id="pr-overlay" onclick="if(isBackdropClick(event))crmClosePresupuesto()">
+  <div class="modal-box" style="max-width:520px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="pr-titulo">➕ Nueva línea de presupuesto</h2></div>
+      <button class="btn-close" onclick="crmClosePresupuesto()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="pr-id" value="">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label class="ef-label">Empresa *</label><select class="ef" id="pr-empresa"></select></div>
+        <div><label class="ef-label">Rubro *</label><select class="ef" id="pr-rubro">
+          <option value="Eventos">Eventos</option>
+          <option value="Digital">Digital</option>
+          <option value="POP">POP</option>
+          <option value="Trade">Trade</option>
+          <option value="Diseño">Diseño</option>
+          <option value="Otro">Otro</option>
+        </select></div>
+        <div><label class="ef-label">Periodo *</label><input class="ef" id="pr-periodo" type="text" placeholder="Ej. 2026-09 o 2026-Q4"></div>
+        <div><label class="ef-label">Valor presupuestado ($)</label><input class="ef" id="pr-valor" type="text" inputmode="numeric" placeholder="Ej. 10000000"></div>
+      </div>
+      <div style="margin-top:10px"><label class="ef-label">Observaciones</label><textarea class="ef" id="pr-obs" rows="2" style="resize:vertical"></textarea></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="crmClosePresupuesto()">Cancelar</button>
+        <button class="btn-confirm" id="pr-ok" onclick="crmGuardarPresupuesto()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Detalle de presupuesto (gastos ejecutados) -->
+<div class="overlay" id="prd-overlay" onclick="if(isBackdropClick(event))crmClosePresupuestoDetalle()">
+  <div class="modal-box" style="max-width:760px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="prd-titulo">Presupuesto</h2><div class="meta" id="prd-meta"></div></div>
+      <button class="btn-close" onclick="crmClosePresupuestoDetalle()">✕</button>
+    </div>
+    <div class="mbody" id="prd-body"></div>
+    <div class="mftr"><div class="mftr-btns" style="width:100%;display:flex">
+      <span style="flex:1"></span>
+      <button class="btn-cancel" onclick="crmClosePresupuestoDetalle()">Cerrar</button>
+    </div></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260922b"></script>
+<script src="js/shared.js?v=20260922c"></script>
 <script src="js/auth.js?v=20260922a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
-<script src="js/crm.js?v=20260922b"></script>
+<script src="js/crm.js?v=20260922c"></script>
 </body>
 </html>

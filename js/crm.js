@@ -1,21 +1,28 @@
 // ══════════════════════════════════════════════════════════════
-// CRM de Mercadeo — Leads (Entrega 1) + Actividades (Entrega 2)
+// CRM de Mercadeo — Leads + Actividades + Presupuesto + Indicadores
 // ══════════════════════════════════════════════════════════════
 // Leads: ciclo de vida del manual MKT-P-10 — captura -> calificación ->
 // asignación a un comercial (48h) -> seguimiento -> cierre (Convertido /
-// Perdido / Cierre automático a 90 días sin movimiento; este último llega
-// en la Entrega 3, vía cron en la base de datos).
+// Perdido / Cierre automático a 90 días sin movimiento, vía cron en la BD:
+// función cerrar_leads_inactivos()).
 //
 // Actividades: eventos/digital/POP/trade con presupuesto y responsable;
 // Leads.Actividad_Id vincula opcionalmente un lead a la actividad que lo
 // generó (usado para "leads generados" y el indicador de anticipación).
 //
+// Presupuesto: PresupuestoMercadeo (cabecera por empresa/rubro/periodo) +
+// PresupuestoMercadeoGastos (detalle ejecutado, opcionalmente ligado a una
+// actividad); lo ejecutado se suma siempre en el cliente, nunca se duplica.
+//
+// Indicadores: KPIs 100% calculados en cliente sobre lo ya cargado.
+//
 // Tablas independientes de ClientesUnicos/SolicitudMuestras/Pedidos por
 // decisión explícita del proyecto (sin vinculación por ahora).
 //
-// RLS: admin/editor/mercadeo ven y gestionan todos los leads y actividades;
-// comercial solo ve/gestiona los leads que tiene asignados (o que él mismo
-// creó), y solo lee actividades (no las administra).
+// RLS: admin/editor/mercadeo ven y gestionan todo. Comercial solo ve/gestiona
+// los leads que tiene asignados (o que él mismo creó), solo LEE actividades
+// (no las administra), y no tiene acceso alguno a Presupuesto (la pestaña se
+// oculta para ese rol).
 
 var CRM_CALIF_COLOR = { Caliente: '#c0392b', Tibio: '#d97706', Frio: '#2563eb' };
 var CRM_ESTADO_COLOR = {
@@ -26,16 +33,22 @@ var CRM_ESTADO_COLOR = {
 var crmLeads = [];
 var crmSeguimientos = [];
 var crmActividades = [];
+var crmPresupuesto = [];
+var crmGastos = [];
 var crmByLeadId = {};
 var crmSeguimientosPorLead = {};
 var crmActividadesById = {};
+var crmPresupuestoById = {};
+var crmGastosPorPresupuesto = {};
 var crmDirectorio = [];        // usuarios (de list_usuarios_directorio)
 var crmComerciales = [];       // solo rol=comercial, activos
 var crmActivos = [];           // todos los usuarios activos (para Responsable de actividad)
 var crmCtxId = null;           // lead abierto en el panel de detalle
 var crmCierreKind = null;      // 'Convertido' | 'Perdido'
-var crmTab = 'leads';          // 'leads' | 'actividades'
+var crmTab = 'leads';          // 'leads' | 'actividades' | 'presupuesto' | 'indicadores'
 var crmActividadEditId = null;
+var crmPresupuestoEditId = null;
+var crmPresupuestoDetalleId = null;
 
 var CRM_TIPO_ACTIVIDAD_COLOR = { Eventos: '#c2410c', Digital: '#2563eb', POP: '#7c3aed', Trade: '#0891b2', 'Diseño': '#be185d', Otro: '#718096' };
 var CRM_ESTADO_ACTIVIDAD_COLOR = { 'Planificada': '#718096', 'En ejecucion': '#2563eb', 'Cerrada': '#15803d', 'Cancelada': '#c0392b' };
@@ -99,16 +112,24 @@ async function loadCRM() {
       apiGet('getLeads'),
       apiGet('getLeadsSeguimiento'),
       apiGet('getActividadesMercadeo'),
+      apiGet('getPresupuestoMercadeo'),
+      apiGet('getPresupuestoMercadeoGastos'),
       (typeof NOTIF !== 'undefined' && NOTIF.getDirectorio) ? NOTIF.getDirectorio() : Promise.resolve([])
     ]);
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar leads');
     if (!results[1].ok) throw new Error(results[1].error || 'Error al cargar seguimientos');
     if (!results[2].ok) throw new Error(results[2].error || 'Error al cargar actividades');
+    // Presupuesto/Gastos: RLS los deja vacíos (no error) para comercial; solo se
+    // trata como error real si el rol que sí debería verlos no los pudo cargar.
+    if (!results[3].ok && !crmEsComercial()) throw new Error(results[3].error || 'Error al cargar el presupuesto');
+    if (!results[4].ok && !crmEsComercial()) throw new Error(results[4].error || 'Error al cargar los gastos');
 
     crmLeads = results[0].leads || [];
     crmSeguimientos = results[1].seguimientos || [];
     crmActividades = results[2].actividades || [];
-    crmDirectorio = results[3] || [];
+    crmPresupuesto = results[3].presupuesto || [];
+    crmGastos = results[4].gastos || [];
+    crmDirectorio = results[5] || [];
     crmComerciales = crmDirectorio.filter(function(u) { return u.rol === 'comercial' && u.activo; });
     crmActivos = crmDirectorio.filter(function(u) { return u.activo; });
 
@@ -123,13 +144,22 @@ async function loadCRM() {
     });
     crmActividadesById = {};
     crmActividades.forEach(function(a) { crmActividadesById[a.id] = a; });
+    crmPresupuestoById = {};
+    crmPresupuesto.forEach(function(p) { crmPresupuestoById[p.id] = p; });
+    crmGastosPorPresupuesto = {};
+    crmGastos.forEach(function(g) {
+      (crmGastosPorPresupuesto[g.Presupuesto_Id] = crmGastosPorPresupuesto[g.Presupuesto_Id] || []).push(g);
+    });
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
     setSyncStatus('ok', 'Datos actualizados ' + new Date().toLocaleTimeString('es-CO'));
     crmFillAsignadoSelects();
+    crmAplicarVisibilidadPorRol();
     crmRender();
     crmRenderActividades();
+    crmRenderPresupuesto();
+    crmRenderIndicadores();
     crmSwitchTab(crmTab);
     if (crmCtxId) {
       if (crmByLeadId[crmCtxId]) crmRenderCtx(); else crmCloseCtx();
@@ -168,6 +198,20 @@ function crmFillAsignadoSelects() {
     return '<option value="' + escHtml(u.id) + '">' + escHtml(u.nombre || u.email) + '</option>';
   }).join('');
   document.getElementById('ac-responsable').innerHTML = '<option value="">Sin asignar</option>' + respOpts;
+
+  var empOpts = EMPRESAS_HOLDING.map(function(e) { return '<option value="' + e.sigla + '">' + e.sigla + '</option>'; }).join('');
+  var fpEmp = document.getElementById('fp-empresa');
+  var fpEmpActual = fpEmp.value;
+  fpEmp.innerHTML = '<option value="">Todas</option>' + empOpts;
+  fpEmp.value = fpEmpActual;
+  document.getElementById('pr-empresa').innerHTML = empOpts;
+}
+
+// Comercial no gestiona ni ve Presupuesto (RLS lo deja fuera por completo).
+function crmAplicarVisibilidadPorRol() {
+  var oculto = crmEsComercial();
+  document.getElementById('tab-presupuesto').style.display = oculto ? 'none' : '';
+  if (oculto && crmTab === 'presupuesto') crmTab = 'leads';
 }
 
 // ── Pestañas ─────────────────────────────────────────────────
@@ -175,8 +219,12 @@ function crmSwitchTab(t) {
   crmTab = t;
   document.getElementById('tab-leads').classList.toggle('active', t === 'leads');
   document.getElementById('tab-actividades').classList.toggle('active', t === 'actividades');
+  document.getElementById('tab-presupuesto').classList.toggle('active', t === 'presupuesto');
+  document.getElementById('tab-indicadores').classList.toggle('active', t === 'indicadores');
   document.getElementById('panel-leads').style.display = t === 'leads' ? 'block' : 'none';
   document.getElementById('panel-actividades').style.display = t === 'actividades' ? 'block' : 'none';
+  document.getElementById('panel-presupuesto').style.display = t === 'presupuesto' ? 'block' : 'none';
+  document.getElementById('panel-indicadores').style.display = t === 'indicadores' ? 'block' : 'none';
 }
 
 // ── Filtros y render principal ───────────────────────────────
@@ -437,6 +485,281 @@ async function crmEliminarActividad(id) {
   if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo eliminar'), '#e74c3c'); return; }
   showToast('🗑 Actividad eliminada', undefined);
   await loadCRM();
+}
+
+// ── Presupuesto de mercadeo ────────────────────────────────────
+function crmEjecutadoDe(presupuestoId) {
+  return (crmGastosPorPresupuesto[presupuestoId] || []).reduce(function(s, g) { return s + (Number(g.Valor_Ejecutado) || 0); }, 0);
+}
+
+function crmSemaforoEjecucion(pct) {
+  if (pct == null) return { cls: 'none', txt: 'sin ejecución' };
+  if (pct > 105) return { cls: 'over', txt: pct + '% (sobreejecutado)' };
+  if (pct >= 95) return { cls: 'ok', txt: pct + '% (en meta)' };
+  return { cls: 'mid', txt: pct + '%' };
+}
+
+function crmFiltrarPresupuesto(list) {
+  var emp = document.getElementById('fp-empresa').value;
+  var rubro = document.getElementById('fp-rubro').value;
+  return list.filter(function(p) {
+    if (emp && p.Empresa !== emp) return false;
+    if (rubro && p.Rubro !== rubro) return false;
+    return true;
+  });
+}
+
+function crmRenderPresupuesto() {
+  if (crmEsComercial()) return; // sin acceso (RLS); la pestaña ya está oculta
+  var lista = crmFiltrarPresupuesto(crmPresupuesto).slice().sort(function(a, b) {
+    return String(b.Periodo).localeCompare(String(a.Periodo)) || String(a.Empresa).localeCompare(String(b.Empresa));
+  });
+  document.getElementById('presupuesto-ct').textContent = '(' + lista.length + (lista.length !== crmPresupuesto.length ? ' de ' + crmPresupuesto.length : '') + ')';
+
+  if (!lista.length) {
+    document.getElementById('presupuesto-body').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:26px">' +
+      (crmPresupuesto.length ? 'Ninguna línea coincide con los filtros.' : 'Aún no hay líneas de presupuesto registradas.') + '</td></tr>';
+    return;
+  }
+
+  document.getElementById('presupuesto-body').innerHTML = lista.map(function(p) {
+    var ejecutado = crmEjecutadoDe(p.id);
+    var presupuestado = Number(p.Valor_Presupuestado) || 0;
+    var pct = presupuestado > 0 ? Math.round(ejecutado / presupuestado * 100) : null;
+    var sem = crmSemaforoEjecucion(pct);
+    return '<tr style="cursor:pointer" onclick="crmAbrirDetallePresupuesto(' + p.id + ')">' +
+      '<td>' + escHtml(p.Empresa) + '</td>' +
+      '<td>' + crmBadge(p.Rubro, CRM_TIPO_ACTIVIDAD_COLOR[p.Rubro] || '#718096') + '</td>' +
+      '<td>' + escHtml(p.Periodo) + '</td>' +
+      '<td style="text-align:right">' + fmtMoney(presupuestado) + '</td>' +
+      '<td style="text-align:right">' + fmtMoney(ejecutado) + '</td>' +
+      '<td><span class="car-pill ' + sem.cls + '">' + sem.txt + '</span></td>' +
+      '<td style="display:flex;gap:4px">' +
+        '<button class="btn-ver" onclick="event.stopPropagation();crmAbrirEditarPresupuesto(' + p.id + ')">Editar</button>' +
+        '<button class="btn-rechazar-pedido" onclick="event.stopPropagation();crmEliminarPresupuesto(' + p.id + ')">🗑</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function crmOpenNuevoPresupuesto() {
+  crmPresupuestoEditId = null;
+  document.getElementById('pr-titulo').textContent = '➕ Nueva línea de presupuesto';
+  document.getElementById('pr-id').value = '';
+  document.getElementById('pr-empresa').value = EMPRESAS_HOLDING[0].sigla;
+  document.getElementById('pr-rubro').value = 'Eventos';
+  document.getElementById('pr-periodo').value = today().slice(0, 7);
+  document.getElementById('pr-valor').value = '';
+  document.getElementById('pr-obs').value = '';
+  document.getElementById('pr-overlay').classList.add('show');
+}
+
+function crmAbrirEditarPresupuesto(id) {
+  var p = crmPresupuestoById[id];
+  if (!p) return;
+  crmPresupuestoEditId = id;
+  document.getElementById('pr-titulo').textContent = '✏️ Editar línea de presupuesto';
+  document.getElementById('pr-id').value = p.id;
+  document.getElementById('pr-empresa').value = p.Empresa;
+  document.getElementById('pr-rubro').value = p.Rubro;
+  document.getElementById('pr-periodo').value = p.Periodo;
+  document.getElementById('pr-valor').value = p.Valor_Presupuestado || '';
+  document.getElementById('pr-obs').value = p.Observaciones || '';
+  document.getElementById('pr-overlay').classList.add('show');
+}
+
+function crmClosePresupuesto() { document.getElementById('pr-overlay').classList.remove('show'); }
+
+async function crmGuardarPresupuesto() {
+  var periodo = document.getElementById('pr-periodo').value.trim();
+  if (!periodo) { showToast('El periodo es obligatorio (ej. 2026-09)', '#e74c3c'); return; }
+
+  var body = {
+    empresa: document.getElementById('pr-empresa').value,
+    rubro: document.getElementById('pr-rubro').value,
+    periodo: periodo,
+    valor_presupuestado: document.getElementById('pr-valor').value.replace(/[^\d.]/g, ''),
+    observaciones: document.getElementById('pr-obs').value.trim()
+  };
+
+  var okBtn = document.getElementById('pr-ok');
+  okBtn.disabled = true; okBtn.textContent = 'Guardando…';
+  var res = crmPresupuestoEditId
+    ? await apiPost(Object.assign({ action: 'editarPresupuesto', id: crmPresupuestoEditId }, body))
+    : await apiPost(Object.assign({ action: 'crearPresupuesto' }, body));
+  okBtn.disabled = false; okBtn.textContent = 'Guardar';
+
+  if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo guardar'), '#e74c3c'); return; }
+  showToast(crmPresupuestoEditId ? '✅ Línea actualizada' : '✅ Línea creada', undefined);
+  crmClosePresupuesto();
+  await loadCRM();
+}
+
+async function crmEliminarPresupuesto(id) {
+  var p = crmPresupuestoById[id];
+  if (!p) return;
+  var gastos = crmGastosPorPresupuesto[id] || [];
+  if (gastos.length && !confirm('Esta línea tiene ' + gastos.length + ' gasto(s) registrados que también se eliminarán. ¿Continuar?')) return;
+  if (!gastos.length && !confirm('¿Eliminar la línea de presupuesto de ' + p.Empresa + ' / ' + p.Rubro + ' / ' + p.Periodo + '?')) return;
+  var res = await apiPost({ action: 'eliminarPresupuesto', id: id });
+  if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo eliminar'), '#e74c3c'); return; }
+  showToast('🗑 Línea eliminada', undefined);
+  await loadCRM();
+}
+
+// ── Detalle de presupuesto (gastos) ──────────────────────────
+function crmAbrirDetallePresupuesto(id) {
+  crmPresupuestoDetalleId = id;
+  crmRenderPresupuestoDetalle();
+  document.getElementById('prd-overlay').classList.add('show');
+}
+function crmClosePresupuestoDetalle() {
+  crmPresupuestoDetalleId = null;
+  document.getElementById('prd-overlay').classList.remove('show');
+}
+
+function crmRenderPresupuestoDetalle() {
+  var p = crmPresupuestoById[crmPresupuestoDetalleId];
+  if (!p) return;
+  var gastos = (crmGastosPorPresupuesto[p.id] || []).slice().sort(function(a, b) { return String(b.Fecha_Gasto).localeCompare(String(a.Fecha_Gasto)); });
+  var ejecutado = crmEjecutadoDe(p.id);
+  var presupuestado = Number(p.Valor_Presupuestado) || 0;
+  var pct = presupuestado > 0 ? Math.round(ejecutado / presupuestado * 100) : null;
+  var sem = crmSemaforoEjecucion(pct);
+
+  document.getElementById('prd-titulo').textContent = p.Empresa + ' — ' + p.Rubro + ' — ' + p.Periodo;
+  document.getElementById('prd-meta').innerHTML =
+    '<span>Presupuestado: ' + fmtMoney(presupuestado) + '</span>' +
+    '<span>Ejecutado: ' + fmtMoney(ejecutado) + '</span>' +
+    '<span class="car-pill ' + sem.cls + '">' + sem.txt + '</span>';
+
+  var html = '<div class="car-box" style="margin-bottom:14px">' +
+    '<h4>Registrar gasto</h4>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">' +
+      '<div><label class="ef-label">Fecha del gasto</label><input class="ef" id="ga-fecha" type="date" value="' + today() + '"></div>' +
+      '<div><label class="ef-label">Valor ejecutado ($)</label><input class="ef" id="ga-valor" type="text" inputmode="numeric" placeholder="Ej. 500000"></div>' +
+      '<div><label class="ef-label">Fecha de legalización</label><input class="ef" id="ga-legal" type="date"></div>' +
+    '</div>' +
+    '<div style="margin-top:8px"><label class="ef-label">Concepto</label><input class="ef" id="ga-concepto" type="text" placeholder="Ej. Alquiler de carpas"></div>' +
+    '<div style="margin-top:8px"><label class="ef-label">Actividad relacionada (opcional)</label><select class="ef" id="ga-actividad"><option value="">Sin actividad</option>' +
+      crmActividades.map(function(a) { return '<option value="' + a.id + '">' + escHtml(a.Nombre) + '</option>'; }).join('') +
+    '</select></div>' +
+    '<button class="btn-confirm" style="margin-top:10px" onclick="crmAgregarGasto(' + p.id + ')">➕ Registrar gasto</button>' +
+  '</div>';
+
+  html += '<div class="car-box"><h4>Gastos registrados (' + gastos.length + ')</h4>';
+  if (!gastos.length) {
+    html += '<div style="color:#a0aec0;font-size:0.82rem">Sin gastos registrados todavía.</div>';
+  } else {
+    html += '<table class="car-mini"><thead><tr><th>Fecha</th><th>Concepto</th><th>Actividad</th><th style="text-align:right">Valor</th><th>Legalización</th><th></th></tr></thead><tbody>' +
+      gastos.map(function(g) {
+        var legaliza = g.Fecha_Legalizacion ? fmtDate(g.Fecha_Legalizacion) : '<span class="tag-sin">pendiente</span>';
+        var diasLeg = g.Fecha_Legalizacion ? crmDiasEntre(g.Fecha_Gasto, g.Fecha_Legalizacion) : null;
+        var legalWarn = diasLeg != null && diasLeg > 5 ? ' ⚠' : '';
+        return '<tr><td>' + escHtml(fmtDate(g.Fecha_Gasto)) + '</td><td>' + escHtml(g.Concepto || '—') + '</td>' +
+          '<td>' + escHtml(g.Actividad_Id ? ((crmActividadesById[g.Actividad_Id] || {}).Nombre || '—') : '—') + '</td>' +
+          '<td style="text-align:right">' + fmtMoney(g.Valor_Ejecutado || 0) + '</td>' +
+          '<td>' + legaliza + legalWarn + '</td>' +
+          '<td><button class="btn-rechazar-pedido" onclick="crmEliminarGasto(' + g.id + ')">🗑</button></td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+  html += '</div>';
+
+  document.getElementById('prd-body').innerHTML = html;
+}
+
+function crmDiasEntre(desde, hasta) {
+  var a = new Date(desde + 'T00:00:00').getTime(), b = new Date(hasta + 'T00:00:00').getTime();
+  if (isNaN(a) || isNaN(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+
+async function crmAgregarGasto(presupuestoId) {
+  var body = {
+    presupuesto_id: presupuestoId,
+    fecha_gasto: document.getElementById('ga-fecha').value || today(),
+    valor_ejecutado: document.getElementById('ga-valor').value.replace(/[^\d.]/g, ''),
+    concepto: document.getElementById('ga-concepto').value.trim(),
+    actividad_id: document.getElementById('ga-actividad').value || null,
+    fecha_legalizacion: document.getElementById('ga-legal').value || null
+  };
+  if (!body.valor_ejecutado) { showToast('El valor ejecutado es obligatorio', '#e74c3c'); return; }
+  var res = await apiPost(Object.assign({ action: 'registrarGastoPresupuesto' }, body));
+  if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo registrar'), '#e74c3c'); return; }
+  showToast('✅ Gasto registrado', undefined);
+  await loadCRM();
+  crmAbrirDetallePresupuesto(presupuestoId);
+}
+
+async function crmEliminarGasto(id) {
+  if (!confirm('¿Eliminar este gasto?')) return;
+  var res = await apiPost({ action: 'eliminarGastoPresupuesto', id: id });
+  if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo eliminar'), '#e74c3c'); return; }
+  showToast('🗑 Gasto eliminado', undefined);
+  var pid = crmPresupuestoDetalleId;
+  await loadCRM();
+  if (pid) crmAbrirDetallePresupuesto(pid);
+}
+
+// ── Indicadores ───────────────────────────────────────────────
+function crmRenderIndicadores() {
+  var mesActual = today().slice(0, 7);
+  var leadsMes = crmLeads.filter(function(l) { return String(l.Fecha_Captura || '').slice(0, 7) === mesActual; });
+
+  // Tiempo promedio de asignación (creado_en -> Fecha_Asignacion) y de primer contacto (Fecha_Asignacion -> primer seguimiento).
+  var horasAsig = [];
+  crmLeads.forEach(function(l) {
+    if (l.Fecha_Asignacion && l.creado_en) {
+      var h = (new Date(l.Fecha_Asignacion).getTime() - new Date(l.creado_en).getTime()) / 3600000;
+      if (h >= 0) horasAsig.push(h);
+    }
+  });
+  var promAsig = horasAsig.length ? Math.round(horasAsig.reduce(function(s, h) { return s + h; }, 0) / horasAsig.length) : null;
+
+  var horasContacto = [];
+  crmLeads.forEach(function(l) {
+    var segs = crmSeguimientosPorLead[l.id];
+    if (l.Fecha_Asignacion && segs && segs.length) {
+      var primero = segs[segs.length - 1]; // el arreglo está ordenado desc por fecha
+      var h = (new Date(primero.Fecha).getTime() - new Date(l.Fecha_Asignacion).getTime()) / 3600000;
+      if (h >= 0) horasContacto.push(h);
+    }
+  });
+  var promContacto = horasContacto.length ? Math.round(horasContacto.reduce(function(s, h) { return s + h; }, 0) / horasContacto.length) : null;
+
+  // Ejecución presupuestal total (solo si el rol puede verla).
+  var statsHtml =
+    '<div class="sc pend-aprob"><div class="num">' + leadsMes.length + '</div><div class="lbl">Leads capturados (mes)</div></div>' +
+    '<div class="sc recibido"><div class="num">' + (promAsig == null ? '—' : promAsig + ' h') + '</div><div class="lbl">Tiempo promedio de asignación</div></div>' +
+    '<div class="sc sol-pend"><div class="num">' + (promContacto == null ? '—' : promContacto + ' h') + '</div><div class="lbl">Tiempo promedio de 1er contacto</div></div>';
+
+  if (!crmEsComercial()) {
+    var totalPres = crmPresupuesto.reduce(function(s, p) { return s + (Number(p.Valor_Presupuestado) || 0); }, 0);
+    var totalEjec = crmGastos.reduce(function(s, g) { return s + (Number(g.Valor_Ejecutado) || 0); }, 0);
+    var pctEjec = totalPres > 0 ? Math.round(totalEjec / totalPres * 100) : null;
+    statsHtml += '<div class="sc total"><div class="num">' + (pctEjec == null ? '—' : pctEjec + '%') + '</div><div class="lbl">Ejecución presupuestal total</div><div class="car-sub">' + fmtMoney(totalEjec) + ' de ' + fmtMoney(totalPres) + '</div></div>';
+  }
+  document.getElementById('ind-stats').innerHTML = statsHtml;
+
+  // Leads por origen (mes)
+  var porOrigen = { Evento: 0, Digital: 0, Distribuidor: 0 };
+  leadsMes.forEach(function(l) { if (porOrigen[l.Origen] != null) porOrigen[l.Origen]++; });
+  document.getElementById('ind-origen-body').innerHTML = Object.keys(porOrigen).map(function(o) {
+    return '<tr><td>' + o + '</td><td style="text-align:right">' + porOrigen[o] + '</td></tr>';
+  }).join('');
+
+  // Cumplimiento de anticipación de eventos
+  var eventos = crmActividades.filter(function(a) { return a.Tipo === 'Eventos' && a.Fecha_Solicitud && a.Fecha_Inicio; });
+  if (!eventos.length) {
+    document.getElementById('ind-eventos-body').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:16px">Sin eventos con fechas registradas.</td></tr>';
+  } else {
+    document.getElementById('ind-eventos-body').innerHTML = eventos.map(function(a) {
+      var d = crmAnticipacionDias(a);
+      var color = d != null && d < 15 ? '#c0392b' : '#15803d';
+      return '<tr><td>' + escHtml(a.Nombre) + '</td><td>' + escHtml(fmtDate(a.Fecha_Solicitud)) + '</td><td>' + escHtml(fmtDate(a.Fecha_Inicio)) + '</td>' +
+        '<td style="text-align:right;color:' + color + ';font-weight:700">' + (d == null ? '—' : d + ' días') + '</td></tr>';
+    }).join('');
+  }
 }
 
 // ── Modal: nuevo / editar lead ───────────────────────────────
@@ -702,6 +1025,8 @@ async function crmConfirmCierre() {
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
   if (document.getElementById('cierre-overlay').classList.contains('show')) crmCloseCierre();
+  else if (document.getElementById('prd-overlay').classList.contains('show')) crmClosePresupuestoDetalle();
+  else if (document.getElementById('pr-overlay').classList.contains('show')) crmClosePresupuesto();
   else if (document.getElementById('act-overlay').classList.contains('show')) crmCloseActividad();
   else if (document.getElementById('nuevo-overlay').classList.contains('show')) crmCloseNuevo();
   else if (document.getElementById('ctx-overlay').classList.contains('show')) crmCloseCtx();

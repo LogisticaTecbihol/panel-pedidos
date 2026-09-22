@@ -468,6 +468,16 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, actividades: _addRow(res.data) };
     }
+    if (action === 'getPresupuestoMercadeo') {
+      var res = await _fetchAllRows('PresupuestoMercadeo', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, presupuesto: _addRow(res.data) };
+    }
+    if (action === 'getPresupuestoMercadeoGastos') {
+      var res = await _fetchAllRows('PresupuestoMercadeoGastos', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, gastos: _addRow(res.data) };
+    }
 
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
@@ -2121,6 +2131,80 @@ async function _apiPostCore(body) {
         return { ok: false, error: 'No se puede eliminar: hay ' + enUso.count + ' lead(s) vinculados a esta actividad.' };
       }
       var res = await _sb.from('ActividadesMercadeo').delete().eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    // ── CRM de Mercadeo (Presupuesto) ──
+
+    if (action === 'crearPresupuesto') {
+      var payloadPr = {
+        Empresa: body.empresa || '',
+        Rubro: body.rubro || 'Otro',
+        Periodo: body.periodo || '',
+        Valor_Presupuestado: Number(body.valor_presupuestado) || 0,
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('PresupuestoMercadeo').insert(payloadPr).select('id').single();
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, id: res.data && res.data.id };
+    }
+
+    if (action === 'editarPresupuesto') {
+      if (!body.id) return { ok: false, error: 'Falta id del presupuesto' };
+      var updPr = {
+        Empresa: body.empresa || '',
+        Rubro: body.rubro || 'Otro',
+        Periodo: body.periodo || '',
+        Valor_Presupuestado: Number(body.valor_presupuestado) || 0,
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('PresupuestoMercadeo').update(updPr).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    if (action === 'eliminarPresupuesto') {
+      if (!body.id) return { ok: false, error: 'Falta id del presupuesto' };
+      var res = await _sb.from('PresupuestoMercadeo').delete().eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    if (action === 'registrarGastoPresupuesto') {
+      if (!body.presupuesto_id) return { ok: false, error: 'Falta el presupuesto' };
+      var payloadGa = {
+        Presupuesto_Id: body.presupuesto_id,
+        Actividad_Id: body.actividad_id || null,
+        Fecha_Gasto: body.fecha_gasto || today(),
+        Valor_Ejecutado: Number(body.valor_ejecutado) || 0,
+        Concepto: body.concepto || '',
+        Fecha_Legalizacion: body.fecha_legalizacion || null,
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('PresupuestoMercadeoGastos').insert(payloadGa);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    if (action === 'editarGastoPresupuesto') {
+      if (!body.id) return { ok: false, error: 'Falta id del gasto' };
+      var updGa = {
+        Actividad_Id: body.actividad_id || null,
+        Fecha_Gasto: body.fecha_gasto || today(),
+        Valor_Ejecutado: Number(body.valor_ejecutado) || 0,
+        Concepto: body.concepto || '',
+        Fecha_Legalizacion: body.fecha_legalizacion || null,
+        Observaciones: body.observaciones || ''
+      };
+      var res = await _sb.from('PresupuestoMercadeoGastos').update(updGa).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
+    if (action === 'eliminarGastoPresupuesto') {
+      if (!body.id) return { ok: false, error: 'Falta id del gasto' };
+      var res = await _sb.from('PresupuestoMercadeoGastos').delete().eq('id', body.id);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true };
     }
