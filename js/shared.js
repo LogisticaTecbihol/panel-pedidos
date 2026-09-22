@@ -2064,6 +2064,16 @@ async function _apiPostCore(body) {
       return { ok: true };
     }
 
+    // Borra un lead cargado por error. RLS: admin/editor/mercadeo cualquiera;
+    // comercial solo los que él mismo creó. LeadsSeguimiento se borra solo
+    // (ON DELETE CASCADE sobre Lead_Id).
+    if (action === 'eliminarLead') {
+      if (!body.id) return { ok: false, error: 'Falta id del lead' };
+      var res = await _sb.from('Leads').delete().eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
     // Cierra el lead como Convertido (con valor de venta) o Perdido (con motivo).
     // El CHECK leads_cierre_check de la BD exige uno u otro dato según el caso.
     if (action === 'cerrarLead') {

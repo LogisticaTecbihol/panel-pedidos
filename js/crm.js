@@ -62,6 +62,11 @@ function crmMiUid() {
   var u = typeof AUTH !== 'undefined' && AUTH.getUser ? AUTH.getUser() : null;
   return u ? u.id : null;
 }
+// admin/editor/mercadeo pueden borrar cualquier lead; comercial solo los que él mismo creó (RLS).
+function crmPuedeEliminarLead(l) {
+  if (!crmEsComercial()) return true;
+  return l.creado_por === crmMiUid();
+}
 function crmNombreUsuario(id) {
   if (!id) return null;
   var u = crmDirectorio.filter(function(d) { return d.id === id; })[0];
@@ -278,7 +283,10 @@ function crmRender() {
       '<td>' + escHtml(crmNombreUsuario(l.Asignado_A) || '—') + '</td>' +
       '<td>' + escHtml(fmtDate(l.Fecha_Captura)) + '</td>' +
       '<td>' + (l.Fecha_Ultima_Interaccion ? escHtml(_fmtAudTs(l.Fecha_Ultima_Interaccion)) : '—') + '</td>' +
-      '<td><button class="btn-ver" onclick="event.stopPropagation();crmOpenCtx(' + l.id + ')">Ver</button></td>' +
+      '<td style="display:flex;gap:4px">' +
+        '<button class="btn-ver" onclick="event.stopPropagation();crmOpenCtx(' + l.id + ')">Ver</button>' +
+        (crmPuedeEliminarLead(l) ? '<button class="btn-rechazar-pedido" onclick="event.stopPropagation();crmEliminarLead(' + l.id + ')">🗑</button>' : '') +
+      '</td>' +
     '</tr>';
   }).join('');
 }
@@ -398,7 +406,10 @@ function crmRenderLeadsFiltradoPorActividad(actId) {
       '<td>' + crmCalifBadge(l) + '</td><td>' + crmEstadoBadge(l) + '</td>' +
       '<td>' + escHtml(crmNombreUsuario(l.Asignado_A) || '—') + '</td><td>' + escHtml(fmtDate(l.Fecha_Captura)) + '</td>' +
       '<td>' + (l.Fecha_Ultima_Interaccion ? escHtml(_fmtAudTs(l.Fecha_Ultima_Interaccion)) : '—') + '</td>' +
-      '<td><button class="btn-ver" onclick="event.stopPropagation();crmOpenCtx(' + l.id + ')">Ver</button></td></tr>';
+      '<td style="display:flex;gap:4px">' +
+        '<button class="btn-ver" onclick="event.stopPropagation();crmOpenCtx(' + l.id + ')">Ver</button>' +
+        (crmPuedeEliminarLead(l) ? '<button class="btn-rechazar-pedido" onclick="event.stopPropagation();crmEliminarLead(' + l.id + ')">🗑</button>' : '') +
+      '</td></tr>';
   }).join('') : '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">Esta actividad no tiene leads vinculados.</td></tr>';
 }
 
@@ -932,6 +943,7 @@ function crmRenderCtx() {
   var venc = crmVencido48h(l);
   var puedeGestionar = !crmEsComercial() || l.Asignado_A === crmMiUid() || l.creado_por === crmMiUid();
 
+  document.getElementById('ctx-btn-eliminar').style.display = crmPuedeEliminarLead(l) ? '' : 'none';
   document.getElementById('ctx-titulo').textContent = (l.Nombre_Contacto || '—') + (l.Empresa_Contacto ? ' — ' + l.Empresa_Contacto : '');
   document.getElementById('ctx-meta').innerHTML =
     '<span>' + crmEstadoBadge(l) + '</span><span>' + crmCalifBadge(l) + '</span>' +
@@ -1090,6 +1102,25 @@ async function crmConfirmCierre() {
   if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo cerrar'), '#e74c3c'); return; }
   showToast(crmCierreKind === 'Convertido' ? '✅ Lead convertido' : '❌ Lead marcado como perdido', undefined);
   crmCloseCierre();
+  await loadCRM();
+}
+
+// Borra un lead cargado por error. Advierte con más fuerza si ya está cerrado,
+// porque ahí se pierde el registro de un resultado real (venta o pérdida).
+async function crmEliminarLead(id) {
+  var l = crmByLeadId[id];
+  if (!l) return;
+  var msg = '¿Eliminar el lead "' + l.Nombre_Contacto + '"? Esta acción no se puede deshacer.';
+  if (l.Estado === 'Cerrado') {
+    msg = '⚠ Este lead ya está CERRADO' +
+      (l.Resultado_Cierre === 'Convertido' ? ' como Convertido, con un valor de venta de ' + fmtMoney(l.Valor_Venta || 0) : (l.Resultado_Cierre ? ' (' + l.Resultado_Cierre + ')' : '')) +
+      '. Si lo elimina se pierde ese registro para siempre. ¿Continuar de todas formas?';
+  }
+  if (!confirm(msg)) return;
+  var res = await apiPost({ action: 'eliminarLead', id: id });
+  if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo eliminar'), '#e74c3c'); return; }
+  showToast('🗑 Lead eliminado', undefined);
+  if (crmCtxId === id) crmCloseCtx();
   await loadCRM();
 }
 
