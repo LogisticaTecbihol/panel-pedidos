@@ -2853,6 +2853,9 @@ var existFiltersAttached = false;
 // Va aparte: NO entra en TOTAL / APARTADO / DISP. NETO (esos son de las 5 empresas
 // del holding). Solo se ve con "Todas las empresas" y para quien tenga GRANEL.
 var existShowGranel = false;
+// true cuando el filtro de Empresa está puesto específicamente en GRANEL
+// (se ve solo esa columna, sin TOTAL/APARTADO/DISP. NETO del holding).
+var existSoloGranel = false;
 
 function _granelVisibleKx() {
   return (typeof AUTH !== 'undefined') &&
@@ -2935,6 +2938,7 @@ function calcularExistencias() {
     }
     // Producto con movimiento en alguna empresa del holding (no solo en GRANEL).
     if (!_esGranel(bucket)) saldos[key]._hold = true;
+    else saldos[key]._granel = true;
     if (m.tipo === 'Entrada') {
       saldos[key][bucket] += m.cantidad;
     } else {
@@ -2975,11 +2979,13 @@ function calcularExistencias() {
 
   var selEmp = document.getElementById('ex-f-empresa');
   var prevEmp = selEmp.value;
+  var granelOpt = _granelVisibleKx() ? '<option value="GRANEL">🛢️ GRANEL</option>' : '';
   selEmp.innerHTML = '<option value="">— Todas —</option>' +
     empresasView.map(function(e) {
       return '<option value="' + e.value + '">' + e.sigla + '</option>';
-    }).join('');
-  var stillExists = empresasView.some(function(e) { return e.value === prevEmp; });
+    }).join('') + granelOpt;
+  var stillExists = empresasView.some(function(e) { return e.value === prevEmp; }) ||
+    (prevEmp === 'GRANEL' && !!granelOpt);
   selEmp.value = stillExists ? prevEmp : '';
 
   var selProd = document.getElementById('ex-f-buscar');
@@ -3014,14 +3020,16 @@ function renderExistencias() {
   var buscar = document.getElementById('ex-f-buscar').value;
   var mostrar = document.getElementById('ex-f-mostrar').value;
   var empresaSel = document.getElementById('ex-f-empresa').value;
+  var soloGranel = empresaSel === 'GRANEL' && _granelVisibleKx();
+  existSoloGranel = soloGranel;
 
   var notaEmp = document.getElementById('ex-nota-empresa');
-  if (notaEmp) notaEmp.style.display = empresaSel ? 'block' : 'none';
+  if (notaEmp) notaEmp.style.display = (empresaSel && !soloGranel) ? 'block' : 'none';
 
   var empresasAll = _empresasExistView();
-  var empresasView = empresaSel
+  var empresasView = soloGranel ? [] : (empresaSel
     ? empresasAll.filter(function(e) { return e.value === empresaSel; })
-    : empresasAll;
+    : empresasAll);
 
   var parcelarKeys = _allParcelarKeys();
   function _existEmpVal(row, eValue) {
@@ -3033,13 +3041,18 @@ function renderExistencias() {
     return row[eValue] || 0;
   }
 
-  // GRANEL: columna aparte, solo con "Todas las empresas" y si el usuario la tiene.
-  existShowGranel = !empresaSel && _granelVisibleKx();
+  // GRANEL: columna aparte junto al holding ("Todas las empresas"), o única
+  // columna cuando el filtro de Empresa está puesto en GRANEL. Siempre exige acceso.
+  existShowGranel = (soloGranel || !empresaSel) && _granelVisibleKx();
 
   existFiltered = existData.filter(function(row) {
     if (buscar && row.producto !== buscar) return false;
-    // Producto que solo existe en GRANEL: no se muestra si la columna está oculta.
-    if (!row._hold && !existShowGranel) return false;
+    if (soloGranel) {
+      if (!row._granel) return false;
+    } else if (!row._hold && !existShowGranel) {
+      // Producto que solo existe en GRANEL: no se muestra si la columna está oculta.
+      return false;
+    }
     var totalView = 0;
     empresasView.forEach(function(e) { totalView += _existEmpVal(row, e.value); });
     row._totalView = totalView;
@@ -3057,7 +3070,8 @@ function renderExistencias() {
       var val = _existEmpVal(row, e.value);
       if (val > 0) empresasConStock[e.value] = true;
     });
-    totalUnidades += row._totalView;
+    if (soloGranel && _existGranelVal(row) > 0) empresasConStock['GRANEL'] = true;
+    totalUnidades += soloGranel ? _existGranelVal(row) : row._totalView;
   });
 
   document.getElementById('ex-s-productos').textContent = _fmtNum.format(existFiltered.length);
@@ -3147,9 +3161,10 @@ function _existSectionRow(colSpan, label, txtColor, bgColor) {
 function renderExistTable(empresasView) {
   empresasView = empresasView || _empresasExistView();
   var showTotal = empresasView.length > 1;
+  var showApartado = !existSoloGranel;
   var hasParcelarCol = empresasView.some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
   var tbl = document.getElementById('tbl-ex');
-  if (tbl) tbl.classList.toggle('single', empresasView.length === 1);
+  if (tbl) tbl.classList.toggle('single', empresasView.length === 1 || existSoloGranel);
   var thead = document.getElementById('t-head-ex');
   var headerCols = '<th style="position:sticky;left:0;background:#f0f4f8;z-index:2">#</th>' +
     '<th style="position:sticky;left:30px;background:#f0f4f8;z-index:2;min-width:220px">Producto</th>';
@@ -3157,13 +3172,15 @@ function renderExistTable(empresasView) {
     headerCols += '<th style="text-align:right;min-width:90px">' + e.sigla + '</th>';
   });
   if (showTotal) headerCols += '<th style="text-align:right;min-width:90px;background:#edf2f7;font-weight:800">TOTAL</th>';
-  headerCols += '<th style="text-align:right;min-width:90px;background:#fff7ed;color:#b45309;font-weight:800" title="Stock apartado a pedidos sin remisionar. Es el total de TODO el holding para este producto, no solo de la empresa filtrada.">APARTADO</th>';
-  headerCols += '<th style="text-align:right;min-width:90px;background:#f0fdf4;color:#15803d;font-weight:800" title="Disponible neto = existencia física − apartado, sumando TODAS las empresas del holding para este producto (no solo la empresa filtrada).">DISP. NETO</th>';
+  if (showApartado) {
+    headerCols += '<th style="text-align:right;min-width:90px;background:#fff7ed;color:#b45309;font-weight:800" title="Stock apartado a pedidos sin remisionar. Es el total de TODO el holding para este producto, no solo de la empresa filtrada.">APARTADO</th>';
+    headerCols += '<th style="text-align:right;min-width:90px;background:#f0fdf4;color:#15803d;font-weight:800" title="Disponible neto = existencia física − apartado, sumando TODAS las empresas del holding para este producto (no solo la empresa filtrada).">DISP. NETO</th>';
+  }
   if (existShowGranel) headerCols += '<th style="' + _GRANEL_TH_STYLE + '" title="' + _GRANEL_TH_TITLE + '">🛢️ GRANEL</th>';
   thead.innerHTML = headerCols;
 
   var tbody = document.getElementById('t-body-ex');
-  var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0) + 2 + (existShowGranel ? 1 : 0);
+  var colSpan = 2 + empresasView.length + (showTotal ? 1 : 0) + (showApartado ? 2 : 0) + (existShowGranel ? 1 : 0);
   if (!existFiltered.length) {
     tbody.innerHTML = '<tr><td colspan="' + colSpan + '"><div class="empty-msg" style="text-align:center;padding:32px;color:#718096">No hay productos con los filtros seleccionados.</div></td></tr>';
     document.getElementById('t-foot-ex').innerHTML = '';
@@ -3185,10 +3202,12 @@ function renderExistTable(empresasView) {
       var totalColor = totalView > 0 ? '#2c3e50' : totalView < 0 ? '#e74c3c' : '#cbd5e0';
       html += '<td style="text-align:right;font-weight:800;color:' + totalColor + ';background:#f7fafc;font-size:0.88rem">' + _fmtNum.format(totalView) + '</td>';
     }
-    var apa = row._apartadoTotal || 0;
-    var neto = row._dispNetoTotal != null ? row._dispNetoTotal : ((row._totalView != null ? row._totalView : row._total) - apa);
-    html += '<td style="text-align:right;font-weight:' + (apa ? '700' : '400') + ';color:' + (apa ? '#b45309' : '#cbd5e0') + ';background:#fff7ed;font-size:0.84rem">' + _fmtNum.format(apa) + '</td>';
-    html += '<td style="text-align:right;font-weight:700;color:' + (neto < 0 ? '#e74c3c' : neto > 0 ? '#15803d' : '#cbd5e0') + ';background:#f0fdf4;font-size:0.84rem">' + _fmtNum.format(neto) + '</td>';
+    if (showApartado) {
+      var apa = row._apartadoTotal || 0;
+      var neto = row._dispNetoTotal != null ? row._dispNetoTotal : ((row._totalView != null ? row._totalView : row._total) - apa);
+      html += '<td style="text-align:right;font-weight:' + (apa ? '700' : '400') + ';color:' + (apa ? '#b45309' : '#cbd5e0') + ';background:#fff7ed;font-size:0.84rem">' + _fmtNum.format(apa) + '</td>';
+      html += '<td style="text-align:right;font-weight:700;color:' + (neto < 0 ? '#e74c3c' : neto > 0 ? '#15803d' : '#cbd5e0') + ';background:#f0fdf4;font-size:0.84rem">' + _fmtNum.format(neto) + '</td>';
+    }
     if (existShowGranel) html += _granelTd(_existGranelVal(row));
     html += '</tr>';
     return html;
@@ -3211,8 +3230,10 @@ function renderExistTable(empresasView) {
       h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;color:' + (v > 0 ? '#27ae60' : v < 0 ? '#e74c3c' : '#a0aec0') + '">' + _fmtNum.format(v) + '</td>';
     });
     if (showTotal) h += '<td style="text-align:right;font-weight:800;font-size:0.86rem;background:#e2e8f0">' + _fmtNum.format(gt) + '</td>';
-    h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#fff7ed;color:#b45309">' + _fmtNum.format(apaGt) + '</td>';
-    h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#f0fdf4;color:' + ((gt - apaGt) < 0 ? '#e74c3c' : '#15803d') + '">' + _fmtNum.format(gt - apaGt) + '</td>';
+    if (showApartado) {
+      h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#fff7ed;color:#b45309">' + _fmtNum.format(apaGt) + '</td>';
+      h += '<td style="text-align:right;font-weight:800;font-size:0.84rem;background:#f0fdf4;color:' + ((gt - apaGt) < 0 ? '#e74c3c' : '#15803d') + '">' + _fmtNum.format(gt - apaGt) + '</td>';
+    }
     if (existShowGranel) {
       var gSub = 0;
       items.forEach(function(row) { gSub += _existGranelVal(row); });
@@ -3273,8 +3294,10 @@ function renderExistTable(empresasView) {
     footHtml += '<td style="text-align:right;font-weight:800;color:' + color + ';font-size:0.88rem">' + _fmtNum.format(val) + '</td>';
   });
   if (showTotal) footHtml += '<td style="text-align:right;font-weight:800;color:#0e6655;background:#e8f5e9;font-size:0.95rem">' + _fmtNum.format(granTotal) + '</td>';
-  footHtml += '<td style="text-align:right;font-weight:800;color:#b45309;background:#fff7ed;font-size:0.9rem">' + _fmtNum.format(apaTotales) + '</td>';
-  footHtml += '<td style="text-align:right;font-weight:800;color:' + ((granTotal - apaTotales) < 0 ? '#e74c3c' : '#15803d') + ';background:#f0fdf4;font-size:0.9rem">' + _fmtNum.format(granTotal - apaTotales) + '</td>';
+  if (showApartado) {
+    footHtml += '<td style="text-align:right;font-weight:800;color:#b45309;background:#fff7ed;font-size:0.9rem">' + _fmtNum.format(apaTotales) + '</td>';
+    footHtml += '<td style="text-align:right;font-weight:800;color:' + ((granTotal - apaTotales) < 0 ? '#e74c3c' : '#15803d') + ';background:#f0fdf4;font-size:0.9rem">' + _fmtNum.format(granTotal - apaTotales) + '</td>';
+  }
   if (existShowGranel) footHtml += _granelTd(granelTotal, '800', '0.9rem');
   document.getElementById('t-foot-ex').innerHTML = footHtml;
 }
@@ -3283,25 +3306,29 @@ function exportExistExcel() {
   if (!existFiltered.length) { showToast('No hay datos para exportar.', '#e74c3c'); return; }
 
   var empresaSel = document.getElementById('ex-f-empresa').value;
+  var soloGranel = empresaSel === 'GRANEL' && _granelVisibleKx();
   var empresasAll = _empresasExistView();
-  var empresasView = empresaSel
+  var empresasView = soloGranel ? [] : (empresaSel
     ? empresasAll.filter(function(e) { return e.value === empresaSel; })
-    : empresasAll;
+    : empresasAll);
 
   var showTotal = empresasView.length > 1;
+  var showApartado = !soloGranel;
   var hasParcelarCol = empresasView.some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
   var data = [];
   var num = 1;
   // Columna GRANEL: misma condición que en pantalla (existShowGranel lo fija renderExistencias).
-  var xlGranel = existShowGranel && !empresaSel;
+  var xlGranel = soloGranel || (existShowGranel && !empresaSel);
 
   function pushProductRow(row) {
     var obj = { '#': num++, 'Producto': row.producto };
     empresasView.forEach(function(e) { obj[e.sigla] = _existCellVal(row, e.value); });
     if (showTotal) obj['TOTAL'] = (row._totalView != null ? row._totalView : row._total);
-    obj['APARTADO'] = row._apartadoTotal || 0;
-    obj['DISP. NETO'] = row._dispNetoTotal != null ? row._dispNetoTotal
-      : ((row._totalView != null ? row._totalView : row._total) - (row._apartadoTotal || 0));
+    if (showApartado) {
+      obj['APARTADO'] = row._apartadoTotal || 0;
+      obj['DISP. NETO'] = row._dispNetoTotal != null ? row._dispNetoTotal
+        : ((row._totalView != null ? row._totalView : row._total) - (row._apartadoTotal || 0));
+    }
     if (xlGranel) obj['GRANEL'] = _existGranelVal(row);
     data.push(obj);
   }
@@ -3310,7 +3337,7 @@ function exportExistExcel() {
     var header = { '#': '', 'Producto': label };
     empresasView.forEach(function(e) { header[e.sigla] = ''; });
     if (showTotal) header['TOTAL'] = '';
-    header['APARTADO'] = ''; header['DISP. NETO'] = '';
+    if (showApartado) { header['APARTADO'] = ''; header['DISP. NETO'] = ''; }
     if (xlGranel) header['GRANEL'] = '';
     data.push(header);
   }
@@ -3328,8 +3355,10 @@ function exportExistExcel() {
       apaGt += (row._apartadoTotal || 0);
     });
     if (showTotal) obj['TOTAL'] = gt;
-    obj['APARTADO'] = apaGt;
-    obj['DISP. NETO'] = gt - apaGt;
+    if (showApartado) {
+      obj['APARTADO'] = apaGt;
+      obj['DISP. NETO'] = gt - apaGt;
+    }
     if (xlGranel) {
       var gS = 0;
       items.forEach(function(row) { gS += _existGranelVal(row); });
