@@ -408,12 +408,44 @@
   </div>
 </div>
 
+<!-- MODAL: Carga masiva de leads (asistentes de una actividad) -->
+<div class="overlay" id="carga-overlay" style="z-index:260" onclick="if(isBackdropClick(event))crmCloseCarga()">
+  <div class="modal-box" style="max-width:720px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="carga-titulo">📋 Cargar asistentes</h2><div style="font-size:0.78rem;opacity:0.9" id="carga-sub"></div></div>
+      <button class="btn-close" onclick="crmCloseCarga()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="carga-actividad-id" value="">
+      <p style="font-size:0.82rem;color:#4a5568;margin:0 0 8px">Pega una fila por persona (puedes copiar y pegar directo desde Excel). Columnas en este orden: <strong>Nombre*, Teléfono, Correo, Empresa/Finca, Municipio, Producto de interés</strong>. Solo el nombre es obligatorio; las demás columnas pueden ir vacías.</p>
+      <textarea class="ef" id="carga-texto" rows="10" style="resize:vertical;font-family:monospace;font-size:0.82rem" placeholder="Juan Pérez	3001234567	juan@correo.com	Finca La Esperanza	Villavicencio	Fertilizante foliar" oninput="crmActualizarPreviewCarga()"></textarea>
+      <div style="font-size:0.8rem;color:#4a5568;margin-top:6px" id="carga-preview">0 asistentes detectados</div>
+
+      <div id="carga-asignar-wrap" style="margin-top:12px">
+        <label class="ef-label">Asignar todos a (opcional)</label>
+        <select class="ef" id="carga-asignado"><option value="">Sin asignar todavía</option></select>
+      </div>
+
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:0.84rem;color:#2d3748;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="carga-autorizacion"> Todos autorizaron el tratamiento de sus datos personales (Ley 1581 de 2012) *
+      </label>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="crmCloseCarga()">Cancelar</button>
+        <button class="btn-confirm" id="carga-ok" onclick="crmConfirmarCarga()">Cargar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260922c"></script>
+<script src="js/shared.js?v=20260922d"></script>
 <script src="js/auth.js?v=20260922a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
-<script src="js/crm.js?v=20260922c"></script>
+<script src="js/crm.js?v=20260922d"></script>
 </body>
 </html>

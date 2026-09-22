@@ -205,6 +205,8 @@ function crmFillAsignadoSelects() {
   fpEmp.innerHTML = '<option value="">Todas</option>' + empOpts;
   fpEmp.value = fpEmpActual;
   document.getElementById('pr-empresa').innerHTML = empOpts;
+
+  document.getElementById('carga-asignado').innerHTML = '<option value="">Sin asignar todavía</option>' + opts;
 }
 
 // Comercial no gestiona ni ve Presupuesto (RLS lo deja fuera por completo).
@@ -372,7 +374,8 @@ function crmRenderActividades() {
       '<td>' + crmBadge(a.Estado === 'En ejecucion' ? 'En ejecución' : a.Estado, CRM_ESTADO_ACTIVIDAD_COLOR[a.Estado] || '#718096') + '</td>' +
       '<td style="text-align:right">' + fmtMoney(a.Presupuesto_Asignado || 0) + '</td>' +
       '<td style="text-align:right">' + (nLeads ? '<a href="#" onclick="event.preventDefault();crmVerLeadsDeActividad(' + a.id + ')" style="font-weight:700">' + nLeads + '</a>' : '0') + '</td>' +
-      '<td style="display:flex;gap:4px">' +
+      '<td style="display:flex;gap:4px;flex-wrap:wrap">' +
+        '<button class="btn-ver" onclick="crmAbrirCargaAsistentes(' + a.id + ')">📋 Cargar</button>' +
         (puedeGestionarActividades ? '<button class="btn-ver" onclick="crmAbrirEditarActividad(' + a.id + ')">Editar</button>' +
         '<button class="btn-rechazar-pedido" onclick="crmEliminarActividad(' + a.id + ')">🗑</button>' : '') +
       '</td>' +
@@ -484,6 +487,75 @@ async function crmEliminarActividad(id) {
   var res = await apiPost({ action: 'eliminarActividad', id: id });
   if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo eliminar'), '#e74c3c'); return; }
   showToast('🗑 Actividad eliminada', undefined);
+  await loadCRM();
+}
+
+// ── Carga masiva de leads (asistentes pegados desde Excel) ──────
+function crmParseAsistentes(text) {
+  return text.split('\n')
+    .map(function(line) { return line.replace(/\r$/, ''); })
+    .filter(function(line) { return line.trim().length > 0; })
+    .map(function(line) {
+      var parts = (line.indexOf('\t') >= 0 ? line.split('\t') : line.split(',')).map(function(p) { return p.trim(); });
+      return {
+        nombre_contacto: parts[0] || '',
+        telefono: parts[1] || '',
+        correo: parts[2] || '',
+        empresa_contacto: parts[3] || '',
+        municipio: parts[4] || '',
+        producto_interes: parts[5] || ''
+      };
+    })
+    .filter(function(r) { return r.nombre_contacto; });
+}
+
+function crmActualizarPreviewCarga() {
+  var texto = document.getElementById('carga-texto').value;
+  var lineasNoVacias = texto.split('\n').filter(function(l) { return l.trim().length > 0; }).length;
+  var validos = crmParseAsistentes(texto).length;
+  var msg = validos + (validos === 1 ? ' asistente detectado' : ' asistentes detectados');
+  if (lineasNoVacias > validos) msg += ' (' + (lineasNoVacias - validos) + ' línea(s) sin nombre, se ignoran)';
+  document.getElementById('carga-preview').textContent = msg;
+}
+
+function crmAbrirCargaAsistentes(actividadId) {
+  var a = crmActividadesById[actividadId];
+  if (!a) return;
+  document.getElementById('carga-actividad-id').value = actividadId;
+  document.getElementById('carga-sub').textContent = a.Nombre;
+  document.getElementById('carga-texto').value = '';
+  document.getElementById('carga-autorizacion').checked = false;
+  document.getElementById('carga-asignado').value = crmEsComercial() ? (crmMiUid() || '') : '';
+  document.getElementById('carga-asignar-wrap').style.display = crmEsComercial() ? 'none' : 'block';
+  crmActualizarPreviewCarga();
+  document.getElementById('carga-overlay').classList.add('show');
+}
+function crmCloseCarga() { document.getElementById('carga-overlay').classList.remove('show'); }
+
+async function crmConfirmarCarga() {
+  var actividadId = Number(document.getElementById('carga-actividad-id').value);
+  var items = crmParseAsistentes(document.getElementById('carga-texto').value);
+  if (!items.length) { showToast('Pega al menos un asistente con nombre', '#e74c3c'); return; }
+  if (!document.getElementById('carga-autorizacion').checked) { showToast('Falta confirmar la autorización de tratamiento de datos (Ley 1581)', '#e74c3c'); return; }
+
+  var body = { action: 'crearLeadsMasivo', items: items, actividad_id: actividadId, origen: 'Evento', autorizacion_datos: true };
+  var asignado = document.getElementById('carga-asignado').value;
+  if (asignado) body.asignado_a = asignado;
+
+  var okBtn = document.getElementById('carga-ok');
+  okBtn.disabled = true; okBtn.textContent = 'Cargando…';
+  var res = await apiPost(body);
+  okBtn.disabled = false; okBtn.textContent = 'Cargar';
+  if (!res || res.ok === false) { showToast('Error: ' + ((res && res.error) || 'no se pudo cargar'), '#e74c3c'); return; }
+
+  // La carga de la base de datos de asistentes cuenta como su entrega (KPI de 3 días del manual de Eventos).
+  var a = crmActividadesById[actividadId];
+  if (a && !a.Base_Datos_Entregada) {
+    try { await apiPost({ action: 'marcarBaseDatosEntregada', id: actividadId }); } catch (e) { /* no bloquea la carga */ }
+  }
+
+  showToast('✅ ' + res.added + ' lead(s) cargados', undefined);
+  crmCloseCarga();
   await loadCRM();
 }
 
@@ -1025,6 +1097,7 @@ async function crmConfirmCierre() {
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
   if (document.getElementById('cierre-overlay').classList.contains('show')) crmCloseCierre();
+  else if (document.getElementById('carga-overlay').classList.contains('show')) crmCloseCarga();
   else if (document.getElementById('prd-overlay').classList.contains('show')) crmClosePresupuestoDetalle();
   else if (document.getElementById('pr-overlay').classList.contains('show')) crmClosePresupuesto();
   else if (document.getElementById('act-overlay').classList.contains('show')) crmCloseActividad();

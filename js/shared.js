@@ -2079,6 +2079,45 @@ async function _apiPostCore(body) {
       return { ok: true };
     }
 
+    // Carga masiva de leads (ej. asistentes de un evento, pegados desde Excel).
+    // Todos comparten actividad_id/origen/autorizacion_datos/fecha_captura.
+    if (action === 'crearLeadsMasivo') {
+      var items = body.items || [];
+      if (!items.length) return { ok: true, added: 0 };
+      var rowsLd = items.map(function(it) {
+        var r = {
+          Nombre_Contacto: it.nombre_contacto || '',
+          Empresa_Contacto: it.empresa_contacto || '',
+          Producto_Interes: it.producto_interes || '',
+          Telefono: it.telefono || '',
+          Correo: it.correo || '',
+          Municipio: it.municipio || '',
+          Departamento: it.departamento || '',
+          Origen: body.origen || 'Evento',
+          Actividad_Id: body.actividad_id || null,
+          Autorizacion_Datos: !!body.autorizacion_datos,
+          Fecha_Captura: body.fecha_captura || today(),
+          Observaciones: body.observaciones || ''
+        };
+        if (body.asignado_a) { r.Asignado_A = body.asignado_a; r.Estado = 'Asignado'; r.Fecha_Asignacion = new Date().toISOString(); }
+        return r;
+      });
+      var res = await _sb.from('Leads').insert(rowsLd);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, added: rowsLd.length };
+    }
+
+    // Marca la base de datos de asistentes como entregada (KPI de 3 días hábiles del manual de Eventos).
+    if (action === 'marcarBaseDatosEntregada') {
+      if (!body.id) return { ok: false, error: 'Falta id de la actividad' };
+      var res = await _sb.from('ActividadesMercadeo').update({
+        Base_Datos_Entregada: true,
+        Fecha_Entrega_Base_Datos: body.fecha || today()
+      }).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    }
+
     // ── CRM de Mercadeo (Actividades) ──
 
     if (action === 'crearActividad') {
