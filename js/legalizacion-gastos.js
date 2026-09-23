@@ -19,20 +19,39 @@ var formClientes = [];   // clientes visitados del formulario en curso (lista)
 var legAdjuntosCache = [];
 
 // Clientes con al menos una remisión real generada (Pedidos.Remisiones no
-// vacío, Estado_2 != 'Anulado'), para sugerir en el campo Cliente(s).
+// vacío, Estado_2 != 'Anulado'), para sugerir en el campo Cliente(s) y para
+// auto-completar el cliente cuando se agrega una remisión que le pertenece.
 var clientesConRemisionCache = null;
+var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
+
+// Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
+// en registros viejos, un solo código sin "|"). Mismo parseo que kardex.js.
+function _parseRemisionesField(remStr) {
+  var s = (remStr || '').trim();
+  if (!s) return [];
+  if (s.indexOf('|') < 0) return [s];
+  return s.split(',').map(function(seg) {
+    return (seg.split('|')[0] || '').trim();
+  }).filter(function(r) { return r; });
+}
 
 async function loadClientesConRemision() {
   try {
     var res = await apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2' });
     var set = {};
+    var remMap = {};
     if (res.ok) {
       (res.pedidos || []).forEach(function(p) {
         var cli = (p.Cliente || '').trim();
-        if (cli && (p.Remisiones || '').trim() && p.Estado_2 !== 'Anulado') set[cli] = true;
+        if (!cli || p.Estado_2 === 'Anulado') return;
+        var rems = _parseRemisionesField(p.Remisiones);
+        if (!rems.length) return;
+        set[cli] = true;
+        rems.forEach(function(r) { remMap[r.toUpperCase()] = cli; });
       });
     }
     clientesConRemisionCache = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
+    remisionClienteMap = remMap;
   } catch (e) {
     clientesConRemisionCache = clientesConRemisionCache || [];
   }
@@ -357,6 +376,11 @@ function addLgRemision() {
   inp.value = '';
   renderLgRemisiones();
   inp.focus();
+
+  // Si la remisión pertenece a un pedido real, su cliente se agrega solo
+  // (sin robar el foco del campo de remisiones ni bloquear la edición manual).
+  var cliAuto = remisionClienteMap && remisionClienteMap[val.toUpperCase()];
+  if (cliAuto) _addClienteToList(cliAuto);
 }
 
 function removeLgRemision(i) {
@@ -373,13 +397,18 @@ function renderLgClientes() {
   }).join('') : '<span style="color:#a0aec0;font-size:0.82rem">Sin clientes agregados.</span>';
 }
 
+function _addClienteToList(val) {
+  val = (val || '').trim();
+  if (!val || formClientes.indexOf(val) >= 0) return;
+  formClientes.push(val);
+  renderLgClientes();
+}
+
 function addLgCliente(nombre) {
   var inp = document.getElementById('lg-cliente-nueva');
-  var val = (nombre != null ? nombre : inp.value).trim();
-  if (!val) return;
-  if (formClientes.indexOf(val) < 0) formClientes.push(val);
+  var val = nombre != null ? nombre : inp.value;
+  _addClienteToList(val);
   inp.value = '';
-  renderLgClientes();
   inp.focus();
 }
 
