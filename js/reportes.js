@@ -78,7 +78,9 @@ async function loadReportes() {
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     data.pedidos = data.pedidos.filter(function(p) {
-      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente';
+      // GRANEL queda fuera de los consolidados de Reportes, igual que en el
+      // resto del panel: sus pedidos solo se ven dentro del módulo Pedidos.
+      return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente' && !_esGranel(p.Nombre_Empresa);
     });
 
     pedidos = data.pedidos.map(function(p) {

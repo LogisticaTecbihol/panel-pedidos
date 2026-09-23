@@ -362,8 +362,11 @@ async function loadDashboard() {
       //    retroactivo.
       //  - dEsPedidoConsignacionExplicito: campo "Pedido en Consignación" =
       //    Sí — retroactivo, cualquier empresa.
+      //  - GRANEL: aislada de los consolidados igual que en el resto del
+      //    panel; sus pedidos solo se ven dentro del módulo Pedidos.
       return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente'
-        && !p.Bodega_Consignacion_Id && !dEsBodegaIasoExcluida(p) && !dEsPedidoConsignacionExplicito(p);
+        && !p.Bodega_Consignacion_Id && !dEsBodegaIasoExcluida(p) && !dEsPedidoConsignacionExplicito(p)
+        && !_esGranel(p.Nombre_Empresa);
     }).map(function(p) {
       if (!p.Cant_Entregada && p.Cant_Entregada !== 0) {
         p.Cant_Entregada = 0;

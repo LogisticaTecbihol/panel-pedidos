@@ -868,7 +868,11 @@ function _buildOCsLegalizadasMap(ordenes) {
 // ── Load from API ──
 async function loadFromAPI() {
   await _authReady;
-  populateEmpresaSelect('nv-empresa');
+  // incluirGranel=true: la muestra solo a quien ya tenga GRANEL asignada
+  // (AUTH.getFilteredEmpresas filtra por usuario_empresas), igual que en
+  // Ingresos/Salidas/Reenvases. Los pedidos de Granel solo descuentan su
+  // propio stock — ver renderAsignacionCell/_competenciaApartadoHtml.
+  populateEmpresaSelect('nv-empresa', null, null, false, true);
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -2566,8 +2570,9 @@ function _competenciaApartadoHtml(l, empresaPedido) {
   var prodStock = _normProdSel(l.Producto);
   var pend = Math.max(0, (Number(l.Cantidad) || 0) - (Number(l.Cant_Entregada) || 0));
   if (pend <= 0) return '';
-  // disponible neto total (empresas visibles) para este producto
-  var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion, { neto: true });
+  // disponible neto total (empresas visibles) para este producto. Un pedido
+  // de GRANEL solo compite por el stock de GRANEL (nunca por el del holding).
+  var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion, { neto: true, soloGranel: _esGranel(empresaPedido) });
   var netoTotal = lista.reduce(function(s, x) { return s + Math.max(0, x.disponibleNeto || 0); }, 0);
   if (netoTotal >= pend) return '';
 
@@ -2686,7 +2691,9 @@ function renderAsignacionCell(i, l, empresaPedido) {
     // − apartado (de este y otros pedidos). Así no se sobre-promete stock ya
     // reservado. La conversión del apartado PROPIO a entrega va por los chips
     // "🔒 apartadas" de abajo, que no pasan por este tope.
-    var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion, { neto: true });
+    // Un pedido de GRANEL solo puede descontar de GRANEL (nunca se le arma
+    // una solicitud de compra/traslado desde otra empresa del holding).
+    var lista = Existencias.getPorEmpresa(existSnapshot, prodStock, l.Presentacion, { neto: true, soloGranel: _esGranel(empresaPedido) });
     lista.sort(function(a, b) {
       var aEsPedido = norm(a.empresa) === norm(empresaPedido) ? 0 : 1;
       var bEsPedido = norm(b.empresa) === norm(empresaPedido) ? 0 : 1;

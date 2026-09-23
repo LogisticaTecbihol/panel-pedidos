@@ -512,16 +512,21 @@
   // ordenado por sigla, filtrado por las empresas visibles al usuario (AUTH).
   //   opts.neto = true → filtra/ordena por disponibleNeto (para el modal de
   //                      apartar); por defecto filtra por disponible físico > 0.
+  //   opts.soloGranel = true → universo de empresas = solo GRANEL, en vez del
+  //                      holding (pedidos de la bodega Granel: solo pueden
+  //                      descontar su propio stock, nunca el de otra empresa).
   function getPorEmpresa(snapshot, producto /*, presentacion — ignorado */, opts) {
     if (!snapshot || !snapshot.saldos) return [];
     var neto = !!(opts && opts.neto);
+    var soloGranel = !!(opts && opts.soloGranel);
     var prodKey = _normProd(producto);
     var perEmp = snapshot.saldos[prodKey] || {};
     var perApa = (snapshot.apartadoPorEmpresa && snapshot.apartadoPorEmpresa[prodKey]) || {};
 
+    var base = soloGranel ? [EMPRESA_GRANEL] : EMPRESAS_HOLDING;
     var visibles = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas)
-      ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING)
-      : EMPRESAS_HOLDING;
+      ? AUTH.getFilteredEmpresas(base)
+      : base;
     var permitidas = {};
     visibles.forEach(function(e) { permitidas[e.value] = true; });
 
