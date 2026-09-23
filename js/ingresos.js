@@ -573,7 +573,7 @@ function addProductToGroup() {
 
   ingLineas = [{ Producto: '', Presentacion: '', Cantidad: '' }];
   renderIngLines();
-  onOrigenChange();
+  onOrigenChange(true);
   document.getElementById('ing-overlay').classList.add('show');
 }
 
@@ -847,7 +847,7 @@ function getOrigenValue() {
   return sel;
 }
 
-function onOrigenChange() {
+function onOrigenChange(preserveDestino) {
   var selVal = document.getElementById('ing-origen').value;
   var customEl = document.getElementById('ing-origen-custom');
   customEl.style.display = selVal === '__otro__' ? '' : 'none';
@@ -872,7 +872,7 @@ function onOrigenChange() {
   if (esGranelDest) {
     document.getElementById('ing-empresa-origen').value = '';
   }
-  if (origen === 'Chia Abago') {
+  if (origen === 'Chia Abago' && !preserveDestino) {
     document.getElementById('ing-empresa-destino').value = '';
   }
   var esPlanta = !!ORIGEN_EMPRESA[origen];
@@ -965,7 +965,7 @@ function openEditIng(row) {
   document.getElementById('ing-edit-presentacion').value = r.Presentacion || '';
   document.getElementById('ing-edit-cantidad').value = r.Cantidad || '';
 
-  onOrigenChange();
+  onOrigenChange(true);
   document.getElementById('ing-overlay').classList.add('show');
 }
 
