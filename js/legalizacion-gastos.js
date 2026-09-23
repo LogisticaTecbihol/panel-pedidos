@@ -56,6 +56,21 @@ function readResponsable() {
   return sel;
 }
 
+// El NIT se guarda como un solo texto "base-DV" (igual que el resto del
+// panel); en el formulario se captura en dos casillas separadas.
+function splitNitDv(value) {
+  var s = (value || '').trim();
+  var m = /^(.*)[\s.\-](\d)\s*$/.exec(s);
+  if (m) return { nit: m[1].replace(/\D/g, ''), dv: m[2] };
+  return { nit: s.replace(/\D/g, ''), dv: '' };
+}
+
+function joinNitDv(nit, dv) {
+  var n = (nit || '').trim();
+  var d = (dv || '').trim();
+  return d ? (n + '-' + d) : n;
+}
+
 // Conceptos fijos del formulario de gasto; "Otros" pide especificar el detalle.
 var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Mantenimiento'];
 
@@ -257,7 +272,10 @@ function renderLgGastos() {
         (parsed.sel === 'Otros' ? '<input class="ef lg-g-concepto-otro" data-line="' + i + '" type="text" value="' + escHtml(parsed.detail) + '" placeholder="Especifique…" style="margin-top:4px" oninput="readLgGastos()">' : '') +
       '</td>' +
       '<td><input class="ef lg-g-proveedor" data-line="' + i + '" type="text" value="' + escHtml(g.Proveedor || '') + '" placeholder="Proveedor" oninput="readLgGastos()"></td>' +
-      '<td><input class="ef lg-g-nit" data-line="' + i + '" type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:130px" oninput="readLgGastos()"></td>' +
+      '<td><div style="display:flex;gap:4px">' +
+        '<input class="ef lg-g-nit" data-line="' + i + '" type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:100px" oninput="readLgGastos()">' +
+        '<input class="ef lg-g-dv" data-line="' + i + '" type="text" value="' + escHtml(g.DV || '') + '" placeholder="DV" maxlength="2" style="width:44px;text-align:center" oninput="readLgGastos()">' +
+      '</div></td>' +
       '<td><input class="ef lg-g-valor" data-line="' + i + '" type="number" min="0" step="1" value="' + (g.Valor || '') + '" style="text-align:right;width:120px" oninput="readLgGastos()"></td>' +
       '<td style="text-align:center"><button onclick="removeLgGasto(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
     '</tr>';
@@ -265,7 +283,7 @@ function renderLgGastos() {
 }
 
 function addLgGasto() {
-  formGastos.push({ Concepto: 'Combustible', Proveedor: '', NIT: '', Valor: '' });
+  formGastos.push({ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' });
   renderLgGastos();
   var lastInput = document.querySelector('.lg-g-concepto[data-line="' + (formGastos.length - 1) + '"]');
   if (lastInput) lastInput.focus();
@@ -295,6 +313,7 @@ function readLgGastos() {
   document.querySelectorAll('.lg-g-concepto-otro').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Concepto = inp.value; });
   document.querySelectorAll('.lg-g-proveedor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Proveedor = inp.value; });
   document.querySelectorAll('.lg-g-nit').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].NIT = inp.value; });
+  document.querySelectorAll('.lg-g-dv').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].DV = inp.value; });
   document.querySelectorAll('.lg-g-valor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Valor = Number(inp.value) || 0; });
   recalcTotals();
 }
@@ -347,7 +366,10 @@ function openForm(id) {
     document.getElementById('lg-clientes').value = leg.Clientes || '';
     document.getElementById('lg-anticipo').value = leg.Anticipo_Entregado || '';
     document.getElementById('lg-observaciones').value = leg.Observaciones || '';
-    formGastos = itemsOf(editingLegId).map(function(it) { return { Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: it.NIT, Valor: it.Valor }; });
+    formGastos = itemsOf(editingLegId).map(function(it) {
+      var nd = splitNitDv(it.NIT);
+      return { Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: nd.nit, DV: nd.dv, Valor: it.Valor };
+    });
     formEmpresas = empresasOf(editingLegId).map(function(e) { return { Empresa: e.Empresa, Monto: e.Monto }; });
     formRemisiones = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
   } else {
@@ -361,11 +383,11 @@ function openForm(id) {
     document.getElementById('lg-clientes').value = '';
     document.getElementById('lg-anticipo').value = '';
     document.getElementById('lg-observaciones').value = '';
-    formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', Valor: '' }];
+    formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' }];
     formEmpresas = [{ Empresa: '', Monto: '' }];
     formRemisiones = [];
   }
-  if (!formGastos.length) formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', Valor: '' }];
+  if (!formGastos.length) formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' }];
   if (!formEmpresas.length) formEmpresas = [{ Empresa: '', Monto: '' }];
   document.getElementById('lg-remision-nueva').value = '';
   renderLgGastos();
@@ -400,7 +422,9 @@ async function saveForm() {
   var header = readHeaderForm();
 
   if (!header.Responsable) { showToast('Indica el responsable', '#e67e22'); return; }
-  var gastosValidos = formGastos.filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; });
+  var gastosValidos = formGastos
+    .filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; })
+    .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor }; });
   if (!gastosValidos.length) { showToast('Agrega al menos una línea de gasto válida', '#e67e22'); return; }
   var empresasValidas = formEmpresas.filter(function(e) { return e.Empresa; });
   if (!empresasValidas.length) { showToast('Agrega al menos una empresa en el reparto', '#e67e22'); return; }
