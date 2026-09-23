@@ -479,6 +479,23 @@ async function apiGet(action, opts) {
       return { ok: true, gastos: _addRow(res.data) };
     }
 
+    // ── LEGALIZACIÓN DE GASTOS ──
+    if (action === 'getLegalizacionGastos') {
+      var res = await _fetchAllRows('LegalizacionGastos', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, legalizaciones: _addRow(res.data) };
+    }
+    if (action === 'getLegalizacionGastosItems') {
+      var res = await _fetchAllRows('LegalizacionGastosItems', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, items: _addRow(res.data) };
+    }
+    if (action === 'getLegalizacionGastosEmpresas') {
+      var res = await _fetchAllRows('LegalizacionGastosEmpresas', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, empresas: _addRow(res.data) };
+    }
+
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -2256,6 +2273,101 @@ async function _apiPostCore(body) {
       var res = await _sb.from('PresupuestoMercadeoGastos').delete().eq('id', body.id);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true };
+    }
+
+    // ── LEGALIZACIÓN DE GASTOS ──
+
+    if (action === 'agregarLegalizacionGastos') {
+      var itemsLG = (body.items || []).filter(function(it) { return (it.Concepto || '').trim() || Number(it.Valor) > 0; });
+      if (!itemsLG.length) return { ok: false, error: 'Agrega al menos una línea de gasto' };
+      var empresasLG = (body.empresas || []).filter(function(e) { return (e.Empresa || '').trim(); });
+      if (!empresasLG.length) return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
+      var hdrLG = body.header || {};
+      var payloadLG = {
+        Fecha: hdrLG.Fecha || today(),
+        Responsable: hdrLG.Responsable || '',
+        Recorrido_Ruta: hdrLG.Recorrido_Ruta || '',
+        No_Personas: hdrLG.No_Personas || null,
+        Fecha_Salida: hdrLG.Fecha_Salida || null,
+        Fecha_Llegada: hdrLG.Fecha_Llegada || null,
+        Clientes: hdrLG.Clientes || '',
+        Remisiones_Relacionadas: hdrLG.Remisiones_Relacionadas || '',
+        Anticipo_Entregado: Number(hdrLG.Anticipo_Entregado) || 0,
+        Observaciones: hdrLG.Observaciones || '',
+        creado_por: _uid()
+      };
+      var resLG = await _sb.from('LegalizacionGastos').insert(payloadLG).select('id').single();
+      if (resLG.error) return { ok: false, error: resLG.error.message };
+      var idLG = resLG.data.id;
+      var rowsItemsLG = itemsLG.map(function(it) {
+        return { Legalizacion_Id: idLG, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, creado_por: _uid() };
+      });
+      var resItemsLG = await _sb.from('LegalizacionGastosItems').insert(rowsItemsLG);
+      if (resItemsLG.error) return { ok: false, error: resItemsLG.error.message };
+      var rowsEmpLG = empresasLG.map(function(e) {
+        return { Legalizacion_Id: idLG, Empresa: e.Empresa || '', Monto: Number(e.Monto) || 0, creado_por: _uid() };
+      });
+      var resEmpLG = await _sb.from('LegalizacionGastosEmpresas').insert(rowsEmpLG);
+      if (resEmpLG.error) return { ok: false, error: resEmpLG.error.message };
+      return { ok: true, id: idLG };
+    }
+
+    if (action === 'editarLegalizacionGastos') {
+      if (!body.id) return { ok: false, error: 'Falta el id de la legalización' };
+      var itemsLGe = (body.items || []).filter(function(it) { return (it.Concepto || '').trim() || Number(it.Valor) > 0; });
+      if (!itemsLGe.length) return { ok: false, error: 'Agrega al menos una línea de gasto' };
+      var empresasLGe = (body.empresas || []).filter(function(e) { return (e.Empresa || '').trim(); });
+      if (!empresasLGe.length) return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
+      var hdrLGe = body.header || {};
+      var updLG = {
+        Fecha: hdrLGe.Fecha || today(),
+        Responsable: hdrLGe.Responsable || '',
+        Recorrido_Ruta: hdrLGe.Recorrido_Ruta || '',
+        No_Personas: hdrLGe.No_Personas || null,
+        Fecha_Salida: hdrLGe.Fecha_Salida || null,
+        Fecha_Llegada: hdrLGe.Fecha_Llegada || null,
+        Clientes: hdrLGe.Clientes || '',
+        Remisiones_Relacionadas: hdrLGe.Remisiones_Relacionadas || '',
+        Anticipo_Entregado: Number(hdrLGe.Anticipo_Entregado) || 0,
+        Observaciones: hdrLGe.Observaciones || '',
+        modificado_por: _uid()
+      };
+      var resLGe = await _sb.from('LegalizacionGastos').update(updLG).eq('id', body.id);
+      if (resLGe.error) return { ok: false, error: resLGe.error.message };
+      var delItemsLG = await _sb.from('LegalizacionGastosItems').delete().eq('Legalizacion_Id', body.id);
+      if (delItemsLG.error) return { ok: false, error: delItemsLG.error.message };
+      var rowsItemsLGe = itemsLGe.map(function(it) {
+        return { Legalizacion_Id: body.id, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, creado_por: _uid() };
+      });
+      var resItemsLGe = await _sb.from('LegalizacionGastosItems').insert(rowsItemsLGe);
+      if (resItemsLGe.error) return { ok: false, error: resItemsLGe.error.message };
+      var delEmpLG = await _sb.from('LegalizacionGastosEmpresas').delete().eq('Legalizacion_Id', body.id);
+      if (delEmpLG.error) return { ok: false, error: delEmpLG.error.message };
+      var rowsEmpLGe = empresasLGe.map(function(e) {
+        return { Legalizacion_Id: body.id, Empresa: e.Empresa || '', Monto: Number(e.Monto) || 0, creado_por: _uid() };
+      });
+      var resEmpLGe = await _sb.from('LegalizacionGastosEmpresas').insert(rowsEmpLGe);
+      if (resEmpLGe.error) return { ok: false, error: resEmpLGe.error.message };
+      return { ok: true, updated: 1 };
+    }
+
+    if (action === 'eliminarLegalizacionGastos') {
+      if (!body.id) return { ok: false, error: 'Falta el id de la legalización' };
+      var resDelLG = await _sb.from('LegalizacionGastos').delete().eq('id', body.id);
+      if (resDelLG.error) return { ok: false, error: resDelLG.error.message };
+      return { ok: true, deleted: 1 };
+    }
+
+    if (action === 'conciliarLegalizacionGastos') {
+      var resConcLG = await _sb.rpc('conciliar_legalizacion_gastos', {
+        p_id: body.id,
+        p_aprobar: !!body.aprobar,
+        p_saldo_favor: (body.saldo_favor != null && body.saldo_favor !== '') ? Number(body.saldo_favor) : null,
+        p_saldo_reembolsar: (body.saldo_reembolsar != null && body.saldo_reembolsar !== '') ? Number(body.saldo_reembolsar) : null,
+        p_motivo_rechazo: body.motivo_rechazo || ''
+      });
+      if (resConcLG.error) return { ok: false, error: resConcLG.error.message };
+      return resConcLG.data || { ok: true };
     }
 
     return { error: 'Accion POST no reconocida: ' + action };

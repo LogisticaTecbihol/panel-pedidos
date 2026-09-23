@@ -29,7 +29,9 @@ var AUTH = (function() {
     { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' },
     { key: 'clientes',                  label: '👥 Clientes' },
     { key: 'notificaciones',          label: '🔔 Notificaciones' },
-    { key: 'crm',                     label: '🧲 CRM de Mercadeo' }
+    { key: 'crm',                     label: '🧲 CRM de Mercadeo' },
+    { key: 'legalizacion_gastos',          label: '🧾 Legalización de Gastos' },
+    { key: 'legalizacion_gastos_aprobar',  label: '✅ Conciliar legalización de gastos' }
   ];
 
   function init() {
@@ -330,6 +332,14 @@ var AUTH = (function() {
     return _modules.indexOf('ordenes_aprobar') >= 0;
   }
 
+  // Quién puede conciliar/rechazar una legalización de gastos (segundo paso).
+  // El backend lo hace cumplir con el RPC conciliar_legalizacion_gastos.
+  function canConciliarGastos() {
+    if (!_profile) return false;
+    if (_profile.rol === 'admin') return true;
+    return _modules.indexOf('legalizacion_gastos_aprobar') >= 0;
+  }
+
   function hasCompany(nombre) {
     if (!_profile) return false;
     if (_profile.rol === 'admin' || _profile.rol === 'cartera') return true;
@@ -401,6 +411,7 @@ var AUTH = (function() {
     canDeleteIn: canDeleteIn,
     canApprove: canApprove,
     canApproveOC: canApproveOC,
+    canConciliarGastos: canConciliarGastos,
     canManageUsers: canManageUsers,
     isAdmin: isAdmin,
     canAutoConsec: canAutoConsec,
