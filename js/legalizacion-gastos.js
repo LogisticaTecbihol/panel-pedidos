@@ -14,8 +14,29 @@ var verLegId = null;     // id mostrado en #ver-overlay
 var formGastos = [];     // líneas de gasto del formulario en curso
 var formEmpresas = [];   // reparto por empresa del formulario en curso
 var formRemisiones = []; // remisiones relacionadas del formulario en curso (lista)
+var formClientes = [];   // clientes visitados del formulario en curso (lista)
 
 var legAdjuntosCache = [];
+
+// Clientes con al menos una remisión real generada (Pedidos.Remisiones no
+// vacío, Estado_2 != 'Anulado'), para sugerir en el campo Cliente(s).
+var clientesConRemisionCache = null;
+
+async function loadClientesConRemision() {
+  try {
+    var res = await apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2' });
+    var set = {};
+    if (res.ok) {
+      (res.pedidos || []).forEach(function(p) {
+        var cli = (p.Cliente || '').trim();
+        if (cli && (p.Remisiones || '').trim() && p.Estado_2 !== 'Anulado') set[cli] = true;
+      });
+    }
+    clientesConRemisionCache = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
+  } catch (e) {
+    clientesConRemisionCache = clientesConRemisionCache || [];
+  }
+}
 
 // Responsables conocidos; "Otro" pide especificar el nombre.
 var RESPONSABLES_FIJOS = ['Leimer Villegas', 'Kevin Rey'];
@@ -89,6 +110,7 @@ function conceptoOptionsHtml(selected) {
 async function loadLegalizaciones() {
   await _authReady;
   populateEmpresaSelect('f-emp', 'Todas');
+  loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
@@ -342,6 +364,30 @@ function removeLgRemision(i) {
   renderLgRemisiones();
 }
 
+// ── Formulario: clientes visitados (lista, sugeridos desde Pedidos con remisión) ──
+function renderLgClientes() {
+  var box = document.getElementById('lg-clientes-chips');
+  box.innerHTML = formClientes.length ? formClientes.map(function(c, i) {
+    return '<span class="badge b-ent" style="display:inline-flex;align-items:center;gap:6px">' + escHtml(c) +
+      '<span onclick="removeLgCliente(' + i + ')" style="cursor:pointer;font-weight:700" title="Quitar">✕</span></span>';
+  }).join('') : '<span style="color:#a0aec0;font-size:0.82rem">Sin clientes agregados.</span>';
+}
+
+function addLgCliente(nombre) {
+  var inp = document.getElementById('lg-cliente-nueva');
+  var val = (nombre != null ? nombre : inp.value).trim();
+  if (!val) return;
+  if (formClientes.indexOf(val) < 0) formClientes.push(val);
+  inp.value = '';
+  renderLgClientes();
+  inp.focus();
+}
+
+function removeLgCliente(i) {
+  formClientes.splice(i, 1);
+  renderLgClientes();
+}
+
 function recalcTotals() {
   var totalGastos = formGastos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
   var totalReparto = formEmpresas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
@@ -363,7 +409,6 @@ function openForm(id) {
     document.getElementById('lg-personas').value = leg.No_Personas || '';
     document.getElementById('lg-fecha-salida').value = (leg.Fecha_Salida || '').slice(0, 10);
     document.getElementById('lg-fecha-llegada').value = (leg.Fecha_Llegada || '').slice(0, 10);
-    document.getElementById('lg-clientes').value = leg.Clientes || '';
     document.getElementById('lg-anticipo').value = leg.Anticipo_Entregado || '';
     document.getElementById('lg-observaciones').value = leg.Observaciones || '';
     formGastos = itemsOf(editingLegId).map(function(it) {
@@ -372,6 +417,7 @@ function openForm(id) {
     });
     formEmpresas = empresasOf(editingLegId).map(function(e) { return { Empresa: e.Empresa, Monto: e.Monto }; });
     formRemisiones = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+    formClientes = (leg.Clientes || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
   } else {
     document.getElementById('form-titulo').textContent = 'Nueva legalización de gastos';
     document.getElementById('lg-fecha').value = today();
@@ -380,19 +426,21 @@ function openForm(id) {
     document.getElementById('lg-personas').value = '';
     document.getElementById('lg-fecha-salida').value = '';
     document.getElementById('lg-fecha-llegada').value = '';
-    document.getElementById('lg-clientes').value = '';
     document.getElementById('lg-anticipo').value = '';
     document.getElementById('lg-observaciones').value = '';
     formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' }];
     formEmpresas = [{ Empresa: '', Monto: '' }];
     formRemisiones = [];
+    formClientes = [];
   }
   if (!formGastos.length) formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' }];
   if (!formEmpresas.length) formEmpresas = [{ Empresa: '', Monto: '' }];
   document.getElementById('lg-remision-nueva').value = '';
+  document.getElementById('lg-cliente-nueva').value = '';
   renderLgGastos();
   renderLgEmpresas();
   renderLgRemisiones();
+  renderLgClientes();
   recalcTotals();
   document.getElementById('form-overlay').classList.add('show');
 }
@@ -409,7 +457,7 @@ function readHeaderForm() {
     No_Personas: Number(document.getElementById('lg-personas').value) || null,
     Fecha_Salida: document.getElementById('lg-fecha-salida').value || null,
     Fecha_Llegada: document.getElementById('lg-fecha-llegada').value || null,
-    Clientes: document.getElementById('lg-clientes').value.trim(),
+    Clientes: formClientes.join(', '),
     Remisiones_Relacionadas: formRemisiones.join(', '),
     Anticipo_Entregado: Number(document.getElementById('lg-anticipo').value) || 0,
     Observaciones: document.getElementById('lg-observaciones').value.trim()
@@ -719,5 +767,13 @@ function exportarPDF() {
   };
   generarRemisionPDF(data);
 }
+
+initAutocomplete(document.getElementById('lg-cliente-nueva'), {
+  minChars: 1,
+  items: function() { return clientesConRemisionCache || []; },
+  display: function(c) { return '<strong>' + escHtml(c) + '</strong>'; },
+  match: function(c, val) { return c.toLowerCase().indexOf(val) >= 0; },
+  onSelect: function(c) { addLgCliente(c); }
+});
 
 loadLegalizaciones();
