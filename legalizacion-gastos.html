@@ -130,7 +130,14 @@
         <div><label class="ef-label">Fecha de llegada</label><input class="ef" id="lg-fecha-llegada" type="date"></div>
         <div style="grid-column:span 2"><label class="ef-label">Cliente(s)</label><input class="ef" id="lg-clientes" type="text" placeholder="Clientes visitados en la ruta"></div>
         <div><label class="ef-label">Anticipo entregado ($)</label><input class="ef" id="lg-anticipo" type="number" min="0" step="1"></div>
-        <div style="grid-column:span 3"><label class="ef-label">Remisiones relacionadas</label><input class="ef" id="lg-remisiones" type="text" placeholder="Ej. RESO-RE-0032, PARCELAR-RS-0081"></div>
+        <div style="grid-column:span 3">
+          <label class="ef-label">Remisiones relacionadas</label>
+          <div id="lg-remisiones-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+          <div style="display:flex;gap:8px">
+            <input class="ef" id="lg-remision-nueva" type="text" placeholder="Ej. RESO-RE-0032" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addLgRemision();}">
+            <button class="btn-edit" type="button" onclick="addLgRemision()">+ Agregar</button>
+          </div>
+        </div>
         <div style="grid-column:span 3"><label class="ef-label">Observaciones</label><textarea class="ef" id="lg-observaciones" rows="2" style="resize:vertical"></textarea></div>
       </div>
 

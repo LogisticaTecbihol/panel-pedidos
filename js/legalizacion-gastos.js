@@ -11,10 +11,25 @@ var legEmpresas = []; // LegalizacionGastosEmpresas (reparto)
 var editingLegId = null; // id en edición dentro de #form-overlay, null = nueva
 var verLegId = null;     // id mostrado en #ver-overlay
 
-var formGastos = [];   // líneas de gasto del formulario en curso
-var formEmpresas = []; // reparto por empresa del formulario en curso
+var formGastos = [];     // líneas de gasto del formulario en curso
+var formEmpresas = [];   // reparto por empresa del formulario en curso
+var formRemisiones = []; // remisiones relacionadas del formulario en curso (lista)
 
 var legAdjuntosCache = [];
+
+// Conceptos fijos del formulario de gasto; "Otros" pide especificar el detalle.
+var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Mantenimiento'];
+
+function parseConceptoLine(concepto) {
+  return CONCEPTO_FIJOS.indexOf(concepto) >= 0 ? { sel: concepto, detail: '' } : { sel: 'Otros', detail: concepto || '' };
+}
+
+function conceptoOptionsHtml(selected) {
+  var opts = CONCEPTO_FIJOS.concat(['Otros']).map(function(c) {
+    return '<option value="' + escHtml(c) + '"' + (c === selected ? ' selected' : '') + '>' + escHtml(c) + '</option>';
+  });
+  return opts.join('');
+}
 
 // ── Carga inicial ──
 async function loadLegalizaciones() {
@@ -196,8 +211,12 @@ function readLgEmpresas() {
 // ── Formulario: líneas de gasto ──
 function renderLgGastos() {
   document.getElementById('lg-gasto-lines').innerHTML = formGastos.map(function(g, i) {
+    var parsed = parseConceptoLine(g.Concepto || '');
     return '<tr>' +
-      '<td><input class="ef lg-g-concepto" data-line="' + i + '" type="text" value="' + escHtml(g.Concepto || '') + '" placeholder="Ej. Combustible" oninput="readLgGastos()"></td>' +
+      '<td>' +
+        '<select class="ef lg-g-concepto" data-line="' + i + '" onchange="onConceptoSelectChange(this)">' + conceptoOptionsHtml(parsed.sel) + '</select>' +
+        (parsed.sel === 'Otros' ? '<input class="ef lg-g-concepto-otro" data-line="' + i + '" type="text" value="' + escHtml(parsed.detail) + '" placeholder="Especifique…" style="margin-top:4px" oninput="readLgGastos()">' : '') +
+      '</td>' +
       '<td><input class="ef lg-g-proveedor" data-line="' + i + '" type="text" value="' + escHtml(g.Proveedor || '') + '" placeholder="Proveedor" oninput="readLgGastos()"></td>' +
       '<td><input class="ef lg-g-nit" data-line="' + i + '" type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:130px" oninput="readLgGastos()"></td>' +
       '<td><input class="ef lg-g-valor" data-line="' + i + '" type="number" min="0" step="1" value="' + (g.Valor || '') + '" style="text-align:right;width:120px" oninput="readLgGastos()"></td>' +
@@ -207,7 +226,7 @@ function renderLgGastos() {
 }
 
 function addLgGasto() {
-  formGastos.push({ Concepto: '', Proveedor: '', NIT: '', Valor: '' });
+  formGastos.push({ Concepto: 'Combustible', Proveedor: '', NIT: '', Valor: '' });
   renderLgGastos();
   var lastInput = document.querySelector('.lg-g-concepto[data-line="' + (formGastos.length - 1) + '"]');
   if (lastInput) lastInput.focus();
@@ -219,12 +238,50 @@ function removeLgGasto(i) {
   recalcTotals();
 }
 
+// El select de Concepto cambia el modo de la fila (fijo vs "Otros"), así que
+// hace falta volver a pintarla para mostrar/ocultar el input de detalle.
+function onConceptoSelectChange(sel) {
+  var i = Number(sel.dataset.line);
+  if (!formGastos[i]) return;
+  formGastos[i].Concepto = (sel.value === 'Otros') ? '' : sel.value;
+  renderLgGastos();
+  recalcTotals();
+  if (sel.value === 'Otros') {
+    var det = document.querySelector('.lg-g-concepto-otro[data-line="' + i + '"]');
+    if (det) det.focus();
+  }
+}
+
 function readLgGastos() {
-  document.querySelectorAll('.lg-g-concepto').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Concepto = inp.value; });
+  document.querySelectorAll('.lg-g-concepto-otro').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Concepto = inp.value; });
   document.querySelectorAll('.lg-g-proveedor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Proveedor = inp.value; });
   document.querySelectorAll('.lg-g-nit').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].NIT = inp.value; });
   document.querySelectorAll('.lg-g-valor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Valor = Number(inp.value) || 0; });
   recalcTotals();
+}
+
+// ── Formulario: remisiones relacionadas (lista, se agregan de una en una) ──
+function renderLgRemisiones() {
+  var box = document.getElementById('lg-remisiones-chips');
+  box.innerHTML = formRemisiones.length ? formRemisiones.map(function(r, i) {
+    return '<span class="badge b-par" style="display:inline-flex;align-items:center;gap:6px">' + escHtml(r) +
+      '<span onclick="removeLgRemision(' + i + ')" style="cursor:pointer;font-weight:700" title="Quitar">✕</span></span>';
+  }).join('') : '<span style="color:#a0aec0;font-size:0.82rem">Sin remisiones agregadas.</span>';
+}
+
+function addLgRemision() {
+  var inp = document.getElementById('lg-remision-nueva');
+  var val = inp.value.trim();
+  if (!val) return;
+  formRemisiones.push(val);
+  inp.value = '';
+  renderLgRemisiones();
+  inp.focus();
+}
+
+function removeLgRemision(i) {
+  formRemisiones.splice(i, 1);
+  renderLgRemisiones();
 }
 
 function recalcTotals() {
@@ -249,11 +306,11 @@ function openForm(id) {
     document.getElementById('lg-fecha-salida').value = (leg.Fecha_Salida || '').slice(0, 10);
     document.getElementById('lg-fecha-llegada').value = (leg.Fecha_Llegada || '').slice(0, 10);
     document.getElementById('lg-clientes').value = leg.Clientes || '';
-    document.getElementById('lg-remisiones').value = leg.Remisiones_Relacionadas || '';
     document.getElementById('lg-anticipo').value = leg.Anticipo_Entregado || '';
     document.getElementById('lg-observaciones').value = leg.Observaciones || '';
     formGastos = itemsOf(editingLegId).map(function(it) { return { Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: it.NIT, Valor: it.Valor }; });
     formEmpresas = empresasOf(editingLegId).map(function(e) { return { Empresa: e.Empresa, Monto: e.Monto }; });
+    formRemisiones = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
   } else {
     document.getElementById('form-titulo').textContent = 'Nueva legalización de gastos';
     document.getElementById('lg-fecha').value = today();
@@ -263,16 +320,18 @@ function openForm(id) {
     document.getElementById('lg-fecha-salida').value = '';
     document.getElementById('lg-fecha-llegada').value = '';
     document.getElementById('lg-clientes').value = '';
-    document.getElementById('lg-remisiones').value = '';
     document.getElementById('lg-anticipo').value = '';
     document.getElementById('lg-observaciones').value = '';
-    formGastos = [{ Concepto: '', Proveedor: '', NIT: '', Valor: '' }];
+    formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', Valor: '' }];
     formEmpresas = [{ Empresa: '', Monto: '' }];
+    formRemisiones = [];
   }
-  if (!formGastos.length) formGastos = [{ Concepto: '', Proveedor: '', NIT: '', Valor: '' }];
+  if (!formGastos.length) formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', Valor: '' }];
   if (!formEmpresas.length) formEmpresas = [{ Empresa: '', Monto: '' }];
+  document.getElementById('lg-remision-nueva').value = '';
   renderLgGastos();
   renderLgEmpresas();
+  renderLgRemisiones();
   recalcTotals();
   document.getElementById('form-overlay').classList.add('show');
 }
@@ -290,7 +349,7 @@ function readHeaderForm() {
     Fecha_Salida: document.getElementById('lg-fecha-salida').value || null,
     Fecha_Llegada: document.getElementById('lg-fecha-llegada').value || null,
     Clientes: document.getElementById('lg-clientes').value.trim(),
-    Remisiones_Relacionadas: document.getElementById('lg-remisiones').value.trim(),
+    Remisiones_Relacionadas: formRemisiones.join(', '),
     Anticipo_Entregado: Number(document.getElementById('lg-anticipo').value) || 0,
     Observaciones: document.getElementById('lg-observaciones').value.trim()
   };
