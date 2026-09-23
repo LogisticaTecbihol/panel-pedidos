@@ -17,6 +17,45 @@ var formRemisiones = []; // remisiones relacionadas del formulario en curso (lis
 
 var legAdjuntosCache = [];
 
+// Responsables conocidos; "Otro" pide especificar el nombre.
+var RESPONSABLES_FIJOS = ['Leimer Villegas', 'Kevin Rey'];
+
+function setResponsableField(value) {
+  var sel = document.getElementById('lg-responsable-select');
+  var otro = document.getElementById('lg-responsable-otro');
+  if (!value) {
+    sel.value = '';
+    otro.style.display = 'none';
+    otro.value = '';
+  } else if (RESPONSABLES_FIJOS.indexOf(value) >= 0) {
+    sel.value = value;
+    otro.style.display = 'none';
+    otro.value = '';
+  } else {
+    sel.value = 'Otro';
+    otro.style.display = '';
+    otro.value = value;
+  }
+}
+
+function onResponsableSelectChange() {
+  var sel = document.getElementById('lg-responsable-select');
+  var otro = document.getElementById('lg-responsable-otro');
+  if (sel.value === 'Otro') {
+    otro.style.display = '';
+    otro.focus();
+  } else {
+    otro.style.display = 'none';
+    otro.value = '';
+  }
+}
+
+function readResponsable() {
+  var sel = document.getElementById('lg-responsable-select').value;
+  if (sel === 'Otro') return document.getElementById('lg-responsable-otro').value.trim();
+  return sel;
+}
+
 // Conceptos fijos del formulario de gasto; "Otros" pide especificar el detalle.
 var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Mantenimiento'];
 
@@ -300,7 +339,7 @@ function openForm(id) {
     if (!leg) return;
     document.getElementById('form-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
     document.getElementById('lg-fecha').value = (leg.Fecha || '').slice(0, 10);
-    document.getElementById('lg-responsable').value = leg.Responsable || '';
+    setResponsableField(leg.Responsable || '');
     document.getElementById('lg-ruta').value = leg.Recorrido_Ruta || '';
     document.getElementById('lg-personas').value = leg.No_Personas || '';
     document.getElementById('lg-fecha-salida').value = (leg.Fecha_Salida || '').slice(0, 10);
@@ -314,7 +353,7 @@ function openForm(id) {
   } else {
     document.getElementById('form-titulo').textContent = 'Nueva legalización de gastos';
     document.getElementById('lg-fecha').value = today();
-    document.getElementById('lg-responsable').value = '';
+    setResponsableField('');
     document.getElementById('lg-ruta').value = '';
     document.getElementById('lg-personas').value = '';
     document.getElementById('lg-fecha-salida').value = '';
@@ -343,7 +382,7 @@ function closeForm() {
 function readHeaderForm() {
   return {
     Fecha: document.getElementById('lg-fecha').value || today(),
-    Responsable: document.getElementById('lg-responsable').value.trim(),
+    Responsable: readResponsable(),
     Recorrido_Ruta: document.getElementById('lg-ruta').value.trim(),
     No_Personas: Number(document.getElementById('lg-personas').value) || null,
     Fecha_Salida: document.getElementById('lg-fecha-salida').value || null,
