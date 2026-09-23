@@ -291,6 +291,27 @@ function removeLgEmpresa(i) {
   recalcTotals();
 }
 
+// El consecutivo de remisión trae la sigla de la empresa como primer
+// segmento (ej. "RESO-RE-0032", "PARCELAR-RS-0081"), igual convención que
+// usa todo el panel (pdf-remision.js, generar_remision). Solo empresas del
+// holding: GRANEL no aparece en el <select> del reparto.
+function empresaFromRemisionSigla(remision) {
+  var sigla = (remision || '').split('-')[0].trim().toUpperCase();
+  if (!sigla) return null;
+  var e = EMPRESAS_HOLDING.find(function(x) { return x.sigla === sigla; });
+  return e ? e.value : null;
+}
+
+function _addEmpresaToList(empresaValue) {
+  if (!empresaValue) return;
+  if (formEmpresas.some(function(e) { return e.Empresa === empresaValue; })) return;
+  var emptyIdx = formEmpresas.findIndex(function(e) { return !e.Empresa; });
+  if (emptyIdx >= 0) formEmpresas[emptyIdx].Empresa = empresaValue;
+  else formEmpresas.push({ Empresa: empresaValue, Monto: '' });
+  renderLgEmpresas();
+  recalcTotals();
+}
+
 function readLgEmpresas() {
   document.querySelectorAll('.lg-emp-select').forEach(function(sel) {
     var i = Number(sel.dataset.line);
@@ -381,6 +402,11 @@ function addLgRemision() {
   // (sin robar el foco del campo de remisiones ni bloquear la edición manual).
   var cliAuto = remisionClienteMap && remisionClienteMap[val.toUpperCase()];
   if (cliAuto) _addClienteToList(cliAuto);
+
+  // La empresa se extrae de la sigla al inicio del consecutivo, sin
+  // necesidad de que la remisión exista en Pedidos.
+  var empAuto = empresaFromRemisionSigla(val);
+  if (empAuto) _addEmpresaToList(empAuto);
 }
 
 function removeLgRemision(i) {
