@@ -510,12 +510,23 @@
 
   // Devuelve [{empresa, sigla, disponible, apartado, disponibleNeto}]
   // ordenado por sigla, filtrado por las empresas visibles al usuario (AUTH).
+  //   presentacion → ignorada (todos los llamadores la pasan por
+  //                  compatibilidad con getPorEmpresaEspecifica).
   //   opts.neto = true → filtra/ordena por disponibleNeto (para el modal de
   //                      apartar); por defecto filtra por disponible físico > 0.
   //   opts.soloGranel = true → universo de empresas = solo GRANEL, en vez del
   //                      holding (pedidos de la bodega Granel: solo pueden
   //                      descontar su propio stock, nunca el de otra empresa).
-  function getPorEmpresa(snapshot, producto /*, presentacion — ignorado */, opts) {
+  //
+  // OJO: `opts` tiene que ser el 4.º parámetro (con `presentacion` real de
+  // por medio) porque TODOS los llamadores invocan la función como
+  // getPorEmpresa(snap, producto, presentacion, opts). Antes `opts` estaba
+  // declarado como 3.er parámetro: recibía por error el string de
+  // `presentacion` y el objeto de opciones real se perdía silenciosamente
+  // (opts.neto/opts.soloGranel nunca se evaluaban a true). Bug preexistente
+  // que además desactivaba el filtro de "disponible neto" (apartados) en
+  // pedidos.js/muestras.js/asignacion-inventario.js.
+  function getPorEmpresa(snapshot, producto, presentacion, opts) {
     if (!snapshot || !snapshot.saldos) return [];
     var neto = !!(opts && opts.neto);
     var soloGranel = !!(opts && opts.soloGranel);
