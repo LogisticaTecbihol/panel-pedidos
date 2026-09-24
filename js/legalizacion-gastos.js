@@ -247,8 +247,8 @@ function calcularProrrateoGastos() {
   var fDesde = document.getElementById('pf-desde').value;
   var fHasta = document.getElementById('pf-hasta').value;
 
-  var porSku = {};
-  var porEmpresa = {};
+  var porEmpresa = {};       // empresaSigla -> monto total
+  var porEmpresaSku = {};    // empresaSigla -> { sku -> monto } (para agrupar "por producto" por empresa)
   var sinIdentificar = 0;
   var totalGeneral = 0;
 
@@ -287,13 +287,14 @@ function calcularProrrateoGastos() {
       if (fEmpSigla && emp !== fEmpSigla) return;
       var monto = (l._litros / totalLitros) * totalViaje;
       var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
-      porSku[sku] = (porSku[sku] || 0) + monto;
       porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
+      var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
+      skuMap[sku] = (skuMap[sku] || 0) + monto;
       totalGeneral += monto;
     });
   });
 
-  return { porSku: porSku, porEmpresa: porEmpresa, sinIdentificar: sinIdentificar, totalGeneral: totalGeneral };
+  return { porEmpresa: porEmpresa, porEmpresaSku: porEmpresaSku, sinIdentificar: sinIdentificar, totalGeneral: totalGeneral };
 }
 
 // Monto con 2 decimales (el prorrateo por litros da valores fraccionarios;
@@ -333,29 +334,54 @@ function clearProrrateoFiltros() {
   renderProrrateoGastos();
 }
 
+// Agrupado por empresa (una sección + tabla de productos por cada una), para
+// verlas todas separadas de una vez sin tener que ir cambiando el filtro de
+// Empresa. Si el filtro SÍ está activo, esto simplemente deja una sola
+// sección (la de esa empresa).
 function renderGastoPorProducto(calc) {
   var box = document.getElementById('gpp-body');
   if (!box) return;
   var total = calc.totalGeneral;
-  if (total <= 0) {
+  var empresas = Object.keys(calc.porEmpresa).sort(function(a, b) { return calc.porEmpresa[b] - calc.porEmpresa[a]; });
+
+  if (!empresas.length && calc.sinIdentificar <= 0) {
     box.innerHTML = '<div class="empty">Sin gastos para calcular.</div>';
     return;
   }
 
-  var rows = Object.keys(calc.porSku).map(function(sku) {
-    return { label: sku, value: calc.porSku[sku] };
-  }).sort(function(a, b) { return b.value - a.value; });
+  var html = empresas.map(function(emp) {
+    var empTotal = calc.porEmpresa[emp];
+    var pctEmp = total > 0 ? (empTotal / total * 100) : 0;
+    var rows = Object.keys(calc.porEmpresaSku[emp] || {}).map(function(sku) {
+      return { label: sku, value: calc.porEmpresaSku[emp][sku] };
+    }).sort(function(a, b) { return b.value - a.value; });
 
-  var top = rows.slice(0, GPP_TOP_N);
-  var resto = rows.slice(GPP_TOP_N);
-  var otrosVal = resto.reduce(function(s, r) { return s + r.value; }, 0);
+    var top = rows.slice(0, GPP_TOP_N);
+    var resto = rows.slice(GPP_TOP_N);
+    var otrosVal = resto.reduce(function(s, r) { return s + r.value; }, 0);
+    if (otrosVal > 0) top.push({ label: 'Otros (' + resto.length + ' productos)', value: otrosVal });
+    top.forEach(function(r) { r.pct = empTotal > 0 ? (r.value / empTotal * 100) : 0; });
 
-  if (otrosVal > 0) top.push({ label: 'Otros (' + resto.length + ' productos)', value: otrosVal });
-  if (calc.sinIdentificar > 0) top.push({ label: 'Sin identificar', value: calc.sinIdentificar });
+    return '<div class="gpp-group">' +
+      '<div class="gpp-group-head">' +
+        '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' +
+        '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span></span>' +
+      '</div>' +
+      lgProrrateoTable(top, 'Producto') +
+    '</div>';
+  }).join('');
 
-  top.forEach(function(r) { r.pct = r.value / total * 100; });
+  if (calc.sinIdentificar > 0) {
+    var pctSin = total > 0 ? (calc.sinIdentificar / total * 100) : 0;
+    html += '<div class="gpp-group">' +
+      '<div class="gpp-group-head">' +
+        '<span style="color:#718096;font-weight:700">Sin identificar</span>' +
+        '<span class="gpp-group-total">' + escHtml(fmtMoney2(calc.sinIdentificar)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctSin.toFixed(2) + '% del total)</span></span>' +
+      '</div>' +
+    '</div>';
+  }
 
-  box.innerHTML = lgProrrateoTable(top, 'Producto');
+  box.innerHTML = html;
 }
 
 function renderGastoPorEmpresa(calc) {
