@@ -2477,6 +2477,91 @@ function today() {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
+// ── Conversión de presentación a litros por unidad de empaque ──
+// Usado por "Balance de litros" (reportes.js) y por la proporción de gastos
+// por producto (legalizacion-gastos.js). Ver detalle de reglas de conversión
+// en el comentario de cabecera de la sección LITROS en js/reportes.js.
+var LIT_GALON_L = 4;   // 1 galón = 4 L (redondeo comercial de la empresa)
+var LIT_BIDON_L = 20;  // bidón / caneca sin cifra = 20 L
+
+function _litNum(s) {
+  var m = String(s).replace(',', '.').match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : 0;
+}
+
+// Interpreta un segmento de texto ("GALON", "250 ML", "BIDON 20 LITROS"…)
+// como litros por unidad de empaque. Devuelve Number, o null si no se
+// reconoce como volumen.
+function _litSegLitros(seg) {
+  if (!seg) return null;
+  var s = String(seg).toUpperCase().replace(/\s+/g, ' ').trim();
+
+  // Cifra explícita en litros: "20 LITROS", "3 LITROS", "5 L", "20L", "1 LITRO"
+  var mL = s.match(/(\d+(?:[.,]\d+)?)\s*(LITROS?|LTS?|L)\b/);
+  if (mL) return _litNum(mL[1]);
+
+  // Mililitros / centímetros cúbicos: "250 ML", "250ML", "200 CC"
+  var mMl = s.match(/(\d+(?:[.,]\d+)?)\s*(ML|MILILITROS?|CC|CM3|C\.C\.)\b/);
+  if (mMl) return _litNum(mMl[1]) / 1000;
+
+  // Sólidos / conteo → no es volumen
+  if (/\b(KILOS?|KILOGRAMOS?|KGS?|K|GRAMOS?|GR|UNIDAD(ES)?|UND|SOBRES?|BOLSAS?|PASTILLAS?|TARROS?)\b/.test(s)) return null;
+
+  // Galón sin cifra
+  if (/\bGAL[OÓ]N(ES)?\b/.test(s) || /\bGL\b/.test(s)) return LIT_GALON_L;
+
+  // Fracciones de litro
+  if (/\b(MEDIO|1\/2)\s*LITRO\b/.test(s)) return 0.5;
+  if (/\b(CUARTO|1\/4)\s*LITRO\b/.test(s)) return 0.25;
+
+  // Litro suelto
+  if (/\bLITRO\b/.test(s)) return 1;
+
+  // Envase sin cifra → 20 L
+  if (/\b(BIDON|BID[OÓ]N|CANECA|GARRAFA|TAMBOR|CU[ÑN]ETE|PIMPINA)\b/.test(s)) return LIT_BIDON_L;
+
+  return null;
+}
+
+// Devuelve { ref, litrosUnidad, convertible }.
+function _litParse(nombreRaw, presCol) {
+  var nombre = String(nombreRaw || '').replace(/\s+/g, ' ').trim();
+  var U = nombre.toUpperCase();
+
+  var seg = '', ref = nombre;
+  var xIdx = U.lastIndexOf(' X ');
+  if (xIdx >= 0) {
+    seg = nombre.slice(xIdx + 3).trim();
+    ref = nombre.slice(0, xIdx).trim();
+  } else {
+    // Sin " X ": ¿termina en una palabra de presentación conocida?
+    var mTail = U.match(/\s+(\d+(?:[.,]\d+)?\s*)?(LITROS?|ML|CC|GAL[OÓ]N|BID[OÓ]N|BIDON|CANECA|GARRAFA)\s*$/);
+    if (mTail) {
+      seg = nombre.slice(nombre.length - mTail[0].length).trim();
+      ref = nombre.slice(0, nombre.length - mTail[0].length).trim();
+    }
+  }
+
+  var litros = _litSegLitros(seg);
+  if (litros == null && presCol) litros = _litSegLitros(String(presCol).trim());
+
+  // Limpieza del ref: quitar envase suelto o " X" colgando al final.
+  ref = ref.replace(/\s+(BIDON|BID[OÓ]N|CANECA|GARRAFA|TAMBOR|FRASCO|BOTELLA|BOLSA)\s*$/i, '').trim();
+  ref = ref.replace(/\s+X\s*$/i, '').trim();
+  if (!ref) ref = nombre;
+
+  // Normalización final: mayúsculas y sin tildes — así una referencia con el
+  // nombre acentuado (movimientos) y sin acentuar (_normProd de existencias)
+  // caen en la misma fila.
+  ref = ref.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  return {
+    ref: ref,
+    litrosUnidad: litros == null ? 0 : litros,
+    convertible: litros != null && litros > 0
+  };
+}
+
 function toDateInput(v) {
   if (!v) return '';
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;

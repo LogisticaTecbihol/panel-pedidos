@@ -15,6 +15,16 @@
 .ac-item:hover,.ac-item.active{background:#ebf5fb}
 .ac-item strong{color:#1a5276}
 .ac-sub{font-size:.72rem;color:#718096;margin-top:2px}
+
+/* ── Proporción de gastos por producto (lista de barras horizontales) ── */
+.gpp-note{font-size:.78rem;color:#718096;margin:-4px 0 14px}
+.hbar-chart{display:flex;flex-direction:column;gap:10px}
+.hbar-srow{display:flex;flex-direction:column;gap:4px}
+.hbar-shead{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.hbar-slabel{font-size:.8rem;font-weight:700;color:#4a5568;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar-sval{font-size:.82rem;font-weight:700;color:#2d3748;flex-shrink:0}
+.hbar-track{flex:1;height:18px;background:#f0f4f8;border-radius:6px;overflow:hidden;position:relative}
+.hbar-fill{height:100%;border-radius:6px;transition:width .6s ease;min-width:3px}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
@@ -98,6 +108,16 @@
     </div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="responsable, ruta, cliente, N°…" style="width:240px" oninput="renderTable()"></div>
     <button class="btn-dl" style="margin-left:auto" onclick="openForm()">+ Nueva legalización</button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <h3>Proporción de gastos por producto</h3>
+    </div>
+    <div style="padding:16px 20px 4px">
+      <div class="gpp-note">Estimado prorrateando el gasto de cada viaje entre los productos de sus remisiones relacionadas, según litros movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
+      <div id="gpp-body"></div>
+    </div>
   </div>
 
   <div class="card">

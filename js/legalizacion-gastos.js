@@ -24,6 +24,13 @@ var legAdjuntosCache = [];
 var clientesConRemisionCache = null;
 var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 
+// "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad}, ...] — la
+// cantidad es la de ESA remisión puntual (una fila de Pedidos puede tener
+// varias entregas parciales bajo remisiones distintas). Solo cubre entregas
+// de Pedidos (mismo alcance que remisionClienteMap); traslados/OC, muestras
+// y reenvases no se resuelven aquí. Usado por calcularGastoPorProducto().
+var remisionProductoMap = {};
+
 // Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
 // en registros viejos, un solo código sin "|"). Mismo parseo que kardex.js.
 function _parseRemisionesField(remStr) {
@@ -37,21 +44,38 @@ function _parseRemisionesField(remStr) {
 
 async function loadClientesConRemision() {
   try {
-    var res = await apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2' });
+    var res = await apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion' });
     var set = {};
     var remMap = {};
+    var prodMap = {};
     if (res.ok) {
       (res.pedidos || []).forEach(function(p) {
         var cli = (p.Cliente || '').trim();
-        if (!cli || p.Estado_2 === 'Anulado') return;
+        if (p.Estado_2 === 'Anulado') return;
         var rems = _parseRemisionesField(p.Remisiones);
         if (!rems.length) return;
-        set[cli] = true;
-        rems.forEach(function(r) { remMap[r.toUpperCase()] = cli; });
+        if (cli) set[cli] = true;
+        rems.forEach(function(r) { if (cli) remMap[r.toUpperCase()] = cli; });
+        // Cantidad por remisión puntual: "REM|cant|fecha, REM2|cant2|fecha2"
+        // (o un solo código sin "|", con toda Cant_Entregada de la fila —
+        // aquí no se usa ese caso porque no pedimos Cant_Entregada; una
+        // remisión "simple" sin cantidad estructurada no aporta al prorrateo).
+        var remStr = (p.Remisiones || '').trim();
+        if (remStr.indexOf('|') < 0) return;
+        remStr.split(',').forEach(function(seg) {
+          var parts = seg.trim().split('|');
+          var rem = (parts[0] || '').trim();
+          var cant = Number(parts[1]) || 0;
+          if (!rem || cant <= 0) return;
+          var key = rem.toUpperCase();
+          (prodMap[key] = prodMap[key] || []).push({ producto: p.Producto, presentacion: p.Presentacion, cantidad: cant });
+        });
       });
     }
     clientesConRemisionCache = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
     remisionClienteMap = remMap;
+    remisionProductoMap = prodMap;
+    renderGastoPorProducto(); // legs pudo cargar antes o después de este fetch
   } catch (e) {
     clientesConRemisionCache = clientesConRemisionCache || [];
   }
@@ -186,6 +210,101 @@ function empresasOf(legId) { return legEmpresas.filter(function(e) { return e.Le
 function totalGastosOf(legId) { return itemsOf(legId).reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0); }
 function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0); }
 
+// ── Proporción de gastos por producto (estimada) ──
+// Prorratea el gasto de cada viaje entre los productos de sus remisiones
+// relacionadas, según los litros movidos de cada uno. Es una aproximación:
+// Remisiones_Relacionadas es texto libre y remisionProductoMap solo resuelve
+// entregas de Pedidos (ver loadClientesConRemision). Lo que no se puede
+// vincular a un producto, o cuyo producto no es convertible a litros, cae en
+// el bucket "Sin identificar".
+function calcularGastoPorProducto() {
+  var porSku = {};
+  var sinIdentificar = 0;
+  var totalGeneral = 0;
+
+  legs.forEach(function(leg) {
+    if (leg.Estado_Conciliacion === 'Rechazada') return;
+    var totalViaje = totalGastosOf(leg.id);
+    if (totalViaje <= 0) return;
+    totalGeneral += totalViaje;
+
+    // Remisiones_Relacionadas es un CSV simple de códigos (sin "|cant|fecha"),
+    // igual formato que lee openForm() al editar (línea ~591) — no usar
+    // _parseRemisionesField aquí, que solo separa por coma cuando detecta "|".
+    var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+    var lineas = [];
+    codigos.forEach(function(c) {
+      var matches = remisionProductoMap[c.trim().toUpperCase()];
+      if (matches) lineas = lineas.concat(matches);
+    });
+
+    var totalLitros = 0;
+    lineas.forEach(function(l) {
+      var lit = _litParse(l.producto, l.presentacion);
+      l._litros = lit.convertible ? lit.litrosUnidad * (Number(l.cantidad) || 0) : 0;
+      totalLitros += l._litros;
+    });
+
+    if (totalLitros <= 0) {
+      sinIdentificar += totalViaje;
+      return;
+    }
+
+    lineas.forEach(function(l) {
+      if (l._litros <= 0) return;
+      var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
+      var monto = (l._litros / totalLitros) * totalViaje;
+      porSku[sku] = (porSku[sku] || 0) + monto;
+    });
+  });
+
+  return { porSku: porSku, sinIdentificar: sinIdentificar, totalGeneral: totalGeneral };
+}
+
+// Lista de barras horizontales con label largo arriba (mismo patrón visual
+// que dHbarList({stack:true}) de js/dashboard.js, reimplementado localmente
+// porque esta página no carga dashboard.js).
+function lgHbarList(rows) {
+  if (!rows.length) return '<div class="empty">Sin datos.</div>';
+  var mx = Math.max.apply(null, rows.map(function(r) { return r.value; })) || 1;
+  return rows.map(function(r) {
+    var pct = Math.max(3, r.value / mx * 100);
+    return '<div class="hbar-srow">' +
+      '<div class="hbar-shead"><span class="hbar-slabel" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</span>' +
+      '<span class="hbar-sval">' + escHtml(fmtMoney(r.value)) + ' <span style="color:#a0aec0;font-weight:400">(' + r.pct.toFixed(1) + '%)</span></span></div>' +
+      '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + (r.color || '#1a5276') + '"></div></div>' +
+    '</div>';
+  }).join('');
+}
+
+var GPP_TOP_N = 10;
+
+function renderGastoPorProducto() {
+  var box = document.getElementById('gpp-body');
+  if (!box) return;
+  var calc = calcularGastoPorProducto();
+  var total = calc.totalGeneral;
+  if (total <= 0) {
+    box.innerHTML = '<div class="empty">Sin gastos para calcular.</div>';
+    return;
+  }
+
+  var rows = Object.keys(calc.porSku).map(function(sku) {
+    return { label: sku, value: calc.porSku[sku] };
+  }).sort(function(a, b) { return b.value - a.value; });
+
+  var top = rows.slice(0, GPP_TOP_N);
+  var resto = rows.slice(GPP_TOP_N);
+  var otrosVal = resto.reduce(function(s, r) { return s + r.value; }, 0);
+
+  if (otrosVal > 0) top.push({ label: 'Otros (' + resto.length + ' productos)', value: otrosVal, color: '#748ea3' });
+  if (calc.sinIdentificar > 0) top.push({ label: 'Sin identificar', value: calc.sinIdentificar, color: '#a0aec0' });
+
+  top.forEach(function(r) { r.pct = r.value / total * 100; });
+
+  box.innerHTML = lgHbarList(top);
+}
+
 function estadoBadgeHtml(leg) {
   if (leg.Estado_Conciliacion === 'Conciliada') return '<span class="badge b-ent">✅ Conciliada</span>';
   if (leg.Estado_Conciliacion === 'Rechazada') {
@@ -247,6 +366,7 @@ function renderTable() {
   }).join('') || '<tr><td colspan="9"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
 
   updateStats();
+  renderGastoPorProducto();
 }
 
 function updateStats() {
