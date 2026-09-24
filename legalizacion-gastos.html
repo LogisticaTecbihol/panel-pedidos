@@ -30,6 +30,7 @@
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-modulo="legalizacion_gastos">
 
@@ -144,7 +145,8 @@
       <div class="fg"><label>Empresa</label><select id="pf-emp" onchange="renderProrrateoGastos()"><option value="">Todas</option></select></div>
       <div class="fg"><label>Desde</label><input type="date" id="pf-desde" onchange="renderProrrateoGastos()"></div>
       <div class="fg"><label>Hasta</label><input type="date" id="pf-hasta" onchange="renderProrrateoGastos()"></div>
-      <button style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600" onclick="clearProrrateoFiltros()">✕ Limpiar</button>
+      <button class="btn-dl" style="margin-left:auto" onclick="exportarProrrateoExcel()">📥 Exportar Excel</button>
+      <button style="background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600" onclick="clearProrrateoFiltros()">✕ Limpiar</button>
     </div>
     <div class="lg-row">
       <div class="card">
@@ -272,6 +274,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260923a"></script>
-<script src="js/legalizacion-gastos.js?v=20260924g"></script>
+<script src="js/legalizacion-gastos.js?v=20260924h"></script>
 </body>
 </html>

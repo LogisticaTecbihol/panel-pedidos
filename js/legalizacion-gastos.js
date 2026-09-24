@@ -364,6 +364,51 @@ function clearProrrateoFiltros() {
   renderProrrateoGastos();
 }
 
+// Exporta a Excel el mismo prorrateo que se ve en pantalla (respeta los
+// filtros de Empresa/Desde/Hasta activos): una fila por producto de cada
+// empresa, más "Sin identificar" si aplica.
+function exportarProrrateoExcel() {
+  var calc = calcularProrrateoGastos();
+  var total = calc.totalGeneral;
+  var empresas = Object.keys(calc.porEmpresa);
+  if (!empresas.length && calc.sinIdentificar <= 0) {
+    showToast('No hay datos para exportar', '#e74c3c');
+    return;
+  }
+
+  var rows = [];
+  empresas.sort(function(a, b) { return calc.porEmpresa[b] - calc.porEmpresa[a]; }).forEach(function(emp) {
+    Object.keys(calc.porEmpresaSku[emp] || {}).map(function(sku) {
+      return { sku: sku, entry: calc.porEmpresaSku[emp][sku] };
+    }).sort(function(a, b) { return b.entry.monto - a.entry.monto; }).forEach(function(x) {
+      var legsTxt = Object.keys(x.entry.legs).map(function(id) { return x.entry.legs[id]; }).sort().join(', ');
+      rows.push({
+        'Empresa': emp,
+        'Producto': x.sku,
+        'Monto': Number(x.entry.monto.toFixed(2)),
+        '% del total': Number((total > 0 ? x.entry.monto / total * 100 : 0).toFixed(2)),
+        'Legalizaciones': legsTxt
+      });
+    });
+  });
+  if (calc.sinIdentificar > 0) {
+    rows.push({
+      'Empresa': '',
+      'Producto': 'Sin identificar',
+      'Monto': Number(calc.sinIdentificar.toFixed(2)),
+      '% del total': Number((total > 0 ? calc.sinIdentificar / total * 100 : 0).toFixed(2)),
+      'Legalizaciones': ''
+    });
+  }
+
+  var ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Prorrateo');
+  XLSX.writeFile(wb, 'prorrateo_gastos_' + today() + '.xlsx');
+  showToast('Excel exportado');
+}
+
 // Agrupado por empresa (una sección + tabla de productos por cada una), para
 // verlas todas separadas de una vez sin tener que ir cambiando el filtro de
 // Empresa. Si el filtro SÍ está activo, esto simplemente deja una sola
