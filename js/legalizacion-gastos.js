@@ -273,7 +273,7 @@ function calcularProrrateoGastos() {
   var fHasta = document.getElementById('pf-hasta').value;
 
   var porEmpresa = {};       // empresaSigla -> monto total
-  var porEmpresaSku = {};    // empresaSigla -> { sku -> monto } (para agrupar "por producto" por empresa)
+  var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo } } }
   var sinIdentificar = 0;
   var totalGeneral = 0;
 
@@ -314,7 +314,9 @@ function calcularProrrateoGastos() {
       var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
       porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
       var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
-      skuMap[sku] = (skuMap[sku] || 0) + monto;
+      var entry = skuMap[sku] || (skuMap[sku] = { monto: 0, legs: {} });
+      entry.monto += monto;
+      entry.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
       totalGeneral += monto;
     });
   });
@@ -330,12 +332,17 @@ function fmtMoney2(v) {
 }
 
 // Tabla (cuadrícula) reutilizable para las dos vistas de prorrateo.
-// rows: [{label, value, pct, html?}] — html, si viene, reemplaza el texto
-// plano de la primera columna (usado para el badge de sigla en "por empresa").
+// rows: [{label, value, pct, html?, legs?}] — html, si viene, reemplaza el
+// texto plano de la primera columna (badge de sigla en "por empresa"); legs
+// (si viene) es [{id, consecutivo}] de las legalizaciones que aportaron a
+// esa fila, mostradas como enlaces a "Ver" debajo del label.
 function lgProrrateoTable(rows, headerLabel) {
   if (!rows.length) return '<div class="empty">Sin datos.</div>';
   var body = rows.map(function(r) {
-    return '<tr><td>' + (r.html || escHtml(r.label)) + '</td>' +
+    var legsHtml = (r.legs && r.legs.length) ? '<div class="ac-sub">' + r.legs.map(function(l) {
+      return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>';
+    }).join(', ') + '</div>' : '';
+    return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
       '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td></tr>';
   }).join('');
@@ -376,7 +383,11 @@ function renderGastoPorProducto(calc) {
     var empTotal = calc.porEmpresa[emp];
     var pctEmp = total > 0 ? (empTotal / total * 100) : 0;
     var rows = Object.keys(calc.porEmpresaSku[emp] || {}).map(function(sku) {
-      return { label: sku, value: calc.porEmpresaSku[emp][sku] };
+      var entry = calc.porEmpresaSku[emp][sku];
+      var legs = Object.keys(entry.legs).map(function(id) {
+        return { id: Number(id), consecutivo: entry.legs[id] };
+      }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
+      return { label: sku, value: entry.monto, legs: legs };
     }).sort(function(a, b) { return b.value - a.value; });
     rows.forEach(function(r) { r.pct = empTotal > 0 ? (r.value / empTotal * 100) : 0; });
 
