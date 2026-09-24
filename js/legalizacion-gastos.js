@@ -289,36 +289,29 @@ function calcularProrrateoGastos() {
   return { porSku: porSku, porEmpresa: porEmpresa, sinIdentificar: sinIdentificar, totalGeneral: totalGeneral };
 }
 
-// Lista de barras horizontales reutilizable — mismo patrón visual que
-// dHbarList() de js/dashboard.js, reimplementado localmente porque esta
-// página no carga dashboard.js. opts.stack = true → label arriba (para
-// labels largos, ej. productos); por defecto label en línea (labels cortos,
-// ej. siglas de empresa).
-function lgHbarList(rows, opts) {
-  opts = opts || {};
+// Monto con 2 decimales (el prorrateo por litros da valores fraccionarios;
+// fmtMoney de shared.js redondea a entero, aquí interesa ver la precisión real).
+function fmtMoney2(v) {
+  var n = Number(v); if (!n && n !== 0) return '—';
+  return '$' + n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Tabla (cuadrícula) reutilizable para las dos vistas de prorrateo.
+// rows: [{label, value, pct, html?}] — html, si viene, reemplaza el texto
+// plano de la primera columna (usado para el badge de sigla en "por empresa").
+function lgProrrateoTable(rows, headerLabel) {
   if (!rows.length) return '<div class="empty">Sin datos.</div>';
-  var mx = Math.max.apply(null, rows.map(function(r) { return r.value; })) || 1;
-  return rows.map(function(r) {
-    var pct = Math.max(3, r.value / mx * 100);
-    var valTxt = escHtml(fmtMoney(r.value)) + ' <span style="color:#a0aec0;font-weight:400">(' + r.pct.toFixed(1) + '%)</span>';
-    var fill = '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + (r.color || '#1a5276') + '"></div></div>';
-    if (opts.stack) {
-      return '<div class="hbar-srow">' +
-        '<div class="hbar-shead"><span class="hbar-slabel" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</span>' +
-        '<span class="hbar-sval">' + valTxt + '</span></div>' + fill +
-      '</div>';
-    }
-    return '<div class="hbar-row">' +
-      '<div class="hbar-label" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</div>' + fill +
-      '<div class="hbar-value">' + valTxt + '</div>' +
-    '</div>';
+  var body = rows.map(function(r) {
+    return '<tr><td>' + (r.html || escHtml(r.label)) + '</td>' +
+      '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
+      '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td></tr>';
   }).join('');
+  return '<div style="overflow-x:auto"><table>' +
+    '<thead><tr><th>' + escHtml(headerLabel) + '</th><th style="text-align:right">Monto</th><th style="text-align:right">%</th></tr></thead>' +
+    '<tbody>' + body + '</tbody></table></div>';
 }
 
 var GPP_TOP_N = 10;
-
-// Colores sólidos por sigla — mismos valores que .emp-* en dashboard.html.
-var GPP_COLOR_EMPRESA = { PARCELAR: '#2980b9', GREEN: '#27ae60', RESO: '#e67e22', IASO: '#8e44ad', IAS: '#c0392b', GRANEL: '#d35400' };
 
 function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
@@ -350,12 +343,12 @@ function renderGastoPorProducto(calc) {
   var resto = rows.slice(GPP_TOP_N);
   var otrosVal = resto.reduce(function(s, r) { return s + r.value; }, 0);
 
-  if (otrosVal > 0) top.push({ label: 'Otros (' + resto.length + ' productos)', value: otrosVal, color: '#748ea3' });
-  if (calc.sinIdentificar > 0) top.push({ label: 'Sin identificar', value: calc.sinIdentificar, color: '#a0aec0' });
+  if (otrosVal > 0) top.push({ label: 'Otros (' + resto.length + ' productos)', value: otrosVal });
+  if (calc.sinIdentificar > 0) top.push({ label: 'Sin identificar', value: calc.sinIdentificar });
 
   top.forEach(function(r) { r.pct = r.value / total * 100; });
 
-  box.innerHTML = lgHbarList(top, { stack: true });
+  box.innerHTML = lgProrrateoTable(top, 'Producto');
 }
 
 function renderGastoPorEmpresa(calc) {
@@ -368,14 +361,14 @@ function renderGastoPorEmpresa(calc) {
   }
 
   var rows = Object.keys(calc.porEmpresa).map(function(emp) {
-    return { label: emp, value: calc.porEmpresa[emp], color: GPP_COLOR_EMPRESA[emp] };
+    return { label: emp, value: calc.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' };
   }).sort(function(a, b) { return b.value - a.value; });
 
-  if (calc.sinIdentificar > 0) rows.push({ label: 'Sin identificar', value: calc.sinIdentificar, color: '#a0aec0' });
+  if (calc.sinIdentificar > 0) rows.push({ label: 'Sin identificar', value: calc.sinIdentificar });
 
   rows.forEach(function(r) { r.pct = r.value / total * 100; });
 
-  box.innerHTML = lgHbarList(rows, { stack: false });
+  box.innerHTML = lgProrrateoTable(rows, 'Empresa');
 }
 
 function estadoBadgeHtml(leg) {
