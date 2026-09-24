@@ -38,9 +38,10 @@ var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 
 // "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad, empresa}, ...]
 // — la cantidad es la de ESA remisión puntual (una fila de Pedidos puede
-// tener varias entregas parciales bajo remisiones distintas). Solo cubre
-// entregas de Pedidos (mismo alcance que remisionClienteMap); traslados/OC,
-// muestras y reenvases no se resuelven aquí. Usado por calcularProrrateoGastos().
+// tener varias entregas parciales bajo remisiones distintas). Cubre entregas
+// de Pedidos e Ingresos (traslados planta↔empresa); Órdenes de Compra,
+// muestras y reenvases todavía no se resuelven aquí. Usado por
+// calcularProrrateoGastos().
 var remisionProductoMap = {};
 
 // Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
@@ -56,7 +57,12 @@ function _parseRemisionesField(remStr) {
 
 async function loadClientesConRemision() {
   try {
-    var res = await apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' });
+    var results = await Promise.all([
+      apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' }),
+      apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; })
+    ]);
+    var res = results[0];
+    var resIng = results[1];
     var set = {};
     var remMap = {};
     var prodMap = {};
@@ -82,6 +88,25 @@ async function loadClientesConRemision() {
           var key = rem.toUpperCase();
           (prodMap[key] = prodMap[key] || []).push({ producto: p.Producto, presentacion: p.Presentacion, cantidad: cant, empresa: p.Nombre_Empresa });
         });
+      });
+    }
+    // Ingresos — traslados planta↔empresa u otro origen. Remision_Destino
+    // pertenece a Empresa_Destino (quien recibe) y Remision_Origen a
+    // Empresa_Origen (quien despacha); una fila puede aportar a ambas claves.
+    if (resIng.ok) {
+      (resIng.ingresos || []).forEach(function(ing) {
+        var cant = Number(ing.Cantidad) || 0;
+        if (cant <= 0) return;
+        var remDest = (ing.Remision_Destino || '').trim();
+        if (remDest) {
+          var keyD = remDest.toUpperCase();
+          (prodMap[keyD] = prodMap[keyD] || []).push({ producto: ing.Producto, presentacion: ing.Presentacion, cantidad: cant, empresa: ing.Empresa_Destino });
+        }
+        var remOrig = (ing.Remision_Origen || '').trim();
+        if (remOrig) {
+          var keyO = remOrig.toUpperCase();
+          (prodMap[keyO] = prodMap[keyO] || []).push({ producto: ing.Producto, presentacion: ing.Presentacion, cantidad: cant, empresa: ing.Empresa_Origen });
+        }
       });
     }
     clientesConRemisionCache = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
