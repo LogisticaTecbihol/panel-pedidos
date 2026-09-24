@@ -90,21 +90,21 @@ async function loadKardex() {
     var needsInvf = activeTab === 'invf';
 
     var corePromises = [
-      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Estado_2,Consecutivo,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido' }).catch(function() { return { ok: true, pedidos: [] }; }),
-      apiGet('getIngresos', { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,Cant_Entregada,Estado_2,Consecutivo,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido,Historico' }).catch(function() { return { ok: true, pedidos: [] }; }),
+      apiGet('getIngresos', { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion,Historico' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Consecutivo,Producto,Presentacion,Tipo,Estado,Ref_Pedido' }).catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras', { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Consecutivo,Solicitante,Empresa,Producto,Presentacion,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases', { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Planta,Observaciones' }).catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getDevoluciones', { columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Consecutivo,Motivo,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getMuestras', { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Consecutivo,Solicitante,Empresa,Producto,Presentacion,Tipo_Solicitud,Historico' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getReenvases', { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Planta,Observaciones,Historico' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getDevoluciones', { columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Consecutivo,Motivo,Empresa,Producto,Presentacion,Historico' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
-      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio,Historico' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
       apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; }),
       apiGet('getApartadosMuestra', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
     ];
 
-    corePromises.push(apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustesNC: [] }; }));
+    corePromises.push(apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion,Historico' }).catch(function() { return { ok: true, ajustesNC: [] }; }));
     if (needsInvf || _invfLoaded) {
       corePromises.push(apiGet('getInventarioFisico').catch(function() { return { ok: true, conteos: [] }; }));
     }
@@ -188,6 +188,7 @@ function buildMovimientos() {
 
   // Pedidos — entregas (SALIDA), desglosadas por entrega individual
   kxPedidos.forEach(function(p) {
+    if (p.Historico === true) return; // carga histórica: no afecta stock
     var cantE = Number(p.Cant_Entregada) || 0;
     if (cantE <= 0) return;
     var est2 = (p.Estado_2 || '').trim();
@@ -241,6 +242,7 @@ function buildMovimientos() {
 
   // Ingresos — ENTRADA para destino siempre; SALIDA para origen solo si NO es Cachipay
   kxIngresos.forEach(function(ing) {
+    if (ing.Historico === true) return; // carga histórica: no afecta stock
     var cant = Number(ing.Cantidad) || 0;
     if (cant <= 0) return;
     var origenLc = (ing.Origen || '').toLowerCase();
@@ -281,6 +283,7 @@ function buildMovimientos() {
 
   // Devoluciones — ENTRADA a Productos Buenos + SALIDA (si hay remisión de salida)
   kxDevoluciones.forEach(function(d) {
+    if (d.Historico === true) return; // carga histórica: no afecta stock
     var estado = (d.Estado || '').toLowerCase();
     if (estado === 'anulado' || estado === 'pendiente') return;
     var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
@@ -331,6 +334,7 @@ function buildMovimientos() {
   // Cambios de Mercancía — ENTRADA + SALIDA en un solo pase.
   // 'parcial' = solo un lado registrado; cada lado se emite igualmente según su remisión.
   kxCambios.forEach(function(c) {
+    if (c.Historico === true) return; // carga histórica: no afecta stock
     var cant = Number(c.Cantidad) || 0;
     if (cant <= 0) return;
     var estado = (c.Estado || '').toLowerCase();
@@ -424,6 +428,7 @@ function buildMovimientos() {
   kxMuestras.forEach(function(m) {
     // Las órdenes de producción de muestras (Solicitante = Mercadeo) NO despachan:
     // el producto ingresa vía la salida a producción del granel y su retorno.
+    if (m.Historico === true) return; // carga histórica: no afecta stock
     if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
     var cantE = Number(m.Cant_Entregada);
     var cant = (isNaN(cantE) || cantE === 0) ? 0 : cantE;
@@ -446,6 +451,7 @@ function buildMovimientos() {
 
   // Salidas a producción (Reenvases) — SALIDA (solo Bodega Producto Terminado)
   kxReenvases.forEach(function(re) {
+    if (re.Historico === true) return; // carga histórica: no afecta stock
     var bodega = re.Bodega || 'Productos Buenos';
     if (bodega !== 'Productos Buenos' && bodega !== 'Producto Terminado') return;
     var cant = Number(re.Cantidad) || 0;
@@ -490,6 +496,7 @@ function buildMovimientos() {
   //   - Retorno_conforme:   el producto viene de otra bodega NC (traslado entre empresas).
   //   - Traslado_NC:        traslado explícito entre bodegas NC de distintas empresas.
   ncAjustes.forEach(function(a) {
+    if (a.Historico === true) return; // carga histórica: no afecta stock
     if (a.Tipo !== 'Ingreso_NC') return;
     var _mn = (a.Motivo || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
     if (_mn === 'devolucioncliente' || _mn === 'devcliente') return;
@@ -519,6 +526,7 @@ function buildMovimientos() {
   //   Los movimientos anteriores a KX_NC_RETORNO_DESDE están pendientes de revisión
   //   manual de bodega y todavía no se proyectan aquí.
   ncAjustes.forEach(function(a) {
+    if (a.Historico === true) return; // carga histórica: no afecta stock
     if (a.Tipo !== 'Salida_NC') return;
     var _mn = (a.Motivo || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
     if (_mn !== 'reacondicionamiento' && _mn !== 'retornoconforme' && _mn !== 'retornoabodegaconforme') return;
@@ -1775,7 +1783,7 @@ function switchKardexTab(tab) {
 async function _loadNCData() {
   setSyncStatus('syncing', 'Cargando datos No Conforme...');
   try {
-    var res = await apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion' });
+    var res = await apiGet('getKardexNC', { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Observaciones,Empresa,Producto,Presentacion,Historico' });
     ncAjustes = (res && res.ajustesNC) || [];
     _ncLoaded = true;
     buildNCMovimientos();
@@ -1818,6 +1826,7 @@ function buildNCMovimientos() {
   //     origen (Remision) + ENTRADA a la bodega NC del destino (Remision_Destino),
   //     igual que los traslados de Productos Buenos en buildMovimientos().
   kxReenvases.forEach(function(re) {
+    if (re.Historico === true) return; // carga histórica: no afecta stock
     var bodega = re.Bodega || 'Productos Buenos';
     if (bodega !== 'Producto No Conforme') return;
     var cant = Number(re.Cantidad) || 0;
@@ -1869,6 +1878,7 @@ function buildNCMovimientos() {
   // Cambios de Mercancía — CAMBIAR con Bodega_Ingreso NC = ENTRADA;
   // ENTREGAR con Bodega_Salida NC = SALIDA
   kxCambios.forEach(function(c) {
+    if (c.Historico === true) return; // carga histórica: no afecta stock
     var estado = (c.Estado || '').toLowerCase();
     if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
     var cant = Number(c.Cantidad) || 0;
@@ -1913,6 +1923,7 @@ function buildNCMovimientos() {
 
   // Devoluciones a Bodega No Conforme
   kxDevoluciones.forEach(function(d) {
+    if (d.Historico === true) return; // carga histórica: no afecta stock
     var estado = (d.Estado || '').toLowerCase();
     if (estado === 'anulado' || estado === 'pendiente') return;
     var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
@@ -1937,6 +1948,9 @@ function buildNCMovimientos() {
     var cant = Number(a.Cantidad) || 0;
     if (cant <= 0) return;
     var tipo = a.Tipo || '';
+    // Carga histórica: no afecta stock. Saldo_Inicial_NC es otro concepto
+    // (el arranque de la bodega NC), nunca se marca histórico.
+    if (a.Historico === true && tipo !== 'Saldo_Inicial_NC') return;
     var esTipo;
     var motivo;
     if (tipo === 'Saldo_Inicial_NC') {
@@ -2340,6 +2354,8 @@ function openNCModal(tipo) {
   _populateNCMotivos(isIngreso, isIngreso ? 'Vencimiento' : 'Disposicion_final');
   document.getElementById('nc-remision').value = '';
   _resetNCRemisionField(true);
+  var _ncChkHist = document.getElementById('nc-chk-historico');
+  if (_ncChkHist) _ncChkHist.checked = false;
   document.getElementById('nc-observaciones').value = '';
   document.getElementById('btn-save-nc').disabled = false;
   var _ncA = document.getElementById('nc-audit');
@@ -2397,6 +2413,13 @@ function readNCLines() {
     var i = Number(inp.dataset.line);
     if (ncLineas[i]) ncLineas[i].Cantidad = Number(inp.value) || 0;
   });
+}
+
+// Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
+// afectar existencias/Kardex (se excluye vía columna Historico). Al marcarla,
+// la remisión pasa a texto libre (nunca se genera con el contador vivo).
+function toggleCargaHistoricaNC(on) {
+  if (on) _resetNCRemisionField(false);
 }
 
 // Restablece el campo "N° Remisión" del modal NC al modo indicado.
@@ -2460,6 +2483,8 @@ async function saveNC() {
   var autoOn = !autoChk || autoChk.checked;
   var remisionManual = document.getElementById('nc-remision').value.trim();
   var obs = document.getElementById('nc-observaciones').value.trim();
+  var _histNCChk = document.getElementById('nc-chk-historico');
+  var esHistorico = !!(_histNCChk && _histNCChk.checked && AUTH.isAdmin());
 
   if (!fecha) { showToast('Selecciona la fecha', '#e74c3c'); return; }
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
@@ -2473,7 +2498,7 @@ async function saveNC() {
   var btnLabel = esIngreso ? '✓ Registrar ingreso' : '✓ Registrar salida';
   var esHolding = _ncEmpresaAutoRemision(empresa);
 
-  if (autoOn && !remisionManual && !esHolding) {
+  if (!esHistorico && autoOn && !remisionManual && !esHolding) {
     showToast('Esta empresa no genera remisión automática. Desmarca "Auto" y escribe el número.', '#e74c3c');
     return;
   }
@@ -2485,7 +2510,8 @@ async function saveNC() {
   var remGenerada = '';
   var remisionFinal = autoOn ? '' : remisionManual;
   try {
-    if (!remisionFinal && esHolding && (esIngreso || ncModalTipo === 'Salida_NC')) {
+    // Carga histórica: nunca consumir el contador vivo de remisiones.
+    if (!esHistorico && !remisionFinal && esHolding && (esIngreso || ncModalTipo === 'Salida_NC')) {
       remisionFinal = await generarRemisionConsecutivo(empresa, remTipo);
       remGenerada = remisionFinal;
     }
@@ -2498,7 +2524,8 @@ async function saveNC() {
       Motivo: motivo,
       Remision: remisionFinal,
       Observaciones: obs,
-      lineas: validLines
+      lineas: validLines,
+      Historico: esHistorico
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
 

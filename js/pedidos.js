@@ -1063,6 +1063,7 @@ function rebuildConsecs() {
       Facturar_A: p.Facturar_A, NIT_Adicional: p.NIT_Adicional,
       Consignacion: p.Consignacion, Bodega_Facturacion: p.Bodega_Facturacion,
       Observaciones: p.Observaciones,
+      Historico: p.Historico || false,
       _ModTs: null, _ModTipo: null,
     };
     var pts = p.Fecha_Modificacion_Cant;
@@ -1664,7 +1665,7 @@ function populateFilters() {
   if (fp && prevProd) fp.value = prevProd;
   if (!filtersAttached) {
     function onFilterChange() { currentPage = 1; renderTable(); }
-    ['f-emp','f-com','f-cli','f-est','f-est2','f-otd','f-prod','f-fec-desde','f-fec-hasta'].forEach(function(id) {
+    ['f-emp','f-com','f-cli','f-est','f-est2','f-otd','f-prod','f-fec-desde','f-fec-hasta','f-mostrar-historicos'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', onFilterChange);
@@ -1706,7 +1707,10 @@ function filtered() {
   var fhasta = fhEl ? fhEl.value : '';
   var ft = document.getElementById('f-txt').value.toLowerCase();
   var fmunis = _muniSelected.slice();
+  var fMostrarHist = document.getElementById('f-mostrar-historicos');
+  var mostrarHistoricos = !!(fMostrarHist && fMostrarHist.checked);
   return consecs.filter(function(c) {
+    if (!mostrarHistoricos && c.Historico) return false;
     if (fe && c.Nombre_Empresa !== fe) return false;
     if (fcom && (c.Comercial||'').trim() !== fcom) return false;
     if (fc && (c.Cliente||'').toLowerCase().indexOf(fc.toLowerCase()) < 0) return false;
@@ -1750,6 +1754,7 @@ function clearFilters() {
   var fp = document.getElementById('f-prod');   if (fp) fp.value = '';
   var fd = document.getElementById('f-fec-desde'); if (fd) fd.value = '';
   var fh = document.getElementById('f-fec-hasta'); if (fh) fh.value = '';
+  var fMostrarHistClr = document.getElementById('f-mostrar-historicos'); if (fMostrarHistClr) fMostrarHistClr.checked = false;
   _muniSelected = [];
   _renderMuniToggle();
   _renderMuniOptions();
@@ -4933,8 +4938,33 @@ function nextConsecutivoPorComercial(comercial) {
 }
 
 function actualizarConsecutivoNuevo() {
+  var chkHistPedCons = document.getElementById('nv-chk-historico');
+  if (chkHistPedCons && chkHistPedCons.checked) return; // carga histórica: consecutivo manual
   var comercial = document.getElementById('nv-comercial').value.trim();
   document.getElementById('nv-consecutivo').value = comercial ? nextConsecutivoPorComercial(comercial) : '';
+}
+
+// Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
+// afectar existencias/Kardex (se excluye vía columna Historico). El pedido
+// ya fue entregado, así que la entrega se captura en el mismo alta en vez
+// de pasar por el flujo normal de "registrar entrega".
+function toggleCargaHistoricaPed(on) {
+  var wrap = document.getElementById('nv-hist-wrap');
+  if (wrap) wrap.style.display = on ? '' : 'none';
+  var consecEl = document.getElementById('nv-consecutivo');
+  if (consecEl) {
+    consecEl.readOnly = !on;
+    consecEl.style.background = on ? '' : '#f0f0f0';
+    consecEl.placeholder = on ? 'N° pedido original' : 'Automático al seleccionar comercial';
+  }
+  var fechaEl = document.getElementById('nv-fecha');
+  if (fechaEl) fechaEl.min = on ? '' : today();
+  var compEl = document.getElementById('nv-compromiso');
+  if (compEl) compEl.min = on ? '' : fechaEl.value;
+  if (on) {
+    var fEntEl = document.getElementById('nv-hist-fecha-entrega');
+    if (fEntEl && !fEntEl.value) fEntEl.value = fechaEl.value || today();
+  }
 }
 
 function _normBodegaFacturacion(v) {
@@ -5066,6 +5096,16 @@ async function openNuevoPedido() {
   document.getElementById('nv-observaciones').value = '';
   document.getElementById('nv-cupo-info').style.display = 'none';
   document.getElementById('nv-dup-warn').style.display = 'none';
+  var _chkHistPed = document.getElementById('nv-chk-historico');
+  if (_chkHistPed) _chkHistPed.checked = false;
+  var _histWrapPed = document.getElementById('nv-hist-wrap');
+  if (_histWrapPed) _histWrapPed.style.display = 'none';
+  var _histEntPed = document.getElementById('nv-hist-entregado');
+  if (_histEntPed) _histEntPed.checked = true;
+  var _histFechaEntPed = document.getElementById('nv-hist-fecha-entrega');
+  if (_histFechaEntPed) _histFechaEntPed.value = '';
+  var _histRemPed = document.getElementById('nv-hist-remision');
+  if (_histRemPed) _histRemPed.value = '';
   document.getElementById('btn-guardar-nuevo').disabled = false;
   document.getElementById('btn-guardar-nuevo').textContent = '✏️ Guardar pedido';
   _nvEsTraslado = false;
@@ -5437,11 +5477,17 @@ async function guardarNuevoPedido() {
   var fecha = document.getElementById('nv-fecha').value;
   var compromiso = document.getElementById('nv-compromiso').value || addDiasHabiles(fecha, PLAZO_COMPROMISO_DIAS_HABILES);
   var cliente = document.getElementById('nv-cliente').value.trim();
+  var _chkHistPedSave = document.getElementById('nv-chk-historico');
+  var esHistoricoPed = !!(_chkHistPedSave && _chkHistPedSave.checked && AUTH.isAdmin());
+  var histEntregadoPed = esHistoricoPed && document.getElementById('nv-hist-entregado').checked;
+  var histFechaEntregaPed = document.getElementById('nv-hist-fecha-entrega').value || fecha;
+  var histRemisionPed = document.getElementById('nv-hist-remision').value.trim();
 
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
-  if (!consecutivo) { showToast('Selecciona un comercial para generar el consecutivo', '#e74c3c'); return; }
+  if (!consecutivo) { showToast(esHistoricoPed ? 'Ingresa el N° de pedido original' : 'Selecciona un comercial para generar el consecutivo', '#e74c3c'); return; }
   if (!fecha) { showToast('Selecciona la fecha del pedido', '#e74c3c'); return; }
-  if (!AUTH.isAdmin() && fecha < today()) { showToast('La fecha del pedido no puede ser anterior a hoy', '#e74c3c'); return; }
+  if (!esHistoricoPed && !AUTH.isAdmin() && fecha < today()) { showToast('La fecha del pedido no puede ser anterior a hoy', '#e74c3c'); return; }
+  if (histEntregadoPed && !histFechaEntregaPed) { showToast('Indica la fecha de entrega', '#e74c3c'); return; }
   if (!compromiso) { showToast('Indica la fecha de compromiso', '#e74c3c'); return; }
   if (compromiso < fecha) { showToast('La fecha de compromiso no puede ser anterior a la del pedido', '#e74c3c'); return; }
   if (_nvEsTraslado && !document.getElementById('nv-bodega-destino').value) {
@@ -5463,17 +5509,21 @@ async function guardarNuevoPedido() {
     // El N° que muestra el formulario sale de los pedidos cargados en esta
     // pestaña y puede estar desactualizado: el servidor asigna el definitivo
     // (RPC generar_consecutivo_pedido) para no repetirlo entre clientes.
+    // Carga histórica: nunca consumir el contador vivo — se conserva el N°
+    // original que se tecleó (texto libre).
     var nvComercial = document.getElementById('nv-comercial').value.trim();
-    var _rpcPed = await _sb.rpc('generar_consecutivo_pedido', {
-      p_empresa: empresa, p_comercial: nvComercial
-    });
-    if (_rpcPed.error) throw new Error('No se pudo asignar el N° de pedido: ' + _rpcPed.error.message);
-    var _nPed = String(_rpcPed.data == null ? '' : _rpcPed.data).trim();
-    if (!_nPed) throw new Error('No se pudo asignar el N° de pedido (respuesta vacía)');
-    if (_nPed !== String(consecutivo)) {
-      showToast('ℹ️ El N° de pedido cambió de ' + consecutivo + ' a ' + _nPed + ' (otro pedido del comercial ya usaba el ' + consecutivo + ')', '#e67e22');
-      consecutivo = _nPed;
-      document.getElementById('nv-consecutivo').value = _nPed;
+    if (!esHistoricoPed) {
+      var _rpcPed = await _sb.rpc('generar_consecutivo_pedido', {
+        p_empresa: empresa, p_comercial: nvComercial
+      });
+      if (_rpcPed.error) throw new Error('No se pudo asignar el N° de pedido: ' + _rpcPed.error.message);
+      var _nPed = String(_rpcPed.data == null ? '' : _rpcPed.data).trim();
+      if (!_nPed) throw new Error('No se pudo asignar el N° de pedido (respuesta vacía)');
+      if (_nPed !== String(consecutivo)) {
+        showToast('ℹ️ El N° de pedido cambió de ' + consecutivo + ' a ' + _nPed + ' (otro pedido del comercial ya usaba el ' + consecutivo + ')', '#e67e22');
+        consecutivo = _nPed;
+        document.getElementById('nv-consecutivo').value = _nPed;
+      }
     }
 
     var dupResult = await apiPost({
@@ -5519,7 +5569,11 @@ async function guardarNuevoPedido() {
         return { producto: p.producto, presentacion: p.presentacion, cantidad: p.cantidad,
                  valor_unitario: p.valor_unitario, valor_total: p.valor_total, bonificado: p.bonificado };
       }),
-      archivo_fuente: 'Ingreso manual',
+      archivo_fuente: esHistoricoPed ? 'Carga histórica' : 'Ingreso manual',
+      historico: esHistoricoPed,
+      historico_entregado: histEntregadoPed,
+      historico_fecha_entrega: histEntregadoPed ? histFechaEntregaPed : '',
+      historico_remision: histEntregadoPed ? histRemisionPed : '',
     });
 
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
@@ -5550,7 +5604,7 @@ async function guardarNuevoPedido() {
       } catch (e) { /* no bloquea la creación del pedido */ }
     }
 
-    if (_pendAprob) {
+    if (_pendAprob && !esHistoricoPed) {
       await _notifyAprobadoresClienteNuevo({
         sigla: getSigla(empresa), consecutivo: consecutivo, cliente: cliente,
         nit: _nitNuevo, nLineas: productosValidos.length, total: totalOrden

@@ -555,8 +555,11 @@ function applyMuFilters() {
   var fEst = document.getElementById('f-estado').value;
   var fApr = document.getElementById('f-aprobacion').value;
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
+  var fMostrarHistMu = document.getElementById('f-mostrar-historicos');
+  var mostrarHistoricosMu = !!(fMostrarHistMu && fMostrarHistMu.checked);
 
   filteredMu = allMuestras.filter(function(r) {
+    if (!mostrarHistoricosMu && r.Historico) return false;
     if (fEmp && String(r.Empresa || '').trim() !== fEmp) return false;
     if (fResp && r.Responsable !== fResp) return false;
     if (fMun && r.Municipio !== fMun) return false;
@@ -591,6 +594,8 @@ function clearMuestraFilters() {
   document.getElementById('f-estado').value = '';
   document.getElementById('f-aprobacion').value = '';
   document.getElementById('f-txt').value = '';
+  var fMostrarHistMuClr = document.getElementById('f-mostrar-historicos');
+  if (fMostrarHistMuClr) fMostrarHistMuClr.checked = false;
   applyMuFilters();
 }
 
@@ -602,6 +607,8 @@ if (_fTipoEl) _fTipoEl.addEventListener('change', applyMuFilters);
 document.getElementById('f-estado').addEventListener('change', applyMuFilters);
 document.getElementById('f-aprobacion').addEventListener('change', applyMuFilters);
 document.getElementById('f-txt').addEventListener('input', debounce(applyMuFilters, 300));
+var _fMostrarHistMuEl = document.getElementById('f-mostrar-historicos');
+if (_fMostrarHistMuEl) _fMostrarHistMuEl.addEventListener('change', applyMuFilters);
 
 // ── Stats ──
 
@@ -2173,8 +2180,27 @@ async function getNextConsecutivo(empresa) {
 
 async function onEmpresaChange() {
   if (muEditId) return;
+  var chkHistMuEmp = document.getElementById('mu-chk-historico');
+  if (chkHistMuEmp && chkHistMuEmp.checked) return; // carga histórica: consecutivo manual
   var empresa = document.getElementById('mu-empresa').value;
   document.getElementById('mu-consecutivo').value = await getNextConsecutivo(empresa);
+}
+
+// Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
+// afectar existencias/Kardex (se excluye vía columna Historico). La muestra
+// ya se despachó, así que se registra directamente como Despachada.
+function toggleCargaHistoricaMu(on) {
+  var estadoSel = document.getElementById('mu-estado');
+  var optDesp = document.querySelector('#mu-estado option[value="Despachada"]');
+  if (optDesp) { optDesp.disabled = !on; optDesp.title = on ? '' : 'Requiere aprobación previa'; }
+  if (on && estadoSel) estadoSel.value = 'Despachada';
+  else if (!on && estadoSel) estadoSel.value = 'Pendiente';
+  var remChk = document.getElementById('mu-remision-auto');
+  if (on && remChk && remChk.checked) { remChk.checked = false; remChk.dispatchEvent(new Event('change')); }
+  var fechaEl = document.getElementById('mu-fecha-solicitud');
+  if (fechaEl) fechaEl.min = on ? '' : today();
+  var fdEl = document.getElementById('mu-fecha-despacho');
+  if (on && fdEl && !fdEl.value) fdEl.value = document.getElementById('mu-fecha-solicitud').value || today();
 }
 
 // Ajusta el modal según el tipo de solicitud. En "Orden de producción" no hay
@@ -2241,6 +2267,8 @@ async function openNewMuestra() {
   onMuTipoChange();
   document.getElementById('mu-objetivo').value = '';
   document.getElementById('mu-observaciones').value = '';
+  var _chkHistMu = document.getElementById('mu-chk-historico');
+  if (_chkHistMu) _chkHistMu.checked = false;
 
   document.getElementById('mu-multi-lines').style.display = '';
   document.getElementById('mu-edit-single').style.display = 'none';
@@ -2564,12 +2592,15 @@ async function saveMuestra() {
   var fechaSol = document.getElementById('mu-fecha-solicitud').value;
   var responsable = document.getElementById('mu-responsable').value.trim();
 
+  var _chkHistMuSave = document.getElementById('mu-chk-historico');
+  var esHistoricoMu = !!(_chkHistMuSave && _chkHistMuSave.checked && AUTH.isAdmin());
+
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!consecutivo) { showToast('Ingresa el consecutivo', '#e74c3c'); return; }
   if (!fechaSol) { showToast('Selecciona la fecha de solicitud', '#e74c3c'); return; }
-  if (!AUTH.isAdmin() && fechaSol < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
+  if (!esHistoricoMu && !AUTH.isAdmin() && fechaSol < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!responsable) { showToast('Ingresa el responsable', '#e74c3c'); return; }
-  if (document.getElementById('mu-estado').value === 'Despachada') {
+  if (!esHistoricoMu && document.getElementById('mu-estado').value === 'Despachada') {
     showToast('🔒 Una solicitud nueva no puede crearse ya despachada: primero se registra y aprueba, luego se despacha.', '#e74c3c');
     return;
   }
@@ -2582,6 +2613,7 @@ async function saveMuestra() {
 
   try {
     var responsableId = await _resolveResponsableId(responsable);
+    var _estadoMuSave = document.getElementById('mu-estado').value;
     var result = await apiPost({
       action: 'agregarMuestra',
       Empresa: empresa,
@@ -2598,13 +2630,21 @@ async function saveMuestra() {
       Remision: document.getElementById('mu-remision').value.trim(),
       Solicitante: document.getElementById('mu-solicitante').value.trim(),
       Autoriza: document.getElementById('mu-autoriza').value.trim(),
-      Estado: document.getElementById('mu-estado').value,
+      Estado: _estadoMuSave,
       Tipo_Solicitud: (document.getElementById('mu-tipo-solicitud') || {}).value || 'Despacho',
       Objetivo: document.getElementById('mu-objetivo').value.trim(),
       Observaciones: document.getElementById('mu-observaciones').value.trim(),
-      _generar_remision: document.getElementById('mu-estado').value === 'Despachada' && !document.getElementById('mu-remision').value.trim(),
+      _generar_remision: !esHistoricoMu && _estadoMuSave === 'Despachada' && !document.getElementById('mu-remision').value.trim(),
+      Historico: esHistoricoMu,
+      _reuse_consecutivo: esHistoricoMu,
+      Estado_Aprobacion: (esHistoricoMu && _estadoMuSave === 'Despachada') ? 'Aprobada' : undefined,
+      Aprobada_Por: (esHistoricoMu && _estadoMuSave === 'Despachada') ? ((AUTH.getProfile() && (AUTH.getProfile().nombre || AUTH.getProfile().email)) || '') : undefined,
+      Fecha_Aprobacion: (esHistoricoMu && _estadoMuSave === 'Despachada') ? fechaSol : undefined,
       lineas: productosValidos.map(function(p) {
-        return { Producto: p.producto, Presentacion: p.presentacion, Cantidad: p.cantidad };
+        return {
+          Producto: p.producto, Presentacion: p.presentacion, Cantidad: p.cantidad,
+          Cant_Entregada: (esHistoricoMu && _estadoMuSave === 'Despachada') ? p.cantidad : undefined
+        };
       })
     });
 

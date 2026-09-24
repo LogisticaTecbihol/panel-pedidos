@@ -226,8 +226,9 @@ function populateCamFilters() {
   var fc = document.getElementById('fc-cliente');
   fc.innerHTML = '<option value="">Todos</option>' + clientes.map(function(c) { return '<option value="'+escHtml(c)+'">'+escHtml(c)+'</option>'; }).join('');
   if (!camFiltersAttached) {
-    ['fc-empresa','fc-cliente','fc-estado'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', renderCamTable);
+    ['fc-empresa','fc-cliente','fc-estado','fc-mostrar-historicos'].forEach(function(id) {
+      var elCamF = document.getElementById(id);
+      if (elCamF) elCamF.addEventListener('change', renderCamTable);
     });
     document.getElementById('fc-txt').addEventListener('input', debounce(renderCamTable, 300));
     camFiltersAttached = true;
@@ -238,7 +239,10 @@ function filteredCam() {
   var fc = document.getElementById('fc-cliente').value;
   var fst = document.getElementById('fc-estado').value;
   var ft = document.getElementById('fc-txt').value.toLowerCase();
+  var fMostrarHistCam = document.getElementById('fc-mostrar-historicos');
+  var mostrarHistoricosCam = !!(fMostrarHistCam && fMostrarHistCam.checked);
   return cambios.filter(function(r) {
+    if (!mostrarHistoricosCam && r.Historico) return false;
     if (fe && r.Empresa !== fe) return false;
     if (fc && r.Cliente !== fc) return false;
     if (fst && r.Estado !== fst) return false;
@@ -254,6 +258,8 @@ function clearCamFilters() {
   document.getElementById('fc-cliente').value = '';
   document.getElementById('fc-estado').value = '';
   document.getElementById('fc-txt').value = '';
+  var fMostrarHistCamClr = document.getElementById('fc-mostrar-historicos');
+  if (fMostrarHistCamClr) fMostrarHistCamClr.checked = false;
   renderCamTable();
 }
 
@@ -625,8 +631,26 @@ function nextConsecutivoCam(empresa) {
 
 function onCamEmpresaChange() {
   if (editCam) return;
+  var chkHist = document.getElementById('cam-chk-historico');
+  if (chkHist && chkHist.checked) return; // carga histórica: consecutivo manual
   var empresa = document.getElementById('cam-empresa').value;
   document.getElementById('cam-consecutivo').value = nextConsecutivoCam(empresa);
+}
+
+// Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
+// afectar existencias/Kardex (se excluye vía columna Historico). El cambio
+// ya se tramitó, así que se captura resuelto (Estado/remisiones) de una vez.
+function toggleCargaHistoricaCam(on) {
+  var wrap = document.getElementById('cam-hist-wrap');
+  if (wrap) wrap.style.display = on ? 'grid' : 'none';
+  var consecEl = document.getElementById('cam-consecutivo');
+  if (consecEl) {
+    consecEl.readOnly = !on;
+    consecEl.style.background = on ? '' : '#f7fafc';
+    consecEl.placeholder = on ? 'N° consecutivo original' : 'Automático';
+  }
+  var fechaEl = document.getElementById('cam-fecha-solicitud');
+  if (fechaEl) fechaEl.min = on ? '' : today();
 }
 
 // ── New Cambio ──
@@ -656,6 +680,14 @@ function openNewCambio() {
   document.getElementById('cam-valor-cliente').value = '';
   document.getElementById('cam-valor-empresa').value = '';
   document.getElementById('cam-observaciones').value = '';
+  var chkHistCam = document.getElementById('cam-chk-historico');
+  if (chkHistCam) chkHistCam.checked = false;
+  var histWrapCam = document.getElementById('cam-hist-wrap');
+  if (histWrapCam) histWrapCam.style.display = 'none';
+  var remIngCamEl = document.getElementById('cam-hist-remision-ingreso');
+  if (remIngCamEl) remIngCamEl.value = '';
+  var remSalCamEl = document.getElementById('cam-hist-remision-salida');
+  if (remSalCamEl) remSalCamEl.value = '';
   document.getElementById('btn-save-cam').disabled = false;
   document.getElementById('btn-save-cam').textContent = '✓ Registrar cambio';
   camLineasCambiar = [{ Producto:'', Cantidad:'', Lote_Vencimiento:'', Razon_Cambio:'' }];
@@ -728,9 +760,12 @@ async function saveCambio() {
   var valorEmpresa = Number(document.getElementById('cam-valor-empresa').value) || 0;
   var observaciones = document.getElementById('cam-observaciones').value.trim();
 
+  var chkHistCamSave = document.getElementById('cam-chk-historico');
+  var esHistoricoCam = !!(chkHistCamSave && chkHistCamSave.checked && AUTH.isAdmin());
+
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!fechaSolicitud) { showToast('Selecciona la fecha de solicitud', '#e74c3c'); return; }
-  if (!AUTH.isAdmin() && fechaSolicitud < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
+  if (!esHistoricoCam && !AUTH.isAdmin() && fechaSolicitud < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
 
   readCamLines();
@@ -755,8 +790,16 @@ async function saveCambio() {
     Empresa: empresa, Fecha_Solicitud: fechaSolicitud, Fecha_Recogida: fechaRecogida,
     Consecutivo: consecutivo, Cliente: cliente, NIT: nit, Telefono: telefono,
     Correo: correo, Num_Factura: numFactura, Fecha_Compra: fechaCompra,
-    Valor_Cliente: valorCliente, Valor_Empresa: valorEmpresa, Observaciones: observaciones
+    Valor_Cliente: valorCliente, Valor_Empresa: valorEmpresa, Observaciones: observaciones,
+    Historico: esHistoricoCam
   };
+  if (esHistoricoCam) {
+    header.Estado = 'Cerrado';
+    header.Remision_Ingreso = (document.getElementById('cam-hist-remision-ingreso').value || '').trim();
+    header.Fecha_Ingreso = fechaSolicitud;
+    header.Remision_Salida = (document.getElementById('cam-hist-remision-salida').value || '').trim();
+    header.Fecha_Salida = fechaSolicitud;
+  }
 
   try {
     if (editCam) {

@@ -118,6 +118,12 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
       </select>
     </div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="producto, remisión…" style="width:175px"></div>
+    <div class="fg" style="justify-content:flex-end">
+      <label style="font-size:0.72rem;color:#7c2d12;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;white-space:nowrap">
+        <input type="checkbox" id="f-mostrar-historicos">
+        📜 Mostrar cargas históricas
+      </label>
+    </div>
     <button onclick="clearReenvaseFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
   </div>
 
@@ -261,6 +267,12 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
           <label class="auth-autoconsec" style="font-size:0.72rem;cursor:pointer;user-select:none;display:none;align-items:center;gap:3px" data-display="flex"><input type="checkbox" id="re-remision-destino-auto" checked onchange="var el=document.getElementById('re-remision-destino');if(this.checked){el.readOnly=true;el.style.background='#f0f4f8';el.placeholder='(Auto al guardar)';el.value='';}else{el.readOnly=false;el.style.background='';el.placeholder='N° remisión destino';}">Auto</label>
         </div>
       </div>
+      <div class="auth-admin-only" data-display="flex" style="display:none;align-items:center;gap:6px;margin:0 0 14px">
+        <label style="font-size:0.8rem;cursor:pointer;user-select:none;color:#7c2d12">
+          <input type="checkbox" id="re-chk-historico" onchange="toggleCargaHistoricaRe(this.checked)">
+          📜 Carga histórica (registro anterior al 2026-07-01, no afecta existencias/Kardex)
+        </label>
+      </div>
 
       <!-- Multi-line product entry (new mode) -->
       <div id="re-multi-lines">
@@ -388,10 +400,10 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260923a"></script>
+<script src="js/shared.js?v=20260924a"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260921d"></script>
-<script src="js/reenvases.js?v=20260921d"></script>
+<script src="js/reenvases.js?v=20260924a"></script>
 </body>
 </html>

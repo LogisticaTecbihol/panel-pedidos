@@ -82,6 +82,7 @@
 
     // Pedidos — SALIDA por cada entrega parseada de Remisiones
     (src.pedidos || []).forEach(function(p) {
+      if (p.Historico === true) return; // carga histórica: no afecta stock
       var cantE = Number(p.Cant_Entregada) || 0;
       if (cantE <= 0) return;
       var est2 = (p.Estado_2 || '').trim();
@@ -120,6 +121,7 @@
 
     // Ingresos — ENTRADA destino siempre; SALIDA origen salvo Cachipay/Planta/misma empresa
     (src.ingresos || []).forEach(function(ing) {
+      if (ing.Historico === true) return; // carga histórica: no afecta stock
       var cant = Number(ing.Cantidad) || 0;
       if (cant <= 0) return;
       var origenLc = (ing.Origen || '').toLowerCase();
@@ -146,6 +148,7 @@
 
     // Devoluciones — ENTRADA (excluye Bodega NC)
     (src.devoluciones || []).forEach(function(d) {
+      if (d.Historico === true) return; // carga histórica: no afecta stock
       var estado = (d.Estado || '').toLowerCase();
       if (estado === 'anulado' || estado === 'pendiente') return;
       var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
@@ -162,6 +165,7 @@
 
     // Devoluciones — SALIDA desde Productos Buenos (cuando hay remisión de salida)
     (src.devoluciones || []).forEach(function(d) {
+      if (d.Historico === true) return; // carga histórica: no afecta stock
       var estado = (d.Estado || '').toLowerCase();
       if (estado === 'anulado' || estado === 'pendiente') return;
       var cant = Number(d.Cant_Entregada != null && d.Cant_Entregada !== '' ? d.Cant_Entregada : d.Cantidad) || 0;
@@ -191,6 +195,7 @@
 
     // Cambios de Mercancía — ENTRADA (CAMBIAR a bodega buena; cerrado o parcial)
     (src.cambios || []).forEach(function(c) {
+      if (c.Historico === true) return; // carga histórica: no afecta stock
       if (c.Tipo_Linea !== 'CAMBIAR') return;
       var cant = Number(c.Cantidad) || 0;
       if (cant <= 0) return;
@@ -210,6 +215,7 @@
 
     // Cambios de Mercancía — SALIDA (ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
     (src.cambios || []).forEach(function(c) {
+      if (c.Historico === true) return; // carga histórica: no afecta stock
       var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
       var tieneEntregar = _cTE[gk];
       if (tieneEntregar && c.Tipo_Linea !== 'ENTREGAR') return;
@@ -257,6 +263,7 @@
 
     // Muestras — SALIDA
     (src.muestras || []).forEach(function(m) {
+      if (m.Historico === true) return; // carga histórica: no afecta stock
       // Las órdenes de producción de muestras no despachan (ver kardex.js).
       if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
       var cantE = Number(m.Cant_Entregada);
@@ -274,6 +281,7 @@
 
     // Reenvases (Producción) — SALIDA (solo Producto Terminado)
     (src.reenvases || []).forEach(function(re) {
+      if (re.Historico === true) return; // carga histórica: no afecta stock
       var bodega = re.Bodega || 'Productos Buenos';
       if (bodega !== 'Productos Buenos' && bodega !== 'Producto Terminado') return;
       var cant = Number(re.Cantidad) || 0;
@@ -299,6 +307,7 @@
 
     // Ingresos a Bodega NC — SALIDA (excepto devoluciones de cliente)
     (src.ajustesNC || []).forEach(function(a) {
+      if (a.Historico === true) return; // carga histórica: no afecta stock
       if (a.Tipo !== 'Ingreso_NC') return;
       if (_NC_MOTIVOS_IGNORAR_SALIDA[a.Motivo]) return;
       var cant = Number(a.Cantidad) || 0;
@@ -316,6 +325,7 @@
     // Retorno conforme). Antes de KX_NC_RETORNO_DESDE quedan fuera (revisión manual).
     var _ncRetDesde = (typeof KX_NC_RETORNO_DESDE !== 'undefined') ? KX_NC_RETORNO_DESDE : '2026-09-01';
     (src.ajustesNC || []).forEach(function(a) {
+      if (a.Historico === true) return; // carga histórica: no afecta stock
       if (a.Tipo !== 'Salida_NC') return;
       var _mn = _norm(a.Motivo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
       if (_mn !== 'reacondicionamiento' && _mn !== 'retornoconforme' && _mn !== 'retornoabodegaconforme') return;
@@ -390,23 +400,23 @@
       try { await _authReady; } catch(e) {}
     }
     var res = await Promise.all([
-      apiGet('getPedidos',     { columns: 'Nombre_Empresa,Cant_Entregada,Estado_2,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido' })
+      apiGet('getPedidos',     { columns: 'Nombre_Empresa,Cant_Entregada,Estado_2,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido,Historico' })
         .catch(function() { return { ok: true, pedidos: [] }; }),
-      apiGet('getIngresos',    { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion' })
+      apiGet('getIngresos',    { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion,Historico' })
         .catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido' })
         .catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion,Tipo_Solicitud' })
+      apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion,Tipo_Solicitud,Historico' })
         .catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases',   { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion' })
+      apiGet('getReenvases',   { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Historico' })
         .catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getDevoluciones',{ columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Fecha_Devolucion,Fecha,Remision,Remision_Ingreso,Empresa,Producto,Presentacion' })
+      apiGet('getDevoluciones',{ columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Fecha_Devolucion,Fecha,Remision,Remision_Ingreso,Empresa,Producto,Presentacion,Historico' })
         .catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, ajustes: [] }; }),
-      apiGet('getKardexNC',    { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion' })
+      apiGet('getKardexNC',    { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion,Historico' })
         .catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida' })
+      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico' })
         .catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' })
         .catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
@@ -587,6 +597,7 @@
   function _computeComprometido_Inv(pedidos) {
     var comp = {};
     (pedidos || []).forEach(function(p) {
+      if (p.Historico === true) return; // carga histórica: no afecta existencias
       var prod = _norm(p.Producto);
       if (!prod) return;
       var pedida = Number(p.Cantidad) || 0;
@@ -612,18 +623,21 @@
       mov[key] += cantidad;
     }
     (sources.reenvases || []).forEach(function(re) {
+      if (re.Historico === true) return; // carga histórica: no afecta existencias
       if (!_esBueno(re.Bodega || 'Productos Buenos')) return;
       var cant = Number(re.Cantidad) || 0;
       add(re.Empresa, re.Producto, -cant);
       if (re.Empresa_Destino) add(re.Empresa_Destino, re.Producto, cant);
     });
     (sources.muestras || []).forEach(function(m) {
+      if (m.Historico === true) return; // carga histórica: no afecta existencias
       if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
       var cant = Number(m.Cant_Entregada) || 0;
       if (cant <= 0) return;
       add(m.Empresa, m.Producto, -cant);
     });
     (sources.ingresos || []).forEach(function(ing) {
+      if (ing.Historico === true) return; // carga histórica: no afecta existencias
       var cant = Number(ing.Cantidad) || 0;
       if (cant <= 0) return;
       if (ing.Empresa_Origen)  add(ing.Empresa_Origen,  ing.Producto, -cant);
@@ -650,6 +664,7 @@
       }
     });
     (sources.devoluciones || []).forEach(function(d) {
+      if (d.Historico === true) return; // carga histórica: no afecta existencias
       if ((d.Estado || '').toLowerCase() !== 'tramitada') return;
       var cant = Number(d.Cantidad) || 0;
       if (cant <= 0) return;
@@ -662,6 +677,7 @@
     });
     var cambiosGrp = {};
     (sources.cambios || []).forEach(function(c) {
+      if (c.Historico === true) return; // carga histórica: no afecta existencias
       var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
       if (!cambiosGrp[gk]) cambiosGrp[gk] = [];
       cambiosGrp[gk].push(c);

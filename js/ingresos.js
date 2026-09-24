@@ -48,6 +48,7 @@ function rebuildIngGroups() {
         Empresa_Destino: r.Empresa_Destino, Responsable: r.Responsable,
         Remision_Origen: r.Remision_Origen, Remision_Destino: r.Remision_Destino,
         Observaciones: r.Observaciones, Reenvase_Ref: r.Reenvase_Ref || '',
+        Historico: r.Historico || false,
       };
       order.push(k);
     }
@@ -301,7 +302,7 @@ function populateIngFilters() {
 
   if (!ingFiltersAttached) {
     var ingHandler = function() { renderIngTable(); renderDetalleIng(); };
-    ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta'].forEach(function(id) {
+    ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta','f-mostrar-historicos'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', ingHandler);
@@ -323,7 +324,10 @@ function filteredIng() {
   var fdesde = fdEl ? fdEl.value : '';
   var fhasta = fhEl ? fhEl.value : '';
   var ft = document.getElementById('f-txt').value.toLowerCase();
+  var fMostrarHistIng = document.getElementById('f-mostrar-historicos');
+  var mostrarHistoricosIng = !!(fMostrarHistIng && fMostrarHistIng.checked);
   return ingGroups.filter(function(g) {
+    if (!mostrarHistoricosIng && g.Historico) return false;
     if (fo && g.Origen !== fo) return false;
     if (feo && g.Empresa_Origen !== feo) return false;
     if (fed && g.Empresa_Destino !== fed) return false;
@@ -354,6 +358,7 @@ function clearIngFilters() {
   var fd = document.getElementById('f-fec-desde'); if (fd) fd.value = '';
   var fh = document.getElementById('f-fec-hasta'); if (fh) fh.value = '';
   document.getElementById('f-txt').value = '';
+  var fMostrarHistIngClr = document.getElementById('f-mostrar-historicos'); if (fMostrarHistIngClr) fMostrarHistIngClr.checked = false;
   renderIngTable();
   renderDetalleIng();
 }
@@ -566,6 +571,8 @@ function addProductToGroup() {
   if (chkDestA) chkDestA.checked = true;
   var elDest = document.getElementById('ing-remision-destino');
   elDest.readOnly = true; elDest.style.background = '#f0f4f8'; elDest.placeholder = '(Auto al guardar)';
+  var chkHistIngGrp = document.getElementById('ing-chk-historico');
+  if (chkHistIngGrp) chkHistIngGrp.checked = !!g.Historico;
   document.getElementById('btn-save-ing').disabled = false;
   document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso y enviar';
   document.getElementById('ing-edit-single').style.display = 'none';
@@ -911,6 +918,8 @@ function openNewIngreso() {
   if (chkDestA) chkDestA.checked = true;
   var elDest = document.getElementById('ing-remision-destino');
   elDest.readOnly = true; elDest.style.background = '#f0f4f8'; elDest.placeholder = '(Auto al guardar)';
+  var chkHistIng = document.getElementById('ing-chk-historico');
+  if (chkHistIng) chkHistIng.checked = false;
   document.getElementById('btn-save-ing').disabled = false;
   document.getElementById('btn-save-ing').textContent = '✓ Registrar ingreso y enviar';
   document.getElementById('ing-edit-single').style.display = 'none';
@@ -967,6 +976,17 @@ function openEditIng(row) {
 
   onOrigenChange(true);
   document.getElementById('ing-overlay').classList.add('show');
+}
+
+// Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
+// afectar existencias/Kardex (se excluye vía columna Historico). Al marcarla,
+// las remisiones pasan a texto libre (nunca se generan con el contador vivo).
+function toggleCargaHistoricaIng(on) {
+  if (!on) return;
+  ['ing-remision-origen-auto', 'ing-remision-destino-auto'].forEach(function(id) {
+    var chk = document.getElementById(id);
+    if (chk && chk.checked) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
+  });
 }
 
 // ── Save ──
@@ -1078,6 +1098,8 @@ async function confirmAndSaveIngreso() {
   var remision_origen = document.getElementById('ing-remision-origen').value.trim();
   var remision_destino = document.getElementById('ing-remision-destino').value.trim();
   var observaciones = document.getElementById('ing-observaciones').value.trim();
+  var chkHistIngSave = document.getElementById('ing-chk-historico');
+  var esHistoricoIng = !!(chkHistIngSave && chkHistIngSave.checked && AUTH.isAdmin());
 
   readIngLines();
   var validLines = ingLineas.filter(function(l) { return l.Producto && l.Cantidad > 0; });
@@ -1093,6 +1115,7 @@ async function confirmAndSaveIngreso() {
       Responsable: responsable, Remision_Origen: remision_origen, Remision_Destino: remision_destino, Observaciones: observaciones,
       Reenvase_Ref: _ingReenvaseRef || '',
       lineas: validLines,
+      Historico: esHistoricoIng
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     var _remIng = result.remision_destino || result.remision_origen || '';

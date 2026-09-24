@@ -234,8 +234,9 @@ function populateDevFilters() {
   fm.innerHTML = '<option value="">Todos</option>' + motivos.map(function(m) { return '<option value="' + escHtml(m) + '">' + escHtml(m) + '</option>'; }).join('');
 
   if (!devFiltersAttached) {
-    ['f-empresa','f-cliente','f-motivo','f-prod'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', onDevFilterChange);
+    ['f-empresa','f-cliente','f-motivo','f-prod','f-mostrar-historicos'].forEach(function(id) {
+      var elDevF = document.getElementById(id);
+      if (elDevF) elDevF.addEventListener('change', onDevFilterChange);
     });
     document.getElementById('f-txt').addEventListener('input', debounce(onDevFilterChange, 300));
     devFiltersAttached = true;
@@ -248,7 +249,10 @@ function filteredDev() {
   var fm = document.getElementById('f-motivo').value;
   var fp = document.getElementById('f-prod').value;
   var ft = document.getElementById('f-txt').value.toLowerCase();
+  var fMostrarHistDev = document.getElementById('f-mostrar-historicos');
+  var mostrarHistoricosDev = !!(fMostrarHistDev && fMostrarHistDev.checked);
   return devoluciones.filter(function(r) {
+    if (!mostrarHistoricosDev && r.Historico) return false;
     if (fe && r.Empresa !== fe) return false;
     if (fc && r.Cliente !== fc) return false;
     if (fm && r.Motivo !== fm) return false;
@@ -267,6 +271,8 @@ function clearDevFilters() {
   document.getElementById('f-motivo').value = '';
   document.getElementById('f-prod').value = '';
   document.getElementById('f-txt').value = '';
+  var fMostrarHistDevClr = document.getElementById('f-mostrar-historicos');
+  if (fMostrarHistDevClr) fMostrarHistDevClr.checked = false;
   renderDevTable();
 }
 
@@ -1102,6 +1108,12 @@ function openNewDev() {
   document.getElementById('dev-motivo-otro').value = '';
   document.getElementById('dev-motivo-otro').style.display = 'none';
   document.getElementById('dev-observaciones').value = '';
+  var chkHistDev = document.getElementById('dev-chk-historico');
+  if (chkHistDev) chkHistDev.checked = false;
+  var histWrapDev = document.getElementById('dev-hist-wrap');
+  if (histWrapDev) histWrapDev.style.display = 'none';
+  var remHistDev = document.getElementById('dev-hist-remision');
+  if (remHistDev) remHistDev.value = '';
   document.getElementById('btn-save-dev').disabled = false;
   document.getElementById('btn-save-dev').textContent = '✓ Registrar devolución';
   document.getElementById('dev-edit-single').style.display = 'none';
@@ -1169,6 +1181,16 @@ function openEditDev(row) {
   document.getElementById('dev-overlay').classList.add('show');
 }
 
+// Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
+// afectar existencias/Kardex (se excluye vía columna Historico). La
+// devolución ya ocurrió, así que se captura directamente tramitada.
+function toggleCargaHistoricaDev(on) {
+  var wrap = document.getElementById('dev-hist-wrap');
+  if (wrap) wrap.style.display = on ? '' : 'none';
+  var fechaEl = document.getElementById('dev-fecha');
+  if (fechaEl) fechaEl.min = on ? '' : today();
+}
+
 // ── Save ──
 async function saveDevolucion() {
   var empresa = document.getElementById('dev-empresa').value;
@@ -1231,6 +1253,10 @@ async function saveDevolucion() {
   var validLines = devLineas.filter(function(l) { return l.Producto; });
   if (!validLines.length) { showToast('Agrega al menos un producto', '#e74c3c'); return; }
 
+  var chkHistDevSave = document.getElementById('dev-chk-historico');
+  var esHistoricoDev = !!(chkHistDevSave && chkHistDevSave.checked && AUTH.isAdmin());
+  var remHistDevSave = document.getElementById('dev-hist-remision');
+
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
 
@@ -1242,6 +1268,10 @@ async function saveDevolucion() {
       Departamento: departamento, Telefono: telefono,
       Motivo: motivo, Observaciones: observaciones,
       lineas: validLines,
+      Historico: esHistoricoDev,
+      Estado: esHistoricoDev ? 'Tramitada' : undefined,
+      Remision: esHistoricoDev ? ((remHistDevSave && remHistDevSave.value.trim()) || '') : undefined,
+      Fecha_Devolucion: esHistoricoDev ? fecha : undefined
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     closeDevModal();

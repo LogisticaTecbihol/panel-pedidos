@@ -198,7 +198,8 @@ function rebuildReGroups() {
       seen[k] = {
         _key: k, Fecha: r.Fecha, Empresa: r.Empresa, Empresa_Destino: r.Empresa_Destino,
         Planta: r.Planta, Remision: r.Remision, Remision_Destino: r.Remision_Destino,
-        Bodega: bod, Estado: r.Estado || 'Pendiente', Muestra_Ref: r.Muestra_Ref || ''
+        Bodega: bod, Estado: r.Estado || 'Pendiente', Muestra_Ref: r.Muestra_Ref || '',
+        Historico: r.Historico || false
       };
       order.push(k);
     }
@@ -419,10 +420,13 @@ function applyReFilters() {
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
   var fEstEl = document.getElementById('f-estado');
   var fEst = fEstEl ? fEstEl.value : '';
+  var fMostrarHistEl = document.getElementById('f-mostrar-historicos');
+  var mostrarHistoricosRe = !!(fMostrarHistEl && fMostrarHistEl.checked);
 
   rebuildReGroups();
 
   filteredRe = reGroups.filter(function(g) {
+    if (!mostrarHistoricosRe && g.Historico) return false;
     if (fEmp && g.Empresa !== fEmp) return false;
     if (fEst && estadoSalida(g) !== fEst) return false;
     if (fTxt) {
@@ -444,6 +448,8 @@ function clearReenvaseFilters() {
   document.getElementById('f-txt').value = '';
   var fEstEl = document.getElementById('f-estado');
   if (fEstEl) fEstEl.value = '';
+  var fMostrarHistClrRe = document.getElementById('f-mostrar-historicos');
+  if (fMostrarHistClrRe) fMostrarHistClrRe.checked = false;
   applyReFilters();
 }
 
@@ -452,6 +458,8 @@ document.getElementById('f-txt').addEventListener('input', debounce(applyReFilte
 (function() {
   var fEstEl = document.getElementById('f-estado');
   if (fEstEl) fEstEl.addEventListener('change', applyReFilters);
+  var fMostrarHistEl2 = document.getElementById('f-mostrar-historicos');
+  if (fMostrarHistEl2) fMostrarHistEl2.addEventListener('change', applyReFilters);
 })();
 
 // ── Stats ──
@@ -651,8 +659,11 @@ function getFilteredProductos() {
   var fEstEl = document.getElementById('f-estado');
   var fEst = fEstEl ? fEstEl.value : '';
   var bodegaActual = getBodegaFromTab();
+  var fMostrarHistElProd = document.getElementById('f-mostrar-historicos');
+  var mostrarHistoricosReProd = !!(fMostrarHistElProd && fMostrarHistElProd.checked);
 
   var rows = allReenvases.filter(function(r) {
+    if (!mostrarHistoricosReProd && r.Historico) return false;
     if (normBodegaRe(r.Bodega) !== bodegaActual) return false;
     if (fEmp && r.Empresa !== fEmp) return false;
     if (fEst && estadoSalida(r) !== fEst) return false;
@@ -1209,6 +1220,8 @@ async function openNewReenvase() {
   if (chkRemDest) chkRemDest.checked = true;
   var elRem = document.getElementById('re-remision');
   elRem.readOnly = true; elRem.style.background = '#f0f4f8'; elRem.placeholder = '(Auto al guardar)';
+  var chkHistRe = document.getElementById('re-chk-historico');
+  if (chkHistRe) chkHistRe.checked = false;
 
   document.getElementById('re-multi-lines').style.display = '';
   document.getElementById('re-edit-single').style.display = 'none';
@@ -1454,12 +1467,25 @@ async function confirmarYRegistrarReenvase() {
   await confirmAndSaveReenvase();
 }
 
+// Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
+// afectar existencias/Kardex (se excluye vía columna Historico). Al marcarla,
+// las remisiones pasan a texto libre (nunca se generan con el contador vivo).
+function toggleCargaHistoricaRe(on) {
+  if (!on) return;
+  ['re-remision-auto', 're-remision-destino-auto'].forEach(function(id) {
+    var chk = document.getElementById(id);
+    if (chk && chk.checked) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
+  });
+}
+
 async function confirmAndSaveReenvase() {
   var empresa = document.getElementById('re-empresa').value;
   var empresaDestino = document.getElementById('re-empresa-destino').value;
   var planta = document.getElementById('re-planta').value;
   var fecha = document.getElementById('re-fecha').value;
   var remision = document.getElementById('re-remision').value.trim();
+  var chkHistReSave = document.getElementById('re-chk-historico');
+  var esHistoricoRe = !!(chkHistReSave && chkHistReSave.checked && AUTH.isAdmin());
 
   syncReLinesFromDOM();
   var productosValidos = reLines.filter(function(p) { return p.producto && p.cantidad > 0; });
@@ -1470,16 +1496,20 @@ async function confirmAndSaveReenvase() {
 
   try {
     var remAutoSalida = remision;
-    var remAutoEntrada = '';
+    var remAutoEntrada = document.getElementById('re-remision-destino')
+      ? document.getElementById('re-remision-destino').value.trim() : '';
     var remSalidaGenerada = '';
     var remEntradaGenerada = '';
-    if (!remAutoSalida && empresa) {
-      remAutoSalida = await generarRemisionConsecutivo(empresa, 'SALIDA');
-      remSalidaGenerada = remAutoSalida;
-    }
-    if (empresaDestino && empresaDestino !== empresa) {
-      remAutoEntrada = await generarRemisionConsecutivo(empresaDestino, 'ENTRADA');
-      remEntradaGenerada = remAutoEntrada;
+    // Carga histórica: nunca consumir el contador vivo de remisiones.
+    if (!esHistoricoRe) {
+      if (!remAutoSalida && empresa) {
+        remAutoSalida = await generarRemisionConsecutivo(empresa, 'SALIDA');
+        remSalidaGenerada = remAutoSalida;
+      }
+      if (empresaDestino && empresaDestino !== empresa) {
+        remAutoEntrada = await generarRemisionConsecutivo(empresaDestino, 'ENTRADA');
+        remEntradaGenerada = remAutoEntrada;
+      }
     }
     var added = 0;
     var bodegaVal = document.getElementById('re-bodega').value;
@@ -1490,7 +1520,8 @@ async function confirmAndSaveReenvase() {
         Empresa: empresa, Empresa_Destino: empresaDestino, Planta: planta, Producto: p.producto, Presentacion: p.presentacion,
         Cantidad: p.cantidad, Remision: remAutoSalida, Remision_Destino: remAutoEntrada, Fecha: fecha,
         Observaciones: (p.observaciones || '').trim(), Bodega: bodegaVal,
-        Muestra_Ref: window._reMuestraRef || ''
+        Muestra_Ref: window._reMuestraRef || '',
+        Historico: esHistoricoRe
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar línea ' + (i + 1));
       added++;

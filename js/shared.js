@@ -610,17 +610,31 @@ async function _apiPostCore(body) {
     }
 
     if (action === 'agregarPedido') {
+      // Carga histórica (registro anterior al 2026-07-01, pre-corte de
+      // saldo inicial): no debe bloquearse por el estado ACTUAL del
+      // cliente (solo aplica a operación viva), y captura la entrega
+      // directamente en el mismo alta en vez de pasar por el flujo normal
+      // de "registrar entrega". Solo admin puede marcar Historico=true
+      // (reforzado también por RLS, ver migración add_columna_historico_movimientos.sql).
+      var _hist = body.historico === true;
+
       // Bloqueo por estado del cliente: no se registran pedidos para
       // clientes 'Inactivo' o 'Bloqueado por cartera' (maestro ClientesUnicos).
-      try {
-        var _estCli = await _sb.rpc('cliente_estado_pedido', {
-          p_cliente: body.cliente || '', p_nit: body.nit || ''
-        });
-        var _estVal = (_estCli && !_estCli.error && _estCli.data) ? String(_estCli.data) : 'Activo';
-        if (_estVal === 'Inactivo' || _estVal === 'Bloqueado por cartera') {
-          return { ok: false, error: 'El cliente "' + (body.cliente || '') + '" está en estado "' + _estVal + '". No se pueden registrar pedidos; contacta a Cartera / Administración.' };
-        }
-      } catch (e) { /* si la validación falla, no bloqueamos la operación */ }
+      if (!_hist) {
+        try {
+          var _estCli = await _sb.rpc('cliente_estado_pedido', {
+            p_cliente: body.cliente || '', p_nit: body.nit || ''
+          });
+          var _estVal = (_estCli && !_estCli.error && _estCli.data) ? String(_estCli.data) : 'Activo';
+          if (_estVal === 'Inactivo' || _estVal === 'Bloqueado por cartera') {
+            return { ok: false, error: 'El cliente "' + (body.cliente || '') + '" está en estado "' + _estVal + '". No se pueden registrar pedidos; contacta a Cartera / Administración.' };
+          }
+        } catch (e) { /* si la validación falla, no bloqueamos la operación */ }
+      }
+
+      var _histEntregado = _hist && body.historico_entregado === true;
+      var _histFechaEntrega = body.historico_fecha_entrega || '';
+      var _histRemision = body.historico_remision || '';
 
       var now = new Date().toISOString().slice(0, 16).replace('T', ' ');
       var productos = body.productos || [{}];
@@ -640,6 +654,10 @@ async function _apiPostCore(body) {
           p_empresa: body.nombre_empresa || ''
         });
         var idPr = resPr.data;
+        var _cantEntLinea = _histEntregado ? (prod.cantidad || 0) : 0;
+        var _remisionesLinea = _histEntregado
+          ? (_histRemision + '|' + _cantEntLinea + '|' + _histFechaEntrega)
+          : '';
         rows.push({
           Fecha_Procesamiento: now, Nombre_Empresa: body.nombre_empresa || '',
           Consecutivo: body.consecutivo || '', Fecha_Pedido: body.fecha_pedido || '',
@@ -652,9 +670,13 @@ async function _apiPostCore(body) {
           Cantidad: prod.cantidad || 0, Valor_Unitario: prod.valor_unitario || 0,
           Valor_Total: prod.valor_total || 0, Total_Orden: body.total_orden || 0,
           Archivo_Fuente: body.archivo_fuente || '', Estado: 'recibido',
-          Cant_Entregada: 0, Cant_Pendiente: prod.cantidad || 0, Estado_Entrega: 'Recibido',
+          Cant_Entregada: _cantEntLinea, Cant_Pendiente: (prod.cantidad || 0) - _cantEntLinea,
+          Estado_Entrega: _histEntregado ? 'Entregado' : 'Recibido',
+          Fecha_Ult_Entrega: _histEntregado ? _histFechaEntrega : null,
+          Remisiones: _remisionesLinea,
           ID_Cliente: idCl || '', ID_Comercial: idCm || '', ID_Producto: idPr || '',
-          Observaciones: body.observaciones || '', Estado_2: 'Abierto',
+          Observaciones: body.observaciones || '',
+          Estado_2: _histEntregado ? 'Cerrado' : 'Abierto',
           Bonificado: prod.bonificado || '',
           Facturar_A: body.facturar_a || body.cliente || '',
           NIT_Adicional: body.nit_adicional || '',
@@ -663,6 +685,7 @@ async function _apiPostCore(body) {
           Sucursal: body.sucursal || '',
           Bodega_Consignacion_Id: body.bodega_consignacion_id || null,
           comercial_id: body.comercial_id || null,
+          Historico: _hist,
           creado_por: _uid()
         });
       }
@@ -812,11 +835,17 @@ async function _apiPostCore(body) {
       var empDestino = (body.Empresa_Destino || '').trim();
       var esPlanta = /planta/i.test(origen);
       var esHolding = _esEmpresaHolding(empOrigen);
-      if (!remDestino && empDestino) {
-        remDestino = await _genRem(empDestino, 'ENTRADA');
-      }
-      if (!remOrigen && esHolding && !esPlanta && empOrigen !== empDestino) {
-        remOrigen = await _genRem(empOrigen, 'SALIDA');
+      var _histIng = body.Historico === true;
+      // Carga histórica: nunca consumir el contador vivo de remisiones
+      // (generar_remision); el módulo debe mandar Remision_Origen/Destino
+      // como texto libre (puede quedar vacío si no aplica).
+      if (!_histIng) {
+        if (!remDestino && empDestino) {
+          remDestino = await _genRem(empDestino, 'ENTRADA');
+        }
+        if (!remOrigen && esHolding && !esPlanta && empOrigen !== empDestino) {
+          remOrigen = await _genRem(empOrigen, 'SALIDA');
+        }
       }
       var rows = lineas.map(function(lin) {
         return {
@@ -827,6 +856,7 @@ async function _apiPostCore(body) {
           Remision_Origen: remOrigen, Remision_Destino: remDestino,
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
           Reenvase_Ref: (body.Reenvase_Ref || '').trim(),
+          Historico: _histIng,
           creado_por: _uid()
         };
       });
@@ -882,10 +912,15 @@ async function _apiPostCore(body) {
           Cant_Entregada: body.Cant_Entregada, Valor_Unitario: body.Valor_Unitario, Valor_Total: body.Valor_Total
         }];
       }
+      // Carga histórica: la devolución ya ocurrió, así que se captura
+      // directamente resuelta (Estado/remisiones), sin pasar por el flujo
+      // normal "tramitarDevolucion" (que consume el contador vivo de
+      // remisiones).
+      var _histDev = body.Historico === true;
       var rows = lineas.map(function(lin) {
         var cant = Number(lin.Cantidad) || 0;
         var vU = Number(lin.Valor_Unitario) || 0;
-        return {
+        var row = {
           Fecha: body.Fecha || '', Empresa: body.Empresa || '', Consecutivo: body.Consecutivo || '',
           Vendedor: body.Vendedor || '', Cliente: body.Cliente || '', NIT: body.NIT || '',
           Direccion: body.Direccion || '', Municipio: body.Municipio || '',
@@ -895,10 +930,22 @@ async function _apiPostCore(body) {
           Cant_Entregada: Number(lin.Cant_Entregada) || 0, Valor_Unitario: vU,
           Valor_Total: Number(lin.Valor_Total) || (cant * vU),
           Motivo: body.Motivo || '', Observaciones: body.Observaciones || '',
-          Estado: 'Pendiente', Remision: '', Fecha_Devolucion: '',
+          Estado: _histDev ? (body.Estado || 'Tramitada') : 'Pendiente',
+          Remision: _histDev ? (body.Remision || '') : '',
+          Fecha_Devolucion: _histDev ? (body.Fecha_Devolucion || '') : '',
           Fecha_Registro: now,
+          Historico: _histDev,
           creado_por: _uid()
         };
+        if (_histDev) {
+          row.Remision_Ingreso = body.Remision_Ingreso || '';
+          row.Bodega_Ingreso = body.Bodega_Ingreso || '';
+          row.Fecha_Ingreso = body.Fecha_Ingreso || '';
+          row.Remision_Salida = body.Remision_Salida || '';
+          row.Bodega_Salida = body.Bodega_Salida || '';
+          row.Fecha_Salida = body.Fecha_Salida || '';
+        }
+        return row;
       });
       var res = await _sb.from('Devoluciones').insert(rows);
       if (res.error) return { ok: false, error: res.error.message };
@@ -1063,9 +1110,14 @@ async function _apiPostCore(body) {
     if (action === 'agregarCambio') {
       var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
       var h = body.header || {};
+      // Carga histórica: el cambio ya se tramitó, así que se captura
+      // resuelto (Estado/remisiones) directamente en el alta, sin pasar
+      // por 'gestionarCambio' (que consume el contador vivo de remisiones).
+      var _histCam = h.Historico === true;
+      var _estadoHistCam = h.Estado || 'Cerrado';
       var allLines = [];
       (body.lineasCambiar || []).forEach(function(lin) {
-        allLines.push({
+        var rowCam = {
           Empresa: h.Empresa || '', Fecha_Solicitud: h.Fecha_Solicitud || '',
           Fecha_Recogida: h.Fecha_Recogida || '', Consecutivo: h.Consecutivo || '',
           Cliente: h.Cliente || '', NIT: h.NIT || '', Telefono: h.Telefono || '',
@@ -1076,12 +1128,18 @@ async function _apiPostCore(body) {
           Razon_Cambio: lin.Razon_Cambio || '', Fecha_Cambio: '',
           Valor_Cliente: Number(h.Valor_Cliente) || 0,
           Valor_Empresa: Number(h.Valor_Empresa) || 0,
-          Observaciones: h.Observaciones || '', Estado: 'Pendiente',
-          Fecha_Registro: now, creado_por: _uid()
-        });
+          Observaciones: h.Observaciones || '', Estado: _histCam ? _estadoHistCam : 'Pendiente',
+          Fecha_Registro: now, Historico: _histCam, creado_por: _uid()
+        };
+        if (_histCam) {
+          rowCam.Remision_Ingreso = h.Remision_Ingreso || '';
+          rowCam.Bodega_Ingreso = h.Bodega_Ingreso || 'Productos Buenos';
+          rowCam.Fecha_Ingreso = h.Fecha_Ingreso || '';
+        }
+        allLines.push(rowCam);
       });
       (body.lineasEntregar || []).forEach(function(lin) {
-        allLines.push({
+        var rowEnt = {
           Empresa: h.Empresa || '', Fecha_Solicitud: h.Fecha_Solicitud || '',
           Fecha_Recogida: h.Fecha_Recogida || '', Consecutivo: h.Consecutivo || '',
           Cliente: h.Cliente || '', NIT: h.NIT || '', Telefono: h.Telefono || '',
@@ -1092,9 +1150,16 @@ async function _apiPostCore(body) {
           Razon_Cambio: '', Fecha_Cambio: lin.Fecha_Cambio || '',
           Valor_Cliente: Number(h.Valor_Cliente) || 0,
           Valor_Empresa: Number(h.Valor_Empresa) || 0,
-          Observaciones: h.Observaciones || '', Estado: 'Pendiente',
-          Fecha_Registro: now, creado_por: _uid()
-        });
+          Observaciones: h.Observaciones || '', Estado: _histCam ? _estadoHistCam : 'Pendiente',
+          Fecha_Registro: now, Historico: _histCam, creado_por: _uid()
+        };
+        if (_histCam) {
+          rowEnt.Cant_Entregada = Number(lin.Cantidad) || 0;
+          rowEnt.Remision_Salida = h.Remision_Salida || '';
+          rowEnt.Bodega_Salida = h.Bodega_Salida || 'Productos Buenos';
+          rowEnt.Fecha_Salida = h.Fecha_Salida || '';
+        }
+        allLines.push(rowEnt);
       });
       if (!allLines.length) return { ok: false, error: 'Sin líneas' };
       var res = await _sb.from('CambiosMercancia').insert(allLines);
@@ -1383,6 +1448,11 @@ async function _apiPostCore(body) {
       // (_reuse_consecutivo), se conserva el consecutivo que ya tiene esa
       // solicitud en vez de pedir uno nuevo (si no, la línea nueva queda
       // separada en un consecutivo distinto, partiendo la solicitud en dos).
+      // Carga histórica: el caller (muestras.js) debe mandar
+      // _reuse_consecutivo=true + Consecutivo/Remision como texto libre, y
+      // omitir _generar_remision, para no consumir las RPC de contador
+      // vivo (generar_consecutivo_muestra / generar_remision).
+      var _histMu = body.Historico === true;
       var consecMu = (body.Consecutivo || '').trim();
       if (!body._reuse_consecutivo && (body.Empresa || '').trim()) {
         var _cm = await _sb.rpc('generar_consecutivo_muestra', { p_empresa_nombre: body.Empresa });
@@ -1405,6 +1475,7 @@ async function _apiPostCore(body) {
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
           Tipo_Solicitud: body.Tipo_Solicitud || 'Despacho',
           responsable_id: body.responsable_id || null,
+          Historico: _histMu,
           creado_por: _uid()
         };
       });
@@ -1670,6 +1741,7 @@ async function _apiPostCore(body) {
           Cantidad: Number(lin.Cantidad) || 0,
           Motivo: body.Motivo || '', Remision: body.Remision || '',
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
+          Historico: body.Historico === true,
           creado_por: _uid()
         };
       });
@@ -1706,11 +1778,15 @@ async function _apiPostCore(body) {
       var remReenvDest = (body.Remision_Destino || '').trim();
       var empReenv = (body.Empresa || '').trim();
       var empReenvDest = (body.Empresa_Destino || '').trim();
-      if (!remReenv && empReenv) {
-        remReenv = await _genRem(empReenv, 'SALIDA');
-      }
-      if (!remReenvDest && empReenvDest && empReenvDest !== empReenv) {
-        remReenvDest = await _genRem(empReenvDest, 'ENTRADA');
+      var _histReenv = body.Historico === true;
+      // Carga histórica: nunca consumir el contador vivo de remisiones.
+      if (!_histReenv) {
+        if (!remReenv && empReenv) {
+          remReenv = await _genRem(empReenv, 'SALIDA');
+        }
+        if (!remReenvDest && empReenvDest && empReenvDest !== empReenv) {
+          remReenvDest = await _genRem(empReenvDest, 'ENTRADA');
+        }
       }
       var row = {
         Empresa: body.Empresa || '', Empresa_Destino: body.Empresa_Destino || '', Planta: body.Planta || '',
@@ -1720,6 +1796,7 @@ async function _apiPostCore(body) {
         Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
         Muestra_Ref: (body.Muestra_Ref || '').trim(),
         Fecha_Registro: now,
+        Historico: _histReenv,
         creado_por: _uid()
       };
       var res = await _sb.from('Reenvases').insert([row]);

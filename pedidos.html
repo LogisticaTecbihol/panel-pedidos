@@ -214,6 +214,12 @@
     <div class="fg"><label>Desde</label><input type="date" id="f-fec-desde" title="Fecha de pedido — desde" style="width:150px"></div>
     <div class="fg"><label>Hasta</label><input type="date" id="f-fec-hasta" title="Fecha de pedido — hasta" style="width:150px"></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="cliente, consecutivo…" style="width:175px"></div>
+    <div class="fg" style="justify-content:flex-end">
+      <label style="font-size:0.72rem;color:#7c2d12;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;white-space:nowrap">
+        <input type="checkbox" id="f-mostrar-historicos">
+        📜 Mostrar cargas históricas
+      </label>
+    </div>
     <button onclick="clearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
   </div>
 
@@ -859,6 +865,28 @@
           Total calculado: <strong id="nv-total-calc">$0</strong>
         </div>
       </div>
+      <div class="auth-admin-only" data-display="block" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">
+        <label style="font-size:0.8rem;cursor:pointer;user-select:none;color:#7c2d12">
+          <input type="checkbox" id="nv-chk-historico" onchange="toggleCargaHistoricaPed(this.checked)">
+          📜 Carga histórica (registro anterior al 2026-07-01, no afecta existencias/Kardex)
+        </label>
+        <div id="nv-hist-wrap" style="display:none;margin-top:10px">
+          <label style="font-size:0.8rem;cursor:pointer;user-select:none">
+            <input type="checkbox" id="nv-hist-entregado" checked>
+            Ya fue entregado en su totalidad
+          </label>
+          <div id="nv-hist-entrega-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+            <div>
+              <label class="ef-label">Fecha de entrega</label>
+              <input class="ef" id="nv-hist-fecha-entrega" type="date">
+            </div>
+            <div>
+              <label class="ef-label">N° Remisión de entrega</label>
+              <input class="ef" id="nv-hist-remision" type="text" placeholder="Ej: RE-0001">
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="mftr">
       <div id="nv-dup-warn" style="display:none;background:#fef3cd;border:1px solid #f9ca24;border-radius:8px;padding:6px 14px;font-size:0.82rem;color:#856404">⚠️ Este pedido ya existe</div>
@@ -913,12 +941,12 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260923a"></script>
+<script src="js/shared.js?v=20260924a"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
-<script src="js/existencias.js?v=20260923b"></script>
+<script src="js/existencias.js?v=20260924a"></script>
 <script src="js/pdf-remision.js?v=20260921d"></script>
-<script src="js/pedidos.js?v=20260923a"></script>
+<script src="js/pedidos.js?v=20260924a"></script>
 </body>
 </html>
