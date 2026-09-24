@@ -16,6 +16,9 @@
 .ac-item strong{color:#1a5276}
 .ac-sub{font-size:.72rem;color:#718096;margin-top:2px}
 
+/* ── Tabs del módulo ── */
+.lg-tab{background:#718096;color:white;border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600;transition:background .2s}
+
 /* ── Proporción de gastos por producto / por empresa (barras horizontales) ── */
 .lg-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
 @media (max-width:900px){.lg-row{grid-template-columns:1fr}}
@@ -115,43 +118,53 @@
     <button class="btn-dl" style="margin-left:auto" onclick="openForm()">+ Nueva legalización</button>
   </div>
 
-  <div class="lg-row">
+  <!-- Tabs -->
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="lg-tab" id="tab-legalizaciones" onclick="switchTab('legalizaciones')" style="background:#1a5276">📋 Legalizaciones</button>
+    <button class="lg-tab" id="tab-prorrateo" onclick="switchTab('prorrateo')" style="background:#718096">📊 Prorrateo de gastos</button>
+  </div>
+
+  <div id="panel-legalizaciones">
     <div class="card">
       <div class="card-head">
-        <h3>Proporción de gastos por producto</h3>
+        <h3>Legalizaciones <span id="lg-ct" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
       </div>
-      <div style="padding:16px 20px 4px">
-        <div class="gpp-note">Estimado prorrateando el gasto de cada viaje entre los productos de sus remisiones relacionadas, según litros movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
-        <div id="gpp-body"></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-head">
-        <h3>Proporción de gastos por empresa</h3>
-      </div>
-      <div style="padding:16px 20px 4px">
-        <div class="gpp-note">Mismo prorrateo por litros, agregado por la empresa dueña de cada producto.</div>
-        <div id="gpe-body"></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>N°</th><th>Fecha</th><th>Responsable</th><th>Ruta</th><th>Empresas</th>
+              <th style="text-align:right">Total gastos</th><th style="text-align:right">Anticipo</th>
+              <th>Estado</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="lg-body"></tbody>
+        </table>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-head">
-      <h3>Legalizaciones <span id="lg-ct" style="font-weight:400;color:#718096"></span></h3>
-      <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
-    </div>
-    <div style="overflow-x:auto">
-      <table>
-        <thead>
-          <tr>
-            <th>N°</th><th>Fecha</th><th>Responsable</th><th>Ruta</th><th>Empresas</th>
-            <th style="text-align:right">Total gastos</th><th style="text-align:right">Anticipo</th>
-            <th>Estado</th><th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="lg-body"></tbody>
-      </table>
+  <div id="panel-prorrateo" style="display:none">
+    <div class="lg-row">
+      <div class="card">
+        <div class="card-head">
+          <h3>Proporción de gastos por producto</h3>
+        </div>
+        <div style="padding:16px 20px 4px">
+          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje entre los productos de sus remisiones relacionadas, según litros movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
+          <div id="gpp-body"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>Proporción de gastos por empresa</h3>
+        </div>
+        <div style="padding:16px 20px 4px">
+          <div class="gpp-note">Mismo prorrateo por litros, agregado por la empresa dueña de cada producto.</div>
+          <div id="gpe-body"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>

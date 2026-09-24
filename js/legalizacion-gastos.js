@@ -2,6 +2,17 @@
 // Reemplaza el Excel CT-PFT-FO02: gastos de ruta de un conductor (combustible,
 // alimentación, peajes) contra un anticipo, con conciliación en dos pasos.
 
+// ── Tabs ──
+function switchTab(tab) {
+  ['legalizaciones', 'prorrateo'].forEach(function(t) {
+    var panel = document.getElementById('panel-' + t);
+    var btn = document.getElementById('tab-' + t);
+    if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
+    if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
+  });
+  if (tab === 'prorrateo') renderProrrateoGastos();
+}
+
 var LEG_BUCKET = 'legalizacion-gastos-adjuntos';
 
 var legs = [];       // LegalizacionGastos (cabeceras)
