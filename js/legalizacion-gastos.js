@@ -344,8 +344,6 @@ function lgProrrateoTable(rows, headerLabel) {
     '<tbody>' + body + '</tbody></table></div>';
 }
 
-var GPP_TOP_N = 10;
-
 function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
   renderGastoPorProducto(calc);
@@ -380,19 +378,14 @@ function renderGastoPorProducto(calc) {
     var rows = Object.keys(calc.porEmpresaSku[emp] || {}).map(function(sku) {
       return { label: sku, value: calc.porEmpresaSku[emp][sku] };
     }).sort(function(a, b) { return b.value - a.value; });
-
-    var top = rows.slice(0, GPP_TOP_N);
-    var resto = rows.slice(GPP_TOP_N);
-    var otrosVal = resto.reduce(function(s, r) { return s + r.value; }, 0);
-    if (otrosVal > 0) top.push({ label: 'Otros (' + resto.length + ' productos)', value: otrosVal });
-    top.forEach(function(r) { r.pct = empTotal > 0 ? (r.value / empTotal * 100) : 0; });
+    rows.forEach(function(r) { r.pct = empTotal > 0 ? (r.value / empTotal * 100) : 0; });
 
     return '<div class="gpp-group">' +
       '<div class="gpp-group-head">' +
         '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' +
         '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span></span>' +
       '</div>' +
-      lgProrrateoTable(top, 'Producto') +
+      lgProrrateoTable(rows, 'Producto') +
     '</div>';
   }).join('');
 
