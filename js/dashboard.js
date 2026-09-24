@@ -406,6 +406,7 @@ async function loadDashboard() {
     mainEl.style.display = 'block';
 
     populateDashFilters();
+    populateMpProductoSelect();
     buildDashboard();
 
     setSyncStatus('ok', 'Conectado a la nube. Ultima actualizacion: ' + new Date().toLocaleTimeString('es-CO'));
@@ -569,6 +570,7 @@ function buildDashboard() {
   buildOtrosModulos(cur.cam, cur.mue, cur.ree);
   buildCalidadDatos(cur.ped, fEmp);
   buildClientesNuevos(fEmp, fDesde, fHasta);
+  buildMovimientosPorProducto(fEmp, fDesde, fHasta);
 }
 
 // ── Existencias (snapshot Kardex) ──
@@ -2001,6 +2003,108 @@ function buildAlertasStock(fEmp) {
     return { label: r.prod, value: r.stock, valueTxt: Math.round(r.stock).toLocaleString('es-CO') + ' uds', color: '#e67e22' };
   }), null, { stack: true });
   el.innerHTML = html;
+}
+
+// ── Movimientos por producto (selector) ──
+// Lista de productos con movimiento en el Kardex (dExist.kxMovimientos),
+// independiente del filtro de Empresa/fechas — esos se aplican al construir
+// el gráfico/tabla, no al armar el desplegable.
+var dMpSelectAttached = false;
+function populateMpProductoSelect() {
+  var sel = document.getElementById('mp-producto');
+  if (!sel) return;
+  var prev = sel.value;
+  var set = {};
+  ((dExist && dExist.kxMovimientos) || []).forEach(function(m) {
+    if (_esGranel(m.empresa)) return;
+    var k = dNormProd(m.producto);
+    if (k) set[k] = 1;
+  });
+  var productos = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
+  sel.innerHTML = '<option value="">Selecciona un producto...</option>' + productos.map(function(p) {
+    return '<option value="' + escHtml(p) + '">' + escHtml(p) + '</option>';
+  }).join('');
+  if (prev && productos.indexOf(prev) >= 0) sel.value = prev;
+
+  if (!dMpSelectAttached) {
+    sel.addEventListener('change', function() {
+      var fEmp = document.getElementById('df-emp').value;
+      var fDesde = document.getElementById('df-desde').value;
+      var fHasta = document.getElementById('df-hasta').value;
+      buildMovimientosPorProducto(fEmp, fDesde, fHasta);
+    });
+    dMpSelectAttached = true;
+  }
+}
+
+var DASH_MP_TOPE_FILAS = 100;
+function buildMovimientosPorProducto(fEmp, fDesde, fHasta) {
+  var sub = document.getElementById('mp-sub');
+  var tbody = document.getElementById('tb-mp-detalle');
+  if (!sub || !tbody) return;
+  var prod = document.getElementById('mp-producto').value;
+
+  if (!dExist) {
+    sub.textContent = '';
+    _destroyChart('cv-mp-mes');
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:20px">Sin snapshot de existencias</td></tr>';
+    return;
+  }
+  if (!prod) {
+    sub.textContent = 'Elegí un producto arriba para ver sus movimientos de Kardex';
+    _destroyChart('cv-mp-mes');
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:20px">Sin producto seleccionado</td></tr>';
+    return;
+  }
+
+  var movs = (dExist.kxMovimientos || []).filter(function(m) {
+    if (_esGranel(m.empresa)) return false;
+    if (dNormProd(m.producto) !== prod) return false;
+    if (fEmp && m.empresa !== fEmp) return false;
+    if (!_fechaEnRango(m.fecha, fDesde, fHasta)) return false;
+    return true;
+  });
+
+  // Gráfico: entradas vs salidas por mes
+  var map = {};
+  movs.forEach(function(m) {
+    var mes = String(m.fecha || '').slice(0, 7);
+    if (!dEsMes(mes)) return;
+    if (!map[mes]) map[mes] = { ent: 0, sal: 0 };
+    if (m.tipo === 'Entrada') map[mes].ent += Number(m.cantidad) || 0;
+    else map[mes].sal += Number(m.cantidad) || 0;
+  });
+  var meses = Object.keys(map).sort();
+  dMixedChart('cv-mp-mes', meses.map(dMesLbl), [
+    { label: 'Entradas', tipo: 'bar', yAxis: 'y', color: '#27ae60', data: meses.map(function(m) { return Math.round(map[m].ent); }) },
+    { label: 'Salidas', tipo: 'bar', yAxis: 'y', color: '#e74c3c', data: meses.map(function(m) { return Math.round(map[m].sal); }) }
+  ], {});
+
+  var totEnt = 0, totSal = 0;
+  movs.forEach(function(m) {
+    if (m.tipo === 'Entrada') totEnt += Number(m.cantidad) || 0; else totSal += Number(m.cantidad) || 0;
+  });
+  sub.textContent = movs.length.toLocaleString('es-CO') + ' movimientos · Entradas ' + Math.round(totEnt).toLocaleString('es-CO') +
+    ' · Salidas ' + Math.round(totSal).toLocaleString('es-CO') + ' · Saldo del período ' + Math.round(totEnt - totSal).toLocaleString('es-CO') +
+    (movs.length > DASH_MP_TOPE_FILAS ? ' · tabla: últimos ' + DASH_MP_TOPE_FILAS : '');
+
+  var rows = movs.slice().sort(function(a, b) { return String(b.fecha || '').localeCompare(String(a.fecha || '')); }).slice(0, DASH_MP_TOPE_FILAS);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:20px">Sin movimientos en el período</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(m) {
+    var esEnt = m.tipo === 'Entrada';
+    return '<tr>' +
+      '<td>' + escHtml(fmtDate(String(m.fecha || '').slice(0, 10))) + '</td>' +
+      '<td style="font-weight:700;color:' + (esEnt ? '#27ae60' : '#e74c3c') + '">' + (esEnt ? '⬆️ Entrada' : '⬇️ Salida') + '</td>' +
+      '<td>' + escHtml(m.modulo || '') + '</td>' +
+      '<td>' + escHtml(dGetSigla(m.empresa)) + '</td>' +
+      '<td>' + escHtml(m.presentacion || '—') + '</td>' +
+      '<td>' + escHtml(m.remision || '—') + '</td>' +
+      '<td class="money">' + Math.round(Number(m.cantidad) || 0).toLocaleString('es-CO') + '</td>' +
+    '</tr>';
+  }).join('');
 }
 
 // Agrupa las líneas de OrdenesCompra en órdenes: 1 por (origen, destino,
