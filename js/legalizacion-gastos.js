@@ -233,10 +233,16 @@ function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) 
 // — el mismo bucket y monto para ambos desgloses.
 //
 // Filtros propios de la pestaña Prorrateo (#pf-emp/#pf-desde/#pf-hasta):
-// Empresa filtra igual que la tabla de Legalizaciones (reparto manual en
-// LegalizacionGastosEmpresas); el rango de fechas usa Fecha del viaje.
+// el rango de fechas excluye viajes completos por Fecha; Empresa filtra a
+// nivel de LÍNEA de producto, por la empresa dueña de esa remisión resuelta
+// (Nombre_Empresa del Pedido), NO por el reparto manual del viaje — así,
+// filtrar por una empresa muestra solo sus productos, aunque el viaje haya
+// tocado varias empresas. Con el filtro activo, "Sin identificar" se omite
+// (no se le puede atribuir a una empresa algo que no se pudo resolver) y el
+// total/porcentajes quedan sobre la porción de esa empresa únicamente.
 function calcularProrrateoGastos() {
   var fEmp = document.getElementById('pf-emp').value;
+  var fEmpSigla = fEmp ? getSigla(fEmp) : '';
   var fDesde = document.getElementById('pf-desde').value;
   var fHasta = document.getElementById('pf-hasta').value;
 
@@ -247,12 +253,10 @@ function calcularProrrateoGastos() {
 
   legs.forEach(function(leg) {
     if (leg.Estado_Conciliacion === 'Rechazada') return;
-    if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return;
     if (fDesde && (leg.Fecha || '') < fDesde) return;
     if (fHasta && (leg.Fecha || '') > fHasta) return;
     var totalViaje = totalGastosOf(leg.id);
     if (totalViaje <= 0) return;
-    totalGeneral += totalViaje;
 
     // Remisiones_Relacionadas es un CSV simple de códigos (sin "|cant|fecha"),
     // igual formato que lee openForm() al editar (línea ~591) — no usar
@@ -272,17 +276,19 @@ function calcularProrrateoGastos() {
     });
 
     if (totalLitros <= 0) {
-      sinIdentificar += totalViaje;
+      if (!fEmp) { sinIdentificar += totalViaje; totalGeneral += totalViaje; }
       return;
     }
 
     lineas.forEach(function(l) {
       if (l._litros <= 0) return;
+      var emp = getSigla(l.empresa);
+      if (fEmpSigla && emp !== fEmpSigla) return;
       var monto = (l._litros / totalLitros) * totalViaje;
       var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
       porSku[sku] = (porSku[sku] || 0) + monto;
-      var emp = getSigla(l.empresa);
       porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
+      totalGeneral += monto;
     });
   });
 
