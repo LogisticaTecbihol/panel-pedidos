@@ -3303,6 +3303,33 @@ async function guardarTodo() {
     return;
   }
 
+  // Refrescar desde el servidor lo YA entregado de cada línea justo antes
+  // de fusionar. Si este modal se abrió antes de que otra persona
+  // registrara una entrega sobre el mismo pedido, dl._entregas queda vieja
+  // (aunque esta vez no se agregue ninguna asignación nueva) y guardar
+  // sobre ella borraría esa entrega ajena. Así ocurrió con el pedido #838
+  // de Parcelar / remisión RS-0116 (2026-09-23): un guardado sin entregas
+  // nuevas pisó la entrega que otro usuario acababa de registrar minutos
+  // antes, dejando el pedido en "Recibido" y sin descuento en Kardex.
+  var _rowIds = detailWorkingLines.map(function(l) { return l && l.__row; }).filter(Boolean);
+  if (_rowIds.length) {
+    var _freshRes = await _sb.from('Pedidos')
+      .select('id,Cant_Entregada,Remisiones,Fecha_Ult_Entrega')
+      .in('id', _rowIds);
+    if (_freshRes.error) {
+      showToast('No se pudo verificar el estado actual del pedido antes de guardar. Intenta de nuevo.', '#e74c3c');
+      return;
+    }
+    var _freshByRow = {};
+    (_freshRes.data || []).forEach(function(r) { _freshByRow[r.id] = r; });
+    detailWorkingLines.forEach(function(l) {
+      if (!l || !l.__row) return;
+      var f = _freshByRow[l.__row];
+      if (!f) return;
+      l._entregas = parseEntregas(f.Remisiones, Number(f.Cant_Entregada) || 0, f.Fecha_Ult_Entrega);
+    });
+  }
+
   // Volcar SOLO las entregas directas para que el resto del flujo
   // (Cant_Entregada, Remisiones, Estado_Entrega, PDF de remisión) opere
   // únicamente sobre lo que realmente se entrega al cliente. Los traslados
@@ -4032,15 +4059,47 @@ async function saveEdit() {
   var vtots = [].slice.call(document.querySelectorAll('.ed-vtot'));
   var rems = [].slice.call(document.querySelectorAll('.ed-rem'));
   var bonifs = [].slice.call(document.querySelectorAll('.ed-bonif'));
+
+  // Refrescar Cant_Entregada/Estado_Entrega/Fecha_Ult_Entrega desde el
+  // servidor antes de guardar: este modal no trae input para editarlos
+  // (solo el texto libre de Remisiones), así que si quedó abierto mientras
+  // alguien más registraba una entrega, editWorkingLines está viejo y
+  // volver a guardarlo la borraría (mismo bug que en guardarTodo — ver
+  // pedido #838 / RS-0116, 2026-09-23). El texto de Remisiones solo se
+  // reemplaza por el del servidor si el usuario no lo tocó en este modal;
+  // si lo editó a mano, se respeta lo que escribió.
+  var _edRowIds = editWorkingLines.map(function(l) { return l && l.__row; }).filter(Boolean);
+  var _edFreshByRow = {};
+  if (_edRowIds.length) {
+    var _edFreshRes = await _sb.from('Pedidos')
+      .select('id,Cant_Entregada,Estado_Entrega,Remisiones,Fecha_Ult_Entrega')
+      .in('id', _edRowIds);
+    if (_edFreshRes.error) {
+      showToast('No se pudo verificar el estado actual del pedido antes de guardar. Intenta de nuevo.', '#e74c3c');
+      return;
+    }
+    (_edFreshRes.data || []).forEach(function(r) { _edFreshByRow[r.id] = r; });
+  }
+
   editWorkingLines.forEach(function(l, i) {
     if (norm(l.Estado_Entrega || '') === 'entregado' && !AUTH.isAdmin()) return;
+    var remInput = rems[i] ? rems[i].value.trim() : '';
+    var remSinTocar = remInput === (l.Remisiones || '').trim();
+    var fresh = l.__row ? _edFreshByRow[l.__row] : null;
     l.Producto = prods[i] ? prods[i].value.trim() : '';
     l.Presentacion = press[i] ? press[i].value.trim() : '';
     l.Cantidad = Number(cants[i] && cants[i].value) || 0;
     l.Valor_Unitario = Number(vunis[i] && vunis[i].value) || 0;
     l.Valor_Total = Number(vtots[i] && vtots[i].value) || 0;
-    l.Remisiones = rems[i] ? rems[i].value.trim() : '';
     l.Bonificado = bonifs[i] && bonifs[i].checked ? 'Sí' : '';
+    if (fresh) {
+      l.Cant_Entregada = Number(fresh.Cant_Entregada) || 0;
+      l.Estado_Entrega = fresh.Estado_Entrega || l.Estado_Entrega;
+      l.Fecha_Ult_Entrega = fresh.Fecha_Ult_Entrega || l.Fecha_Ult_Entrega;
+      l.Remisiones = remSinTocar ? (fresh.Remisiones || '') : remInput;
+    } else {
+      l.Remisiones = remInput;
+    }
     l.Cant_Pendiente = Math.max(0, l.Cantidad - (Number(l.Cant_Entregada)||0));
   });
 
