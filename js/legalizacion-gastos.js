@@ -26,6 +26,7 @@ var formGastos = [];     // líneas de gasto del formulario en curso
 var formEmpresas = [];   // reparto por empresa del formulario en curso
 var formRemisiones = []; // remisiones relacionadas del formulario en curso (lista)
 var formClientes = [];   // clientes visitados del formulario en curso (lista)
+var formGastoProveedorACs = []; // autocompletes de Proveedor (uno por línea de gasto, se recrean en cada render)
 
 var legAdjuntosCache = [];
 
@@ -516,8 +517,30 @@ function readLgEmpresas() {
   recalcTotals();
 }
 
+// Proveedores usados en gastos previos (de todas las legalizaciones ya
+// cargadas), deduplicados por nombre+NIT, para autocompletar el campo
+// Proveedor. legItems ya está cargado en memoria (loadLegalizaciones), así
+// que no hace falta una consulta aparte.
+function proveedoresConocidos() {
+  var seen = {};
+  var list = [];
+  legItems.forEach(function(it) {
+    var prov = (it.Proveedor || '').trim();
+    if (!prov) return;
+    var nit = (it.NIT || '').trim();
+    var key = prov.toLowerCase() + '|' + nit;
+    if (seen[key]) return;
+    seen[key] = true;
+    list.push({ proveedor: prov, nit: nit });
+  });
+  return list.sort(function(a, b) { return a.proveedor.localeCompare(b.proveedor, 'es'); });
+}
+
 // ── Formulario: líneas de gasto ──
 function renderLgGastos() {
+  formGastoProveedorACs.forEach(function(ac) { ac.destroy(); });
+  formGastoProveedorACs = [];
+
   document.getElementById('lg-gasto-lines').innerHTML = formGastos.map(function(g, i) {
     var parsed = parseConceptoLine(g.Concepto || '');
     return '<tr>' +
@@ -525,7 +548,7 @@ function renderLgGastos() {
         '<select class="ef lg-g-concepto" data-line="' + i + '" onchange="onConceptoSelectChange(this)">' + conceptoOptionsHtml(parsed.sel) + '</select>' +
         (parsed.sel === 'Otros' ? '<input class="ef lg-g-concepto-otro" data-line="' + i + '" type="text" value="' + escHtml(parsed.detail) + '" placeholder="Especifique…" style="margin-top:4px" oninput="readLgGastos()">' : '') +
       '</td>' +
-      '<td><input class="ef lg-g-proveedor" data-line="' + i + '" type="text" value="' + escHtml(g.Proveedor || '') + '" placeholder="Proveedor" oninput="readLgGastos()"></td>' +
+      '<td><input class="ef lg-g-proveedor" data-line="' + i + '" type="text" value="' + escHtml(g.Proveedor || '') + '" placeholder="Proveedor" autocomplete="off" oninput="readLgGastos()"></td>' +
       '<td><div style="display:flex;gap:4px">' +
         '<input class="ef lg-g-nit" data-line="' + i + '" type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:100px" oninput="readLgGastos()">' +
         '<input class="ef lg-g-dv" data-line="' + i + '" type="text" value="' + escHtml(g.DV || '') + '" placeholder="DV" maxlength="2" style="width:44px;text-align:center" oninput="readLgGastos()">' +
@@ -534,6 +557,27 @@ function renderLgGastos() {
       '<td style="text-align:center"><button onclick="removeLgGasto(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="5"><div class="no-lines">Sin líneas de gasto.</div></td></tr>';
+
+  document.querySelectorAll('.lg-g-proveedor').forEach(function(inp) {
+    formGastoProveedorACs.push(initAutocomplete(inp, {
+      minChars: 1,
+      items: proveedoresConocidos,
+      display: function(p) {
+        return '<strong>' + escHtml(p.proveedor) + '</strong>' + (p.nit ? ' <span class="ac-sub">NIT ' + escHtml(p.nit) + '</span>' : '');
+      },
+      match: function(p, val) { return p.proveedor.toLowerCase().indexOf(val) >= 0; },
+      onSelect: function(p) {
+        var i = Number(inp.dataset.line);
+        inp.value = p.proveedor;
+        var nd = splitNitDv(p.nit);
+        var nitInput = document.querySelector('.lg-g-nit[data-line="' + i + '"]');
+        var dvInput = document.querySelector('.lg-g-dv[data-line="' + i + '"]');
+        if (nitInput) nitInput.value = nd.nit;
+        if (dvInput) dvInput.value = nd.dv;
+        readLgGastos();
+      }
+    }));
+  });
 }
 
 function addLgGasto() {
