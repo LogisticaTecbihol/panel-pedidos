@@ -164,6 +164,7 @@ function conceptoOptionsHtml(selected) {
 async function loadLegalizaciones() {
   await _authReady;
   populateEmpresaSelect('f-emp', 'Todas');
+  populateEmpresaSelect('pf-emp', 'Todas');
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
   var loadZone = document.getElementById('load-zone');
@@ -230,7 +231,15 @@ function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) 
 // loadClientesConRemision). Lo que no se puede vincular a un producto, o
 // cuyo producto no es convertible a litros, cae en el bucket "Sin identificar"
 // — el mismo bucket y monto para ambos desgloses.
+//
+// Filtros propios de la pestaña Prorrateo (#pf-emp/#pf-desde/#pf-hasta):
+// Empresa filtra igual que la tabla de Legalizaciones (reparto manual en
+// LegalizacionGastosEmpresas); el rango de fechas usa Fecha del viaje.
 function calcularProrrateoGastos() {
+  var fEmp = document.getElementById('pf-emp').value;
+  var fDesde = document.getElementById('pf-desde').value;
+  var fHasta = document.getElementById('pf-hasta').value;
+
   var porSku = {};
   var porEmpresa = {};
   var sinIdentificar = 0;
@@ -238,6 +247,9 @@ function calcularProrrateoGastos() {
 
   legs.forEach(function(leg) {
     if (leg.Estado_Conciliacion === 'Rechazada') return;
+    if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return;
+    if (fDesde && (leg.Fecha || '') < fDesde) return;
+    if (fHasta && (leg.Fecha || '') > fHasta) return;
     var totalViaje = totalGastosOf(leg.id);
     if (totalViaje <= 0) return;
     totalGeneral += totalViaje;
@@ -312,6 +324,13 @@ function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
   renderGastoPorProducto(calc);
   renderGastoPorEmpresa(calc);
+}
+
+function clearProrrateoFiltros() {
+  document.getElementById('pf-emp').value = '';
+  document.getElementById('pf-desde').value = '';
+  document.getElementById('pf-hasta').value = '';
+  renderProrrateoGastos();
 }
 
 function renderGastoPorProducto(calc) {
