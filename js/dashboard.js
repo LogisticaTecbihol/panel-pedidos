@@ -2076,8 +2076,8 @@ function buildMovimientosPorProducto(fEmp, fDesde, fHasta) {
   });
   var meses = Object.keys(map).sort();
   dMixedChart('cv-mp-mes', meses.map(dMesLbl), [
-    { label: 'Entradas', tipo: 'bar', yAxis: 'y', color: '#27ae60', data: meses.map(function(m) { return Math.round(map[m].ent); }) },
-    { label: 'Salidas', tipo: 'bar', yAxis: 'y', color: '#e74c3c', data: meses.map(function(m) { return Math.round(map[m].sal); }) }
+    { label: 'Entradas', tipo: 'line', yAxis: 'y', color: '#27ae60', data: meses.map(function(m) { return Math.round(map[m].ent); }) },
+    { label: 'Salidas', tipo: 'line', yAxis: 'y', color: '#e74c3c', data: meses.map(function(m) { return Math.round(map[m].sal); }) }
   ], {});
 
   var totEnt = 0, totSal = 0;
