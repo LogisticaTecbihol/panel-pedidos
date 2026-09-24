@@ -16,13 +16,18 @@
 .ac-item strong{color:#1a5276}
 .ac-sub{font-size:.72rem;color:#718096;margin-top:2px}
 
-/* ── Proporción de gastos por producto (lista de barras horizontales) ── */
+/* ── Proporción de gastos por producto / por empresa (barras horizontales) ── */
+.lg-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+@media (max-width:900px){.lg-row{grid-template-columns:1fr}}
 .gpp-note{font-size:.78rem;color:#718096;margin:-4px 0 14px}
 .hbar-chart{display:flex;flex-direction:column;gap:10px}
 .hbar-srow{display:flex;flex-direction:column;gap:4px}
 .hbar-shead{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .hbar-slabel{font-size:.8rem;font-weight:700;color:#4a5568;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hbar-sval{font-size:.82rem;font-weight:700;color:#2d3748;flex-shrink:0}
+.hbar-row{display:flex;align-items:center;gap:10px}
+.hbar-label{width:80px;font-size:.8rem;font-weight:700;color:#4a5568;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar-value{width:auto;font-size:.82rem;font-weight:700;color:#2d3748;text-align:right;flex-shrink:0;white-space:nowrap}
 .hbar-track{flex:1;height:18px;background:#f0f4f8;border-radius:6px;overflow:hidden;position:relative}
 .hbar-fill{height:100%;border-radius:6px;transition:width .6s ease;min-width:3px}
 </style>
@@ -110,13 +115,24 @@
     <button class="btn-dl" style="margin-left:auto" onclick="openForm()">+ Nueva legalización</button>
   </div>
 
-  <div class="card" style="margin-bottom:16px">
-    <div class="card-head">
-      <h3>Proporción de gastos por producto</h3>
+  <div class="lg-row">
+    <div class="card">
+      <div class="card-head">
+        <h3>Proporción de gastos por producto</h3>
+      </div>
+      <div style="padding:16px 20px 4px">
+        <div class="gpp-note">Estimado prorrateando el gasto de cada viaje entre los productos de sus remisiones relacionadas, según litros movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
+        <div id="gpp-body"></div>
+      </div>
     </div>
-    <div style="padding:16px 20px 4px">
-      <div class="gpp-note">Estimado prorrateando el gasto de cada viaje entre los productos de sus remisiones relacionadas, según litros movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
-      <div id="gpp-body"></div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Proporción de gastos por empresa</h3>
+      </div>
+      <div style="padding:16px 20px 4px">
+        <div class="gpp-note">Mismo prorrateo por litros, agregado por la empresa dueña de cada producto.</div>
+        <div id="gpe-body"></div>
+      </div>
     </div>
   </div>
 

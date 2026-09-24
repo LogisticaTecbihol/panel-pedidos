@@ -24,11 +24,11 @@ var legAdjuntosCache = [];
 var clientesConRemisionCache = null;
 var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 
-// "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad}, ...] — la
-// cantidad es la de ESA remisión puntual (una fila de Pedidos puede tener
-// varias entregas parciales bajo remisiones distintas). Solo cubre entregas
-// de Pedidos (mismo alcance que remisionClienteMap); traslados/OC, muestras
-// y reenvases no se resuelven aquí. Usado por calcularGastoPorProducto().
+// "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad, empresa}, ...]
+// — la cantidad es la de ESA remisión puntual (una fila de Pedidos puede
+// tener varias entregas parciales bajo remisiones distintas). Solo cubre
+// entregas de Pedidos (mismo alcance que remisionClienteMap); traslados/OC,
+// muestras y reenvases no se resuelven aquí. Usado por calcularProrrateoGastos().
 var remisionProductoMap = {};
 
 // Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
@@ -44,7 +44,7 @@ function _parseRemisionesField(remStr) {
 
 async function loadClientesConRemision() {
   try {
-    var res = await apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion' });
+    var res = await apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' });
     var set = {};
     var remMap = {};
     var prodMap = {};
@@ -68,14 +68,14 @@ async function loadClientesConRemision() {
           var cant = Number(parts[1]) || 0;
           if (!rem || cant <= 0) return;
           var key = rem.toUpperCase();
-          (prodMap[key] = prodMap[key] || []).push({ producto: p.Producto, presentacion: p.Presentacion, cantidad: cant });
+          (prodMap[key] = prodMap[key] || []).push({ producto: p.Producto, presentacion: p.Presentacion, cantidad: cant, empresa: p.Nombre_Empresa });
         });
       });
     }
     clientesConRemisionCache = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
     remisionClienteMap = remMap;
     remisionProductoMap = prodMap;
-    renderGastoPorProducto(); // legs pudo cargar antes o después de este fetch
+    renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
   } catch (e) {
     clientesConRemisionCache = clientesConRemisionCache || [];
   }
@@ -210,15 +210,18 @@ function empresasOf(legId) { return legEmpresas.filter(function(e) { return e.Le
 function totalGastosOf(legId) { return itemsOf(legId).reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0); }
 function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0); }
 
-// ── Proporción de gastos por producto (estimada) ──
+// ── Proporción de gastos por producto y por empresa (estimada) ──
 // Prorratea el gasto de cada viaje entre los productos de sus remisiones
-// relacionadas, según los litros movidos de cada uno. Es una aproximación:
-// Remisiones_Relacionadas es texto libre y remisionProductoMap solo resuelve
-// entregas de Pedidos (ver loadClientesConRemision). Lo que no se puede
-// vincular a un producto, o cuyo producto no es convertible a litros, cae en
-// el bucket "Sin identificar".
-function calcularGastoPorProducto() {
+// relacionadas, según los litros movidos de cada uno, y agrega ese mismo
+// prorrateo por SKU y por empresa (la Nombre_Empresa del pedido dueño de
+// cada línea). Es una aproximación: Remisiones_Relacionadas es texto libre y
+// remisionProductoMap solo resuelve entregas de Pedidos (ver
+// loadClientesConRemision). Lo que no se puede vincular a un producto, o
+// cuyo producto no es convertible a litros, cae en el bucket "Sin identificar"
+// — el mismo bucket y monto para ambos desgloses.
+function calcularProrrateoGastos() {
   var porSku = {};
+  var porEmpresa = {};
   var sinIdentificar = 0;
   var totalGeneral = 0;
 
@@ -252,37 +255,57 @@ function calcularGastoPorProducto() {
 
     lineas.forEach(function(l) {
       if (l._litros <= 0) return;
-      var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
       var monto = (l._litros / totalLitros) * totalViaje;
+      var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
       porSku[sku] = (porSku[sku] || 0) + monto;
+      var emp = getSigla(l.empresa);
+      porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
     });
   });
 
-  return { porSku: porSku, sinIdentificar: sinIdentificar, totalGeneral: totalGeneral };
+  return { porSku: porSku, porEmpresa: porEmpresa, sinIdentificar: sinIdentificar, totalGeneral: totalGeneral };
 }
 
-// Lista de barras horizontales con label largo arriba (mismo patrón visual
-// que dHbarList({stack:true}) de js/dashboard.js, reimplementado localmente
-// porque esta página no carga dashboard.js).
-function lgHbarList(rows) {
+// Lista de barras horizontales reutilizable — mismo patrón visual que
+// dHbarList() de js/dashboard.js, reimplementado localmente porque esta
+// página no carga dashboard.js. opts.stack = true → label arriba (para
+// labels largos, ej. productos); por defecto label en línea (labels cortos,
+// ej. siglas de empresa).
+function lgHbarList(rows, opts) {
+  opts = opts || {};
   if (!rows.length) return '<div class="empty">Sin datos.</div>';
   var mx = Math.max.apply(null, rows.map(function(r) { return r.value; })) || 1;
   return rows.map(function(r) {
     var pct = Math.max(3, r.value / mx * 100);
-    return '<div class="hbar-srow">' +
-      '<div class="hbar-shead"><span class="hbar-slabel" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</span>' +
-      '<span class="hbar-sval">' + escHtml(fmtMoney(r.value)) + ' <span style="color:#a0aec0;font-weight:400">(' + r.pct.toFixed(1) + '%)</span></span></div>' +
-      '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + (r.color || '#1a5276') + '"></div></div>' +
+    var valTxt = escHtml(fmtMoney(r.value)) + ' <span style="color:#a0aec0;font-weight:400">(' + r.pct.toFixed(1) + '%)</span>';
+    var fill = '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + (r.color || '#1a5276') + '"></div></div>';
+    if (opts.stack) {
+      return '<div class="hbar-srow">' +
+        '<div class="hbar-shead"><span class="hbar-slabel" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</span>' +
+        '<span class="hbar-sval">' + valTxt + '</span></div>' + fill +
+      '</div>';
+    }
+    return '<div class="hbar-row">' +
+      '<div class="hbar-label" title="' + escHtml(r.label) + '">' + escHtml(r.label) + '</div>' + fill +
+      '<div class="hbar-value">' + valTxt + '</div>' +
     '</div>';
   }).join('');
 }
 
 var GPP_TOP_N = 10;
 
-function renderGastoPorProducto() {
+// Colores sólidos por sigla — mismos valores que .emp-* en dashboard.html.
+var GPP_COLOR_EMPRESA = { PARCELAR: '#2980b9', GREEN: '#27ae60', RESO: '#e67e22', IASO: '#8e44ad', IAS: '#c0392b', GRANEL: '#d35400' };
+
+function renderProrrateoGastos() {
+  var calc = calcularProrrateoGastos();
+  renderGastoPorProducto(calc);
+  renderGastoPorEmpresa(calc);
+}
+
+function renderGastoPorProducto(calc) {
   var box = document.getElementById('gpp-body');
   if (!box) return;
-  var calc = calcularGastoPorProducto();
   var total = calc.totalGeneral;
   if (total <= 0) {
     box.innerHTML = '<div class="empty">Sin gastos para calcular.</div>';
@@ -302,7 +325,27 @@ function renderGastoPorProducto() {
 
   top.forEach(function(r) { r.pct = r.value / total * 100; });
 
-  box.innerHTML = lgHbarList(top);
+  box.innerHTML = lgHbarList(top, { stack: true });
+}
+
+function renderGastoPorEmpresa(calc) {
+  var box = document.getElementById('gpe-body');
+  if (!box) return;
+  var total = calc.totalGeneral;
+  if (total <= 0) {
+    box.innerHTML = '<div class="empty">Sin gastos para calcular.</div>';
+    return;
+  }
+
+  var rows = Object.keys(calc.porEmpresa).map(function(emp) {
+    return { label: emp, value: calc.porEmpresa[emp], color: GPP_COLOR_EMPRESA[emp] };
+  }).sort(function(a, b) { return b.value - a.value; });
+
+  if (calc.sinIdentificar > 0) rows.push({ label: 'Sin identificar', value: calc.sinIdentificar, color: '#a0aec0' });
+
+  rows.forEach(function(r) { r.pct = r.value / total * 100; });
+
+  box.innerHTML = lgHbarList(rows, { stack: false });
 }
 
 function estadoBadgeHtml(leg) {
@@ -366,7 +409,7 @@ function renderTable() {
   }).join('') || '<tr><td colspan="9"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
 
   updateStats();
-  renderGastoPorProducto();
+  renderProrrateoGastos();
 }
 
 function updateStats() {
