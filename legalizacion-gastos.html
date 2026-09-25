@@ -193,6 +193,20 @@
           </select>
           <input class="ef" id="lg-responsable-otro" type="text" placeholder="Nombre del responsable" style="margin-top:4px;display:none">
         </div>
+        <div>
+          <label class="ef-label">Placa</label>
+          <select class="ef" id="lg-placa-select" onchange="onPlacaSelectChange()">
+            <option value="">— Seleccionar —</option>
+            <option value="JRM295 - Camión Blanco">JRM295 - Camión Blanco</option>
+            <option value="LJT165 - Camión Azúl">LJT165 - Camión Azúl</option>
+            <option value="BTI756 - Luv Blanca">BTI756 - Luv Blanca</option>
+            <option value="DBN900 - Mazda">DBN900 - Mazda</option>
+            <option value="SWS985 - Carri Blanca">SWS985 - Carri Blanca</option>
+            <option value="UVS68H - Moto">UVS68H - Moto</option>
+            <option value="Otro">Otro (especificar)</option>
+          </select>
+          <input class="ef" id="lg-placa-otro" type="text" placeholder="Placa del vehículo" style="margin-top:4px;display:none">
+        </div>
         <div><label class="ef-label">Recorrido / Ruta</label><input class="ef" id="lg-ruta" type="text" placeholder="Ej. Boyacá"></div>
         <div><label class="ef-label">No. Personas en ruta</label><input class="ef" id="lg-personas" type="number" min="0"></div>
         <div><label class="ef-label">Fecha de salida</label><input class="ef" id="lg-fecha-salida" type="date"></div>
@@ -272,10 +286,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260924b"></script>
+<script src="js/shared.js?v=20260925a"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260925f"></script>
-<script src="js/legalizacion-gastos.js?v=20260925g"></script>
+<script src="js/legalizacion-gastos.js?v=20260925h"></script>
 </body>
 </html>

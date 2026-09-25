@@ -2363,6 +2363,7 @@ async function _apiPostCore(body) {
       var payloadLG = {
         Fecha: hdrLG.Fecha || today(),
         Responsable: hdrLG.Responsable || '',
+        Placa: hdrLG.Placa || '',
         Recorrido_Ruta: hdrLG.Recorrido_Ruta || '',
         No_Personas: hdrLG.No_Personas || null,
         Fecha_Salida: hdrLG.Fecha_Salida || null,
@@ -2399,6 +2400,7 @@ async function _apiPostCore(body) {
       var updLG = {
         Fecha: hdrLGe.Fecha || today(),
         Responsable: hdrLGe.Responsable || '',
+        Placa: hdrLGe.Placa || '',
         Recorrido_Ruta: hdrLGe.Recorrido_Ruta || '',
         No_Personas: hdrLGe.No_Personas || null,
         Fecha_Salida: hdrLGe.Fecha_Salida || null,

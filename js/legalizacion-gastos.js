@@ -157,6 +157,45 @@ function readResponsable() {
   return sel;
 }
 
+// Vehículos conocidos (placa - descripción); "Otro" pide especificar.
+var PLACAS_FIJAS = ['JRM295 - Camión Blanco', 'LJT165 - Camión Azúl', 'BTI756 - Luv Blanca', 'DBN900 - Mazda', 'SWS985 - Carri Blanca', 'UVS68H - Moto'];
+
+function setPlacaField(value) {
+  var sel = document.getElementById('lg-placa-select');
+  var otro = document.getElementById('lg-placa-otro');
+  if (!value) {
+    sel.value = '';
+    otro.style.display = 'none';
+    otro.value = '';
+  } else if (PLACAS_FIJAS.indexOf(value) >= 0) {
+    sel.value = value;
+    otro.style.display = 'none';
+    otro.value = '';
+  } else {
+    sel.value = 'Otro';
+    otro.style.display = '';
+    otro.value = value;
+  }
+}
+
+function onPlacaSelectChange() {
+  var sel = document.getElementById('lg-placa-select');
+  var otro = document.getElementById('lg-placa-otro');
+  if (sel.value === 'Otro') {
+    otro.style.display = '';
+    otro.focus();
+  } else {
+    otro.style.display = 'none';
+    otro.value = '';
+  }
+}
+
+function readPlaca() {
+  var sel = document.getElementById('lg-placa-select').value;
+  if (sel === 'Otro') return document.getElementById('lg-placa-otro').value.trim();
+  return sel;
+}
+
 // El NIT se guarda como un solo texto "base-DV" (igual que el resto del
 // panel); en el formulario se captura en dos casillas separadas.
 function splitNitDv(value) {
@@ -796,6 +835,7 @@ function openForm(id) {
     document.getElementById('form-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
     document.getElementById('lg-fecha').value = (leg.Fecha || '').slice(0, 10);
     setResponsableField(leg.Responsable || '');
+    setPlacaField(leg.Placa || '');
     document.getElementById('lg-ruta').value = leg.Recorrido_Ruta || '';
     document.getElementById('lg-personas').value = leg.No_Personas || '';
     document.getElementById('lg-fecha-salida').value = (leg.Fecha_Salida || '').slice(0, 10);
@@ -813,6 +853,7 @@ function openForm(id) {
     document.getElementById('form-titulo').textContent = 'Nueva legalización de gastos';
     document.getElementById('lg-fecha').value = today();
     setResponsableField('');
+    setPlacaField('');
     document.getElementById('lg-ruta').value = '';
     document.getElementById('lg-personas').value = '';
     document.getElementById('lg-fecha-salida').value = '';
@@ -844,6 +885,7 @@ function readHeaderForm() {
   return {
     Fecha: document.getElementById('lg-fecha').value || today(),
     Responsable: readResponsable(),
+    Placa: readPlaca(),
     Recorrido_Ruta: document.getElementById('lg-ruta').value.trim(),
     No_Personas: Number(document.getElementById('lg-personas').value) || null,
     Fecha_Salida: document.getElementById('lg-fecha-salida').value || null,
@@ -976,6 +1018,7 @@ function renderVerBody(leg) {
   document.getElementById('ver-body').innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
       '<div><strong>Ruta:</strong> ' + escHtml(leg.Recorrido_Ruta || '—') + '</div>' +
+      '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
       '<div><strong>Personas en ruta:</strong> ' + escHtml(leg.No_Personas || '—') + '</div>' +
       '<div><strong>Clientes:</strong> ' + escHtml(leg.Clientes || '—') + '</div>' +
       '<div><strong>Fecha salida:</strong> ' + escHtml(fmtDate(leg.Fecha_Salida)) + '</div>' +
@@ -1161,6 +1204,7 @@ function exportarPDF() {
     }),
     left_fields: [
       ['Responsable', leg.Responsable || ''],
+      ['Placa', leg.Placa || '—'],
       ['Recorrido / Ruta', leg.Recorrido_Ruta || ''],
       ['No. Personas en ruta', String(leg.No_Personas || '')],
       ['Cliente(s)', leg.Clientes || ''],
