@@ -212,7 +212,7 @@ function joinNitDv(nit, dv) {
 }
 
 // Conceptos fijos del formulario de gasto; "Otros" pide especificar el detalle.
-var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Mantenimiento'];
+var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Mantenimiento', 'Envío', 'Alojamiento'];
 
 function parseConceptoLine(concepto) {
   return CONCEPTO_FIJOS.indexOf(concepto) >= 0 ? { sel: concepto, detail: '' } : { sel: 'Otros', detail: concepto || '' };
