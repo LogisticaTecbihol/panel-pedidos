@@ -1122,11 +1122,15 @@ function exportarPDF() {
   var emps = empresasOf(leg.id);
   var totalGastos = totalGastosOf(leg.id);
 
-  var empresaPrincipal = (emps[0] && emps[0].Empresa) || '';
   var reparto = emps.map(function(e) { return getSigla(e.Empresa) + ': ' + fmtMoney(e.Monto); }).join('  ·  ');
 
+  // El gasto se reparte entre varias empresas del holding (ver "reparto" /
+  // right_fields), así que el documento no pertenece a ninguna en particular
+  // — mostrar aquí una de esas empresas (y su NIT/dirección real) sería
+  // incorrecto. "Polinizando Futuro" es una etiqueta neutra, no una empresa
+  // real del holding, así que no dispara ningún banner de NIT/dirección.
   var data = {
-    empresa: empresaPrincipal,
+    empresa: 'Polinizando Futuro',
     consecutivo: leg.Consecutivo,
     doc_title: 'LEGALIZACION DE GASTOS',
     doc_number: leg.Consecutivo,
