@@ -226,7 +226,12 @@ function _drawRemisionCopy(doc, data, palette) {
     var titleX = 14;
     if (logo) {
       try {
-        var lb = _pdfLogoBox(logo, 22, 12);
+        // El logo arranca en y=2; se limita a la altura que quede antes de
+        // la línea divisoria (y=headerH), con ~1.5mm de aire, para que un
+        // logo alto (ej. el círculo de Polinizando Futuro, sin headerInfo
+        // y por tanto con headerH más bajo) no quede cortado por la línea.
+        var logoMaxH = Math.min(12, headerH - 2 - 1.5);
+        var lb = _pdfLogoBox(logo, 22, logoMaxH);
         doc.addImage(logo.data, 'PNG', 6, 2, lb.w, lb.h);
         titleX = 6 + lb.w + 3;
       } catch (e) {}
