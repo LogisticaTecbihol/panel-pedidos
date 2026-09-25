@@ -82,6 +82,7 @@
   <div class="filters" style="gap:6px;padding-bottom:0;border:none">
     <button class="car-tab" id="tab-aprobar" onclick="carSwitchTab('aprobar')">⏳ Por aprobar <span class="car-tab-ct" id="ct-aprobar">0</span></button>
     <button class="car-tab" id="tab-bloqueados" onclick="carSwitchTab('bloqueados')">🔒 Bloqueados <span class="car-tab-ct" id="ct-bloqueados">0</span></button>
+    <button class="car-tab" id="tab-clibloq" onclick="carSwitchTab('clibloq')">🚫 Clientes bloqueados <span class="car-tab-ct" id="ct-clibloq">0</span></button>
     <button class="car-tab" id="tab-resumen" onclick="carSwitchTab('resumen')">📈 Resumen</button>
   </div>
 
@@ -118,6 +119,31 @@
       </div>
     </div>
     <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px" id="cola-nota"></p>
+  </div>
+
+  <!-- PANEL: Clientes bloqueados (incluye clientes sin pedidos vigentes) -->
+  <div id="panel-clibloq" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>🚫 Clientes bloqueados por cartera <span id="clibloq-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="carExportClibloq()">⬇️ Excel</button>
+          <button class="btn-dl" onclick="loadCartera()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>NIT</th><th>Empresa(s)</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Última modificación</th><th></th>
+          </tr></thead>
+          <tbody id="clibloq-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px">
+      Incluye todos los clientes con Estado = "Bloqueado por cartera" en el módulo de Clientes, tengan o no pedidos vigentes.
+      La pestaña "🔒 Bloqueados" solo muestra pedidos bloqueados individualmente; esta pestaña muestra el bloqueo del cliente.
+    </p>
   </div>
 
   <!-- PANEL: Resumen -->
@@ -231,6 +257,6 @@
 <script src="js/shared.js?v=20260925a"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
-<script src="js/cartera.js?v=20260921a"></script>
+<script src="js/cartera.js?v=20260925a"></script>
 </body>
 </html>

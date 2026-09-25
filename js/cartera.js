@@ -18,7 +18,7 @@ var CAR_PED_COLS = 'id,Nombre_Empresa,Consecutivo,Cliente,NIT,Comercial,Fecha_Pe
   'creado_por,creado_por_nombre,creado_en,' +
   'Bloqueo_Observacion,Bloqueo_Por_Nombre,Bloqueo_En,Desbloqueo_Por_Nombre,Desbloqueo_En,' +
   'Aprobacion_Por_Nombre,Aprobacion_En,Aprobacion_Nota';
-var CAR_CLI_COLS = 'id,Cliente,Identificacion,Tipo_Identificacion,Nombre_Empresa,Estado,Cupo_Credito,Plazo_Pago,Cliente_Nuevo';
+var CAR_CLI_COLS = 'id,Cliente,Identificacion,Tipo_Identificacion,Nombre_Empresa,Estado,Cupo_Credito,Plazo_Pago,Cliente_Nuevo,modificado_por_nombre,modificado_en';
 
 var carOrders = [];        // pedidos agrupados (uno por empresa+consecutivo+cliente)
 var carByKey = {};
@@ -251,6 +251,11 @@ function carFillEmpresas() {
   carOrders.forEach(function(o) {
     if (o.estado2 === CAR_PEND || o.estado2 === CAR_BLOQ) nombres[o.empresa] = true;
   });
+  // También las empresas de clientes bloqueados sin pedidos vigentes (si no,
+  // no aparecerían nunca en el filtro de empresa de la pestaña "Clientes bloqueados").
+  carClientes.forEach(function(c) {
+    if (c.Estado === CAR_BLOQ && c.Nombre_Empresa) nombres[c.Nombre_Empresa] = true;
+  });
   var arr = Object.keys(nombres).sort();
   sel.innerHTML = '<option value="">Todas</option>' + arr.map(function(n) {
     return '<option value="' + escHtml(n) + '">' + escHtml(n) + '</option>';
@@ -286,19 +291,25 @@ function carFiltrar(list) {
 function carRender() {
   var pend = carOrders.filter(function(o) { return o.estado2 === CAR_PEND; });
   var bloq = carOrders.filter(function(o) { return o.estado2 === CAR_BLOQ; });
+  var cliBloq = carClientesBloqueados();
 
   document.getElementById('ct-aprobar').textContent = pend.length;
   document.getElementById('ct-bloqueados').textContent = bloq.length;
-  ['aprobar', 'bloqueados', 'resumen'].forEach(function(t) {
+  document.getElementById('ct-clibloq').textContent = cliBloq.length;
+  ['aprobar', 'bloqueados', 'clibloq', 'resumen'].forEach(function(t) {
     document.getElementById('tab-' + t).classList.toggle('active', carTab === t);
   });
   carRenderStats(pend, bloq);
 
   var esResumen = carTab === 'resumen';
-  document.getElementById('panel-cola').style.display = esResumen ? 'none' : 'block';
+  var esClibloq = carTab === 'clibloq';
+  document.getElementById('panel-cola').style.display = (esResumen || esClibloq) ? 'none' : 'block';
   document.getElementById('panel-resumen').style.display = esResumen ? 'block' : 'none';
+  document.getElementById('panel-clibloq').style.display = esClibloq ? 'block' : 'none';
   document.getElementById('car-filters').style.display = esResumen ? 'none' : 'flex';
-  if (esResumen) carRenderResumen(bloq); else carRenderCola(carTab === 'aprobar' ? pend : bloq);
+  if (esResumen) carRenderResumen(bloq);
+  else if (esClibloq) carRenderClibloq(cliBloq);
+  else carRenderCola(carTab === 'aprobar' ? pend : bloq);
 }
 
 function carRenderStats(pend, bloq) {
@@ -385,6 +396,116 @@ function carRenderCola(base) {
   var all = document.getElementById('car-chk-all');
   if (all) all.checked = lista.length > 0 && lista.every(function(o) { return carSel[o.key]; });
   carUpdateBulk();
+}
+
+// ── Clientes bloqueados (incluye clientes sin pedidos vigentes) ──────
+// A diferencia de la pestaña "Bloqueados" (pedidos con Estado_2 = Bloqueado
+// por cartera), esta lista sale de ClientesUnicos.Estado y por eso incluye
+// también a los clientes bloqueados desde el módulo de Clientes que no
+// tienen ningún pedido vigente.
+var carCliBloqByKey = {};   // idCli → grupo (para el botón Liberar)
+
+function carClientesBloqueados() {
+  var g = {};
+  carClientes.forEach(function(c) {
+    if (c.Estado !== CAR_BLOQ) return;
+    var nb = _nitBase(c.Identificacion);
+    var idCli = nb || ('n:' + norm(c.Cliente));
+    var x = g[idCli] || (g[idCli] = { idCli: idCli, cliente: (c.Cliente || '—').trim(), nit: '', empresas: [], regs: [] });
+    if (!x.nit && c.Identificacion) x.nit = c.Identificacion;
+    x.regs.push(c);
+    if (c.Nombre_Empresa && x.empresas.indexOf(c.Nombre_Empresa) < 0) x.empresas.push(c.Nombre_Empresa);
+  });
+  var out = Object.keys(g).map(function(k) { return g[k]; });
+  out.forEach(function(x) {
+    var maxCupo = 0, hayCupo = false;
+    x.regs.forEach(function(r) { var ci = _cupoInfo(r.Cupo_Credito); if (ci.tipo === 'numero') { hayCupo = true; if (ci.valor > maxCupo) maxCupo = ci.valor; } });
+    x.cupo = hayCupo ? { tipo: 'numero', valor: maxCupo } : (x.regs.length ? _cupoInfo(x.regs[0].Cupo_Credito) : { tipo: 'vacio' });
+    var plazos = [];
+    x.regs.forEach(function(r) { var p = _normalizePlazo(r.Plazo_Pago); if (p && plazos.indexOf(p) < 0) plazos.push(p); });
+    x.plazo = plazos.join(' / ');
+    var modEn = '', modPor = '';
+    x.regs.forEach(function(r) { if (r.modificado_en && r.modificado_en > modEn) { modEn = r.modificado_en; modPor = r.modificado_por_nombre || ''; } });
+    x.modEn = modEn; x.modPor = modPor;
+    // Pedidos vigentes = con valor abierto (mismo criterio que carAbiertosDelCliente).
+    var abiertos = carOrders.filter(function(o) { return o.idCli === x.idCli && o.valorAbierto > 0; });
+    x.pedidosVigentes = abiertos.length;
+    x.valorVigente = abiertos.reduce(function(s, o) { return s + o.valorAbierto; }, 0);
+  });
+  out.sort(function(a, b) { return (b.pedidosVigentes - a.pedidosVigentes) || a.cliente.localeCompare(b.cliente); });
+  return out;
+}
+
+function carFiltrarClibloq(list) {
+  var emp = document.getElementById('f-emp').value;
+  var q = norm(document.getElementById('f-txt').value);
+  return list.filter(function(x) {
+    if (emp && x.empresas.indexOf(emp) < 0) return false;
+    if (q) {
+      var hay = norm([x.cliente, x.nit].concat(x.empresas).join(' '));
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function carRenderClibloq(all) {
+  var lista = carFiltrarClibloq(all);
+  carCliBloqByKey = {};
+  lista.forEach(function(x) { carCliBloqByKey[x.idCli] = x; });
+
+  document.getElementById('clibloq-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
+
+  var puedeLib = carPuedeBloquear();
+  if (!lista.length) {
+    document.getElementById('clibloq-body').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#a0aec0;padding:26px">' +
+      (all.length ? 'Ningún cliente bloqueado coincide con los filtros.' : 'No hay clientes bloqueados por cartera. 🎉') + '</td></tr>';
+    return;
+  }
+
+  document.getElementById('clibloq-body').innerHTML = lista.map(function(x) {
+    var k = escHtml(x.idCli);
+    var cupoTxt = x.cupo.tipo === 'numero' ? fmtMoney(x.cupo.valor) : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? escHtml(x.cupo.texto) : '—';
+    var vigTxt = x.pedidosVigentes
+      ? x.pedidosVigentes + (x.pedidosVigentes === 1 ? ' pedido · ' : ' pedidos · ') + fmtMoney(x.valorVigente)
+      : '<span class="tag-sin">sin pedidos vigentes</span>';
+    var modTxt = x.modEn ? escHtml(carFmtTs(x.modEn)) + (x.modPor ? ' · ' + escHtml(x.modPor) : '') : '—';
+    return '<tr class="row-bloqueada-cartera"><td>' + escHtml(x.cliente) + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
+      '<td>' + (x.empresas.map(function(e) { return carSiglaHtml(e); }).join(' ') || '—') + '</td>' +
+      '<td>' + cupoTxt + '</td><td>' + escHtml(x.plazo || '—') + '</td>' +
+      '<td>' + vigTxt + '</td>' +
+      '<td style="font-size:0.78rem;color:#718096">' + modTxt + '</td>' +
+      '<td>' + (puedeLib ? '<button class="btn-aprobar-pedido" data-idcli="' + k + '" onclick="carLiberarCliente(this.getAttribute(\'data-idcli\'))">🔓 Liberar</button>' : '') + '</td></tr>';
+  }).join('');
+}
+
+async function carLiberarCliente(idCli) {
+  var x = carCliBloqByKey[idCli];
+  if (!x) return;
+  if (!carPuedeBloquear()) { showToast('Solo Cartera, editor o administración pueden liberar clientes', '#e74c3c'); return; }
+  var emp = x.empresas.length ? ' (' + x.empresas.join(', ') + ')' : '';
+  if (!confirm('¿LIBERAR a ' + x.cliente + (x.nit ? ' — NIT ' + x.nit : '') + emp + ' del bloqueo por cartera?\n\nQuedará como cliente Activo y podrá volver a generar pedidos.')) return;
+  var ids = x.regs.map(function(r) { return r.id; }).filter(function(v) { return v != null; });
+  if (!ids.length) return;
+  try {
+    var r = await apiPost({ action: 'setEstadoClientes', ids: ids, estado: 'Activo' });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al liberar');
+    showToast('🔓 Cliente liberado del bloqueo por cartera');
+    await loadCartera();
+  } catch (e) {
+    showToast('❌ ' + (e.message || e), '#e74c3c');
+  }
+}
+
+function carExportClibloq() {
+  var lista = carFiltrarClibloq(carClientesBloqueados());
+  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
+  lista.forEach(function(x) {
+    filas.push([x.cliente, x.nit, x.empresas.join(', '),
+      x.cupo.tipo === 'numero' ? x.cupo.valor : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? x.cupo.texto : '',
+      x.plazo, x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
+  });
+  carXlsx('cartera_clientes_bloqueados', 'Clientes bloqueados', filas);
 }
 
 // ── Selección y acciones masivas ─────────────────────────────
