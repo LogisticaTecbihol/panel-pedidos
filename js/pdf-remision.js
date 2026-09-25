@@ -271,9 +271,18 @@ function _drawRemisionCopy(doc, data, palette) {
 
     var totalW = pw - 28;
     var leftBlockW = totalW * 0.58;
-    var leftValX = 14 + 26;
     var rightLabelX = 14 + leftBlockW + 4;
-    var rightValX = rightLabelX + 26;
+
+    // Ancho de la columna de etiqueta calculado según el texto real (en
+    // negrita, mismo tamaño con el que se dibuja abajo) para que labels
+    // largos (ej. "Reparto entre empresas:") no se solapen con su valor —
+    // un ancho fijo solo funcionaba con las etiquetas cortas originales.
+    doc.setFont(undefined, 'bold');
+    var leftLabelW = left.reduce(function(w, f) { return Math.max(w, doc.getTextWidth(f[0] + ':')); }, 0);
+    var rightLabelW = right.reduce(function(w, f) { return Math.max(w, doc.getTextWidth(f[0] + ':')); }, 0);
+    doc.setFont(undefined, 'normal');
+    var leftValX = Math.max(16 + leftLabelW + 3, 14 + 26);
+    var rightValX = Math.max(rightLabelX + 2 + rightLabelW + 3, rightLabelX + 26);
     var leftValMaxW = (14 + leftBlockW) - leftValX - 4;
     var rightValMaxW = pw - 14 - rightValX;
     var maxF = Math.max(left.length, right.length);
@@ -360,7 +369,7 @@ function _drawRemisionCopy(doc, data, palette) {
     return row;
   });
 
-  var tableHead = ['#', 'Producto', 'Presentacion', data.qty_header || 'Cant. Entregada'];
+  var tableHead = ['#', data.col1_header || 'Producto', data.col2_header || 'Presentacion', data.qty_header || 'Cant. Entregada'];
   if (showValores) tableHead.push('Valor Unit.', 'Valor Total');
   tableHead.push(lastColHeader);
 

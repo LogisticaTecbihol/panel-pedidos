@@ -1136,6 +1136,8 @@ function exportarPDF() {
     file_prefix: 'Legalizacion_Gastos',
     copies: ['ORIGINAL - CONTABILIDAD'],
     hide_signatures: false,
+    col1_header: 'Concepto',
+    col2_header: 'Proveedor',
     qty_header: 'Valor',
     show_valores: false,
     last_col_header: 'Observaciones',
@@ -1144,16 +1146,18 @@ function exportarPDF() {
     }),
     left_fields: [
       ['Responsable', leg.Responsable || ''],
-      ['Ruta', leg.Recorrido_Ruta || ''],
-      ['Personas en ruta', String(leg.No_Personas || '')],
-      ['Clientes', leg.Clientes || ''],
+      ['Recorrido / Ruta', leg.Recorrido_Ruta || ''],
+      ['No. Personas en ruta', String(leg.No_Personas || '')],
+      ['Cliente(s)', leg.Clientes || ''],
+      ['Observaciones', leg.Observaciones || '—'],
     ],
     right_fields: [
-      ['Fecha salida', fmtDate(leg.Fecha_Salida)],
-      ['Fecha llegada', fmtDate(leg.Fecha_Llegada)],
+      ['Fecha de salida', fmtDate(leg.Fecha_Salida)],
+      ['Fecha de llegada', fmtDate(leg.Fecha_Llegada)],
       ['Anticipo entregado', fmtMoney(leg.Anticipo_Entregado)],
       ['Total gastos', fmtMoney(totalGastos)],
-      ['Reparto', reparto || '—'],
+      ['Reparto entre empresas', reparto || '—'],
+      ['Remisiones relacionadas', leg.Remisiones_Relacionadas || '—'],
     ]
   };
   generarRemisionPDF(data);
