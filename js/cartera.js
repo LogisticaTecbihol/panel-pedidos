@@ -403,7 +403,10 @@ function carRenderCola(base) {
 // por cartera), esta lista sale de ClientesUnicos.Estado y por eso incluye
 // también a los clientes bloqueados desde el módulo de Clientes que no
 // tienen ningún pedido vigente.
-var carCliBloqByKey = {};   // idCli → grupo (para el botón Liberar)
+// El bloqueo es específico POR EMPRESA (un cliente puede estar bloqueado en
+// una empresa y activo en otra): cada fila es un par (cliente, empresa), no
+// el cliente agregando todas sus empresas.
+var carCliBloqByKey = {};   // "idCli||empresa" → grupo (para el botón Liberar)
 
 function carClientesBloqueados() {
   var g = {};
@@ -411,10 +414,11 @@ function carClientesBloqueados() {
     if (c.Estado !== CAR_BLOQ) return;
     var nb = _nitBase(c.Identificacion);
     var idCli = nb || ('n:' + norm(c.Cliente));
-    var x = g[idCli] || (g[idCli] = { idCli: idCli, cliente: (c.Cliente || '—').trim(), nit: '', empresas: [], regs: [] });
+    var empresa = c.Nombre_Empresa || '';
+    var key = idCli + '||' + empresa;
+    var x = g[key] || (g[key] = { key: key, idCli: idCli, empresa: empresa, cliente: (c.Cliente || '—').trim(), nit: '', regs: [] });
     if (!x.nit && c.Identificacion) x.nit = c.Identificacion;
     x.regs.push(c);
-    if (c.Nombre_Empresa && x.empresas.indexOf(c.Nombre_Empresa) < 0) x.empresas.push(c.Nombre_Empresa);
   });
   var out = Object.keys(g).map(function(k) { return g[k]; });
   out.forEach(function(x) {
@@ -427,12 +431,13 @@ function carClientesBloqueados() {
     var modEn = '', modPor = '';
     x.regs.forEach(function(r) { if (r.modificado_en && r.modificado_en > modEn) { modEn = r.modificado_en; modPor = r.modificado_por_nombre || ''; } });
     x.modEn = modEn; x.modPor = modPor;
-    // Pedidos vigentes = con valor abierto (mismo criterio que carAbiertosDelCliente).
-    var abiertos = carOrders.filter(function(o) { return o.idCli === x.idCli && o.valorAbierto > 0; });
+    // Pedidos vigentes de ESTA MISMA empresa (el bloqueo no afecta ni dice
+    // nada de la exposición del cliente en las demás empresas del holding).
+    var abiertos = carOrders.filter(function(o) { return o.idCli === x.idCli && o.empresa === x.empresa && o.valorAbierto > 0; });
     x.pedidosVigentes = abiertos.length;
     x.valorVigente = abiertos.reduce(function(s, o) { return s + o.valorAbierto; }, 0);
   });
-  out.sort(function(a, b) { return (b.pedidosVigentes - a.pedidosVigentes) || a.cliente.localeCompare(b.cliente); });
+  out.sort(function(a, b) { return (b.pedidosVigentes - a.pedidosVigentes) || a.cliente.localeCompare(b.cliente) || a.empresa.localeCompare(b.empresa); });
   return out;
 }
 
@@ -440,9 +445,9 @@ function carFiltrarClibloq(list) {
   var emp = document.getElementById('f-emp').value;
   var q = norm(document.getElementById('f-txt').value);
   return list.filter(function(x) {
-    if (emp && x.empresas.indexOf(emp) < 0) return false;
+    if (emp && x.empresa !== emp) return false;
     if (q) {
-      var hay = norm([x.cliente, x.nit].concat(x.empresas).join(' '));
+      var hay = norm([x.cliente, x.nit, x.empresa].join(' '));
       if (hay.indexOf(q) < 0) return false;
     }
     return true;
@@ -452,7 +457,7 @@ function carFiltrarClibloq(list) {
 function carRenderClibloq(all) {
   var lista = carFiltrarClibloq(all);
   carCliBloqByKey = {};
-  lista.forEach(function(x) { carCliBloqByKey[x.idCli] = x; });
+  lista.forEach(function(x) { carCliBloqByKey[x.key] = x; });
 
   document.getElementById('clibloq-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
 
@@ -464,33 +469,32 @@ function carRenderClibloq(all) {
   }
 
   document.getElementById('clibloq-body').innerHTML = lista.map(function(x) {
-    var k = escHtml(x.idCli);
+    var k = escHtml(x.key);
     var cupoTxt = x.cupo.tipo === 'numero' ? fmtMoney(x.cupo.valor) : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? escHtml(x.cupo.texto) : '—';
     var vigTxt = x.pedidosVigentes
       ? x.pedidosVigentes + (x.pedidosVigentes === 1 ? ' pedido · ' : ' pedidos · ') + fmtMoney(x.valorVigente)
       : '<span class="tag-sin">sin pedidos vigentes</span>';
     var modTxt = x.modEn ? escHtml(carFmtTs(x.modEn)) + (x.modPor ? ' · ' + escHtml(x.modPor) : '') : '—';
     return '<tr class="row-bloqueada-cartera"><td>' + escHtml(x.cliente) + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
-      '<td>' + (x.empresas.map(function(e) { return carSiglaHtml(e); }).join(' ') || '—') + '</td>' +
+      '<td>' + carSiglaHtml(x.empresa) + '</td>' +
       '<td>' + cupoTxt + '</td><td>' + escHtml(x.plazo || '—') + '</td>' +
       '<td>' + vigTxt + '</td>' +
       '<td style="font-size:0.78rem;color:#718096">' + modTxt + '</td>' +
-      '<td>' + (puedeLib ? '<button class="btn-aprobar-pedido" data-idcli="' + k + '" onclick="carLiberarCliente(this.getAttribute(\'data-idcli\'))">🔓 Liberar</button>' : '') + '</td></tr>';
+      '<td>' + (puedeLib ? '<button class="btn-aprobar-pedido" data-key="' + k + '" onclick="carLiberarCliente(this.getAttribute(\'data-key\'))">🔓 Liberar</button>' : '') + '</td></tr>';
   }).join('');
 }
 
-async function carLiberarCliente(idCli) {
-  var x = carCliBloqByKey[idCli];
+async function carLiberarCliente(key) {
+  var x = carCliBloqByKey[key];
   if (!x) return;
   if (!carPuedeBloquear()) { showToast('Solo Cartera, editor o administración pueden liberar clientes', '#e74c3c'); return; }
-  var emp = x.empresas.length ? ' (' + x.empresas.join(', ') + ')' : '';
-  if (!confirm('¿LIBERAR a ' + x.cliente + (x.nit ? ' — NIT ' + x.nit : '') + emp + ' del bloqueo por cartera?\n\nQuedará como cliente Activo y podrá volver a generar pedidos.')) return;
+  if (!confirm('¿LIBERAR a ' + x.cliente + (x.nit ? ' — NIT ' + x.nit : '') + ' del bloqueo por cartera en ' + x.empresa + '?\n\nQuedará como cliente Activo en ' + x.empresa + ' y podrá volver a generar pedidos ahí. No afecta su relación con las demás empresas del holding.')) return;
   var ids = x.regs.map(function(r) { return r.id; }).filter(function(v) { return v != null; });
   if (!ids.length) return;
   try {
     var r = await apiPost({ action: 'setEstadoClientes', ids: ids, estado: 'Activo' });
     if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al liberar');
-    showToast('🔓 Cliente liberado del bloqueo por cartera');
+    showToast('🔓 Cliente liberado del bloqueo por cartera en ' + x.empresa);
     await loadCartera();
   } catch (e) {
     showToast('❌ ' + (e.message || e), '#e74c3c');
@@ -499,9 +503,9 @@ async function carLiberarCliente(idCli) {
 
 function carExportClibloq() {
   var lista = carFiltrarClibloq(carClientesBloqueados());
-  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
+  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
   lista.forEach(function(x) {
-    filas.push([x.cliente, x.nit, x.empresas.join(', '),
+    filas.push([x.cliente, x.nit, x.empresa,
       x.cupo.tipo === 'numero' ? x.cupo.valor : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? x.cupo.texto : '',
       x.plazo, x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
   });
@@ -576,8 +580,12 @@ function carRenderCtx() {
   var o = carByKey[carCtxKey];
   if (!o) return;
   var regs = carClientesDe(o);
-  var estCli = carEstadoCliente(regs);
-  var esNuevo = regs.some(function(r) { return r.Cliente_Nuevo; });
+  // El Estado (Activo/Inactivo/Bloqueado por cartera) es específico por
+  // empresa: para este pedido solo cuenta el registro de SU empresa, aunque
+  // el cliente tenga otros registros (de otras empresas) con otro estado.
+  var regsEmp = regs.filter(function(r) { return r.Nombre_Empresa === o.empresa; });
+  var estCli = carEstadoCliente(regsEmp);
+  var esNuevo = regsEmp.some(function(r) { return r.Cliente_Nuevo; });
 
   document.getElementById('ctx-titulo').textContent = getSigla(o.empresa) + ' #' + o.consecutivo + ' — ' + o.cliente;
   document.getElementById('ctx-meta').innerHTML =
@@ -620,6 +628,7 @@ function carRenderCtx() {
 
   // ── Cliente ──
   var estCliTxt = !regs.length ? '<span class="car-pill mid">No está en Clientes</span>'
+    : !regsEmp.length ? '<span class="car-pill mid">Sin registro en ' + escHtml(getSigla(o.empresa)) + '</span>'
     : estCli === CAR_BLOQ ? '<span class="car-pill over">Bloqueado por cartera</span>'
     : estCli === 'Inactivo' ? '<span class="car-pill mid">Inactivo</span>' : '<span class="car-pill ok">Activo</span>';
 
@@ -806,9 +815,9 @@ async function carDoOne(kind, o, nota, opts) {
   var extra2 = '';
   if (bloquear && opts && opts.bloquearCliente) {
     try {
-      var rb = await apiPost({ action: 'bloquearClientePorNit', nit: o.nit || '', cliente: o.cliente || '' });
+      var rb = await apiPost({ action: 'bloquearClientePorNit', nit: o.nit || '', cliente: o.cliente || '', empresa: o.empresa || '' });
       if (!rb || rb.ok === false) throw new Error((rb && rb.error) || 'Error');
-      if (!(rb.updated > 0) && !(rb.found > 0)) extra2 = 'Bloqueado, pero no se encontró al cliente en Clientes; bloquéalo manualmente allí.';
+      if (!(rb.updated > 0) && !(rb.found > 0)) extra2 = 'Bloqueado, pero no hay un registro de este cliente en Clientes para ' + o.empresa + '; créalo/bloquéalo manualmente allí.';
     } catch (e3) { extra2 = 'Bloqueado, pero no se pudo bloquear al cliente: ' + (e3.message || e3); }
   }
   return extra2;

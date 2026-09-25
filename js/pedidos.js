@@ -1259,17 +1259,17 @@ async function toggleBloqueoCartera(idx) {
       var quiere = confirm(
         'El pedido quedó bloqueado por cartera.\n\n' +
         '¿Bloquear también al CLIENTE "' + (c.Cliente || '—') + '"' +
-        (c.NIT ? ' (NIT ' + c.NIT + ')' : '') + ' en el módulo Clientes?\n\n' +
-        'Esto le impedirá crear pedidos NUEVOS hasta que Cartera lo libere. ' +
-        'Los pedidos que ya tiene no se tocan.'
+        (c.NIT ? ' (NIT ' + c.NIT + ')' : '') + ' en ' + getSigla(c.Nombre_Empresa) + ' dentro del módulo Clientes?\n\n' +
+        'Esto le impedirá crear pedidos NUEVOS en ' + getSigla(c.Nombre_Empresa) + ' hasta que Cartera lo libere. ' +
+        'No afecta su relación con las demás empresas del holding, ni los pedidos que ya tiene.'
       );
       if (quiere) {
         try {
-          var rc = await apiPost({ action: 'bloquearClientePorNit', nit: c.NIT || '', cliente: c.Cliente || '' });
+          var rc = await apiPost({ action: 'bloquearClientePorNit', nit: c.NIT || '', cliente: c.Cliente || '', empresa: c.Nombre_Empresa || '' });
           if (!rc || rc.ok === false) throw new Error((rc && rc.error) || 'Error');
-          if ((rc.updated || 0) > 0) showToast('🔒 Cliente bloqueado por cartera en el módulo Clientes');
-          else if ((rc.found || 0) > 0) showToast('El cliente ya estaba bloqueado por cartera', '#e67e22');
-          else showToast('⚠️ No se encontró el cliente por NIT/nombre en el módulo Clientes; bloquéalo manualmente allí', '#e67e22');
+          if ((rc.updated || 0) > 0) showToast('🔒 Cliente bloqueado por cartera en ' + getSigla(c.Nombre_Empresa) + ' (módulo Clientes)');
+          else if ((rc.found || 0) > 0) showToast('El cliente ya estaba bloqueado por cartera en ' + getSigla(c.Nombre_Empresa), '#e67e22');
+          else showToast('⚠️ No se encontró un registro de este cliente en Clientes para ' + getSigla(c.Nombre_Empresa) + '; créalo/bloquéalo manualmente allí', '#e67e22');
         } catch (e2) {
           showToast('⚠️ Pedido bloqueado, pero no se pudo bloquear el cliente: ' + (e2.message || e2), '#e67e22');
         }

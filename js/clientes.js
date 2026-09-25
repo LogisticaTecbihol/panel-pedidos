@@ -684,6 +684,7 @@ function openGroupDetail(groupIdx) {
       html += '<span class="sigla-tag ' + getSiglaClass(r.Nombre_Empresa) + '">' + escHtml(getSigla(r.Nombre_Empresa)) + '</span>';
       var loc = [r.Municipio, r.Departamento].filter(function(x) { return x; }).join(', ');
       html += '<span style="font-weight:600;font-size:0.85rem;color:#2d3748">' + escHtml(loc || '—') + '</span>';
+      html += _estadoBadge(r.Estado, false);
       if (canEd) {
         html += '<div style="margin-left:auto;display:flex;gap:4px">';
         html += '<button onclick="closeDetail();openEditCliente(' + r.id + ')" style="background:#1a5276;color:white;border:none;padding:3px 9px;border-radius:5px;cursor:pointer;font-size:0.72rem;font-weight:600" title="Editar">✏️</button>';
@@ -835,7 +836,7 @@ function openEditCliente(id) {
   document.getElementById('ed-estado').value = _estadoNorm(c.Estado);
   var _sibs = _nitSiblings(_normalizeId(c.Identificacion));
   document.getElementById('ed-estado-hint').textContent = _sibs.length > 1
-    ? 'El estado se aplica a los ' + _sibs.length + ' registros de este NIT.'
+    ? 'El estado aplica solo al registro de ' + getSigla(c.Nombre_Empresa) + '; este cliente tiene ' + _sibs.length + ' registros (otras empresas) con su propio estado.'
     : '';
   _gateEstadoClienteSelect(_estadoNorm(c.Estado));
   document.getElementById('edit-overlay').style.display = 'flex';
@@ -888,18 +889,6 @@ async function saveEdit() {
       result = await apiPost(payload);
     }
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
-
-    // Estado unificado por NIT: aplica el mismo estado a los demás
-    // registros del mismo NIT (varias empresas/sedes del cliente).
-    var _nk = _normalizeId(payload.Identificacion);
-    if (_nk) {
-      var _sibIds = clientesData
-        .filter(function(x) { return x.id !== editingId && _normalizeId(x.Identificacion) === _nk; })
-        .map(function(x) { return x.id; });
-      if (_sibIds.length) {
-        await apiPost({ action: 'setEstadoClientes', ids: _sibIds, estado: payload.Estado });
-      }
-    }
 
     closeEdit();
     showToast('✅ Cliente guardado correctamente');

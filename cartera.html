@@ -134,7 +134,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>Cliente</th><th>NIT</th><th>Empresa(s)</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Última modificación</th><th></th>
+            <th>Cliente</th><th>NIT</th><th>Empresa</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Última modificación</th><th></th>
           </tr></thead>
           <tbody id="clibloq-body"></tbody>
         </table>
@@ -142,7 +142,8 @@
     </div>
     <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px">
       Incluye todos los clientes con Estado = "Bloqueado por cartera" en el módulo de Clientes, tengan o no pedidos vigentes.
-      La pestaña "🔒 Bloqueados" solo muestra pedidos bloqueados individualmente; esta pestaña muestra el bloqueo del cliente.
+      El bloqueo es específico por empresa: si el mismo cliente le compra a varias empresas, solo aparece(n) aquí la(s) empresa(s)
+      donde está bloqueado; en las demás sigue activo. La pestaña "🔒 Bloqueados" solo muestra pedidos bloqueados individualmente.
     </p>
   </div>
 
@@ -228,7 +229,7 @@
       </div>
 
       <label id="act-cli-wrap" style="display:none;align-items:center;gap:8px;margin-top:12px;font-size:0.84rem;color:#2d3748;font-weight:600;cursor:pointer">
-        <input type="checkbox" id="act-cli-bloq"> Bloquear también al cliente <span style="font-weight:400;color:#718096">(no podrá crear pedidos nuevos)</span>
+        <input type="checkbox" id="act-cli-bloq"> Bloquear también al cliente <span style="font-weight:400;color:#718096">(solo en esta empresa; no podrá crear pedidos nuevos ahí)</span>
       </label>
       <div id="act-warn" style="display:none;margin-top:10px;font-size:0.8rem;color:#b7791f;background:#fef9e7;border:1px solid #f9e79f;border-radius:6px;padding:8px 10px"></div>
     </div>
@@ -254,9 +255,9 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260925a"></script>
+<script src="js/shared.js?v=20260925b"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
-<script src="js/cartera.js?v=20260925a"></script>
+<script src="js/cartera.js?v=20260925b"></script>
 </body>
 </html>

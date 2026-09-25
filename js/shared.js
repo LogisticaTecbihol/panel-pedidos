@@ -623,7 +623,7 @@ async function _apiPostCore(body) {
       if (!_hist) {
         try {
           var _estCli = await _sb.rpc('cliente_estado_pedido', {
-            p_cliente: body.cliente || '', p_nit: body.nit || ''
+            p_cliente: body.cliente || '', p_nit: body.nit || '', p_empresa: body.nombre_empresa || ''
           });
           var _estVal = (_estCli && !_estCli.error && _estCli.data) ? String(_estCli.data) : 'Activo';
           if (_estVal === 'Inactivo' || _estVal === 'Bloqueado por cartera') {
@@ -746,10 +746,13 @@ async function _apiPostCore(body) {
 
     // Bloquear al cliente (ClientesUnicos.Estado) por NIT — opcional, lo
     // ofrece el panel de Pedidos tras bloquear un pedido por cartera.
+    // El bloqueo es específico de la empresa del pedido (no afecta la
+    // relación del cliente con las demás empresas del holding).
     if (action === 'bloquearClientePorNit') {
       var res = await _sb.rpc('bloquear_cliente_por_nit', {
         p_nit: body.nit || '',
-        p_cliente: body.cliente || ''
+        p_cliente: body.cliente || '',
+        p_empresa: body.empresa || ''
       });
       if (res.error) return { ok: false, error: res.error.message };
       return res.data || { ok: true };
