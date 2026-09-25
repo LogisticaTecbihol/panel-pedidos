@@ -1137,6 +1137,12 @@ function exportarPDF() {
     copies: ['ORIGINAL - CONTABILIDAD'],
     hide_signatures: false,
     page_format: 'letter',
+    signatures: [
+      { label: 'Emitido por', sub: 'Nombre y firma' },
+      { label: 'Despachado / Conductor', sub: 'Nombre y firma' },
+      { label: 'Contabilidad', sub: 'Nombre y firma' }
+    ],
+    show_fecha_entrega: false,
     col1_header: 'Concepto',
     col2_header: 'Proveedor',
     col1_width: 32,

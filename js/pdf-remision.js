@@ -425,18 +425,24 @@ function _drawRemisionCopy(doc, data, palette) {
     sigTop = Math.max(newTop + 4, ph - 24);
   }
 
+  // data.signatures permite a un llamador (ej. legalización de gastos, que
+  // no tiene cliente que reciba nada) reemplazar el set de firmas de 4
+  // columnas por defecto sin afectar a los demás documentos.
+  var sigDefs = data.signatures || [
+    { label: 'Emitido por', sub: 'Nombre y firma' },
+    { label: 'Despachado / Conductor', sub: 'Nombre y firma' },
+    { label: 'Contabilidad', sub: 'Nombre y firma' },
+    { label: 'Recibido por el cliente', sub: 'Nombre, firma y fecha' }
+  ];
   var sigGap = 5;
-  var sigCount = 4;
+  var sigCount = sigDefs.length;
   var sigW = (pw - 28 - sigGap * (sigCount - 1)) / sigCount;
   var lineY = sigTop + 7;
   var labelY = lineY + 2.8;
   var subY = labelY + 2.6;
-  var cols = [
-    { x: 14, label: 'Emitido por', sub: 'Nombre y firma' },
-    { x: 14 + (sigW + sigGap), label: 'Despachado / Conductor', sub: 'Nombre y firma' },
-    { x: 14 + (sigW + sigGap) * 2, label: 'Contabilidad', sub: 'Nombre y firma' },
-    { x: 14 + (sigW + sigGap) * 3, label: 'Recibido por el cliente', sub: 'Nombre, firma y fecha' }
-  ];
+  var cols = sigDefs.map(function(s, i) {
+    return { x: 14 + (sigW + sigGap) * i, label: s.label, sub: s.sub };
+  });
   doc.setDrawColor(darkText[0], darkText[1], darkText[2]);
   doc.setLineWidth(0.3);
   doc.setFontSize(7.5);
@@ -453,17 +459,21 @@ function _drawRemisionCopy(doc, data, palette) {
     doc.setFontSize(7);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
   });
-  var recCol = cols[cols.length - 1];
-  var fechaRecY = subY + 3.6;
-  var fechaLabelX = recCol.x + 2;
-  var fechaLineX1 = fechaLabelX + 24;
-  var fechaLineX2 = recCol.x + sigW - 2;
-  doc.setFontSize(6.5);
-  doc.setFont(undefined, 'bold');
-  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.text('Fecha de entrega:', fechaLabelX, fechaRecY);
-  doc.setDrawColor(160, 174, 192);
-  doc.line(fechaLineX1, fechaRecY + 0.5, fechaLineX2, fechaRecY + 0.5);
+  // "Fecha de entrega" solo tiene sentido bajo la firma del cliente; los
+  // documentos sin esa columna (ej. legalización de gastos) la desactivan.
+  if (data.show_fecha_entrega !== false) {
+    var recCol = cols[cols.length - 1];
+    var fechaRecY = subY + 3.6;
+    var fechaLabelX = recCol.x + 2;
+    var fechaLineX1 = fechaLabelX + 24;
+    var fechaLineX2 = recCol.x + sigW - 2;
+    doc.setFontSize(6.5);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+    doc.text('Fecha de entrega:', fechaLabelX, fechaRecY);
+    doc.setDrawColor(160, 174, 192);
+    doc.line(fechaLineX1, fechaRecY + 0.5, fechaLineX2, fechaRecY + 0.5);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
