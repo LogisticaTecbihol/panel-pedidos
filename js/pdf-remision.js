@@ -1,10 +1,10 @@
 // ── PDF de Remisión (compartido: pedidos, muestras, etc.) ──
 // Depende de: window.jspdf (jsPDF + autoTable) y getSigla() de shared.js.
 
-var _pdfLogos = { PARCELAR: null, IASO: null, RESO: null, GREEN: null, IAS: null };
+var _pdfLogos = { PARCELAR: null, IASO: null, RESO: null, GREEN: null, IAS: null, LEGALIZACION: null };
 (function _preloadPdfLogos() {
   if (typeof document === 'undefined') return;
-  var sources = { PARCELAR: 'assets/logo_parcelar.png', IASO: 'assets/logo_iaso.png', RESO: 'assets/logo_reso.png', GREEN: 'assets/logo_green.png', IAS: 'assets/logo_ias.png' };
+  var sources = { PARCELAR: 'assets/logo_parcelar.png', IASO: 'assets/logo_iaso.png', RESO: 'assets/logo_reso.png', GREEN: 'assets/logo_green.png', IAS: 'assets/logo_ias.png', LEGALIZACION: 'assets/logo_legalizacion.png' };
   Object.keys(sources).forEach(function(key) {
     var img = new Image();
     img.onload = function() {
@@ -24,6 +24,14 @@ var _pdfLogos = { PARCELAR: null, IASO: null, RESO: null, GREEN: null, IAS: null
 function _pdfHeaderLogoFor(empresa) {
   var sigla = (typeof getSigla === 'function' ? getSigla(empresa) : '') || '';
   return _pdfLogos[String(sigla).toUpperCase()] || null;
+}
+
+// data.logo_key fija el logo del encabezado a uno de _pdfLogos en vez de
+// derivarlo de data.empresa — para documentos como legalización de gastos,
+// que no pertenecen a una sola empresa del reparto.
+function _pdfHeaderLogoForData(data) {
+  if (data.logo_key) return _pdfLogos[data.logo_key] || null;
+  return _pdfHeaderLogoFor(data.empresa);
 }
 
 // Dimensiones {w,h} para dibujar un logo dentro de un recuadro maxW×maxH
@@ -189,7 +197,7 @@ function _drawRemisionCopy(doc, data, palette) {
   var docTitle = data.doc_title || 'REMISION';
   var docNumber = (data.doc_number != null && data.doc_number !== '') ? String(data.doc_number) : (data.remision ? String(data.remision) : '');
   var dateLabel = data.date_label || 'Fecha remision';
-  var logo = _pdfHeaderLogoFor(data.empresa);
+  var logo = _pdfHeaderLogoForData(data);
 
   var left = data.left_fields || [
     ['Cliente', data.cliente || ''],

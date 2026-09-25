@@ -1137,6 +1137,7 @@ function exportarPDF() {
     copies: ['ORIGINAL - CONTABILIDAD'],
     hide_signatures: false,
     page_format: 'letter',
+    logo_key: 'LEGALIZACION',
     signatures: [
       { label: 'Emitido por', sub: 'Nombre y firma' },
       { label: 'Despachado / Conductor', sub: 'Nombre y firma' },
