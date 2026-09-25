@@ -119,7 +119,7 @@ async function loadClientesConRemision() {
 }
 
 // Responsables conocidos; "Otro" pide especificar el nombre.
-var RESPONSABLES_FIJOS = ['Leimer Villegas', 'Kevin Rey'];
+var RESPONSABLES_FIJOS = ['Leimer Villegas', 'Kevin Rey', 'Giovanny Botia', 'Jhon Paez'];
 
 function setResponsableField(value) {
   var sel = document.getElementById('lg-responsable-select');
