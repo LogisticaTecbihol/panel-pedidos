@@ -855,7 +855,7 @@ function openForm(id) {
     setResponsableField('');
     setPlacaField('');
     document.getElementById('lg-ruta').value = '';
-    document.getElementById('lg-personas').value = '';
+    document.getElementById('lg-personas').value = 1;
     document.getElementById('lg-fecha-salida').value = '';
     document.getElementById('lg-fecha-llegada').value = '';
     document.getElementById('lg-anticipo').value = '';
