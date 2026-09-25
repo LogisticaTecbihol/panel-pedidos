@@ -373,13 +373,20 @@ function _drawRemisionCopy(doc, data, palette) {
   if (showValores) tableHead.push('Valor Unit.', 'Valor Total');
   tableHead.push(lastColHeader);
 
+  // col1_width/col2_width/col2_align permiten a un llamador (ej. legalización
+  // de gastos, donde la col. 2 es "Proveedor" en vez de "Presentacion")
+  // ajustar el reparto de esas dos columnas sin tocar a los demás documentos.
+  var col1W = data.col1_width;
+  var col2W = data.col2_width;
+  var col2Align = data.col2_align || 'center';
+
   var colStyles;
   if (showValores) {
-    colStyles = { 0: { halign: 'center', cellWidth: 8 }, 1: { cellWidth: 52 }, 2: { halign: 'center', cellWidth: 24 }, 3: { halign: 'center', cellWidth: 18 }, 4: { halign: 'right', cellWidth: 24 }, 5: { halign: 'right', cellWidth: 26 }, 6: { halign: 'center', cellWidth: 14 } };
+    colStyles = { 0: { halign: 'center', cellWidth: 8 }, 1: { cellWidth: col1W || 52 }, 2: { halign: col2Align, cellWidth: col2W || 24 }, 3: { halign: 'center', cellWidth: 18 }, 4: { halign: 'right', cellWidth: 24 }, 5: { halign: 'right', cellWidth: 26 }, 6: { halign: 'center', cellWidth: 14 } };
   } else if (useObs) {
-    colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 60 }, 2: { halign: 'center', cellWidth: 32 }, 3: { halign: 'center', cellWidth: 28 }, 4: { cellWidth: 52 } };
+    colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: col1W || 60 }, 2: { halign: col2Align, cellWidth: col2W || 32 }, 3: { halign: 'center', cellWidth: 28 }, 4: { cellWidth: 52 } };
   } else {
-    colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 82 }, 2: { halign: 'center', cellWidth: 40 }, 3: { halign: 'center', cellWidth: 32 }, 4: { halign: 'center', cellWidth: 18 } };
+    colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: col1W || 82 }, 2: { halign: col2Align, cellWidth: col2W || 40 }, 3: { halign: 'center', cellWidth: 32 }, 4: { halign: 'center', cellWidth: 18 } };
   }
 
   // Con firmas reservamos ~28 mm al pie de CADA página: así la tabla nunca
