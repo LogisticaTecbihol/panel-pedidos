@@ -1136,6 +1136,7 @@ function exportarPDF() {
     file_prefix: 'Legalizacion_Gastos',
     copies: ['ORIGINAL - CONTABILIDAD'],
     hide_signatures: false,
+    page_format: 'letter',
     col1_header: 'Concepto',
     col2_header: 'Proveedor',
     col1_width: 32,

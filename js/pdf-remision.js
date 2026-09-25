@@ -36,13 +36,14 @@ function _pdfLogoBox(logo, maxW, maxH) {
 }
 
 // ── Tamaño de página de TODOS los PDF del panel ──
-// Media carta horizontal (apaisada): 8.5" × 5.5" = 215.9 × 139.7 mm.
-// Todo generador que cree un documento nuevo debe usar _nuevoPdfDoc()
-// en vez de `new jsPDF()`.
+// Media carta horizontal (apaisada): 8.5" × 5.5" = 215.9 × 139.7 mm, salvo
+// que el llamador pida otro formato explícito (ej. carta horizontal para
+// legalización de gastos). Todo generador que cree un documento nuevo debe
+// usar _nuevoPdfDoc() en vez de `new jsPDF()`.
 var PDF_MEDIA_CARTA = [215.9, 139.7];
-function _nuevoPdfDoc() {
+function _nuevoPdfDoc(format) {
   var jsPDF = window.jspdf.jsPDF;
-  return new jsPDF({ unit: 'mm', orientation: 'landscape', format: [215.9, 139.7] });
+  return new jsPDF({ unit: 'mm', orientation: 'landscape', format: format || PDF_MEDIA_CARTA });
 }
 
 var _pdfRemisionHeaderInfo = {
@@ -131,7 +132,7 @@ function _drawRemisionCopyFooter(doc, label, palette, pageIdx, pageCount, genSta
 }
 
 function generarRemisionPDF(data) {
-  var doc = data._doc || _nuevoPdfDoc();
+  var doc = data._doc || _nuevoPdfDoc(data.page_format);
   if (data._doc) doc.addPage();
   var palette = _pdfPaletteFor(data.empresa);
   var copias = data.copies || ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD', 'CLIENTE', 'COPIA - LOGISTICA'];
