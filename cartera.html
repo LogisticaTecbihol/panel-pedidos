@@ -83,6 +83,7 @@
     <button class="car-tab" id="tab-aprobar" onclick="carSwitchTab('aprobar')">⏳ Por aprobar <span class="car-tab-ct" id="ct-aprobar">0</span></button>
     <button class="car-tab" id="tab-bloqueados" onclick="carSwitchTab('bloqueados')">🔒 Bloqueados <span class="car-tab-ct" id="ct-bloqueados">0</span></button>
     <button class="car-tab" id="tab-clibloq" onclick="carSwitchTab('clibloq')">🚫 Clientes bloqueados <span class="car-tab-ct" id="ct-clibloq">0</span></button>
+    <button class="car-tab" id="tab-clisus" onclick="carSwitchTab('clisus')">⛔ Suspendidos <span class="car-tab-ct" id="ct-clisus">0</span></button>
     <button class="car-tab" id="tab-resumen" onclick="carSwitchTab('resumen')">📈 Resumen</button>
   </div>
 
@@ -144,6 +145,32 @@
       Incluye todos los clientes con Estado = "Bloqueado por cartera" en el módulo de Clientes, tengan o no pedidos vigentes.
       El bloqueo es específico por empresa: si el mismo cliente le compra a varias empresas, solo aparece(n) aquí la(s) empresa(s)
       donde está bloqueado; en las demás sigue activo. La pestaña "🔒 Bloqueados" solo muestra pedidos bloqueados individualmente.
+    </p>
+  </div>
+
+  <!-- PANEL: Clientes suspendidos -->
+  <div id="panel-clisus" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>⛔ Clientes suspendidos <span id="clisus-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="carExportClisus()">⬇️ Excel</button>
+          <button class="btn-dl" onclick="loadCartera()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>NIT</th><th>Empresa</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Observación</th><th>Última modificación</th><th></th>
+          </tr></thead>
+          <tbody id="clisus-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px">
+      Incluye todos los clientes con Estado = "Suspendido" en el módulo de Clientes (definitivamente no se les volverá a
+      vender), tengan o no pedidos vigentes. Es específico por empresa: si el mismo cliente le compra a varias empresas,
+      solo aparece(n) aquí la(s) empresa(s) donde está suspendido; en las demás sigue activo.
     </p>
   </div>
 

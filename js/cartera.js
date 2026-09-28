@@ -12,13 +12,14 @@
 
 var CAR_PEND = 'Pendiente de aprobación';
 var CAR_BLOQ = 'Bloqueado por cartera';
+var CAR_SUSP = 'Suspendido';
 
 var CAR_PED_COLS = 'id,Nombre_Empresa,Consecutivo,Cliente,NIT,Comercial,Fecha_Pedido,Plazo_Pago,Estado_2,Estado_Entrega,' +
   'Producto,Presentacion,Cantidad,Cant_Entregada,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,' +
   'creado_por,creado_por_nombre,creado_en,' +
   'Bloqueo_Observacion,Bloqueo_Por_Nombre,Bloqueo_En,Desbloqueo_Por_Nombre,Desbloqueo_En,' +
   'Aprobacion_Por_Nombre,Aprobacion_En,Aprobacion_Nota';
-var CAR_CLI_COLS = 'id,Cliente,Identificacion,Tipo_Identificacion,Nombre_Empresa,Estado,Cupo_Credito,Plazo_Pago,Cliente_Nuevo,modificado_por_nombre,modificado_en';
+var CAR_CLI_COLS = 'id,Cliente,Identificacion,Tipo_Identificacion,Nombre_Empresa,Estado,Observaciones_Cartera,Cupo_Credito,Plazo_Pago,Cliente_Nuevo,modificado_por_nombre,modificado_en';
 
 var carOrders = [];        // pedidos agrupados (uno por empresa+consecutivo+cliente)
 var carByKey = {};
@@ -293,23 +294,28 @@ function carRender() {
   var pend = carOrders.filter(function(o) { return o.estado2 === CAR_PEND; });
   var bloq = carOrders.filter(function(o) { return o.estado2 === CAR_BLOQ; });
   var cliBloq = carClientesBloqueados();
+  var cliSus = carClientesSuspendidos();
 
   document.getElementById('ct-aprobar').textContent = pend.length;
   document.getElementById('ct-bloqueados').textContent = bloq.length;
   document.getElementById('ct-clibloq').textContent = cliBloq.length;
-  ['aprobar', 'bloqueados', 'clibloq', 'resumen'].forEach(function(t) {
+  document.getElementById('ct-clisus').textContent = cliSus.length;
+  ['aprobar', 'bloqueados', 'clibloq', 'clisus', 'resumen'].forEach(function(t) {
     document.getElementById('tab-' + t).classList.toggle('active', carTab === t);
   });
   carRenderStats(pend, bloq);
 
   var esResumen = carTab === 'resumen';
   var esClibloq = carTab === 'clibloq';
-  document.getElementById('panel-cola').style.display = (esResumen || esClibloq) ? 'none' : 'block';
+  var esClisus = carTab === 'clisus';
+  document.getElementById('panel-cola').style.display = (esResumen || esClibloq || esClisus) ? 'none' : 'block';
   document.getElementById('panel-resumen').style.display = esResumen ? 'block' : 'none';
   document.getElementById('panel-clibloq').style.display = esClibloq ? 'block' : 'none';
+  document.getElementById('panel-clisus').style.display = esClisus ? 'block' : 'none';
   document.getElementById('car-filters').style.display = esResumen ? 'none' : 'flex';
   if (esResumen) carRenderResumen(bloq);
   else if (esClibloq) carRenderClibloq(cliBloq);
+  else if (esClisus) carRenderClisus(cliSus);
   else carRenderCola(carTab === 'aprobar' ? pend : bloq);
 }
 
@@ -511,6 +517,117 @@ function carExportClibloq() {
       x.plazo, x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
   });
   carXlsx('cartera_clientes_bloqueados', 'Clientes bloqueados', filas);
+}
+
+// ── Clientes suspendidos (mismo patrón que "Clientes bloqueados" arriba) ──
+// 'Suspendido' = definitivamente no se le vuelve a vender (ver
+// project_estado_cliente.md); a diferencia de 'Bloqueado por cartera' no es
+// un tema de cupo/crédito, así que aquí sí se muestra la Observación.
+var carCliSusByKey = {};   // "idCli||empresa" → grupo (para el botón Reactivar)
+
+function carClientesSuspendidos() {
+  var g = {};
+  carClientes.forEach(function(c) {
+    if (c.Estado !== CAR_SUSP) return;
+    var nb = _nitBase(c.Identificacion);
+    var idCli = nb || ('n:' + norm(c.Cliente));
+    var empresa = c.Nombre_Empresa || '';
+    var key = idCli + '||' + empresa;
+    var x = g[key] || (g[key] = { key: key, idCli: idCli, empresa: empresa, cliente: (c.Cliente || '—').trim(), nit: '', obs: '', regs: [] });
+    if (!x.nit && c.Identificacion) x.nit = c.Identificacion;
+    if (!x.obs && c.Observaciones_Cartera) x.obs = c.Observaciones_Cartera;
+    x.regs.push(c);
+  });
+  var out = Object.keys(g).map(function(k) { return g[k]; });
+  out.forEach(function(x) {
+    var maxCupo = 0, hayCupo = false;
+    x.regs.forEach(function(r) { var ci = _cupoInfo(r.Cupo_Credito); if (ci.tipo === 'numero') { hayCupo = true; if (ci.valor > maxCupo) maxCupo = ci.valor; } });
+    x.cupo = hayCupo ? { tipo: 'numero', valor: maxCupo } : (x.regs.length ? _cupoInfo(x.regs[0].Cupo_Credito) : { tipo: 'vacio' });
+    var plazos = [];
+    x.regs.forEach(function(r) { var p = _normalizePlazo(r.Plazo_Pago); if (p && plazos.indexOf(p) < 0) plazos.push(p); });
+    x.plazo = plazos.join(' / ');
+    var modEn = '', modPor = '';
+    x.regs.forEach(function(r) { if (r.modificado_en && r.modificado_en > modEn) { modEn = r.modificado_en; modPor = r.modificado_por_nombre || ''; } });
+    x.modEn = modEn; x.modPor = modPor;
+    // Pedidos vigentes de ESTA MISMA empresa (igual criterio que Clientes bloqueados).
+    var abiertos = carOrders.filter(function(o) { return o.idCli === x.idCli && o.empresa === x.empresa && o.valorAbierto > 0; });
+    x.pedidosVigentes = abiertos.length;
+    x.valorVigente = abiertos.reduce(function(s, o) { return s + o.valorAbierto; }, 0);
+  });
+  out.sort(function(a, b) { return (b.pedidosVigentes - a.pedidosVigentes) || a.cliente.localeCompare(b.cliente) || a.empresa.localeCompare(b.empresa); });
+  return out;
+}
+
+function carFiltrarClisus(list) {
+  var emp = document.getElementById('f-emp').value;
+  var q = norm(document.getElementById('f-txt').value);
+  return list.filter(function(x) {
+    if (emp && x.empresa !== emp) return false;
+    if (q) {
+      var hay = norm([x.cliente, x.nit, x.empresa, x.obs].join(' '));
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function carRenderClisus(all) {
+  var lista = carFiltrarClisus(all);
+  carCliSusByKey = {};
+  lista.forEach(function(x) { carCliSusByKey[x.key] = x; });
+
+  document.getElementById('clisus-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
+
+  var puedeLib = carPuedeBloquear();
+  if (!lista.length) {
+    document.getElementById('clisus-body').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">' +
+      (all.length ? 'Ningún cliente suspendido coincide con los filtros.' : 'No hay clientes suspendidos. 🎉') + '</td></tr>';
+    return;
+  }
+
+  document.getElementById('clisus-body').innerHTML = lista.map(function(x) {
+    var k = escHtml(x.key);
+    var cupoTxt = x.cupo.tipo === 'numero' ? fmtMoney(x.cupo.valor) : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? escHtml(x.cupo.texto) : '—';
+    var vigTxt = x.pedidosVigentes
+      ? x.pedidosVigentes + (x.pedidosVigentes === 1 ? ' pedido · ' : ' pedidos · ') + fmtMoney(x.valorVigente)
+      : '<span class="tag-sin">sin pedidos vigentes</span>';
+    var modTxt = x.modEn ? escHtml(carFmtTs(x.modEn)) + (x.modPor ? ' · ' + escHtml(x.modPor) : '') : '—';
+    return '<tr class="row-bloqueada-cartera"><td>' + escHtml(x.cliente) + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
+      '<td>' + carSiglaHtml(x.empresa) + '</td>' +
+      '<td>' + cupoTxt + '</td><td>' + escHtml(x.plazo || '—') + '</td>' +
+      '<td>' + vigTxt + '</td>' +
+      '<td style="max-width:220px;white-space:normal;font-size:0.78rem;color:#4a5568">' + (x.obs ? escHtml(x.obs) : '<span class="tag-sin">sin observación</span>') + '</td>' +
+      '<td style="font-size:0.78rem;color:#718096">' + modTxt + '</td>' +
+      '<td>' + (puedeLib ? '<button class="btn-aprobar-pedido" data-key="' + k + '" onclick="carReactivarCliente(this.getAttribute(\'data-key\'))">🔓 Reactivar</button>' : '') + '</td></tr>';
+  }).join('');
+}
+
+async function carReactivarCliente(key) {
+  var x = carCliSusByKey[key];
+  if (!x) return;
+  if (!carPuedeBloquear()) { showToast('Solo Cartera, editor o administración pueden reactivar clientes', '#e74c3c'); return; }
+  if (!confirm('¿REACTIVAR a ' + x.cliente + (x.nit ? ' — NIT ' + x.nit : '') + ' en ' + x.empresa + '?\n\nQuedará como cliente Activo en ' + x.empresa + ' y podrá volver a generar pedidos ahí. No afecta su relación con las demás empresas del holding.')) return;
+  var ids = x.regs.map(function(r) { return r.id; }).filter(function(v) { return v != null; });
+  if (!ids.length) return;
+  try {
+    var r = await apiPost({ action: 'setEstadoClientes', ids: ids, estado: 'Activo' });
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al reactivar');
+    showToast('🔓 Cliente reactivado en ' + x.empresa);
+    await loadCartera();
+  } catch (e) {
+    showToast('❌ ' + (e.message || e), '#e74c3c');
+  }
+}
+
+function carExportClisus() {
+  var lista = carFiltrarClisus(carClientesSuspendidos());
+  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Observación', 'Última modificación', 'Modificó']];
+  lista.forEach(function(x) {
+    filas.push([x.cliente, x.nit, x.empresa,
+      x.cupo.tipo === 'numero' ? x.cupo.valor : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? x.cupo.texto : '',
+      x.plazo, x.pedidosVigentes, x.valorVigente, x.obs || '', x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
+  });
+  carXlsx('cartera_clientes_suspendidos', 'Clientes suspendidos', filas);
 }
 
 // ── Selección y acciones masivas ─────────────────────────────
