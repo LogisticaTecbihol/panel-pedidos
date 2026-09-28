@@ -587,7 +587,7 @@ function renderTable() {
     if (canEd) {
       actionHtml = '<td style="text-align:center;white-space:nowrap">' +
         '<button onclick="openGroupDetail(' + globalIdx + ')" style="background:#2c3e50;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Ver detalle">👁️</button>' +
-        '<button onclick="openBitacora(' + globalIdx + ')" style="background:#6b46c1;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Bitácora de contacto">📋</button>';
+        '<button onclick="openBitacora(' + globalIdx + ')" style="background:#6b46c1;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Bitácora de contacto">📞</button>';
       if (!isMulti) {
         actionHtml += '<button onclick="openEditCliente(' + first.id + ')" style="background:#1a5276;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Editar">✏️</button>';
         if (canDel) {
