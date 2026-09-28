@@ -4,7 +4,7 @@
 
 // ── Tabs ──
 function switchTab(tab) {
-  ['legalizaciones', 'prorrateo', 'vehiculos'].forEach(function(t) {
+  ['legalizaciones', 'prorrateo', 'vehiculos', 'detalle'].forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
@@ -12,6 +12,7 @@ function switchTab(tab) {
   });
   if (tab === 'prorrateo') renderProrrateoGastos();
   if (tab === 'vehiculos') renderVehiculosTab();
+  if (tab === 'detalle') renderDetalleTable();
 }
 
 var LEG_BUCKET = 'legalizacion-gastos-adjuntos';
@@ -317,6 +318,7 @@ async function loadLegalizaciones() {
   await _authReady;
   populateEmpresaSelect('f-emp', 'Todas');
   populateEmpresaSelect('pf-emp', 'Todas');
+  populateEmpresaSelect('df-emp', 'Todas');
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
   var loadZone = document.getElementById('load-zone');
@@ -963,6 +965,195 @@ function empresasBadgesHtml(legId) {
   }).join(' ');
 }
 
+// ── Vista detallada ──
+// Segunda mirada sobre las mismas legalizaciones, con dos modos: una fila
+// ancha por legalización (con lo que hoy solo se ve al abrir "Ver": placa,
+// clientes, remisiones, reparto por empresa, líneas de gasto y km/rendimiento
+// si aplica) o una fila por línea de gasto (para sumar/filtrar por concepto o
+// proveedor a través de todos los viajes). Filtros propios (df-*), separados
+// de los de la pestaña Legalizaciones y de los de Prorrateo.
+var detalleModo = 'legalizacion'; // 'legalizacion' | 'linea'
+
+function setDetalleModo(modo) {
+  detalleModo = modo;
+  var btnLeg = document.getElementById('df-modo-legalizacion');
+  var btnLin = document.getElementById('df-modo-linea');
+  if (btnLeg) btnLeg.style.background = (modo === 'legalizacion') ? '#1a5276' : '#718096';
+  if (btnLin) btnLin.style.background = (modo === 'linea') ? '#1a5276' : '#718096';
+  renderDetalleTable();
+}
+
+function _detalleLegsFiltrados() {
+  var fEmp = document.getElementById('df-emp').value;
+  var fTipo = document.getElementById('df-tipo').value;
+  var fEstado = document.getElementById('df-estado').value;
+  var fDesde = document.getElementById('df-desde').value;
+  var fHasta = document.getElementById('df-hasta').value;
+  var fTxt = (document.getElementById('df-txt').value || '').toLowerCase().trim();
+
+  return legs.filter(function(leg) {
+    if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
+    if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
+    if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
+    if (fDesde && (leg.Fecha || '') < fDesde) return false;
+    if (fHasta && (leg.Fecha || '') > fHasta) return false;
+    if (fTxt) {
+      var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes, leg.Placa]
+        .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
+      if (hay.indexOf(fTxt) < 0) return false;
+    }
+    return true;
+  }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
+}
+
+// Km recorridos (Ruta, salida→llegada) u odómetro registrado (Mantenimiento);
+// mismo criterio que el bloque de kilometraje de renderVerBody. '—' si el
+// viaje no está en el piloto de kilometraje.
+function _detalleKmTxt(leg) {
+  var esMant = leg.Tipo === 'Mantenimiento';
+  if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
+    return (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km';
+  }
+  if (esMant && leg.Km_Llegada != null) {
+    return Number(leg.Km_Llegada).toLocaleString('es-CO') + ' km (odóm.)';
+  }
+  return '—';
+}
+
+function renderDetalleTable() {
+  var box = document.getElementById('detalle-body');
+  if (!box) return;
+  var rows = _detalleLegsFiltrados();
+  var ctEl = document.getElementById('df-ct');
+
+  if (detalleModo === 'linea') {
+    var lineas = [];
+    rows.forEach(function(leg) {
+      itemsOf(leg.id).forEach(function(it) { lineas.push({ leg: leg, it: it }); });
+    });
+    if (ctEl) ctEl.textContent = '(' + lineas.length + ' línea' + (lineas.length === 1 ? '' : 's') + ' · ' + rows.length + ' legalización' + (rows.length === 1 ? '' : 'es') + ')';
+    box.innerHTML = _detalleTablaLinea(lineas);
+  } else {
+    if (ctEl) ctEl.textContent = '(' + rows.length + ')';
+    box.innerHTML = _detalleTablaLegalizacion(rows);
+  }
+}
+
+function _detalleTablaLegalizacion(rows) {
+  if (!rows.length) return '<div class="empty">Sin legalizaciones para este filtro.</div>';
+  var body = rows.map(function(leg) {
+    var gastosTxt = itemsOf(leg.id).map(function(it) { return (it.Concepto || '—') + ': ' + fmtMoney(it.Valor); }).join(', ') || '—';
+    return '<tr>' +
+      '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
+      '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
+      '<td>' + tipoBadgeHtml(leg) + '</td>' +
+      '<td>' + escHtml(leg.Responsable || '—') + '</td>' +
+      '<td>' + escHtml(leg.Placa || '—') + '</td>' +
+      '<td>' + escHtml(leg.Recorrido_Ruta || '—') + '</td>' +
+      '<td>' + escHtml(leg.Clientes || '—') + '</td>' +
+      '<td style="max-width:220px;white-space:normal">' + escHtml(leg.Remisiones_Relacionadas || '—') + '</td>' +
+      '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
+      '<td style="max-width:260px;white-space:normal;font-size:0.78rem">' + escHtml(gastosTxt) + '</td>' +
+      '<td style="text-align:right">' + escHtml(fmtMoney(totalGastosOf(leg.id))) + '</td>' +
+      '<td style="text-align:right">' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</td>' +
+      '<td>' + escHtml(_detalleKmTxt(leg)) + '</td>' +
+      '<td>' + estadoBadgeHtml(leg) + '</td>' +
+      '<td style="max-width:200px;white-space:normal">' + escHtml(leg.Observaciones || '—') + '</td>' +
+      '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
+    '</tr>';
+  }).join('');
+  return '<table><thead><tr>' +
+    '<th>N°</th><th>Fecha</th><th>Tipo</th><th>Responsable</th><th>Placa</th><th>Ruta</th><th>Clientes</th>' +
+    '<th>Remisiones</th><th>Empresas</th><th>Gastos</th><th style="text-align:right">Total gastos</th>' +
+    '<th style="text-align:right">Anticipo</th><th>Km</th><th>Estado</th><th>Observaciones</th><th>Acciones</th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table>';
+}
+
+function _detalleTablaLinea(lineas) {
+  if (!lineas.length) return '<div class="empty">Sin líneas de gasto para este filtro.</div>';
+  var body = lineas.map(function(x) {
+    var leg = x.leg, it = x.it;
+    return '<tr>' +
+      '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
+      '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
+      '<td>' + tipoBadgeHtml(leg) + '</td>' +
+      '<td>' + escHtml(leg.Responsable || '—') + '</td>' +
+      '<td>' + escHtml(leg.Placa || '—') + '</td>' +
+      '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
+      '<td>' + escHtml(it.Concepto || '—') + '</td>' +
+      '<td>' + escHtml(it.Proveedor || '—') + '</td>' +
+      '<td>' + escHtml(it.NIT || '—') + '</td>' +
+      '<td style="text-align:right">' + escHtml(fmtMoney(it.Valor)) + '</td>' +
+      '<td>' + estadoBadgeHtml(leg) + '</td>' +
+      '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
+    '</tr>';
+  }).join('');
+  return '<table><thead><tr>' +
+    '<th>N°</th><th>Fecha</th><th>Tipo</th><th>Responsable</th><th>Placa</th><th>Empresas</th>' +
+    '<th>Concepto</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th><th>Estado</th><th>Acciones</th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table>';
+}
+
+// Exporta la misma vista activa (por legalización o por línea de gasto),
+// respetando los filtros df-* actuales.
+function exportarDetalleExcel() {
+  var rows = _detalleLegsFiltrados();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+
+  var wb = XLSX.utils.book_new();
+  if (detalleModo === 'linea') {
+    var dataLinea = [];
+    rows.forEach(function(leg) {
+      itemsOf(leg.id).forEach(function(it) {
+        dataLinea.push({
+          'N°': leg.Consecutivo || '',
+          'Fecha': fmtDate(leg.Fecha),
+          'Tipo': leg.Tipo || 'Ruta',
+          'Responsable': leg.Responsable || '',
+          'Placa': leg.Placa || '',
+          'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+          'Concepto': it.Concepto || '',
+          'Proveedor': it.Proveedor || '',
+          'NIT': it.NIT || '',
+          'Valor': Number(it.Valor) || 0,
+          'Estado': leg.Estado_Conciliacion || ''
+        });
+      });
+    });
+    if (!dataLinea.length) { showToast('No hay líneas de gasto para exportar', '#e74c3c'); return; }
+    var wsLinea = XLSX.utils.json_to_sheet(dataLinea);
+    XLSX.utils.book_append_sheet(wb, wsLinea, 'Por linea de gasto');
+  } else {
+    var dataLeg = rows.map(function(leg) {
+      var esMant = leg.Tipo === 'Mantenimiento';
+      var km = '';
+      if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) km = Number(leg.Km_Llegada) - Number(leg.Km_Salida);
+      else if (esMant && leg.Km_Llegada != null) km = Number(leg.Km_Llegada);
+      return {
+        'N°': leg.Consecutivo || '',
+        'Fecha': fmtDate(leg.Fecha),
+        'Tipo': leg.Tipo || 'Ruta',
+        'Responsable': leg.Responsable || '',
+        'Placa': leg.Placa || '',
+        'Ruta': leg.Recorrido_Ruta || '',
+        'Clientes': leg.Clientes || '',
+        'Remisiones': leg.Remisiones_Relacionadas || '',
+        'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+        'Gastos (detalle)': itemsOf(leg.id).map(function(it) { return (it.Concepto || '') + ': ' + fmtMoney(it.Valor); }).join(', '),
+        'Total gastos': totalGastosOf(leg.id),
+        'Anticipo': Number(leg.Anticipo_Entregado) || 0,
+        'Km': km,
+        'Estado': leg.Estado_Conciliacion || '',
+        'Observaciones': leg.Observaciones || ''
+      };
+    });
+    var wsLeg = XLSX.utils.json_to_sheet(dataLeg);
+    XLSX.utils.book_append_sheet(wb, wsLeg, 'Por legalizacion');
+  }
+  XLSX.writeFile(wb, 'legalizaciones_detalle_' + today() + '.xlsx');
+  showToast('Excel exportado');
+}
+
 // ── Tabla ──
 function renderTable() {
   var fEmp = document.getElementById('f-emp').value;
@@ -1013,6 +1204,7 @@ function renderTable() {
 
   updateStats();
   renderProrrateoGastos();
+  renderDetalleTable();
 }
 
 function updateStats() {

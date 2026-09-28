@@ -128,6 +128,7 @@
     <button class="lg-tab" id="tab-legalizaciones" onclick="switchTab('legalizaciones')" style="background:#1a5276">📋 Legalizaciones</button>
     <button class="lg-tab" id="tab-prorrateo" onclick="switchTab('prorrateo')" style="background:#718096">📊 Prorrateo de gastos</button>
     <button class="lg-tab" id="tab-vehiculos" onclick="switchTab('vehiculos')" style="background:#718096">🚚 Vehículos</button>
+    <button class="lg-tab" id="tab-detalle" onclick="switchTab('detalle')" style="background:#718096">🔎 Vista detallada</button>
   </div>
 
   <div id="panel-legalizaciones">
@@ -217,6 +218,42 @@
           <tbody id="veh-body"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <div id="panel-detalle" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Empresa</label><select id="df-emp" onchange="renderDetalleTable()"><option value="">Todas</option></select></div>
+      <div class="fg"><label>Tipo</label>
+        <select id="df-tipo" onchange="renderDetalleTable()">
+          <option value="">Todos</option>
+          <option value="Ruta">Ruta</option>
+          <option value="Mantenimiento">Mantenimiento</option>
+        </select>
+      </div>
+      <div class="fg"><label>Estado</label>
+        <select id="df-estado" onchange="renderDetalleTable()">
+          <option value="">Todas</option>
+          <option value="Por conciliar">Por conciliar</option>
+          <option value="Conciliada">Conciliadas</option>
+          <option value="Rechazada">Rechazadas</option>
+        </select>
+      </div>
+      <div class="fg"><label>Desde</label><input type="date" id="df-desde" onchange="renderDetalleTable()"></div>
+      <div class="fg"><label>Hasta</label><input type="date" id="df-hasta" onchange="renderDetalleTable()"></div>
+      <div class="fg"><label>Buscar</label><input type="text" id="df-txt" placeholder="responsable, ruta, cliente, N°…" style="width:200px" oninput="renderDetalleTable()"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+      <button class="lg-tab" id="df-modo-legalizacion" onclick="setDetalleModo('legalizacion')" style="background:#1a5276">📄 Por legalización</button>
+      <button class="lg-tab" id="df-modo-linea" onclick="setDetalleModo('linea')" style="background:#718096">🧾 Por línea de gasto</button>
+      <span style="flex:1"></span>
+      <button class="btn-dl" onclick="exportarDetalleExcel()">📥 Exportar Excel</button>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Vista detallada <span id="df-ct" style="font-weight:400;color:#718096"></span></h3>
+      </div>
+      <div style="overflow-x:auto" id="detalle-body"></div>
     </div>
   </div>
 </div>
@@ -415,6 +452,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260925f"></script>
-<script src="js/legalizacion-gastos.js?v=20260928c"></script>
+<script src="js/legalizacion-gastos.js?v=20260928d"></script>
 </body>
 </html>
