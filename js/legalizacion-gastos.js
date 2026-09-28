@@ -313,13 +313,20 @@ function calcularProrrateoGastos() {
 
   var porEmpresa = {};       // empresaSigla -> monto total
   var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo } } }
+  var porEmpresaLitros = {};     // empresaSigla -> litros totales movidos (sin ponderar por monto)
+  var porEmpresaRemisiones = {}; // empresaSigla -> { codigoRemision: true }
+  var porEmpresaLegs = {};       // empresaSigla -> { legId -> Consecutivo } (legalizaciones que tocan esa empresa)
+  var legsPeriodo = {};          // legId -> true (todas las legalizaciones del período, resuelvan o no litros)
   var sinIdentificar = 0;
+  var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto/litros resoluble)
+  var sinIdentificarLegs = {};       // legId -> Consecutivo
   var totalGeneral = 0;
 
   legs.forEach(function(leg) {
     if (leg.Estado_Conciliacion === 'Rechazada') return;
     if (fDesde && (leg.Fecha || '') < fDesde) return;
     if (fHasta && (leg.Fecha || '') > fHasta) return;
+    legsPeriodo[leg.id] = true;
     var totalViaje = totalGastosOf(leg.id);
     if (totalViaje <= 0) return;
 
@@ -330,22 +337,29 @@ function calcularProrrateoGastos() {
     var lineas = [];
     codigos.forEach(function(c) {
       var matches = remisionProductoMap[c.trim().toUpperCase()];
-      if (matches) lineas = lineas.concat(matches);
+      if (matches) matches.forEach(function(m) { lineas.push({ m: m, codigo: c }); });
     });
 
     var totalLitros = 0;
-    lineas.forEach(function(l) {
+    lineas.forEach(function(item) {
+      var l = item.m;
       var lit = _litParse(l.producto, l.presentacion);
       l._litros = lit.convertible ? lit.litrosUnidad * (Number(l.cantidad) || 0) : 0;
       totalLitros += l._litros;
     });
 
     if (totalLitros <= 0) {
-      if (!fEmp) { sinIdentificar += totalViaje; totalGeneral += totalViaje; }
+      if (!fEmp) {
+        sinIdentificar += totalViaje;
+        totalGeneral += totalViaje;
+        sinIdentificarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+        codigos.forEach(function(c) { sinIdentificarRemisiones[c] = true; });
+      }
       return;
     }
 
-    lineas.forEach(function(l) {
+    lineas.forEach(function(item) {
+      var l = item.m;
       if (l._litros <= 0) return;
       var emp = getSigla(l.empresa);
       if (fEmpSigla && emp !== fEmpSigla) return;
@@ -357,10 +371,33 @@ function calcularProrrateoGastos() {
       entry.monto += monto;
       entry.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
       totalGeneral += monto;
+
+      porEmpresaLitros[emp] = (porEmpresaLitros[emp] || 0) + l._litros;
+      (porEmpresaRemisiones[emp] = porEmpresaRemisiones[emp] || {})[item.codigo] = true;
+      (porEmpresaLegs[emp] = porEmpresaLegs[emp] || {})[leg.id] = leg.Consecutivo || ('#' + leg.id);
     });
   });
 
-  return { porEmpresa: porEmpresa, porEmpresaSku: porEmpresaSku, sinIdentificar: sinIdentificar, totalGeneral: totalGeneral };
+  return {
+    porEmpresa: porEmpresa,
+    porEmpresaSku: porEmpresaSku,
+    porEmpresaLitros: porEmpresaLitros,
+    porEmpresaRemisiones: porEmpresaRemisiones,
+    porEmpresaLegs: porEmpresaLegs,
+    legsPeriodoCount: Object.keys(legsPeriodo).length,
+    sinIdentificar: sinIdentificar,
+    sinIdentificarRemisiones: sinIdentificarRemisiones,
+    sinIdentificarLegs: sinIdentificarLegs,
+    totalGeneral: totalGeneral
+  };
+}
+
+// Litros con 2 decimales máx. y unidad " L" (igual convención que _litFmt de
+// reportes.js, pero local a este módulo).
+function _litFmtLg(n) {
+  var v = Number(n) || 0;
+  var r = Math.round((v + Number.EPSILON) * 100) / 100;
+  return r.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' L';
 }
 
 // Monto con 2 decimales (el prorrateo por litros da valores fraccionarios;
@@ -392,8 +429,67 @@ function lgProrrateoTable(rows, headerLabel) {
 
 function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
+  renderResumenProrrateo(calc);
   renderGastoPorProducto(calc);
   renderGastoPorEmpresa(calc);
+}
+
+// Resumen del período: litros totales movidos y remisiones relacionadas por
+// empresa, más la cantidad de legalizaciones consideradas (respeta los
+// filtros Empresa/Desde/Hasta de esta pestaña, igual que las otras dos
+// tablas). Con el filtro de Empresa activo, el conteo de legalizaciones pasa
+// a ser el de esa empresa puntual (las que aportaron al menos una línea).
+function renderResumenProrrateo(calc) {
+  var box = document.getElementById('gpr-body');
+  var legsEl = document.getElementById('gpr-legs-total');
+  if (!box) return;
+
+  var fEmp = document.getElementById('pf-emp').value;
+  var fEmpSigla = fEmp ? getSigla(fEmp) : '';
+  var legsCount = fEmpSigla ? Object.keys(calc.porEmpresaLegs[fEmpSigla] || {}).length : calc.legsPeriodoCount;
+  if (legsEl) legsEl.textContent = legsCount + ' legalización' + (legsCount === 1 ? '' : 'es') + ' en el período';
+
+  var empresas = Object.keys(calc.porEmpresaLitros).sort(function(a, b) { return calc.porEmpresaLitros[b] - calc.porEmpresaLitros[a]; });
+  var sinIdRemisiones = Object.keys(calc.sinIdentificarRemisiones || {}).sort(function(a, b) { return a.localeCompare(b, 'es'); });
+
+  if (!empresas.length && !sinIdRemisiones.length) {
+    box.innerHTML = '<div class="empty">Sin datos para este período.</div>';
+    return;
+  }
+
+  function remisionesHtml(codigos) {
+    if (!codigos.length) return '<span style="color:#a0aec0;font-size:0.82rem">Sin remisiones.</span>';
+    return codigos.map(function(r) {
+      return '<span class="badge b-par" style="margin:2px 4px 2px 0">' + escHtml(r) + '</span>';
+    }).join('');
+  }
+
+  var html = empresas.map(function(emp) {
+    var litros = calc.porEmpresaLitros[emp];
+    var nLegs = Object.keys(calc.porEmpresaLegs[emp] || {}).length;
+    var remisiones = Object.keys(calc.porEmpresaRemisiones[emp] || {}).sort(function(a, b) { return a.localeCompare(b, 'es'); });
+
+    return '<div class="gpp-group">' +
+      '<div class="gpp-group-head">' +
+        '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' +
+        '<span class="gpp-group-total">' + escHtml(_litFmtLg(litros)) + ' <span style="color:#a0aec0;font-weight:400">· ' + nLegs + ' legalización' + (nLegs === 1 ? '' : 'es') + '</span></span>' +
+      '</div>' +
+      '<div style="padding:2px 0 4px">' + remisionesHtml(remisiones) + '</div>' +
+    '</div>';
+  }).join('');
+
+  if (sinIdRemisiones.length) {
+    var nLegsSin = Object.keys(calc.sinIdentificarLegs || {}).length;
+    html += '<div class="gpp-group">' +
+      '<div class="gpp-group-head">' +
+        '<span style="color:#718096;font-weight:700">Sin identificar</span>' +
+        '<span class="gpp-group-total"><span style="color:#a0aec0;font-weight:400">' + nLegsSin + ' legalización' + (nLegsSin === 1 ? '' : 'es') + '</span></span>' +
+      '</div>' +
+      '<div style="padding:2px 0 4px">' + remisionesHtml(sinIdRemisiones) + '</div>' +
+    '</div>';
+  }
+
+  box.innerHTML = html;
 }
 
 function clearProrrateoFiltros() {

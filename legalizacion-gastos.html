@@ -148,6 +148,16 @@
       <button class="btn-dl" style="margin-left:auto" onclick="exportarProrrateoExcel()">📥 Exportar Excel</button>
       <button style="background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600" onclick="clearProrrateoFiltros()">✕ Limpiar</button>
     </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
+        <h3>Resumen del período</h3>
+        <span id="gpr-legs-total" style="font-weight:600;color:#1a5276;font-size:0.86rem"></span>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Litros totales movidos y remisiones relacionadas de cada empresa, según los filtros de arriba.</div>
+      </div>
+      <div id="gpr-body"></div>
+    </div>
     <div class="lg-row">
       <div class="card">
         <div class="card-head">
@@ -290,6 +300,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260925f"></script>
-<script src="js/legalizacion-gastos.js?v=20260925j"></script>
+<script src="js/legalizacion-gastos.js?v=20260928a"></script>
 </body>
 </html>
