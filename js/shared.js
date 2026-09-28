@@ -449,6 +449,13 @@ async function apiGet(action, opts) {
       return { ok: true, bitacora: _addRow(res.data || []) };
     }
 
+    // Todas las entradas de bitácora (todos los clientes) — para el panel Cartera.
+    if (action === 'getBitacoraContactoAll') {
+      var res = await _fetchAllRows('BitacoraContactoClientes', cols);
+      if (res.error) return { ok: false, error: res.error.message, bitacora: [] };
+      return { ok: true, bitacora: _addRow(res.data) };
+    }
+
     if (action === 'getInventarioFisico') {
       var all = [], from = 0, size = 1000;
       while (true) {

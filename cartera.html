@@ -84,6 +84,7 @@
     <button class="car-tab" id="tab-bloqueados" onclick="carSwitchTab('bloqueados')">🔒 Bloqueados <span class="car-tab-ct" id="ct-bloqueados">0</span></button>
     <button class="car-tab" id="tab-clibloq" onclick="carSwitchTab('clibloq')">🚫 Clientes bloqueados <span class="car-tab-ct" id="ct-clibloq">0</span></button>
     <button class="car-tab" id="tab-clisus" onclick="carSwitchTab('clisus')">⛔ Suspendidos <span class="car-tab-ct" id="ct-clisus">0</span></button>
+    <button class="car-tab" id="tab-clibit" onclick="carSwitchTab('clibit')">📞 Con bitácora <span class="car-tab-ct" id="ct-clibit">0</span></button>
     <button class="car-tab" id="tab-resumen" onclick="carSwitchTab('resumen')">📈 Resumen</button>
   </div>
 
@@ -171,6 +172,32 @@
       Incluye todos los clientes con Estado = "Suspendido" en el módulo de Clientes (definitivamente no se les volverá a
       vender), tengan o no pedidos vigentes. Es específico por empresa: si el mismo cliente le compra a varias empresas,
       solo aparece(n) aquí la(s) empresa(s) donde está suspendido; en las demás sigue activo.
+    </p>
+  </div>
+
+  <!-- PANEL: Clientes con bitácora de contacto -->
+  <div id="panel-clibit" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>📞 Clientes con bitácora de contacto <span id="clibit-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="carExportClibit()">⬇️ Excel</button>
+          <button class="btn-dl" onclick="loadCartera()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>NIT</th><th>Estado actual</th><th>N° contactos</th><th>Último contacto</th><th>Tipo</th><th>Última gestión</th><th></th>
+          </tr></thead>
+          <tbody id="clibit-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px">
+      Clientes con al menos una entrada en su bitácora de contacto (módulo Clientes). La bitácora es única por cliente
+      unificado (cruza por NIT), no por empresa. "Ver en Clientes" abre el listado filtrado por ese NIT; desde ahí, el
+      botón 📞 muestra el historial completo.
     </p>
   </div>
 

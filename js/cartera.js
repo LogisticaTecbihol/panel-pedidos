@@ -26,6 +26,8 @@ var carByKey = {};
 var carClientes = [];      // ClientesUnicos
 var carCliByNit = {};      // nitBase → [registros]
 var carCliByName = {};     // nombre normalizado → [registros]
+var carBitacora = [];      // BitacoraContactoClientes (todas las entradas, todos los clientes)
+var carBitPorNit = {};     // nitBase → true (para el filtro de empresa)
 var carTab = 'aprobar';
 var carSel = {};           // key → true (selección de la cola)
 var carCtxKey = null;      // pedido abierto en el panel de contexto
@@ -212,13 +214,20 @@ async function loadCartera() {
   try {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: CAR_PED_COLS }),
-      apiGet('getClientesAll', { columns: CAR_CLI_COLS })
+      apiGet('getClientesAll', { columns: CAR_CLI_COLS }),
+      apiGet('getBitacoraContactoAll', { columns: 'id,NIT,Cliente,Fecha_Contacto,Tipo_Contacto,Gestion,creado_en' })
     ]);
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');
     if (!results[1].ok) throw new Error(results[1].error || 'Error al cargar clientes');
 
     carClientes = results[1].clientes || [];
     carIndexClientes();
+    carBitacora = results[2].ok ? (results[2].bitacora || []) : [];
+    carBitPorNit = {};
+    carBitacora.forEach(function(b) {
+      var nb = _nitBase(b.NIT);
+      if (nb) carBitPorNit[nb] = true;
+    });
     carOrders = carBuildOrders(results[0].pedidos || []);
     carByKey = {};
     carOrders.forEach(function(o) { carByKey[o.key] = o; });
@@ -253,10 +262,13 @@ function carFillEmpresas() {
   carOrders.forEach(function(o) {
     if (o.estado2 === CAR_PEND || o.estado2 === CAR_BLOQ) nombres[o.empresa] = true;
   });
-  // También las empresas de clientes bloqueados sin pedidos vigentes (si no,
-  // no aparecerían nunca en el filtro de empresa de la pestaña "Clientes bloqueados").
+  // También las empresas de clientes bloqueados/suspendidos sin pedidos vigentes,
+  // y las de clientes con bitácora (si no, no aparecerían nunca en el filtro de
+  // empresa de esas pestañas).
   carClientes.forEach(function(c) {
-    if (c.Estado === CAR_BLOQ && c.Nombre_Empresa) nombres[c.Nombre_Empresa] = true;
+    if (!c.Nombre_Empresa) return;
+    var nb = _nitBase(c.Identificacion);
+    if (c.Estado === CAR_BLOQ || c.Estado === CAR_SUSP || (nb && carBitPorNit[nb])) nombres[c.Nombre_Empresa] = true;
   });
   var arr = Object.keys(nombres).sort();
   sel.innerHTML = '<option value="">Todas</option>' + arr.map(function(n) {
@@ -295,12 +307,14 @@ function carRender() {
   var bloq = carOrders.filter(function(o) { return o.estado2 === CAR_BLOQ; });
   var cliBloq = carClientesBloqueados();
   var cliSus = carClientesSuspendidos();
+  var cliBit = carClientesConBitacora();
 
   document.getElementById('ct-aprobar').textContent = pend.length;
   document.getElementById('ct-bloqueados').textContent = bloq.length;
   document.getElementById('ct-clibloq').textContent = cliBloq.length;
   document.getElementById('ct-clisus').textContent = cliSus.length;
-  ['aprobar', 'bloqueados', 'clibloq', 'clisus', 'resumen'].forEach(function(t) {
+  document.getElementById('ct-clibit').textContent = cliBit.length;
+  ['aprobar', 'bloqueados', 'clibloq', 'clisus', 'clibit', 'resumen'].forEach(function(t) {
     document.getElementById('tab-' + t).classList.toggle('active', carTab === t);
   });
   carRenderStats(pend, bloq);
@@ -308,14 +322,17 @@ function carRender() {
   var esResumen = carTab === 'resumen';
   var esClibloq = carTab === 'clibloq';
   var esClisus = carTab === 'clisus';
-  document.getElementById('panel-cola').style.display = (esResumen || esClibloq || esClisus) ? 'none' : 'block';
+  var esClibit = carTab === 'clibit';
+  document.getElementById('panel-cola').style.display = (esResumen || esClibloq || esClisus || esClibit) ? 'none' : 'block';
   document.getElementById('panel-resumen').style.display = esResumen ? 'block' : 'none';
   document.getElementById('panel-clibloq').style.display = esClibloq ? 'block' : 'none';
   document.getElementById('panel-clisus').style.display = esClisus ? 'block' : 'none';
+  document.getElementById('panel-clibit').style.display = esClibit ? 'block' : 'none';
   document.getElementById('car-filters').style.display = esResumen ? 'none' : 'flex';
   if (esResumen) carRenderResumen(bloq);
   else if (esClibloq) carRenderClibloq(cliBloq);
   else if (esClisus) carRenderClisus(cliSus);
+  else if (esClibit) carRenderClibit(cliBit);
   else carRenderCola(carTab === 'aprobar' ? pend : bloq);
 }
 
@@ -628,6 +645,105 @@ function carExportClisus() {
       x.plazo, x.pedidosVigentes, x.valorVigente, x.obs || '', x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
   });
   carXlsx('cartera_clientes_suspendidos', 'Clientes suspendidos', filas);
+}
+
+// ── Clientes con bitácora de contacto ────────────────────────────────────
+// A diferencia de Bloqueados/Suspendidos, la bitácora es UNA sola por
+// cliente unificado (cruza por NIT, no por empresa — ver
+// reference_bitacora_contacto_clientes.md), así que aquí se agrupa solo por
+// NIT/nombre, no por (cliente, empresa).
+var CAR_BIT_ICONS = { 'Llamada': '📞', 'WhatsApp': '💬', 'Correo': '✉️', 'Otro': '📝' };
+
+function carClientesConBitacora() {
+  var g = {};
+  carBitacora.forEach(function(b) {
+    var idCli = _nitBase(b.NIT) || (b.Cliente ? 'n:' + norm(b.Cliente) : '');
+    if (!idCli) return;
+    var x = g[idCli] || (g[idCli] = { idCli: idCli, cliente: b.Cliente || '', nit: b.NIT || '', entradas: [], _maxCreado: '' });
+    // Nombre/NIT de la entrada más reciente (por si el cliente cambió de razón social).
+    if ((b.creado_en || '') >= x._maxCreado) {
+      x._maxCreado = b.creado_en || '';
+      x.cliente = b.Cliente || x.cliente;
+      x.nit = b.NIT || x.nit;
+    }
+    x.entradas.push(b);
+  });
+  var out = Object.keys(g).map(function(k) { return g[k]; });
+  out.forEach(function(x) {
+    x.entradas.sort(function(a, b) {
+      return (b.Fecha_Contacto || '').localeCompare(a.Fecha_Contacto || '') || (b.id - a.id);
+    });
+    x.total = x.entradas.length;
+    var ult = x.entradas[0];
+    x.ultFecha = ult ? ult.Fecha_Contacto : '';
+    x.ultTipo = ult ? ult.Tipo_Contacto : '';
+    x.ultGestion = ult ? ult.Gestion : '';
+    var regs = carCliByNit[x.idCli] || carCliByName[norm(x.cliente)] || [];
+    x.regs = regs;
+    var emps = {};
+    regs.forEach(function(r) { if (r.Nombre_Empresa) emps[r.Nombre_Empresa] = true; });
+    x.empresas = Object.keys(emps);
+  });
+  out.sort(function(a, b) { return (b.ultFecha || '').localeCompare(a.ultFecha || '') || a.cliente.localeCompare(b.cliente); });
+  return out;
+}
+
+function carFiltrarClibit(list) {
+  var emp = document.getElementById('f-emp').value;
+  var q = norm(document.getElementById('f-txt').value);
+  return list.filter(function(x) {
+    if (emp && x.empresas.indexOf(emp) < 0) return false;
+    if (q) {
+      var hay = norm([x.cliente, x.nit, x.ultGestion].join(' '));
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function carEstadoClienteBadge(regs) {
+  var estCli = carEstadoCliente(regs);
+  if (!regs.length) return '<span class="car-pill mid">No está en Clientes</span>';
+  if (estCli === CAR_SUSP) return '<span class="car-pill over">Suspendido</span>';
+  if (estCli === CAR_BLOQ) return '<span class="car-pill over">Bloqueado por cartera</span>';
+  if (estCli === 'Inactivo') return '<span class="car-pill mid">Inactivo</span>';
+  return '<span class="car-pill ok">Activo</span>';
+}
+
+function carRenderClibit(all) {
+  var lista = carFiltrarClibit(all);
+
+  document.getElementById('clibit-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
+
+  if (!lista.length) {
+    document.getElementById('clibit-body').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:26px">' +
+      (all.length ? 'Ningún cliente con bitácora coincide con los filtros.' : 'Todavía no hay entradas de bitácora registradas.') + '</td></tr>';
+    return;
+  }
+
+  document.getElementById('clibit-body').innerHTML = lista.map(function(x) {
+    var icon = CAR_BIT_ICONS[x.ultTipo] || '📝';
+    var verLink = x.nit
+      ? '<a class="btn-dl" href="clientes.html?buscar=' + encodeURIComponent(x.nit) + '" style="text-decoration:none">👁️ Ver en Clientes</a>'
+      : '';
+    return '<tr><td>' + escHtml(x.cliente || '—') + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
+      '<td>' + carEstadoClienteBadge(x.regs) + '</td>' +
+      '<td style="text-align:center">' + x.total + '</td>' +
+      '<td>' + (x.ultFecha ? escHtml(fmtDate(x.ultFecha)) : '—') + '</td>' +
+      '<td>' + icon + ' ' + escHtml(x.ultTipo || '') + '</td>' +
+      '<td style="max-width:260px;white-space:normal;font-size:0.78rem;color:#4a5568">' + escHtml(x.ultGestion || '') + '</td>' +
+      '<td>' + verLink + '</td></tr>';
+  }).join('');
+}
+
+function carExportClibit() {
+  var lista = carFiltrarClibit(carClientesConBitacora());
+  var filas = [['Cliente', 'NIT', 'Estado actual', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
+  lista.forEach(function(x) {
+    filas.push([x.cliente, x.nit, carEstadoCliente(x.regs) || 'No está en Clientes', x.total,
+      x.ultFecha ? fmtDate(x.ultFecha) : '', x.ultTipo || '', x.ultGestion || '']);
+  });
+  carXlsx('cartera_clientes_con_bitacora', 'Con bitácora', filas);
 }
 
 // ── Selección y acciones masivas ─────────────────────────────
