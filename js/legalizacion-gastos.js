@@ -1466,6 +1466,21 @@ function setPlacaFieldMant(value) {
   }
 }
 
+// Mantenimiento no tiene "viaje" (sin salida/llegada), así que registra un
+// solo kilometraje puntual — el odómetro del vehículo al momento del
+// mantenimiento — reutilizando la misma columna Km_Llegada que usa Ruta.
+function updateKmWrapVisibilityMant() {
+  var placa = readPlacaMant();
+  var show = KM_PILOTO_PLACAS.indexOf(placa) >= 0;
+  var wrap = document.getElementById('mant-km-wrap');
+  if (wrap) wrap.style.display = show ? 'block' : 'none';
+  var hintEl = document.getElementById('mant-km-hint');
+  if (hintEl) {
+    var info = show ? ultimoKmVehiculo(placa) : null;
+    hintEl.textContent = info ? ('Último odómetro conocido: ' + info.km.toLocaleString('es-CO') + ' km' + (info.fecha ? ' (' + fmtDate(info.fecha) + ')' : '')) : '';
+  }
+}
+
 function onPlacaSelectChangeMant() {
   var sel = document.getElementById('mant-placa-select');
   var otro = document.getElementById('mant-placa-otro');
@@ -1475,6 +1490,13 @@ function onPlacaSelectChangeMant() {
   } else {
     otro.style.display = 'none';
     otro.value = '';
+  }
+  updateKmWrapVisibilityMant();
+  if (!editingLegId) {
+    var placa = readPlacaMant();
+    var info = KM_PILOTO_PLACAS.indexOf(placa) >= 0 ? ultimoKmVehiculo(placa) : null;
+    var kmInp = document.getElementById('mant-km-actual');
+    if (info && kmInp && !kmInp.value) kmInp.value = info.km;
   }
 }
 
@@ -1611,6 +1633,7 @@ function openFormMant(id) {
     document.getElementById('mant-fecha').value = (leg.Fecha || '').slice(0, 10);
     setResponsableFieldMant(leg.Responsable || '');
     setPlacaFieldMant(leg.Placa || '');
+    document.getElementById('mant-km-actual').value = leg.Km_Llegada != null ? leg.Km_Llegada : '';
     document.getElementById('mant-anticipo').value = leg.Anticipo_Entregado || '';
     document.getElementById('mant-observaciones').value = leg.Observaciones || '';
     formGastosMant = itemsOf(editingLegId).map(function(it) {
@@ -1623,6 +1646,7 @@ function openFormMant(id) {
     document.getElementById('mant-fecha').value = today();
     setResponsableFieldMant('');
     setPlacaFieldMant('');
+    document.getElementById('mant-km-actual').value = '';
     document.getElementById('mant-anticipo').value = '';
     document.getElementById('mant-observaciones').value = '';
     formGastosMant = [{ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' }];
@@ -1630,6 +1654,7 @@ function openFormMant(id) {
   }
   if (!formGastosMant.length) formGastosMant = [{ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' }];
   if (!formEmpresasMant.length) formEmpresasMant = [{ Empresa: '', Monto: '' }];
+  updateKmWrapVisibilityMant();
   renderMantGastos();
   renderMantEmpresas();
   recalcTotalsMant();
@@ -1641,15 +1666,21 @@ function closeFormMant() {
 }
 
 function readHeaderFormMant() {
+  var placa = readPlacaMant();
+  var esPilotoKm = KM_PILOTO_PLACAS.indexOf(placa) >= 0;
   return {
     Fecha: document.getElementById('mant-fecha').value || today(),
     Tipo: 'Mantenimiento',
     Responsable: readResponsableMant(),
-    Placa: readPlacaMant(),
+    Placa: placa,
     Recorrido_Ruta: '',
     No_Personas: null,
     Fecha_Salida: null,
     Fecha_Llegada: null,
+    // Mantenimiento no es un viaje (sin salida/llegada): reutiliza Km_Llegada
+    // como el kilometraje puntual del vehículo al momento del mantenimiento.
+    Km_Salida: null,
+    Km_Llegada: esPilotoKm ? (document.getElementById('mant-km-actual').value || null) : null,
     Clientes: '',
     Remisiones_Relacionadas: '',
     Anticipo_Entregado: Number(document.getElementById('mant-anticipo').value) || 0,
@@ -1811,6 +1842,7 @@ function renderVerBody(leg) {
   var infoGridHtml = esMant ?
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
       '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
+      (leg.Km_Llegada != null ? '<div><strong>Kilometraje registrado:</strong> ' + escHtml(Number(leg.Km_Llegada).toLocaleString('es-CO')) + ' km</div>' : '') +
       '<div><strong>Anticipo entregado:</strong> ' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</div>' +
       '<div style="grid-column:span 3"><strong>Observaciones:</strong> ' + escHtml(leg.Observaciones || '—') + '</div>' +
     '</div>' :
@@ -1996,6 +2028,9 @@ function exportarPDF() {
   ];
   if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
     rightFields.push(['Km recorridos', (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km']);
+  }
+  if (esMant && leg.Km_Llegada != null) {
+    rightFields.push(['Kilometraje', Number(leg.Km_Llegada).toLocaleString('es-CO') + ' km']);
   }
 
   // El gasto se reparte entre varias empresas del holding (ver "reparto" /

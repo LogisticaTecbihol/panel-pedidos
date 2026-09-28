@@ -345,6 +345,13 @@
           </select>
           <input class="ef" id="mant-placa-otro" type="text" placeholder="Placa del vehículo" style="margin-top:4px;display:none">
         </div>
+        <div id="mant-km-wrap" style="display:none;grid-column:span 3;padding:10px 12px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px">
+          <div style="font-size:0.8rem;font-weight:700;color:#1a5276;margin-bottom:8px">Kilometraje (piloto)</div>
+          <div style="max-width:220px">
+            <label class="ef-label">Km actual del vehículo</label><input class="ef" id="mant-km-actual" type="number" min="0" step="1">
+          </div>
+          <div id="mant-km-hint" style="font-size:0.76rem;color:#718096;margin-top:6px"></div>
+        </div>
         <div><label class="ef-label">Anticipo entregado ($)</label><input class="ef" id="mant-anticipo" type="number" min="0" step="1"></div>
         <div style="grid-column:span 2"><label class="ef-label">Observaciones</label><textarea class="ef" id="mant-observaciones" rows="1" style="resize:vertical"></textarea></div>
       </div>
