@@ -2365,6 +2365,7 @@ async function _apiPostCore(body) {
       var hdrLG = body.header || {};
       var payloadLG = {
         Fecha: hdrLG.Fecha || today(),
+        Tipo: hdrLG.Tipo === 'Mantenimiento' ? 'Mantenimiento' : 'Ruta',
         Responsable: hdrLG.Responsable || '',
         Placa: hdrLG.Placa || '',
         Recorrido_Ruta: hdrLG.Recorrido_Ruta || '',
@@ -2402,6 +2403,7 @@ async function _apiPostCore(body) {
       var hdrLGe = body.header || {};
       var updLG = {
         Fecha: hdrLGe.Fecha || today(),
+        Tipo: hdrLGe.Tipo === 'Mantenimiento' ? 'Mantenimiento' : 'Ruta',
         Responsable: hdrLGe.Responsable || '',
         Placa: hdrLGe.Placa || '',
         Recorrido_Ruta: hdrLGe.Recorrido_Ruta || '',

@@ -28,6 +28,15 @@ var formRemisiones = []; // remisiones relacionadas del formulario en curso (lis
 var formClientes = [];   // clientes visitados del formulario en curso (lista)
 var formGastoProveedorACs = []; // autocompletes de Proveedor (uno por línea de gasto, se recrean en cada render)
 
+// ── Formulario de Mantenimiento (Tipo='Mantenimiento'): mismo patrón de
+// cabecera + líneas de gasto + reparto entre empresas que el formulario de
+// ruta, pero sin remisiones/clientes/recorrido y con un detalle de
+// mantenimiento (en vez de Concepto) por línea. Estado propio, en paralelo
+// al del formulario de ruta (editingLegId se comparte: solo un modal a la vez).
+var formGastosMant = [];
+var formEmpresasMant = [];
+var formMantProveedorACs = [];
+
 var legAdjuntosCache = [];
 
 // Clientes con al menos una remisión real generada (Pedidos.Remisiones no
@@ -211,19 +220,28 @@ function joinNitDv(nit, dv) {
   return d ? (n + '-' + d) : n;
 }
 
-// Conceptos fijos del formulario de gasto; "Otros" pide especificar el detalle.
-var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Mantenimiento', 'Envío', 'Alojamiento'];
+// Conceptos fijos del formulario de gasto de ruta; "Otros" pide especificar
+// el detalle. Mantenimiento tiene su propio formulario aparte (ver
+// MANTENIMIENTO_DETALLE_FIJOS) y no aparece aquí.
+var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Envío', 'Alojamiento'];
 
-function parseConceptoLine(concepto) {
-  return CONCEPTO_FIJOS.indexOf(concepto) >= 0 ? { sel: concepto, detail: '' } : { sel: 'Otros', detail: concepto || '' };
+// Detalle de mantenimiento (líneas de gasto del formulario de mantenimiento,
+// en vez de Concepto); "Otros" pide especificar.
+var MANTENIMIENTO_DETALLE_FIJOS = ['Aceite', 'Llantas', 'Extintor', 'Lavado', 'Mantenimiento correctivo'];
+
+function parseConceptoLineFor(list, concepto) {
+  return list.indexOf(concepto) >= 0 ? { sel: concepto, detail: '' } : { sel: 'Otros', detail: concepto || '' };
 }
 
-function conceptoOptionsHtml(selected) {
-  var opts = CONCEPTO_FIJOS.concat(['Otros']).map(function(c) {
+function conceptoOptionsHtmlFor(list, selected) {
+  var opts = list.concat(['Otros']).map(function(c) {
     return '<option value="' + escHtml(c) + '"' + (c === selected ? ' selected' : '') + '>' + escHtml(c) + '</option>';
   });
   return opts.join('');
 }
+
+function parseConceptoLine(concepto) { return parseConceptoLineFor(CONCEPTO_FIJOS, concepto); }
+function conceptoOptionsHtml(selected) { return conceptoOptionsHtmlFor(CONCEPTO_FIJOS, selected); }
 
 // ── Carga inicial ──
 async function loadLegalizaciones() {
@@ -657,6 +675,12 @@ function renderGastoPorEmpresa(calc) {
   box.innerHTML = lgProrrateoTable(rows, 'Empresa');
 }
 
+function tipoBadgeHtml(leg) {
+  return (leg.Tipo === 'Mantenimiento')
+    ? '<span class="badge b-fac">🔧 Mantenimiento</span>'
+    : '<span class="badge b-par">🚚 Ruta</span>';
+}
+
 function estadoBadgeHtml(leg) {
   if (leg.Estado_Conciliacion === 'Conciliada') return '<span class="badge b-ent">✅ Conciliada</span>';
   if (leg.Estado_Conciliacion === 'Rechazada') {
@@ -676,11 +700,13 @@ function empresasBadgesHtml(legId) {
 // ── Tabla ──
 function renderTable() {
   var fEmp = document.getElementById('f-emp').value;
+  var fTipo = document.getElementById('f-tipo').value;
   var fEstado = document.getElementById('f-estado').value;
   var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
 
   var rows = legs.filter(function(leg) {
     if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
+    if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fTxt) {
       var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes]
@@ -697,9 +723,10 @@ function renderTable() {
 
   document.getElementById('lg-body').innerHTML = rows.map(function(leg) {
     var total = totalGastosOf(leg.id);
+    var esMant = leg.Tipo === 'Mantenimiento';
     var acciones = '<button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button>';
     if (leg.Estado_Conciliacion === 'Por conciliar' && canEditMod) {
-      acciones += ' <button class="btn-edit" onclick="openForm(' + leg.id + ')">✏️</button>';
+      acciones += ' <button class="btn-edit" onclick="' + (esMant ? 'openFormMant' : 'openForm') + '(' + leg.id + ')">✏️</button>';
     }
     if (leg.Estado_Conciliacion === 'Por conciliar' && canDel) {
       acciones += ' <button class="btn-edit" style="color:#c0392b" onclick="eliminarLegalizacion(' + leg.id + ')">🗑️</button>';
@@ -708,6 +735,7 @@ function renderTable() {
       '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
       '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
       '<td>' + escHtml(leg.Responsable || '') + '</td>' +
+      '<td>' + tipoBadgeHtml(leg) + '</td>' +
       '<td>' + escHtml(leg.Recorrido_Ruta || '') + '</td>' +
       '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney(total)) + '</td>' +
@@ -715,7 +743,7 @@ function renderTable() {
       '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td>' + acciones + '</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="9"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
+  }).join('') || '<tr><td colspan="10"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
 
   updateStats();
   renderProrrateoGastos();
@@ -1024,6 +1052,7 @@ function closeForm() {
 function readHeaderForm() {
   return {
     Fecha: document.getElementById('lg-fecha').value || today(),
+    Tipo: 'Ruta',
     Responsable: readResponsable(),
     Placa: readPlaca(),
     Recorrido_Ruta: document.getElementById('lg-ruta').value.trim(),
@@ -1073,6 +1102,294 @@ async function saveForm() {
   else if (editingLegId) openVer(editingLegId);
 }
 
+// ── Formulario de Mantenimiento (Tipo='Mantenimiento') ──
+// Mismo patrón que el formulario de ruta (cabecera + reparto entre empresas +
+// líneas de gasto + conciliación posterior), pero sin remisiones, clientes ni
+// recorrido/ruta, con Placa obligatoria y con un detalle de mantenimiento
+// (MANTENIMIENTO_DETALLE_FIJOS) en vez de Concepto por línea de gasto.
+
+function setResponsableFieldMant(value) {
+  var sel = document.getElementById('mant-responsable-select');
+  var otro = document.getElementById('mant-responsable-otro');
+  if (!value) {
+    sel.value = '';
+    otro.style.display = 'none';
+    otro.value = '';
+  } else if (RESPONSABLES_FIJOS.indexOf(value) >= 0) {
+    sel.value = value;
+    otro.style.display = 'none';
+    otro.value = '';
+  } else {
+    sel.value = 'Otro';
+    otro.style.display = '';
+    otro.value = value;
+  }
+}
+
+function onResponsableSelectChangeMant() {
+  var sel = document.getElementById('mant-responsable-select');
+  var otro = document.getElementById('mant-responsable-otro');
+  if (sel.value === 'Otro') {
+    otro.style.display = '';
+    otro.focus();
+  } else {
+    otro.style.display = 'none';
+    otro.value = '';
+  }
+}
+
+function readResponsableMant() {
+  var sel = document.getElementById('mant-responsable-select').value;
+  if (sel === 'Otro') return document.getElementById('mant-responsable-otro').value.trim();
+  return sel;
+}
+
+function setPlacaFieldMant(value) {
+  var sel = document.getElementById('mant-placa-select');
+  var otro = document.getElementById('mant-placa-otro');
+  if (!value) {
+    sel.value = '';
+    otro.style.display = 'none';
+    otro.value = '';
+  } else if (PLACAS_FIJAS.indexOf(value) >= 0) {
+    sel.value = value;
+    otro.style.display = 'none';
+    otro.value = '';
+  } else {
+    sel.value = 'Otro';
+    otro.style.display = '';
+    otro.value = value;
+  }
+}
+
+function onPlacaSelectChangeMant() {
+  var sel = document.getElementById('mant-placa-select');
+  var otro = document.getElementById('mant-placa-otro');
+  if (sel.value === 'Otro') {
+    otro.style.display = '';
+    otro.focus();
+  } else {
+    otro.style.display = 'none';
+    otro.value = '';
+  }
+}
+
+function readPlacaMant() {
+  var sel = document.getElementById('mant-placa-select').value;
+  if (sel === 'Otro') return document.getElementById('mant-placa-otro').value.trim();
+  return sel;
+}
+
+function renderMantEmpresas() {
+  document.getElementById('mant-emp-lines').innerHTML = formEmpresasMant.map(function(e, i) {
+    return '<tr>' +
+      '<td><select class="ef mant-emp-select" data-line="' + i + '" onchange="readMantEmpresas()">' + empresaRowOptionsHtml(e.Empresa) + '</select></td>' +
+      '<td><input class="ef mant-emp-monto" data-line="' + i + '" type="number" min="0" step="1" value="' + (e.Monto || '') + '" style="text-align:right;width:140px" oninput="readMantEmpresas()"></td>' +
+      '<td style="text-align:center"><button onclick="removeMantEmpresa(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="3"><div class="no-lines">Sin empresas en el reparto.</div></td></tr>';
+}
+
+function addMantEmpresa() {
+  formEmpresasMant.push({ Empresa: '', Monto: '' });
+  renderMantEmpresas();
+}
+
+function removeMantEmpresa(i) {
+  formEmpresasMant.splice(i, 1);
+  renderMantEmpresas();
+  recalcTotalsMant();
+}
+
+function readMantEmpresas() {
+  document.querySelectorAll('.mant-emp-select').forEach(function(sel) {
+    var i = Number(sel.dataset.line);
+    if (formEmpresasMant[i]) formEmpresasMant[i].Empresa = sel.value;
+  });
+  document.querySelectorAll('.mant-emp-monto').forEach(function(inp) {
+    var i = Number(inp.dataset.line);
+    if (formEmpresasMant[i]) formEmpresasMant[i].Monto = Number(inp.value) || 0;
+  });
+  recalcTotalsMant();
+}
+
+function renderMantGastos() {
+  formMantProveedorACs.forEach(function(ac) { ac.destroy(); });
+  formMantProveedorACs = [];
+
+  document.getElementById('mant-gasto-lines').innerHTML = formGastosMant.map(function(g, i) {
+    var parsed = parseConceptoLineFor(MANTENIMIENTO_DETALLE_FIJOS, g.Concepto || '');
+    return '<tr>' +
+      '<td>' +
+        '<select class="ef mant-g-concepto" data-line="' + i + '" onchange="onConceptoSelectChangeMant(this)">' + conceptoOptionsHtmlFor(MANTENIMIENTO_DETALLE_FIJOS, parsed.sel) + '</select>' +
+        (parsed.sel === 'Otros' ? '<input class="ef mant-g-concepto-otro" data-line="' + i + '" type="text" value="' + escHtml(parsed.detail) + '" placeholder="Especifique…" style="margin-top:4px" oninput="readMantGastos()">' : '') +
+      '</td>' +
+      '<td><input class="ef mant-g-proveedor" data-line="' + i + '" type="text" value="' + escHtml(g.Proveedor || '') + '" placeholder="Proveedor" autocomplete="off" oninput="readMantGastos()"></td>' +
+      '<td><div style="display:flex;gap:4px">' +
+        '<input class="ef mant-g-nit" data-line="' + i + '" type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:100px" oninput="readMantGastos()">' +
+        '<input class="ef mant-g-dv" data-line="' + i + '" type="text" value="' + escHtml(g.DV || '') + '" placeholder="DV" maxlength="2" style="width:44px;text-align:center" oninput="readMantGastos()">' +
+      '</div></td>' +
+      '<td><input class="ef mant-g-valor" data-line="' + i + '" type="number" min="0" step="1" value="' + (g.Valor || '') + '" style="text-align:right;width:120px" oninput="readMantGastos()"></td>' +
+      '<td style="text-align:center"><button onclick="removeMantGasto(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="5"><div class="no-lines">Sin líneas de gasto.</div></td></tr>';
+
+  document.querySelectorAll('.mant-g-proveedor').forEach(function(inp) {
+    formMantProveedorACs.push(initAutocomplete(inp, {
+      minChars: 1,
+      items: proveedoresConocidos,
+      display: function(p) {
+        return '<strong>' + escHtml(p.proveedor) + '</strong>' + (p.nit ? ' <span class="ac-sub">NIT ' + escHtml(p.nit) + '</span>' : '');
+      },
+      match: function(p, val) { return p.proveedor.toLowerCase().indexOf(val) >= 0; },
+      onSelect: function(p) {
+        var i = Number(inp.dataset.line);
+        inp.value = p.proveedor;
+        var nd = splitNitDv(p.nit);
+        var nitInput = document.querySelector('.mant-g-nit[data-line="' + i + '"]');
+        var dvInput = document.querySelector('.mant-g-dv[data-line="' + i + '"]');
+        if (nitInput) nitInput.value = nd.nit;
+        if (dvInput) dvInput.value = nd.dv;
+        readMantGastos();
+      }
+    }));
+  });
+}
+
+function addMantGasto() {
+  formGastosMant.push({ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' });
+  renderMantGastos();
+  var lastInput = document.querySelector('.mant-g-concepto[data-line="' + (formGastosMant.length - 1) + '"]');
+  if (lastInput) lastInput.focus();
+}
+
+function removeMantGasto(i) {
+  formGastosMant.splice(i, 1);
+  renderMantGastos();
+  recalcTotalsMant();
+}
+
+function onConceptoSelectChangeMant(sel) {
+  var i = Number(sel.dataset.line);
+  if (!formGastosMant[i]) return;
+  formGastosMant[i].Concepto = (sel.value === 'Otros') ? '' : sel.value;
+  renderMantGastos();
+  recalcTotalsMant();
+  if (sel.value === 'Otros') {
+    var det = document.querySelector('.mant-g-concepto-otro[data-line="' + i + '"]');
+    if (det) det.focus();
+  }
+}
+
+function readMantGastos() {
+  document.querySelectorAll('.mant-g-concepto-otro').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].Concepto = inp.value; });
+  document.querySelectorAll('.mant-g-proveedor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].Proveedor = inp.value; });
+  document.querySelectorAll('.mant-g-nit').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].NIT = inp.value; });
+  document.querySelectorAll('.mant-g-dv').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].DV = inp.value; });
+  document.querySelectorAll('.mant-g-valor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].Valor = Number(inp.value) || 0; });
+  recalcTotalsMant();
+}
+
+function recalcTotalsMant() {
+  var totalGastos = formGastosMant.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
+  var totalReparto = formEmpresasMant.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
+  document.getElementById('mant-total-gastos').textContent = fmtMoney(totalGastos);
+  document.getElementById('mant-total-reparto').textContent = fmtMoney(totalReparto);
+  document.getElementById('mant-reparto-warn').style.display = (totalGastos !== totalReparto) ? 'block' : 'none';
+}
+
+function openFormMant(id) {
+  editingLegId = id || null;
+  if (editingLegId) {
+    var leg = legs.find(function(l) { return l.id === editingLegId; });
+    if (!leg) return;
+    document.getElementById('form-mant-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
+    document.getElementById('mant-fecha').value = (leg.Fecha || '').slice(0, 10);
+    setResponsableFieldMant(leg.Responsable || '');
+    setPlacaFieldMant(leg.Placa || '');
+    document.getElementById('mant-anticipo').value = leg.Anticipo_Entregado || '';
+    document.getElementById('mant-observaciones').value = leg.Observaciones || '';
+    formGastosMant = itemsOf(editingLegId).map(function(it) {
+      var nd = splitNitDv(it.NIT);
+      return { Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: nd.nit, DV: nd.dv, Valor: it.Valor };
+    });
+    formEmpresasMant = empresasOf(editingLegId).map(function(e) { return { Empresa: e.Empresa, Monto: e.Monto }; });
+  } else {
+    document.getElementById('form-mant-titulo').textContent = 'Nueva legalización de mantenimiento';
+    document.getElementById('mant-fecha').value = today();
+    setResponsableFieldMant('');
+    setPlacaFieldMant('');
+    document.getElementById('mant-anticipo').value = '';
+    document.getElementById('mant-observaciones').value = '';
+    formGastosMant = [{ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' }];
+    formEmpresasMant = [{ Empresa: '', Monto: '' }];
+  }
+  if (!formGastosMant.length) formGastosMant = [{ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' }];
+  if (!formEmpresasMant.length) formEmpresasMant = [{ Empresa: '', Monto: '' }];
+  renderMantGastos();
+  renderMantEmpresas();
+  recalcTotalsMant();
+  document.getElementById('form-mant-overlay').classList.add('show');
+}
+
+function closeFormMant() {
+  document.getElementById('form-mant-overlay').classList.remove('show');
+}
+
+function readHeaderFormMant() {
+  return {
+    Fecha: document.getElementById('mant-fecha').value || today(),
+    Tipo: 'Mantenimiento',
+    Responsable: readResponsableMant(),
+    Placa: readPlacaMant(),
+    Recorrido_Ruta: '',
+    No_Personas: null,
+    Fecha_Salida: null,
+    Fecha_Llegada: null,
+    Clientes: '',
+    Remisiones_Relacionadas: '',
+    Anticipo_Entregado: Number(document.getElementById('mant-anticipo').value) || 0,
+    Observaciones: document.getElementById('mant-observaciones').value.trim()
+  };
+}
+
+async function saveFormMant() {
+  readMantGastos();
+  readMantEmpresas();
+  var header = readHeaderFormMant();
+
+  if (!header.Responsable) { showToast('Indica el responsable', '#e67e22'); return; }
+  if (!header.Placa) { showToast('Indica la placa del vehículo', '#e67e22'); return; }
+  var gastosValidos = formGastosMant
+    .filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; })
+    .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor }; });
+  if (!gastosValidos.length) { showToast('Agrega al menos una línea de gasto válida', '#e67e22'); return; }
+  var empresasValidas = formEmpresasMant.filter(function(e) { return e.Empresa; });
+  if (!empresasValidas.length) { showToast('Agrega al menos una empresa en el reparto', '#e67e22'); return; }
+
+  var totalGastos = gastosValidos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
+  var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
+  if (totalGastos !== totalReparto) {
+    if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
+  }
+
+  var body = { header: header, items: gastosValidos, empresas: empresasValidas };
+  var res;
+  if (editingLegId) {
+    body.id = editingLegId;
+    res = await apiPost(Object.assign({ action: 'editarLegalizacionGastos' }, body));
+  } else {
+    res = await apiPost(Object.assign({ action: 'agregarLegalizacionGastos' }, body));
+  }
+  if (!res.ok) { showToast('Error al guardar: ' + res.error, '#e74c3c'); return; }
+
+  showToast('Legalización guardada correctamente', '#27ae60');
+  closeFormMant();
+  await loadLegalizaciones();
+  if (res.id) openVer(res.id);
+  else if (editingLegId) openVer(editingLegId);
+}
+
 async function eliminarLegalizacion(id) {
   var leg = legs.find(function(l) { return l.id === id; });
   if (!leg) return;
@@ -1085,8 +1402,10 @@ async function eliminarLegalizacion(id) {
 
 function editarDesdeVer() {
   var id = verLegId;
+  var leg = legs.find(function(l) { return l.id === id; });
   closeVer();
-  openForm(id);
+  if (leg && leg.Tipo === 'Mantenimiento') openFormMant(id);
+  else openForm(id);
 }
 
 // ── Ver / conciliar ──
@@ -1095,7 +1414,7 @@ function openVer(id) {
   var leg = legs.find(function(l) { return l.id === id; });
   if (!leg) return;
 
-  document.getElementById('ver-titulo').textContent = leg.Consecutivo || '';
+  document.getElementById('ver-titulo').innerHTML = escHtml(leg.Consecutivo || '') + ' ' + tipoBadgeHtml(leg);
   document.getElementById('ver-meta').textContent = 'Responsable: ' + (leg.Responsable || '—') + ' · Fecha: ' + fmtDate(leg.Fecha);
 
   var editBtn = document.getElementById('ver-btn-editar');
@@ -1116,6 +1435,7 @@ function renderVerBody(leg) {
   var emps = empresasOf(leg.id);
   var totalGastos = totalGastosOf(leg.id);
   var totalReparto = totalRepartoOf(leg.id);
+  var esMant = leg.Tipo === 'Mantenimiento';
 
   var itemsHtml = items.map(function(it) {
     return '<tr><td>' + escHtml(it.Concepto || '') + '</td><td>' + escHtml(it.Proveedor || '') + '</td><td>' + escHtml(it.NIT || '') + '</td><td style="text-align:right">' + escHtml(fmtMoney(it.Valor)) + '</td></tr>';
@@ -1155,7 +1475,12 @@ function renderVerBody(leg) {
     conciliacionHtml = '<div style="padding:10px 14px;background:#fef3cd;border:1px solid #f9e79f;border-radius:8px;font-size:0.86rem;color:#7d6608">⏳ Pendiente de conciliación.</div>';
   }
 
-  document.getElementById('ver-body').innerHTML =
+  var infoGridHtml = esMant ?
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
+      '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
+      '<div><strong>Anticipo entregado:</strong> ' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</div>' +
+      '<div style="grid-column:span 3"><strong>Observaciones:</strong> ' + escHtml(leg.Observaciones || '—') + '</div>' +
+    '</div>' :
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
       '<div><strong>Ruta:</strong> ' + escHtml(leg.Recorrido_Ruta || '—') + '</div>' +
       '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
@@ -1166,9 +1491,12 @@ function renderVerBody(leg) {
       '<div><strong>Anticipo entregado:</strong> ' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</div>' +
       '<div style="grid-column:span 3"><strong>Remisiones relacionadas:</strong> ' + escHtml(leg.Remisiones_Relacionadas || '—') + '</div>' +
       '<div style="grid-column:span 3"><strong>Observaciones:</strong> ' + escHtml(leg.Observaciones || '—') + '</div>' +
-    '</div>' +
-    '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Líneas de gasto</h3>' +
-    '<table><thead><tr><th>Concepto</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>' +
+    '</div>';
+
+  document.getElementById('ver-body').innerHTML =
+    infoGridHtml +
+    '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">' + (esMant ? 'Líneas de gasto (detalle de mantenimiento)' : 'Líneas de gasto') + '</h3>' +
+    '<table><thead><tr><th>' + (esMant ? 'Detalle' : 'Concepto') + '</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>' +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:14px 0 6px">Reparto entre empresas</h3>' +
     '<table><thead><tr><th>Empresa</th><th style="text-align:right">Monto</th></tr></thead><tbody>' + empsHtml + '</tbody></table>' +
     '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong></div>' +
@@ -1304,8 +1632,34 @@ function exportarPDF() {
   var items = itemsOf(leg.id);
   var emps = empresasOf(leg.id);
   var totalGastos = totalGastosOf(leg.id);
+  var esMant = leg.Tipo === 'Mantenimiento';
 
   var reparto = emps.map(function(e) { return getSigla(e.Empresa) + ': ' + fmtMoney(e.Monto); }).join('  ·  ');
+
+  var leftFields = esMant ? [
+    ['Responsable', leg.Responsable || ''],
+    ['Placa', leg.Placa || '—'],
+    ['Observaciones', leg.Observaciones || '—'],
+  ] : [
+    ['Responsable', leg.Responsable || ''],
+    ['Placa', leg.Placa || '—'],
+    ['Recorrido / Ruta', leg.Recorrido_Ruta || ''],
+    ['No. Personas en ruta', String(leg.No_Personas || '')],
+    ['Cliente(s)', leg.Clientes || ''],
+    ['Observaciones', leg.Observaciones || '—'],
+  ];
+  var rightFields = esMant ? [
+    ['Anticipo entregado', fmtMoney(leg.Anticipo_Entregado)],
+    ['Total gastos', fmtMoney(totalGastos)],
+    ['Reparto entre empresas', reparto || '—'],
+  ] : [
+    ['Fecha de salida', fmtDate(leg.Fecha_Salida)],
+    ['Fecha de llegada', fmtDate(leg.Fecha_Llegada)],
+    ['Anticipo entregado', fmtMoney(leg.Anticipo_Entregado)],
+    ['Total gastos', fmtMoney(totalGastos)],
+    ['Reparto entre empresas', reparto || '—'],
+    ['Remisiones relacionadas', leg.Remisiones_Relacionadas || '—'],
+  ];
 
   // El gasto se reparte entre varias empresas del holding (ver "reparto" /
   // right_fields), así que el documento no pertenece a ninguna en particular
@@ -1315,12 +1669,12 @@ function exportarPDF() {
   var data = {
     empresa: 'Polinizando Futuro',
     consecutivo: leg.Consecutivo,
-    doc_title: 'LEGALIZACION DE GASTOS',
+    doc_title: esMant ? 'LEGALIZACION DE MANTENIMIENTO' : 'LEGALIZACION DE GASTOS',
     doc_number: leg.Consecutivo,
     date_label: 'Fecha',
     ref_label: null,
     fecha_entrega: fmtDate(leg.Fecha),
-    file_prefix: 'Legalizacion_Gastos',
+    file_prefix: esMant ? 'Legalizacion_Mantenimiento' : 'Legalizacion_Gastos',
     copies: ['ORIGINAL - CONTABILIDAD'],
     hide_signatures: false,
     page_format: 'letter',
@@ -1331,7 +1685,7 @@ function exportarPDF() {
       { label: 'Contabilidad', sub: 'Nombre y firma' }
     ],
     show_fecha_entrega: false,
-    col1_header: 'Concepto',
+    col1_header: esMant ? 'Detalle' : 'Concepto',
     col2_header: 'Proveedor',
     col1_width: 32,
     col2_width: 60,
@@ -1342,22 +1696,8 @@ function exportarPDF() {
     entregas: items.map(function(it) {
       return { producto: it.Concepto, presentacion: it.Proveedor + (it.NIT ? ' (NIT ' + it.NIT + ')' : ''), cantidad: it.Valor, observaciones: '' };
     }),
-    left_fields: [
-      ['Responsable', leg.Responsable || ''],
-      ['Placa', leg.Placa || '—'],
-      ['Recorrido / Ruta', leg.Recorrido_Ruta || ''],
-      ['No. Personas en ruta', String(leg.No_Personas || '')],
-      ['Cliente(s)', leg.Clientes || ''],
-      ['Observaciones', leg.Observaciones || '—'],
-    ],
-    right_fields: [
-      ['Fecha de salida', fmtDate(leg.Fecha_Salida)],
-      ['Fecha de llegada', fmtDate(leg.Fecha_Llegada)],
-      ['Anticipo entregado', fmtMoney(leg.Anticipo_Entregado)],
-      ['Total gastos', fmtMoney(totalGastos)],
-      ['Reparto entre empresas', reparto || '—'],
-      ['Remisiones relacionadas', leg.Remisiones_Relacionadas || '—'],
-    ]
+    left_fields: leftFields,
+    right_fields: rightFields
   };
   generarRemisionPDF(data);
 }
