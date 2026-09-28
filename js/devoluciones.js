@@ -1086,6 +1086,7 @@ function openNewDev() {
   editDev = null;
   document.getElementById('dev-modal-title').textContent = '🔄 Registrar Devolución';
   document.getElementById('dev-empresa').value = '';
+  document.getElementById('dev-empresa').onchange = onDevEmpresaChange;
   var devFecha = document.getElementById('dev-fecha');
   devFecha.value = today();
   devFecha.min = today();
@@ -1096,7 +1097,11 @@ function openNewDev() {
     devFecha.readOnly = false;
     devFecha.style.background = '';
   }
-  document.getElementById('dev-consecutivo').value = '';
+  var devConsecEl = document.getElementById('dev-consecutivo');
+  devConsecEl.value = '';
+  devConsecEl.readOnly = true;
+  devConsecEl.style.background = '#f7fafc';
+  devConsecEl.placeholder = 'Automático';
   document.getElementById('dev-vendedor').value = '';
   document.getElementById('dev-cliente').value = '';
   document.getElementById('dev-nit').value = '';
@@ -1189,6 +1194,34 @@ function toggleCargaHistoricaDev(on) {
   if (wrap) wrap.style.display = on ? '' : 'none';
   var fechaEl = document.getElementById('dev-fecha');
   if (fechaEl) fechaEl.min = on ? '' : today();
+  var consecEl = document.getElementById('dev-consecutivo');
+  if (consecEl) {
+    consecEl.readOnly = !on;
+    consecEl.style.background = on ? '' : '#f7fafc';
+    consecEl.placeholder = on ? 'N° consecutivo original' : 'Automático';
+    if (!on) consecEl.value = nextConsecutivoDev(document.getElementById('dev-empresa').value);
+  }
+}
+
+// ── Auto-consecutivo por empresa ──
+function nextConsecutivoDev(empresa) {
+  if (!empresa) return '';
+  var maxCons = 0;
+  devoluciones.forEach(function(r) {
+    if (r.Empresa === empresa) {
+      var n = Number(r.Consecutivo) || 0;
+      if (n > maxCons) maxCons = n;
+    }
+  });
+  return String(maxCons + 1);
+}
+
+function onDevEmpresaChange() {
+  if (editDev) return;
+  var chkHist = document.getElementById('dev-chk-historico');
+  if (chkHist && chkHist.checked) return; // carga histórica: consecutivo manual
+  var empresa = document.getElementById('dev-empresa').value;
+  document.getElementById('dev-consecutivo').value = nextConsecutivoDev(empresa);
 }
 
 // ── Save ──
