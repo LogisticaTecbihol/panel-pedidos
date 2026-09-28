@@ -4877,7 +4877,10 @@ function setupProductoAutocomplete() {
 function _avisarEstadoCliente(c) {
   var est = ((c && c.estado) || 'Activo').trim();
   if (est === 'Inactivo' || est === 'Bloqueado por cartera' || est === 'Suspendido') {
-    showToast('⚠️ Cliente en estado "' + est + '": no se podrá registrar el pedido. Consulta con Cartera.', '#e74c3c');
+    var obs = (c && c.observaciones_cartera) ? String(c.observaciones_cartera).trim() : '';
+    var msg = '⚠️ Cliente en estado "' + est + '": no se podrá registrar el pedido. Consulta con Cartera.';
+    if (obs && (est === 'Bloqueado por cartera' || est === 'Suspendido')) msg += ' Motivo: "' + obs + '".';
+    showToast(msg, '#e74c3c');
   }
 }
 

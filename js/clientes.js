@@ -174,6 +174,8 @@ function _gateEstadoClienteSelect(actual) {
   var puede = (typeof AUTH !== 'undefined' && AUTH.canToggleBloqueoCartera)
     ? AUTH.canToggleBloqueoCartera() : true;
   var hint = document.getElementById('ed-estado-hint');
+  var obsEl = document.getElementById('ed-obs-cartera');
+  if (obsEl) obsEl.disabled = !puede;
   if (puede) {
     _EST_RESTRINGIDOS.forEach(function(v) {
       var opt = sel.querySelector('option[value="' + v + '"]');
@@ -817,6 +819,7 @@ function _clearForm() {
   document.getElementById('ed-lista-precio').value = '';
   document.getElementById('ed-estado').value = 'Activo';
   document.getElementById('ed-estado-hint').textContent = '';
+  document.getElementById('ed-obs-cartera').value = '';
   _gateEstadoClienteSelect('Activo');
 }
 
@@ -851,6 +854,7 @@ function openEditCliente(id) {
   document.getElementById('ed-plazo').value = c.Plazo_Pago || '';
   document.getElementById('ed-lista-precio').value = c.Lista_Precio || '';
   document.getElementById('ed-estado').value = _estadoNorm(c.Estado);
+  document.getElementById('ed-obs-cartera').value = c.Observaciones_Cartera || '';
   var _sibs = _nitSiblings(_normalizeId(c.Identificacion));
   document.getElementById('ed-estado-hint').textContent = _sibs.length > 1
     ? 'El estado aplica solo al registro de ' + getSigla(c.Nombre_Empresa) + '; este cliente tiene ' + _sibs.length + ' registros (otras empresas) con su propio estado.'
@@ -888,7 +892,8 @@ async function saveEdit() {
     Cupo_Credito: document.getElementById('ed-cupo').value.trim(),
     Plazo_Pago: document.getElementById('ed-plazo').value.trim(),
     Lista_Precio: document.getElementById('ed-lista-precio').value,
-    Estado: _estadoNorm(document.getElementById('ed-estado').value)
+    Estado: _estadoNorm(document.getElementById('ed-estado').value),
+    Observaciones_Cartera: document.getElementById('ed-obs-cartera').value.trim()
   };
 
   var _geoCl = normalizarMunicipio(payload.Municipio, payload.Departamento);

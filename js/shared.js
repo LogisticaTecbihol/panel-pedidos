@@ -360,7 +360,8 @@ async function apiGet(action, opts) {
             empresa: r.Nombre_Empresa || '', tipo_identificacion: r.Tipo_Identificacion || '',
             correo: r.Correo_Electronico || '', cupo_credito: r.Cupo_Credito || '',
             plazo_pago: r.Plazo_Pago || '', lista_precio: r.Lista_Precio || '',
-            estado: r.Estado || 'Activo'
+            estado: r.Estado || 'Activo',
+            observaciones_cartera: r.Observaciones_Cartera || ''
           };
         }),
         source: 'ClientesUnicos'
@@ -635,7 +636,17 @@ async function _apiPostCore(body) {
           });
           var _estVal = (_estCli && !_estCli.error && _estCli.data) ? String(_estCli.data) : 'Activo';
           if (_estVal === 'Inactivo' || _estVal === 'Bloqueado por cartera' || _estVal === 'Suspendido') {
-            return { ok: false, error: 'El cliente "' + (body.cliente || '') + '" está en estado "' + _estVal + '". No se pueden registrar pedidos; contacta a Cartera / Administración.' };
+            var _obsMsg = '';
+            if (_estVal === 'Bloqueado por cartera' || _estVal === 'Suspendido') {
+              try {
+                var _obsCli = await _sb.rpc('cliente_observaciones_cartera', {
+                  p_cliente: body.cliente || '', p_nit: body.nit || '', p_empresa: body.nombre_empresa || ''
+                });
+                var _obsVal = (_obsCli && !_obsCli.error && _obsCli.data) ? String(_obsCli.data).trim() : '';
+                if (_obsVal) _obsMsg = ' Observación de Cartera: "' + _obsVal + '".';
+              } catch (e) { /* sin observación disponible, no bloquea el mensaje base */ }
+            }
+            return { ok: false, error: 'El cliente "' + (body.cliente || '') + '" está en estado "' + _estVal + '". No se pueden registrar pedidos; contacta a Cartera / Administración.' + _obsMsg };
           }
         } catch (e) { /* si la validación falla, no bloqueamos la operación */ }
       }
@@ -1997,7 +2008,8 @@ async function _apiPostCore(body) {
         Cupo_Credito: body.Cupo_Credito || '',
         Plazo_Pago: body.Plazo_Pago || '',
         Lista_Precio: body.Lista_Precio || '',
-        Estado: body.Estado || 'Activo'
+        Estado: body.Estado || 'Activo',
+        Observaciones_Cartera: body.Observaciones_Cartera || ''
       };
       var res = await _sb.from('ClientesUnicos').insert([row]).select('id');
       if (res.error) return { ok: false, error: res.error.message };
@@ -2021,6 +2033,7 @@ async function _apiPostCore(body) {
         Cliente_Nuevo: false
       };
       if (typeof body.Estado === 'string' && body.Estado) upd.Estado = body.Estado;
+      if (typeof body.Observaciones_Cartera === 'string') upd.Observaciones_Cartera = body.Observaciones_Cartera;
       var res = await _sb.from('ClientesUnicos').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
