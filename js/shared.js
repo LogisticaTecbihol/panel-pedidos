@@ -440,6 +440,14 @@ async function apiGet(action, opts) {
       return { ok: true, clientes: _addRow(allData) };
     }
 
+    // Bitácora de contacto de UN cliente unificado (cruza por NIT normalizado,
+    // no por registro/empresa) — se pide al abrir el modal, no en la carga inicial.
+    if (action === 'getBitacoraContacto') {
+      var res = await _sb.rpc('get_bitacora_contacto_cliente', { p_nit: (opts && opts.nit) || '' });
+      if (res.error) return { ok: false, error: res.error.message, bitacora: [] };
+      return { ok: true, bitacora: _addRow(res.data || []) };
+    }
+
     if (action === 'getInventarioFisico') {
       var all = [], from = 0, size = 1000;
       while (true) {
@@ -2047,6 +2055,42 @@ async function _apiPostCore(body) {
 
     if (action === 'eliminarClienteUnico') {
       var res = await _sb.from('ClientesUnicos').delete().eq('id', body.row);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, deleted: 1 };
+    }
+
+    // ── Bitácora de contacto (por cliente unificado, cruza por NIT) ──
+    if (action === 'agregarBitacoraContacto') {
+      if (['Llamada', 'WhatsApp', 'Correo', 'Otro'].indexOf(body.Tipo_Contacto) < 0) {
+        return { ok: false, error: 'Tipo de contacto no válido: ' + body.Tipo_Contacto };
+      }
+      var rowBit = {
+        NIT: body.NIT || '', Cliente: body.Cliente || '',
+        Fecha_Contacto: body.Fecha_Contacto || new Date().toISOString().slice(0, 10),
+        Tipo_Contacto: body.Tipo_Contacto,
+        Gestion: (body.Gestion || '').trim()
+      };
+      var res = await _sb.from('BitacoraContactoClientes').insert([rowBit]).select('id');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, added: 1, id: (res.data && res.data[0]) ? res.data[0].id : null };
+    }
+
+    if (action === 'editarBitacoraContacto') {
+      if (['Llamada', 'WhatsApp', 'Correo', 'Otro'].indexOf(body.Tipo_Contacto) < 0) {
+        return { ok: false, error: 'Tipo de contacto no válido: ' + body.Tipo_Contacto };
+      }
+      var updBit = {
+        Fecha_Contacto: body.Fecha_Contacto || new Date().toISOString().slice(0, 10),
+        Tipo_Contacto: body.Tipo_Contacto,
+        Gestion: (body.Gestion || '').trim()
+      };
+      var res = await _sb.from('BitacoraContactoClientes').update(updBit).eq('id', body.id);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, updated: 1 };
+    }
+
+    if (action === 'eliminarBitacoraContacto') {
+      var res = await _sb.from('BitacoraContactoClientes').delete().eq('id', body.id);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, deleted: 1 };
     }

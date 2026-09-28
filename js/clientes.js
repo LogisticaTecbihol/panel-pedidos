@@ -586,7 +586,8 @@ function renderTable() {
     var actionHtml = '';
     if (canEd) {
       actionHtml = '<td style="text-align:center;white-space:nowrap">' +
-        '<button onclick="openGroupDetail(' + globalIdx + ')" style="background:#2c3e50;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Ver detalle">👁️</button>';
+        '<button onclick="openGroupDetail(' + globalIdx + ')" style="background:#2c3e50;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Ver detalle">👁️</button>' +
+        '<button onclick="openBitacora(' + globalIdx + ')" style="background:#6b46c1;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Bitácora de contacto">📋</button>';
       if (!isMulti) {
         actionHtml += '<button onclick="openEditCliente(' + first.id + ')" style="background:#1a5276;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.76rem;font-weight:600;margin-right:3px" title="Editar">✏️</button>';
         if (canDel) {
@@ -1127,11 +1128,163 @@ function exportExcel() {
   showToast('✅ Archivo exportado');
 }
 
+// ── Bitácora de contacto (una sola por cliente unificado, cruza por NIT) ──
+var _bitGroup = null;   // { nit, cliente } del cliente cuya bitácora está abierta
+var _bitRows = [];      // filas cargadas del historial actual
+var _bitEditId = null;  // id en edición (null = alta de una entrada nueva)
+
+var _BIT_ICONS = { 'Llamada': '📞', 'WhatsApp': '💬', 'Correo': '✉️', 'Otro': '📝' };
+
+function openBitacora(groupIdx) {
+  var g = currentGroups[groupIdx];
+  if (!g) return;
+  var first = g.records[0];
+  if (!(first.Identificacion || '').trim()) {
+    showToast('Este cliente no tiene identificación (NIT/CC) registrada: edítalo primero para poder llevarle bitácora de contacto.', '#e74c3c');
+    return;
+  }
+  _bitGroup = { nit: first.Identificacion || '', cliente: first.Cliente || '' };
+  document.getElementById('bit-titulo').textContent = '📋 Bitácora de contacto — ' + (first.Cliente || 'Cliente');
+  _resetFormBitacora();
+  document.getElementById('bitacora-overlay').style.display = 'flex';
+  _loadBitacora();
+}
+
+function closeBitacora() {
+  document.getElementById('bitacora-overlay').style.display = 'none';
+  _bitGroup = null;
+  _bitRows = [];
+  _bitEditId = null;
+}
+
+function _resetFormBitacora() {
+  _bitEditId = null;
+  document.getElementById('bit-form-titulo').textContent = 'Nueva entrada';
+  document.getElementById('bit-fecha').value = today();
+  document.getElementById('bit-tipo').value = 'Llamada';
+  document.getElementById('bit-gestion').value = '';
+  document.getElementById('bit-btn-guardar').textContent = '+ Agregar';
+  document.getElementById('bit-btn-cancelar-edicion').style.display = 'none';
+}
+
+async function _loadBitacora() {
+  var lista = document.getElementById('bit-lista');
+  lista.innerHTML = '<div style="color:#a0aec0;font-size:0.85rem;padding:8px 0">Cargando...</div>';
+  try {
+    var res = await apiGet('getBitacoraContacto', { nit: _bitGroup.nit });
+    if (!res.ok) throw new Error(res.error || 'Error al cargar la bitácora');
+    _bitRows = res.bitacora || [];
+    _renderBitacoraLista();
+  } catch (err) {
+    lista.innerHTML = '<div style="color:#e74c3c;font-size:0.85rem;padding:8px 0">' + escHtml(err.message) + '</div>';
+  }
+}
+
+function _renderBitacoraLista() {
+  var lista = document.getElementById('bit-lista');
+  if (!_bitRows.length) {
+    lista.innerHTML = '<div style="color:#a0aec0;font-size:0.85rem;padding:8px 0">Sin contactos registrados todavía.</div>';
+    return;
+  }
+  var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit)
+    ? (AUTH.canEdit() || (AUTH.isCartera && AUTH.isCartera())) : true;
+  var canDel = (typeof AUTH !== 'undefined' && AUTH.canDelete)
+    ? (AUTH.canDelete() || (AUTH.isCartera && AUTH.isCartera())) : false;
+
+  lista.innerHTML = _bitRows.map(function(r) {
+    var icon = _BIT_ICONS[r.Tipo_Contacto] || '📝';
+    var botones = '';
+    if (canEd) {
+      botones += '<button onclick="editarBitacoraEntry(' + r.id + ')" style="background:#1a5276;color:white;border:none;padding:2px 8px;border-radius:5px;cursor:pointer;font-size:0.7rem;font-weight:600;margin-right:3px" title="Editar">✏️</button>';
+      if (canDel) {
+        botones += '<button onclick="eliminarBitacoraEntry(' + r.id + ')" style="background:#e74c3c;color:white;border:none;padding:2px 8px;border-radius:5px;cursor:pointer;font-size:0.7rem;font-weight:600" title="Eliminar">🗑️</button>';
+      }
+    }
+    return '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+      '<div><span style="font-weight:700;font-size:0.82rem;color:#2d3748">' + icon + ' ' + escHtml(r.Tipo_Contacto) + '</span>' +
+      ' <span style="color:#718096;font-size:0.78rem;margin-left:6px">' + fmtDate(r.Fecha_Contacto) + '</span></div>' +
+      '<div style="white-space:nowrap">' + botones + '</div>' +
+      '</div>' +
+      '<div style="margin-top:6px;font-size:0.84rem;color:#2d3748;white-space:pre-wrap">' + escHtml(r.Gestion || '') + '</div>' +
+      _auditoriaHtml(r, true) +
+      '</div>';
+  }).join('');
+}
+
+function editarBitacoraEntry(id) {
+  var r = _bitRows.filter(function(x) { return x.id === id; })[0];
+  if (!r) return;
+  _bitEditId = id;
+  document.getElementById('bit-form-titulo').textContent = 'Editar entrada';
+  document.getElementById('bit-fecha').value = r.Fecha_Contacto || today();
+  document.getElementById('bit-tipo').value = r.Tipo_Contacto || 'Llamada';
+  document.getElementById('bit-gestion').value = r.Gestion || '';
+  document.getElementById('bit-btn-guardar').textContent = '💾 Guardar cambios';
+  document.getElementById('bit-btn-cancelar-edicion').style.display = '';
+  document.getElementById('bit-fecha').scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function cancelarEdicionBitacora() {
+  _resetFormBitacora();
+}
+
+async function guardarBitacora() {
+  var fecha = document.getElementById('bit-fecha').value;
+  var tipo = document.getElementById('bit-tipo').value;
+  var gestion = document.getElementById('bit-gestion').value.trim();
+  if (!fecha) { showToast('Selecciona la fecha del contacto', '#e74c3c'); return; }
+  if (!gestion) { showToast('Describe la gestión realizada', '#e74c3c'); return; }
+
+  var btn = document.getElementById('bit-btn-guardar');
+  var prevTxt = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Guardando...';
+
+  try {
+    var result;
+    if (_bitEditId) {
+      result = await apiPost({
+        action: 'editarBitacoraContacto', id: _bitEditId,
+        Fecha_Contacto: fecha, Tipo_Contacto: tipo, Gestion: gestion
+      });
+    } else {
+      result = await apiPost({
+        action: 'agregarBitacoraContacto', NIT: _bitGroup.nit, Cliente: _bitGroup.cliente,
+        Fecha_Contacto: fecha, Tipo_Contacto: tipo, Gestion: gestion
+      });
+    }
+    if (!result.ok) throw new Error(result.error || 'Error al guardar');
+    showToast('✅ Bitácora guardada');
+    _resetFormBitacora();
+    await _loadBitacora();
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevTxt;
+  }
+}
+
+async function eliminarBitacoraEntry(id) {
+  if (!confirm('¿Eliminar esta entrada de la bitácora? Esta acción no se puede deshacer.')) return;
+  try {
+    var result = await apiPost({ action: 'eliminarBitacoraContacto', id: id });
+    if (!result.ok) throw new Error(result.error || 'Error al eliminar');
+    showToast('✅ Entrada eliminada');
+    if (_bitEditId === id) _resetFormBitacora();
+    await _loadBitacora();
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+  }
+}
+
 // ── Close modals on overlay click ──
 document.getElementById('edit-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeEdit(); });
 document.getElementById('detail-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeDetail(); });
 document.getElementById('import-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeImport(); });
 document.getElementById('delete-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeDelete(); });
+document.getElementById('bitacora-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeBitacora(); });
 
 // ── Init ──
 loadClientes();

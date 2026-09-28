@@ -269,6 +269,53 @@
   </div>
 </div>
 
+<!-- MODAL: Bitácora de contacto -->
+<div class="overlay" id="bitacora-overlay">
+  <div class="modal-box" style="max-width:640px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#553c9a,#6b46c1)">
+      <div style="flex:1">
+        <h2 id="bit-titulo">📋 Bitácora de contacto</h2>
+      </div>
+      <button class="btn-close" onclick="closeBitacora()">✕</button>
+    </div>
+    <div class="mbody" style="padding:20px 24px;max-height:70vh;overflow-y:auto">
+      <div id="bit-form-titulo" style="font-size:0.82rem;font-weight:700;color:#2d3748;margin-bottom:10px">Nueva entrada</div>
+      <div class="detail-grid" style="margin-bottom:12px">
+        <div>
+          <label class="ef-label">Fecha *</label>
+          <input type="date" class="ef" id="bit-fecha">
+        </div>
+        <div>
+          <label class="ef-label">Tipo de contacto *</label>
+          <select class="ef" id="bit-tipo">
+            <option value="Llamada">📞 Llamada</option>
+            <option value="WhatsApp">💬 WhatsApp</option>
+            <option value="Correo">✉️ Correo</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Gestión *</label>
+        <textarea class="ef" id="bit-gestion" rows="3" placeholder="¿Qué se habló o gestionó en este contacto?"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:20px">
+        <button class="btn-confirm" id="bit-btn-guardar" onclick="guardarBitacora()" style="background:#6b46c1">+ Agregar</button>
+        <button class="btn-cancel" id="bit-btn-cancelar-edicion" onclick="cancelarEdicionBitacora()" style="display:none">Cancelar edición</button>
+      </div>
+      <div style="border-top:1px solid #e2e8f0;padding-top:14px">
+        <div style="font-size:0.82rem;font-weight:700;color:#2d3748;margin-bottom:10px">Historial</div>
+        <div id="bit-lista"></div>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeBitacora()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Import Preview -->
 <div class="overlay" id="import-overlay">
   <div class="modal-box" style="max-width:950px">
