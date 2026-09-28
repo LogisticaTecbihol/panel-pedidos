@@ -619,14 +619,14 @@ async function _apiPostCore(body) {
       var _hist = body.historico === true;
 
       // Bloqueo por estado del cliente: no se registran pedidos para
-      // clientes 'Inactivo' o 'Bloqueado por cartera' (maestro ClientesUnicos).
+      // clientes 'Inactivo', 'Bloqueado por cartera' o 'Suspendido' (maestro ClientesUnicos).
       if (!_hist) {
         try {
           var _estCli = await _sb.rpc('cliente_estado_pedido', {
             p_cliente: body.cliente || '', p_nit: body.nit || '', p_empresa: body.nombre_empresa || ''
           });
           var _estVal = (_estCli && !_estCli.error && _estCli.data) ? String(_estCli.data) : 'Activo';
-          if (_estVal === 'Inactivo' || _estVal === 'Bloqueado por cartera') {
+          if (_estVal === 'Inactivo' || _estVal === 'Bloqueado por cartera' || _estVal === 'Suspendido') {
             return { ok: false, error: 'El cliente "' + (body.cliente || '') + '" está en estado "' + _estVal + '". No se pueden registrar pedidos; contacta a Cartera / Administración.' };
           }
         } catch (e) { /* si la validación falla, no bloqueamos la operación */ }
@@ -2021,7 +2021,7 @@ async function _apiPostCore(body) {
     if (action === 'setEstadoClientes') {
       var _idsEst = (body.ids || []).filter(function(x) { return x !== null && x !== undefined && x !== ''; });
       var _estNew = String(body.estado || '').trim();
-      if (['Activo', 'Inactivo', 'Bloqueado por cartera'].indexOf(_estNew) < 0) {
+      if (['Activo', 'Inactivo', 'Bloqueado por cartera', 'Suspendido'].indexOf(_estNew) < 0) {
         return { ok: false, error: 'Estado no válido: ' + _estNew };
       }
       if (!_idsEst.length) return { ok: true, updated: 0 };

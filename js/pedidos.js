@@ -4876,7 +4876,7 @@ function setupProductoAutocomplete() {
 // El bloqueo efectivo lo aplica el backend (apiPost 'agregarPedido').
 function _avisarEstadoCliente(c) {
   var est = ((c && c.estado) || 'Activo').trim();
-  if (est === 'Inactivo' || est === 'Bloqueado por cartera') {
+  if (est === 'Inactivo' || est === 'Bloqueado por cartera' || est === 'Suspendido') {
     showToast('⚠️ Cliente en estado "' + est + '": no se podrá registrar el pedido. Consulta con Cartera.', '#e74c3c');
   }
 }

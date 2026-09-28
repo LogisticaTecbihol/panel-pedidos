@@ -184,6 +184,7 @@ function carClientesDe(o) {
 }
 function carEstadoCliente(regs) {
   if (!regs.length) return '';
+  if (regs.some(function(r) { return r.Estado === 'Suspendido'; })) return 'Suspendido';
   if (regs.some(function(r) { return r.Estado === CAR_BLOQ; })) return CAR_BLOQ;
   if (regs.some(function(r) { return r.Estado === 'Inactivo'; })) return 'Inactivo';
   return 'Activo';
@@ -629,6 +630,7 @@ function carRenderCtx() {
   // ── Cliente ──
   var estCliTxt = !regs.length ? '<span class="car-pill mid">No está en Clientes</span>'
     : !regsEmp.length ? '<span class="car-pill mid">Sin registro en ' + escHtml(getSigla(o.empresa)) + '</span>'
+    : estCli === 'Suspendido' ? '<span class="car-pill over">Suspendido</span>'
     : estCli === CAR_BLOQ ? '<span class="car-pill over">Bloqueado por cartera</span>'
     : estCli === 'Inactivo' ? '<span class="car-pill mid">Inactivo</span>' : '<span class="car-pill ok">Activo</span>';
 

@@ -151,36 +151,49 @@ function _telCellHtml(raw) {
 }
 
 // ── Estado del cliente ──
-// Valores válidos: 'Activo' (por defecto), 'Inactivo', 'Bloqueado por cartera'.
-var _EST_RANK = { 'Bloqueado por cartera': 0, 'Inactivo': 1, 'Activo': 2 };
+// Valores válidos: 'Activo' (por defecto), 'Inactivo', 'Bloqueado por cartera', 'Suspendido'.
+// 'Suspendido' = no se le volverá a vender (distinto de 'Inactivo', más laxo/reversible);
+// es el más severo de los cuatro.
+var _EST_RANK = { 'Suspendido': 0, 'Bloqueado por cartera': 1, 'Inactivo': 2, 'Activo': 3 };
 
 function _estadoNorm(e) {
   e = (e || 'Activo').trim();
   return _EST_RANK[e] !== undefined ? e : 'Activo';
 }
 
-// "Bloqueado por cartera" solo lo pueden poner/quitar admin, editor y el rol
-// cartera (el backend lo hace cumplir con un trigger en ClientesUnicos).
-// Para el resto de roles con escritura (contabilidad, gerente_iaso, remisionador)
-// se quita la opción; si el cliente ya está bloqueado se deshabilita el <select>.
+// "Bloqueado por cartera" y "Suspendido" solo los puede poner/quitar admin,
+// editor y el rol cartera (el backend lo hace cumplir con un trigger en
+// ClientesUnicos). Para el resto de roles con escritura (contabilidad,
+// gerente_iaso, remisionador) se quitan esas opciones; si el cliente ya
+// está en uno de esos dos estados se deshabilita el <select>.
+var _EST_RESTRINGIDOS = ['Bloqueado por cartera', 'Suspendido'];
+
 function _gateEstadoClienteSelect(actual) {
   var sel = document.getElementById('ed-estado');
   if (!sel) return;
   var puede = (typeof AUTH !== 'undefined' && AUTH.canToggleBloqueoCartera)
     ? AUTH.canToggleBloqueoCartera() : true;
-  var opt = sel.querySelector('option[value="Bloqueado por cartera"]');
   var hint = document.getElementById('ed-estado-hint');
   if (puede) {
-    if (opt) { opt.hidden = false; opt.disabled = false; }
+    _EST_RESTRINGIDOS.forEach(function(v) {
+      var opt = sel.querySelector('option[value="' + v + '"]');
+      if (opt) { opt.hidden = false; opt.disabled = false; }
+    });
     sel.disabled = false;
     return;
   }
-  if (actual === 'Bloqueado por cartera') {
-    if (opt) { opt.hidden = false; opt.disabled = false; }
+  if (_EST_RESTRINGIDOS.indexOf(actual) >= 0) {
+    _EST_RESTRINGIDOS.forEach(function(v) {
+      var opt = sel.querySelector('option[value="' + v + '"]');
+      if (opt) { opt.hidden = (v !== actual); opt.disabled = (v !== actual); }
+    });
     sel.disabled = true;
     if (hint) hint.textContent = 'Solo Cartera o Administración pueden cambiar este estado.';
   } else {
-    if (opt) { opt.hidden = true; opt.disabled = true; }
+    _EST_RESTRINGIDOS.forEach(function(v) {
+      var opt = sel.querySelector('option[value="' + v + '"]');
+      if (opt) { opt.hidden = true; opt.disabled = true; }
+    });
     sel.disabled = false;
   }
 }
@@ -208,7 +221,8 @@ function _grupoEsNuevo(g) {
 
 function _estadoBadge(estado, mixto) {
   estado = _estadoNorm(estado);
-  var cls = estado === 'Bloqueado por cartera' ? 'est-bloqueado'
+  var cls = estado === 'Suspendido' ? 'est-suspendido'
+          : estado === 'Bloqueado por cartera' ? 'est-bloqueado'
           : estado === 'Inactivo' ? 'est-inactivo' : 'est-activo';
   var label = estado === 'Bloqueado por cartera' ? 'Bloq. cartera' : estado;
   var title = mixto ? ' title="Registros con estados distintos — se muestra el más restrictivo"' : '';
