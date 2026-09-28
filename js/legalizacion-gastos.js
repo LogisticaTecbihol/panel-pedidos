@@ -304,6 +304,12 @@ function itemsOf(legId) { return legItems.filter(function(it) { return it.Legali
 function empresasOf(legId) { return legEmpresas.filter(function(e) { return e.Legalizacion_Id === legId; }); }
 function totalGastosOf(legId) { return itemsOf(legId).reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0); }
 function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0); }
+// Suma solo las líneas de gasto de un concepto puntual (ej. 'Combustible'),
+// usado por calcularProrrateoGastos() para sacarlo del prorrateo por producto.
+function totalGastosConceptoOf(legId, concepto) {
+  return itemsOf(legId).filter(function(it) { return it.Concepto === concepto; })
+    .reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0);
+}
 
 // ── Proporción de gastos por producto y por empresa (estimada) ──
 // Prorratea el gasto de cada viaje entre los productos de sus remisiones
@@ -331,6 +337,13 @@ function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) 
 // para las dos). Ya dentro de cada bolsa, el reparto entre productos sigue
 // siendo por litros o por kilos movidos, como antes. Un viaje 100% líquido
 // (el caso más común) se comporta exactamente igual que antes.
+//
+// Combustible aparte: el concepto 'Combustible' no tiene relación con
+// ningún producto/litro/kilo, así que se excluye por completo del reparto
+// por producto de arriba y se muestra en su propia tabla "Combustible por
+// empresa", repartido según el reparto manual entre empresas que ya trae
+// cada legalización (tabla "Reparto entre empresas" del formulario) — no
+// según litros/kilos. Un viaje sin ese reparto manual cae en "Sin asignar".
 function calcularProrrateoGastos() {
   var fEmp = document.getElementById('pf-emp').value;
   var fEmpSigla = fEmp ? getSigla(fEmp) : '';
@@ -348,6 +361,12 @@ function calcularProrrateoGastos() {
   var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto litro/kilo resoluble)
   var sinIdentificarLegs = {};       // legId -> Consecutivo
   var totalGeneral = 0;
+
+  var combustiblePorEmpresa = {};    // empresaSigla -> monto de Combustible
+  var combustibleLegs = {};          // empresaSigla -> { legId -> Consecutivo }
+  var combustibleSinAsignar = 0;     // monto de Combustible en viajes sin reparto manual entre empresas
+  var combustibleSinAsignarLegs = {};// legId -> Consecutivo
+  var combustibleTotalGeneral = 0;
 
   // Reparte subMonto (la porción de líquidos o de sólidos del viaje) entre
   // las líneas de ese tipo, proporcional a su litros/kilos movidos.
@@ -372,12 +391,46 @@ function calcularProrrateoGastos() {
     });
   }
 
+  // Reparte el monto de Combustible de un viaje entre las empresas de su
+  // reparto manual (Reparto entre empresas), a prorrata del Monto de cada
+  // una — NO por litros/kilos, que no aplican a este concepto.
+  function _acumularCombustible(leg, monto) {
+    var totalReparto = totalRepartoOf(leg.id);
+    if (totalReparto <= 0) {
+      if (!fEmp) {
+        combustibleSinAsignar += monto;
+        combustibleTotalGeneral += monto;
+        combustibleSinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+      }
+      return;
+    }
+    empresasOf(leg.id).forEach(function(e) {
+      var eMonto = Number(e.Monto) || 0;
+      if (eMonto <= 0) return;
+      var emp = getSigla(e.Empresa);
+      if (fEmpSigla && emp !== fEmpSigla) return;
+      var m = monto * (eMonto / totalReparto);
+      combustiblePorEmpresa[emp] = (combustiblePorEmpresa[emp] || 0) + m;
+      combustibleTotalGeneral += m;
+      (combustibleLegs[emp] = combustibleLegs[emp] || {})[leg.id] = leg.Consecutivo || ('#' + leg.id);
+    });
+  }
+
   legs.forEach(function(leg) {
+    // Mantenimiento (Tipo='Mantenimiento') es un gasto de vehículo, no de
+    // ruta: no tiene remisiones relacionadas ni relación con litros/kilos de
+    // producto, así que queda totalmente fuera de esta pestaña (si no, caía
+    // completo en "Sin identificar").
+    if (leg.Tipo === 'Mantenimiento') return;
     if (leg.Estado_Conciliacion === 'Rechazada') return;
     if (fDesde && (leg.Fecha || '') < fDesde) return;
     if (fHasta && (leg.Fecha || '') > fHasta) return;
     legsPeriodo[leg.id] = true;
-    var totalViaje = totalGastosOf(leg.id);
+
+    var totalCombustible = totalGastosConceptoOf(leg.id, 'Combustible');
+    if (totalCombustible > 0) _acumularCombustible(leg, totalCombustible);
+
+    var totalViaje = totalGastosOf(leg.id) - totalCombustible;
     if (totalViaje <= 0) return;
 
     // Remisiones_Relacionadas es un CSV simple de códigos (sin "|cant|fecha"),
@@ -436,7 +489,12 @@ function calcularProrrateoGastos() {
     sinIdentificar: sinIdentificar,
     sinIdentificarRemisiones: sinIdentificarRemisiones,
     sinIdentificarLegs: sinIdentificarLegs,
-    totalGeneral: totalGeneral
+    totalGeneral: totalGeneral,
+    combustiblePorEmpresa: combustiblePorEmpresa,
+    combustibleLegs: combustibleLegs,
+    combustibleSinAsignar: combustibleSinAsignar,
+    combustibleSinAsignarLegs: combustibleSinAsignarLegs,
+    combustibleTotalGeneral: combustibleTotalGeneral
   };
 }
 
@@ -483,8 +541,40 @@ function lgProrrateoTable(rows, headerLabel) {
 function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
   renderResumenProrrateo(calc);
+  renderCombustiblePorEmpresa(calc);
   renderGastoPorProducto(calc);
   renderGastoPorEmpresa(calc);
+}
+
+// Combustible por empresa: aparte del prorrateo por producto (litros/kilos),
+// repartido según el reparto manual entre empresas de cada legalización.
+function renderCombustiblePorEmpresa(calc) {
+  var box = document.getElementById('gpc-body');
+  if (!box) return;
+
+  var total = calc.combustibleTotalGeneral;
+  if (total <= 0) {
+    box.innerHTML = '<div class="empty">Sin gastos de Combustible para este período.</div>';
+    return;
+  }
+
+  var rows = Object.keys(calc.combustiblePorEmpresa).map(function(emp) {
+    var legs = Object.keys(calc.combustibleLegs[emp] || {}).map(function(id) {
+      return { id: Number(id), consecutivo: calc.combustibleLegs[emp][id] };
+    }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
+    return { label: emp, value: calc.combustiblePorEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>', legs: legs };
+  }).sort(function(a, b) { return b.value - a.value; });
+
+  if (calc.combustibleSinAsignar > 0) {
+    var legsSin = Object.keys(calc.combustibleSinAsignarLegs || {}).map(function(id) {
+      return { id: Number(id), consecutivo: calc.combustibleSinAsignarLegs[id] };
+    }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
+    rows.push({ label: 'Sin reparto asignado', value: calc.combustibleSinAsignar, legs: legsSin });
+  }
+
+  rows.forEach(function(r) { r.pct = total > 0 ? (r.value / total * 100) : 0; });
+
+  box.innerHTML = lgProrrateoTable(rows, 'Empresa');
 }
 
 // Resumen del período: litros y kilos totales movidos y remisiones
@@ -562,13 +652,15 @@ function clearProrrateoFiltros() {
 }
 
 // Exporta a Excel el mismo prorrateo que se ve en pantalla (respeta los
-// filtros de Empresa/Desde/Hasta activos): una fila por producto de cada
-// empresa, más "Sin identificar" si aplica.
+// filtros de Empresa/Desde/Hasta activos): hoja "Prorrateo" con una fila por
+// producto de cada empresa (más "Sin identificar" si aplica, ya sin
+// Combustible), y hoja "Combustible" con el reparto de ese concepto por
+// empresa (más "Sin reparto asignado" si aplica).
 function exportarProrrateoExcel() {
   var calc = calcularProrrateoGastos();
   var total = calc.totalGeneral;
   var empresas = Object.keys(calc.porEmpresa);
-  if (!empresas.length && calc.sinIdentificar <= 0) {
+  if (!empresas.length && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0) {
     showToast('No hay datos para exportar', '#e74c3c');
     return;
   }
@@ -598,10 +690,37 @@ function exportarProrrateoExcel() {
     });
   }
 
+  var totalComb = calc.combustibleTotalGeneral;
+  var rowsComb = Object.keys(calc.combustiblePorEmpresa)
+    .sort(function(a, b) { return calc.combustiblePorEmpresa[b] - calc.combustiblePorEmpresa[a]; })
+    .map(function(emp) {
+      var legsTxt = Object.keys(calc.combustibleLegs[emp] || {}).map(function(id) { return calc.combustibleLegs[emp][id]; }).sort().join(', ');
+      return {
+        'Empresa': emp,
+        'Monto': Number(calc.combustiblePorEmpresa[emp].toFixed(2)),
+        '% del total': Number((totalComb > 0 ? calc.combustiblePorEmpresa[emp] / totalComb * 100 : 0).toFixed(2)),
+        'Legalizaciones': legsTxt
+      };
+    });
+  if (calc.combustibleSinAsignar > 0) {
+    var legsSinTxt = Object.keys(calc.combustibleSinAsignarLegs || {}).map(function(id) { return calc.combustibleSinAsignarLegs[id]; }).sort().join(', ');
+    rowsComb.push({
+      'Empresa': 'Sin reparto asignado',
+      'Monto': Number(calc.combustibleSinAsignar.toFixed(2)),
+      '% del total': Number((totalComb > 0 ? calc.combustibleSinAsignar / totalComb * 100 : 0).toFixed(2)),
+      'Legalizaciones': legsSinTxt
+    });
+  }
+
+  var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
-  var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Prorrateo');
+  if (rowsComb.length) {
+    var wsComb = XLSX.utils.json_to_sheet(rowsComb);
+    wsComb['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsComb, 'Combustible');
+  }
   XLSX.writeFile(wb, 'prorrateo_gastos_' + today() + '.xlsx');
   showToast('Excel exportado');
 }
