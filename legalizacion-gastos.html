@@ -154,7 +154,7 @@
         <span id="gpr-legs-total" style="font-weight:600;color:#1a5276;font-size:0.86rem"></span>
       </div>
       <div style="padding:12px 20px 0">
-        <div class="gpp-note">Litros totales movidos y remisiones relacionadas de cada empresa, según los filtros de arriba.</div>
+        <div class="gpp-note">Litros (líquidos) y kilos (sólidos) totales movidos, y remisiones relacionadas, de cada empresa, según los filtros de arriba.</div>
       </div>
       <div id="gpr-body"></div>
     </div>
@@ -164,7 +164,7 @@
           <h3>Proporción de gastos por producto</h3>
         </div>
         <div style="padding:12px 20px 0">
-          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje entre los productos de sus remisiones relacionadas, según litros movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
+          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje entre los productos de sus remisiones relacionadas: primero entre líquidos y sólidos según cuántas remisiones son de cada tipo, y luego, dentro de cada grupo, por litros o por kilos movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
         </div>
         <div id="gpp-body"></div>
       </div>
@@ -173,7 +173,7 @@
           <h3>Proporción de gastos por empresa</h3>
         </div>
         <div style="padding:12px 20px 0">
-          <div class="gpp-note">Mismo prorrateo por litros, agregado por la empresa dueña de cada producto.</div>
+          <div class="gpp-note">Mismo prorrateo por litros/kilos, agregado por la empresa dueña de cada producto.</div>
         </div>
         <div id="gpe-body"></div>
       </div>
@@ -296,7 +296,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260925b"></script>
+<script src="js/shared.js?v=20260928b"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260925f"></script>

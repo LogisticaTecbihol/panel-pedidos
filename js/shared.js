@@ -2528,7 +2528,34 @@ function _litSegLitros(seg) {
   return null;
 }
 
-// Devuelve { ref, litrosUnidad, convertible }.
+// Interpreta un segmento de texto ("25 KILOS", "X KILO", "500 GR"…) como
+// kilogramos por unidad de empaque. Devuelve Number, o null si no se
+// reconoce como peso (incluye los líquidos y las unidades de conteo, que no
+// son peso). Usado por la proporción de gastos por producto de
+// legalizacion-gastos.js para prorratear los productos sólidos por kilo,
+// en paralelo a como _litSegLitros prorratea los líquidos por litro.
+function _kiloSegKilos(seg) {
+  if (!seg) return null;
+  var s = String(seg).toUpperCase().replace(/\s+/g, ' ').trim();
+
+  // Cifra explícita en kilos: "25 KILOS", "25 KG", "1 KILOGRAMO"
+  var mK = s.match(/(\d+(?:[.,]\d+)?)\s*(KILOGRAMOS?|KILOS?|KGS?)\b/);
+  if (mK) return _litNum(mK[1]);
+
+  // Gramos: "500 GRAMOS", "500 GR"
+  var mG = s.match(/(\d+(?:[.,]\d+)?)\s*(GRAMOS?|GRS?)\b/);
+  if (mG) return _litNum(mG[1]) / 1000;
+
+  // Líquidos / conteo → no es peso
+  if (/\b(LITROS?|LTS?|L|ML|MILILITROS?|CC|CM3|C\.C\.|GAL[OÓ]N(ES)?|GL|BID[OÓ]N|BIDON|CANECA|GARRAFA|TAMBOR|CU[ÑN]ETE|PIMPINA|UNIDAD(ES)?|UND|SOBRES?|BOLSAS?|PASTILLAS?|TARROS?)\b/.test(s)) return null;
+
+  // Kilo suelto sin cifra
+  if (/\bKILO(GRAMO)?S?\b/.test(s)) return 1;
+
+  return null;
+}
+
+// Devuelve { ref, litrosUnidad, convertible, kilosUnidad, convertibleKilo }.
 function _litParse(nombreRaw, presCol) {
   var nombre = String(nombreRaw || '').replace(/\s+/g, ' ').trim();
   var U = nombre.toUpperCase();
@@ -2540,7 +2567,7 @@ function _litParse(nombreRaw, presCol) {
     ref = nombre.slice(0, xIdx).trim();
   } else {
     // Sin " X ": ¿termina en una palabra de presentación conocida?
-    var mTail = U.match(/\s+(\d+(?:[.,]\d+)?\s*)?(LITROS?|ML|CC|GAL[OÓ]N|BID[OÓ]N|BIDON|CANECA|GARRAFA)\s*$/);
+    var mTail = U.match(/\s+(\d+(?:[.,]\d+)?\s*)?(LITROS?|ML|CC|GAL[OÓ]N|BID[OÓ]N|BIDON|CANECA|GARRAFA|KILOGRAMOS?|KILOS?|KGS?|GRAMOS?|GRS?)\s*$/);
     if (mTail) {
       seg = nombre.slice(nombre.length - mTail[0].length).trim();
       ref = nombre.slice(0, nombre.length - mTail[0].length).trim();
@@ -2549,6 +2576,9 @@ function _litParse(nombreRaw, presCol) {
 
   var litros = _litSegLitros(seg);
   if (litros == null && presCol) litros = _litSegLitros(String(presCol).trim());
+
+  var kilos = _kiloSegKilos(seg);
+  if (kilos == null && presCol) kilos = _kiloSegKilos(String(presCol).trim());
 
   // Limpieza del ref: quitar envase suelto o " X" colgando al final.
   ref = ref.replace(/\s+(BIDON|BID[OÓ]N|CANECA|GARRAFA|TAMBOR|FRASCO|BOTELLA|BOLSA)\s*$/i, '').trim();
@@ -2563,7 +2593,9 @@ function _litParse(nombreRaw, presCol) {
   return {
     ref: ref,
     litrosUnidad: litros == null ? 0 : litros,
-    convertible: litros != null && litros > 0
+    convertible: litros != null && litros > 0,
+    kilosUnidad: kilos == null ? 0 : kilos,
+    convertibleKilo: kilos != null && kilos > 0
   };
 }
 

@@ -305,6 +305,14 @@ function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) 
 // tocado varias empresas. Con el filtro activo, "Sin identificar" se omite
 // (no se le puede atribuir a una empresa algo que no se pudo resolver) y el
 // total/porcentajes quedan sobre la porción de esa empresa únicamente.
+//
+// Líquidos vs. sólidos: dentro de un mismo viaje, el gasto primero se separa
+// en dos bolsas — "líquidos" (prorrateados por litro) y "sólidos"
+// (prorrateados por kilo) — proporcional a cuántas remisiones relacionadas
+// aportan a cada bolsa (una remisión con productos de ambos tipos cuenta
+// para las dos). Ya dentro de cada bolsa, el reparto entre productos sigue
+// siendo por litros o por kilos movidos, como antes. Un viaje 100% líquido
+// (el caso más común) se comporta exactamente igual que antes.
 function calcularProrrateoGastos() {
   var fEmp = document.getElementById('pf-emp').value;
   var fEmpSigla = fEmp ? getSigla(fEmp) : '';
@@ -314,13 +322,37 @@ function calcularProrrateoGastos() {
   var porEmpresa = {};       // empresaSigla -> monto total
   var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo } } }
   var porEmpresaLitros = {};     // empresaSigla -> litros totales movidos (sin ponderar por monto)
+  var porEmpresaKilos = {};      // empresaSigla -> kilos totales movidos (sin ponderar por monto)
   var porEmpresaRemisiones = {}; // empresaSigla -> { codigoRemision: true }
   var porEmpresaLegs = {};       // empresaSigla -> { legId -> Consecutivo } (legalizaciones que tocan esa empresa)
-  var legsPeriodo = {};          // legId -> true (todas las legalizaciones del período, resuelvan o no litros)
+  var legsPeriodo = {};          // legId -> true (todas las legalizaciones del período, resuelvan o no litros/kilos)
   var sinIdentificar = 0;
-  var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto/litros resoluble)
+  var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto litro/kilo resoluble)
   var sinIdentificarLegs = {};       // legId -> Consecutivo
   var totalGeneral = 0;
+
+  // Reparte subMonto (la porción de líquidos o de sólidos del viaje) entre
+  // las líneas de ese tipo, proporcional a su litros/kilos movidos.
+  function _acumularLineas(leg, items, totalUnidad, subMonto, campoUnidad, campoAcumEmp) {
+    items.forEach(function(item) {
+      var l = item.m;
+      if (l[campoUnidad] <= 0) return;
+      var emp = getSigla(l.empresa);
+      if (fEmpSigla && emp !== fEmpSigla) return;
+      var monto = (l[campoUnidad] / totalUnidad) * subMonto;
+      var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
+      porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
+      var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
+      var entry = skuMap[sku] || (skuMap[sku] = { monto: 0, legs: {} });
+      entry.monto += monto;
+      entry.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+      totalGeneral += monto;
+
+      campoAcumEmp[emp] = (campoAcumEmp[emp] || 0) + l[campoUnidad];
+      (porEmpresaRemisiones[emp] = porEmpresaRemisiones[emp] || {})[item.codigo] = true;
+      (porEmpresaLegs[emp] = porEmpresaLegs[emp] || {})[leg.id] = leg.Consecutivo || ('#' + leg.id);
+    });
+  }
 
   legs.forEach(function(leg) {
     if (leg.Estado_Conciliacion === 'Rechazada') return;
@@ -340,15 +372,23 @@ function calcularProrrateoGastos() {
       if (matches) matches.forEach(function(m) { lineas.push({ m: m, codigo: c }); });
     });
 
-    var totalLitros = 0;
+    var totalLitros = 0, totalKilos = 0;
+    var codigosLiquido = {}, codigosSolido = {};
     lineas.forEach(function(item) {
       var l = item.m;
       var lit = _litParse(l.producto, l.presentacion);
       l._litros = lit.convertible ? lit.litrosUnidad * (Number(l.cantidad) || 0) : 0;
+      l._kilos = lit.convertibleKilo ? lit.kilosUnidad * (Number(l.cantidad) || 0) : 0;
       totalLitros += l._litros;
+      totalKilos += l._kilos;
+      if (l._litros > 0) codigosLiquido[item.codigo] = true;
+      if (l._kilos > 0) codigosSolido[item.codigo] = true;
     });
 
-    if (totalLitros <= 0) {
+    var nLiq = Object.keys(codigosLiquido).length;
+    var nSol = Object.keys(codigosSolido).length;
+
+    if (nLiq + nSol <= 0) {
       if (!fEmp) {
         sinIdentificar += totalViaje;
         totalGeneral += totalViaje;
@@ -358,30 +398,20 @@ function calcularProrrateoGastos() {
       return;
     }
 
-    lineas.forEach(function(item) {
-      var l = item.m;
-      if (l._litros <= 0) return;
-      var emp = getSigla(l.empresa);
-      if (fEmpSigla && emp !== fEmpSigla) return;
-      var monto = (l._litros / totalLitros) * totalViaje;
-      var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
-      porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
-      var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
-      var entry = skuMap[sku] || (skuMap[sku] = { monto: 0, legs: {} });
-      entry.monto += monto;
-      entry.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
-      totalGeneral += monto;
+    // Reparto del gasto del viaje entre la bolsa de líquidos y la de
+    // sólidos, proporcional a cuántas remisiones aportan a cada una.
+    var montoLiquidos = totalViaje * nLiq / (nLiq + nSol);
+    var montoSolidos = totalViaje * nSol / (nLiq + nSol);
 
-      porEmpresaLitros[emp] = (porEmpresaLitros[emp] || 0) + l._litros;
-      (porEmpresaRemisiones[emp] = porEmpresaRemisiones[emp] || {})[item.codigo] = true;
-      (porEmpresaLegs[emp] = porEmpresaLegs[emp] || {})[leg.id] = leg.Consecutivo || ('#' + leg.id);
-    });
+    if (totalLitros > 0) _acumularLineas(leg, lineas, totalLitros, montoLiquidos, '_litros', porEmpresaLitros);
+    if (totalKilos > 0) _acumularLineas(leg, lineas, totalKilos, montoSolidos, '_kilos', porEmpresaKilos);
   });
 
   return {
     porEmpresa: porEmpresa,
     porEmpresaSku: porEmpresaSku,
     porEmpresaLitros: porEmpresaLitros,
+    porEmpresaKilos: porEmpresaKilos,
     porEmpresaRemisiones: porEmpresaRemisiones,
     porEmpresaLegs: porEmpresaLegs,
     legsPeriodoCount: Object.keys(legsPeriodo).length,
@@ -392,12 +422,17 @@ function calcularProrrateoGastos() {
   };
 }
 
-// Litros con 2 decimales máx. y unidad " L" (igual convención que _litFmt de
+// Litros/kilos con 2 decimales máx. (igual convención que _litFmt de
 // reportes.js, pero local a este módulo).
 function _litFmtLg(n) {
   var v = Number(n) || 0;
   var r = Math.round((v + Number.EPSILON) * 100) / 100;
   return r.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' L';
+}
+function _kiloFmtLg(n) {
+  var v = Number(n) || 0;
+  var r = Math.round((v + Number.EPSILON) * 100) / 100;
+  return r.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' Kg';
 }
 
 // Monto con 2 decimales (el prorrateo por litros da valores fraccionarios;
@@ -434,11 +469,12 @@ function renderProrrateoGastos() {
   renderGastoPorEmpresa(calc);
 }
 
-// Resumen del período: litros totales movidos y remisiones relacionadas por
-// empresa, más la cantidad de legalizaciones consideradas (respeta los
-// filtros Empresa/Desde/Hasta de esta pestaña, igual que las otras dos
-// tablas). Con el filtro de Empresa activo, el conteo de legalizaciones pasa
-// a ser el de esa empresa puntual (las que aportaron al menos una línea).
+// Resumen del período: litros y kilos totales movidos y remisiones
+// relacionadas por empresa, más la cantidad de legalizaciones consideradas
+// (respeta los filtros Empresa/Desde/Hasta de esta pestaña, igual que las
+// otras dos tablas). Con el filtro de Empresa activo, el conteo de
+// legalizaciones pasa a ser el de esa empresa puntual (las que aportaron al
+// menos una línea, líquida o sólida).
 function renderResumenProrrateo(calc) {
   var box = document.getElementById('gpr-body');
   var legsEl = document.getElementById('gpr-legs-total');
@@ -449,7 +485,13 @@ function renderResumenProrrateo(calc) {
   var legsCount = fEmpSigla ? Object.keys(calc.porEmpresaLegs[fEmpSigla] || {}).length : calc.legsPeriodoCount;
   if (legsEl) legsEl.textContent = legsCount + ' legalización' + (legsCount === 1 ? '' : 'es') + ' en el período';
 
-  var empresas = Object.keys(calc.porEmpresaLitros).sort(function(a, b) { return calc.porEmpresaLitros[b] - calc.porEmpresaLitros[a]; });
+  var empSet = {};
+  Object.keys(calc.porEmpresaLitros).forEach(function(e) { empSet[e] = true; });
+  Object.keys(calc.porEmpresaKilos).forEach(function(e) { empSet[e] = true; });
+  var empresas = Object.keys(empSet).sort(function(a, b) {
+    return (calc.porEmpresaLegs[b] ? Object.keys(calc.porEmpresaLegs[b]).length : 0) -
+           (calc.porEmpresaLegs[a] ? Object.keys(calc.porEmpresaLegs[a]).length : 0);
+  });
   var sinIdRemisiones = Object.keys(calc.sinIdentificarRemisiones || {}).sort(function(a, b) { return a.localeCompare(b, 'es'); });
 
   if (!empresas.length && !sinIdRemisiones.length) {
@@ -465,14 +507,16 @@ function renderResumenProrrateo(calc) {
   }
 
   var html = empresas.map(function(emp) {
-    var litros = calc.porEmpresaLitros[emp];
+    var litros = calc.porEmpresaLitros[emp] || 0;
+    var kilos = calc.porEmpresaKilos[emp] || 0;
+    var totalesTxt = [litros > 0 ? _litFmtLg(litros) : null, kilos > 0 ? _kiloFmtLg(kilos) : null].filter(Boolean).join(' · ');
     var nLegs = Object.keys(calc.porEmpresaLegs[emp] || {}).length;
     var remisiones = Object.keys(calc.porEmpresaRemisiones[emp] || {}).sort(function(a, b) { return a.localeCompare(b, 'es'); });
 
     return '<div class="gpp-group">' +
       '<div class="gpp-group-head">' +
         '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' +
-        '<span class="gpp-group-total">' + escHtml(_litFmtLg(litros)) + ' <span style="color:#a0aec0;font-weight:400">· ' + nLegs + ' legalización' + (nLegs === 1 ? '' : 'es') + '</span></span>' +
+        '<span class="gpp-group-total">' + escHtml(totalesTxt) + ' <span style="color:#a0aec0;font-weight:400">· ' + nLegs + ' legalización' + (nLegs === 1 ? '' : 'es') + '</span></span>' +
       '</div>' +
       '<div style="padding:2px 0 4px">' + remisionesHtml(remisiones) + '</div>' +
     '</div>';
