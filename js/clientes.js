@@ -672,8 +672,10 @@ function openGroupDetail(groupIdx) {
     '</div>';
 
   if (isMulti) {
-    var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit) ? AUTH.canEdit() : true;
-    var canDel = (typeof AUTH !== 'undefined' && AUTH.canDelete) ? AUTH.canDelete() : false;
+    var canEd = (typeof AUTH !== 'undefined' && AUTH.canEdit)
+      ? (AUTH.canEdit() || (AUTH.isCartera && AUTH.isCartera())) : true;
+    var canDel = (typeof AUTH !== 'undefined' && AUTH.canDelete)
+      ? (AUTH.canDelete() || (AUTH.isCartera && AUTH.isCartera())) : false;
 
     html += '<div style="border-top:1px solid #e2e8f0;padding-top:16px">';
     html += '<div style="font-size:0.84rem;font-weight:700;color:#2d3748;margin-bottom:12px">📍 Empresas y sedes (' + g.records.length + ' registros)</div>';
