@@ -4,13 +4,14 @@
 
 // ── Tabs ──
 function switchTab(tab) {
-  ['legalizaciones', 'prorrateo'].forEach(function(t) {
+  ['legalizaciones', 'prorrateo', 'vehiculos'].forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
     if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
   });
   if (tab === 'prorrateo') renderProrrateoGastos();
+  if (tab === 'vehiculos') renderVehiculosTab();
 }
 
 var LEG_BUCKET = 'legalizacion-gastos-adjuntos';
@@ -18,6 +19,12 @@ var LEG_BUCKET = 'legalizacion-gastos-adjuntos';
 var legs = [];       // LegalizacionGastos (cabeceras)
 var legItems = [];   // LegalizacionGastosItems (líneas de gasto)
 var legEmpresas = []; // LegalizacionGastosEmpresas (reparto)
+var vehiculos = [];  // Vehiculos (catálogo, reemplaza la vieja lista fija PLACAS_FIJAS)
+
+// Piloto de kilometraje: solo estas placas muestran los campos de
+// km/hora/galones/rendimiento en el formulario de Ruta y en Ver. Ampliar el
+// piloto después es solo agregar placas aquí — no requiere migración.
+var KM_PILOTO_PLACAS = ['JRM295', 'LJT165'];
 
 var editingLegId = null; // id en edición dentro de #form-overlay, null = nueva
 var verLegId = null;     // id mostrado en #ver-overlay
@@ -166,8 +173,41 @@ function readResponsable() {
   return sel;
 }
 
-// Vehículos conocidos (placa - descripción); "Otro" pide especificar.
-var PLACAS_FIJAS = ['JRM295 - Camión Blanco', 'LJT165 - Camión Azúl', 'BTI756 - Luv Blanca', 'DBN900 - Mazda', 'SWS985 - Carri Blanca', 'UVS68H - Moto'];
+// Catálogo de vehículos (tabla Vehiculos): reemplaza la vieja lista fija
+// PLACAS_FIJAS. El <select> se llena dinámicamente (populatePlacaSelects,
+// tras cargar getVehiculos) — el value de cada <option> es la placa pura
+// (ej. "JRM295"), la descripción solo se muestra en el texto de la opción.
+function placaExiste(value) {
+  return vehiculos.some(function(v) { return v.Placa === value; });
+}
+
+function placaOptionsHtml(selected) {
+  var opts = '<option value="">— Seleccionar —</option>';
+  vehiculos.filter(function(v) { return v.Activo !== false; })
+    .sort(function(a, b) { return a.Placa.localeCompare(b.Placa, 'es'); })
+    .forEach(function(v) {
+      var label = v.Placa + (v.Descripcion ? ' - ' + v.Descripcion : '');
+      opts += '<option value="' + escHtml(v.Placa) + '"' + (v.Placa === selected ? ' selected' : '') + '>' + escHtml(label) + '</option>';
+    });
+  opts += '<option value="Otro"' + (selected === 'Otro' ? ' selected' : '') + '>Otro (especificar)</option>';
+  return opts;
+}
+
+// Se llama tras cargar/actualizar `vehiculos` (loadLegalizaciones,
+// loadVehiculosData) para refrescar ambos selects de Placa (Ruta y
+// Mantenimiento) conservando el valor actualmente seleccionado.
+function populatePlacaSelects() {
+  ['lg-placa-select', 'mant-placa-select'].forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (sel) sel.innerHTML = placaOptionsHtml(sel.value);
+  });
+}
+
+function ultimoKmVehiculo(placa) {
+  var v = vehiculos.find(function(x) { return x.Placa === placa; });
+  if (!v) return null;
+  return { km: Number(v.Km_Actual) || 0, fecha: v.Km_Actual_Fecha, rendimiento: v.Rendimiento_Esperado != null ? Number(v.Rendimiento_Esperado) : null };
+}
 
 function setPlacaField(value) {
   var sel = document.getElementById('lg-placa-select');
@@ -176,7 +216,7 @@ function setPlacaField(value) {
     sel.value = '';
     otro.style.display = 'none';
     otro.value = '';
-  } else if (PLACAS_FIJAS.indexOf(value) >= 0) {
+  } else if (placaExiste(value)) {
     sel.value = value;
     otro.style.display = 'none';
     otro.value = '';
@@ -184,6 +224,21 @@ function setPlacaField(value) {
     sel.value = 'Otro';
     otro.style.display = '';
     otro.value = value;
+  }
+}
+
+// Muestra/oculta el bloque de kilometraje (piloto, KM_PILOTO_PLACAS) y el
+// hint del último odómetro conocido de la placa actual, sin tocar los
+// valores ya escritos en los campos (openForm los precarga aparte al editar).
+function updateKmWrapVisibility() {
+  var placa = readPlaca();
+  var show = KM_PILOTO_PLACAS.indexOf(placa) >= 0;
+  var wrap = document.getElementById('lg-km-wrap');
+  if (wrap) wrap.style.display = show ? 'block' : 'none';
+  var hintEl = document.getElementById('lg-km-hint');
+  if (hintEl) {
+    var info = show ? ultimoKmVehiculo(placa) : null;
+    hintEl.textContent = info ? ('Último odómetro conocido: ' + info.km.toLocaleString('es-CO') + ' km' + (info.fecha ? ' (' + fmtDate(info.fecha) + ')' : '')) : '';
   }
 }
 
@@ -197,6 +252,20 @@ function onPlacaSelectChange() {
     otro.style.display = 'none';
     otro.value = '';
   }
+  updateKmWrapVisibility();
+  // Precarga "Km salida" con el último odómetro conocido, solo en
+  // legalizaciones nuevas y si el campo está vacío (no pisa lo que el
+  // usuario ya haya escrito).
+  if (!editingLegId) {
+    var placa = readPlaca();
+    var info = KM_PILOTO_PLACAS.indexOf(placa) >= 0 ? ultimoKmVehiculo(placa) : null;
+    var salidaInp = document.getElementById('lg-km-salida');
+    if (info && salidaInp && !salidaInp.value) salidaInp.value = info.km;
+  }
+  // La placa determina si la línea de Combustible muestra el input de
+  // Galones (ver renderLgGastos) — hay que leer lo ya escrito y redibujar.
+  readLgGastos();
+  renderLgGastos();
 }
 
 function readPlaca() {
@@ -269,11 +338,13 @@ async function loadLegalizaciones() {
     var results = await Promise.all([
       apiGet('getLegalizacionGastos'),
       apiGet('getLegalizacionGastosItems'),
-      apiGet('getLegalizacionGastosEmpresas')
+      apiGet('getLegalizacionGastosEmpresas'),
+      apiGet('getVehiculos')
     ]);
     if (!results[0].ok) throw new Error(results[0].error || 'Error desconocido');
     if (!results[1].ok) throw new Error(results[1].error || 'Error desconocido');
     if (!results[2].ok) throw new Error(results[2].error || 'Error desconocido');
+    if (!results[3].ok) throw new Error(results[3].error || 'Error desconocido');
 
     legs = (results[0].legalizaciones || []).map(function(r) {
       if (r.Fecha instanceof Date) r.Fecha = r.Fecha.toISOString().slice(0, 10);
@@ -281,6 +352,9 @@ async function loadLegalizaciones() {
     });
     legItems = results[1].items || [];
     legEmpresas = results[2].empresas || [];
+    vehiculos = results[3].vehiculos || [];
+    populatePlacaSelects();
+    renderVehiculosTab();
 
     renderTable();
 
@@ -297,6 +371,70 @@ async function loadLegalizaciones() {
       retryBtn.style.display = 'inline-block';
     }
   }
+}
+
+// ── Catálogo de Vehículos (pestaña "Vehículos") ──
+async function loadVehiculosData() {
+  var res = await apiGet('getVehiculos');
+  if (!res.ok) { showToast('Error al cargar vehículos: ' + res.error, '#e74c3c'); return; }
+  vehiculos = res.vehiculos || [];
+  populatePlacaSelects();
+  renderVehiculosTab();
+}
+
+function renderVehiculosTab() {
+  var box = document.getElementById('veh-body');
+  var ctEl = document.getElementById('veh-ct');
+  var btnNuevo = document.getElementById('veh-btn-nuevo');
+  if (!box) return;
+
+  if (btnNuevo) btnNuevo.style.display = AUTH.hasModule('legalizacion_gastos') ? 'inline-block' : 'none';
+  var puedeEditar = AUTH.canConciliarGastos();
+
+  var rows = vehiculos.slice().sort(function(a, b) { return a.Placa.localeCompare(b.Placa, 'es'); });
+  if (ctEl) ctEl.textContent = '(' + rows.length + ')';
+
+  box.innerHTML = rows.map(function(v) {
+    var descCell = puedeEditar
+      ? '<input class="ef" value="' + escHtml(v.Descripcion || '') + '" style="min-width:140px" onchange="guardarVehiculoCampo(' + v.id + ', \'Descripcion\', this.value)">'
+      : escHtml(v.Descripcion || '—');
+    var rendCell = puedeEditar
+      ? '<input class="ef" type="number" min="0" step="0.1" value="' + (v.Rendimiento_Esperado != null ? v.Rendimiento_Esperado : '') + '" style="width:90px;text-align:right" onchange="guardarVehiculoCampo(' + v.id + ', \'Rendimiento_Esperado\', this.value)">'
+      : escHtml(v.Rendimiento_Esperado != null ? v.Rendimiento_Esperado : '—');
+    var kmTxt = (Number(v.Km_Actual) || 0).toLocaleString('es-CO') + ' km' + (v.Km_Actual_Fecha ? ' (' + fmtDate(v.Km_Actual_Fecha) + ')' : '');
+    var pilotoTxt = KM_PILOTO_PLACAS.indexOf(v.Placa) >= 0 ? '<span class="badge b-ent">✅ Sí</span>' : '<span style="color:#a0aec0">—</span>';
+    var activoCell = puedeEditar
+      ? '<input type="checkbox" ' + (v.Activo !== false ? 'checked' : '') + ' onchange="guardarVehiculoCampo(' + v.id + ', \'Activo\', this.checked)">'
+      : (v.Activo !== false ? '✅' : '❌');
+    return '<tr>' +
+      '<td><strong>' + escHtml(v.Placa) + '</strong></td>' +
+      '<td>' + descCell + '</td>' +
+      '<td style="text-align:right">' + rendCell + '</td>' +
+      '<td style="text-align:right">' + escHtml(kmTxt) + '</td>' +
+      '<td>' + pilotoTxt + '</td>' +
+      '<td>' + activoCell + '</td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="6"><div class="empty">Sin vehículos.</div></td></tr>';
+}
+
+async function guardarVehiculoCampo(id, campo, valor) {
+  var body = { action: 'editarVehiculo', id: id };
+  body[campo] = valor;
+  var res = await apiPost(body);
+  if (!res.ok) { showToast('Error: ' + res.error, '#e74c3c'); return; }
+  showToast('Vehículo actualizado', '#27ae60');
+  await loadVehiculosData();
+}
+
+async function openNuevoVehiculo() {
+  var placa = (prompt('Placa del vehículo nuevo:') || '').trim().toUpperCase();
+  if (!placa) return;
+  if (placaExiste(placa)) { showToast('Esa placa ya existe en el catálogo', '#e67e22'); return; }
+  var desc = (prompt('Descripción (ej. "Camión Blanco"), opcional:') || '').trim();
+  var res = await apiPost({ action: 'agregarVehiculo', Placa: placa, Descripcion: desc });
+  if (!res.ok) { showToast('Error al agregar: ' + res.error, '#e74c3c'); return; }
+  showToast('Vehículo agregado', '#27ae60');
+  await loadVehiculosData();
 }
 
 // ── Helpers de datos ──
@@ -518,6 +656,9 @@ function fmtMoney2(v) {
   return '$' + n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// "08:30:00" (columna time de Postgres) -> "08:30"
+function fmtHora(h) { return h ? String(h).slice(0, 5) : ''; }
+
 // Tabla (cuadrícula) reutilizable para las dos vistas de prorrateo.
 // rows: [{label, value, pct, html?, legs?}] — html, si viene, reemplaza el
 // texto plano de la primera columna (badge de sigla en "por empresa"); legs
@@ -526,8 +667,14 @@ function fmtMoney2(v) {
 function lgProrrateoTable(rows, headerLabel) {
   if (!rows.length) return '<div class="empty">Sin datos.</div>';
   var body = rows.map(function(r) {
+    // El km recorridos (piloto KM_PILOTO_PLACAS) se muestra como referencia
+    // junto al enlace de cada legalización — no cambia el monto ni el %,
+    // que siguen siendo el reparto manual entre empresas de siempre.
     var legsHtml = (r.legs && r.legs.length) ? '<div class="ac-sub">' + r.legs.map(function(l) {
-      return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>';
+      var leg = legs.find(function(x) { return x.id === l.id; });
+      var kmTxt = (leg && leg.Km_Salida != null && leg.Km_Llegada != null)
+        ? ' <span style="color:#a0aec0">(' + (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km)</span>' : '';
+      return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + kmTxt;
     }).join(', ') + '</div>' : '';
     return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
@@ -967,8 +1114,15 @@ function renderLgGastos() {
   formGastoProveedorACs.forEach(function(ac) { ac.destroy(); });
   formGastoProveedorACs = [];
 
+  // Galones solo aplica a Combustible, y solo para las placas del piloto de
+  // kilometraje (KM_PILOTO_PLACAS) — para el resto de la flota el gasto de
+  // Combustible se registra igual que siempre, solo en $.
+  var placaActual = readPlaca();
+  var esPilotoKm = KM_PILOTO_PLACAS.indexOf(placaActual) >= 0;
+
   document.getElementById('lg-gasto-lines').innerHTML = formGastos.map(function(g, i) {
     var parsed = parseConceptoLine(g.Concepto || '');
+    var showGalones = esPilotoKm && g.Concepto === 'Combustible';
     return '<tr>' +
       '<td>' +
         '<select class="ef lg-g-concepto" data-line="' + i + '" onchange="onConceptoSelectChange(this)">' + conceptoOptionsHtml(parsed.sel) + '</select>' +
@@ -979,7 +1133,9 @@ function renderLgGastos() {
         '<input class="ef lg-g-nit" data-line="' + i + '" type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:100px" oninput="readLgGastos()">' +
         '<input class="ef lg-g-dv" data-line="' + i + '" type="text" value="' + escHtml(g.DV || '') + '" placeholder="DV" maxlength="2" style="width:44px;text-align:center" oninput="readLgGastos()">' +
       '</div></td>' +
-      '<td><input class="ef lg-g-valor" data-line="' + i + '" type="number" min="0" step="1" value="' + (g.Valor || '') + '" style="text-align:right;width:120px" oninput="readLgGastos()"></td>' +
+      '<td><input class="ef lg-g-valor" data-line="' + i + '" type="number" min="0" step="1" value="' + (g.Valor || '') + '" style="text-align:right;width:120px" oninput="readLgGastos()">' +
+        (showGalones ? '<input class="ef lg-g-galones" data-line="' + i + '" type="number" min="0" step="0.1" value="' + (g.Galones || '') + '" placeholder="Galones" style="text-align:right;width:120px;margin-top:4px" oninput="readLgGastos()">' : '') +
+      '</td>' +
       '<td style="text-align:center"><button onclick="removeLgGasto(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="5"><div class="no-lines">Sin líneas de gasto.</div></td></tr>';
@@ -1007,7 +1163,7 @@ function renderLgGastos() {
 }
 
 function addLgGasto() {
-  formGastos.push({ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' });
+  formGastos.push({ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '', Galones: '' });
   renderLgGastos();
   var lastInput = document.querySelector('.lg-g-concepto[data-line="' + (formGastos.length - 1) + '"]');
   if (lastInput) lastInput.focus();
@@ -1039,6 +1195,7 @@ function readLgGastos() {
   document.querySelectorAll('.lg-g-nit').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].NIT = inp.value; });
   document.querySelectorAll('.lg-g-dv').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].DV = inp.value; });
   document.querySelectorAll('.lg-g-valor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Valor = Number(inp.value) || 0; });
+  document.querySelectorAll('.lg-g-galones').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastos[i]) formGastos[i].Galones = Number(inp.value) || ''; });
   recalcTotals();
 }
 
@@ -1127,11 +1284,15 @@ function openForm(id) {
     document.getElementById('lg-personas').value = leg.No_Personas || '';
     document.getElementById('lg-fecha-salida').value = (leg.Fecha_Salida || '').slice(0, 10);
     document.getElementById('lg-fecha-llegada').value = (leg.Fecha_Llegada || '').slice(0, 10);
+    document.getElementById('lg-hora-salida').value = leg.Hora_Salida || '';
+    document.getElementById('lg-hora-llegada').value = leg.Hora_Llegada || '';
+    document.getElementById('lg-km-salida').value = leg.Km_Salida != null ? leg.Km_Salida : '';
+    document.getElementById('lg-km-llegada').value = leg.Km_Llegada != null ? leg.Km_Llegada : '';
     document.getElementById('lg-anticipo').value = leg.Anticipo_Entregado || '';
     document.getElementById('lg-observaciones').value = leg.Observaciones || '';
     formGastos = itemsOf(editingLegId).map(function(it) {
       var nd = splitNitDv(it.NIT);
-      return { Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: nd.nit, DV: nd.dv, Valor: it.Valor };
+      return { Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: nd.nit, DV: nd.dv, Valor: it.Valor, Galones: it.Galones != null ? it.Galones : '' };
     });
     formEmpresas = empresasOf(editingLegId).map(function(e) { return { Empresa: e.Empresa, Monto: e.Monto }; });
     formRemisiones = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
@@ -1145,17 +1306,22 @@ function openForm(id) {
     document.getElementById('lg-personas').value = 1;
     document.getElementById('lg-fecha-salida').value = '';
     document.getElementById('lg-fecha-llegada').value = '';
+    document.getElementById('lg-hora-salida').value = '';
+    document.getElementById('lg-hora-llegada').value = '';
+    document.getElementById('lg-km-salida').value = '';
+    document.getElementById('lg-km-llegada').value = '';
     document.getElementById('lg-anticipo').value = '';
     document.getElementById('lg-observaciones').value = '';
-    formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' }];
+    formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '', Galones: '' }];
     formEmpresas = [{ Empresa: '', Monto: '' }];
     formRemisiones = [];
     formClientes = [];
   }
-  if (!formGastos.length) formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '' }];
+  if (!formGastos.length) formGastos = [{ Concepto: 'Combustible', Proveedor: '', NIT: '', DV: '', Valor: '', Galones: '' }];
   if (!formEmpresas.length) formEmpresas = [{ Empresa: '', Monto: '' }];
   document.getElementById('lg-remision-nueva').value = '';
   document.getElementById('lg-cliente-nueva').value = '';
+  updateKmWrapVisibility();
   renderLgGastos();
   renderLgEmpresas();
   renderLgRemisiones();
@@ -1169,15 +1335,24 @@ function closeForm() {
 }
 
 function readHeaderForm() {
+  var placa = readPlaca();
+  var esPilotoKm = KM_PILOTO_PLACAS.indexOf(placa) >= 0;
   return {
     Fecha: document.getElementById('lg-fecha').value || today(),
     Tipo: 'Ruta',
     Responsable: readResponsable(),
-    Placa: readPlaca(),
+    Placa: placa,
     Recorrido_Ruta: document.getElementById('lg-ruta').value.trim(),
     No_Personas: Number(document.getElementById('lg-personas').value) || null,
     Fecha_Salida: document.getElementById('lg-fecha-salida').value || null,
     Fecha_Llegada: document.getElementById('lg-fecha-llegada').value || null,
+    // Kilometraje/hora: solo se guardan para las placas del piloto (ver
+    // KM_PILOTO_PLACAS) — para el resto quedan en null aunque el campo
+    // oculto conserve algún valor residual de una placa anterior.
+    Hora_Salida: esPilotoKm ? (document.getElementById('lg-hora-salida').value || null) : null,
+    Hora_Llegada: esPilotoKm ? (document.getElementById('lg-hora-llegada').value || null) : null,
+    Km_Salida: esPilotoKm ? (document.getElementById('lg-km-salida').value || null) : null,
+    Km_Llegada: esPilotoKm ? (document.getElementById('lg-km-llegada').value || null) : null,
     Clientes: formClientes.join(', '),
     Remisiones_Relacionadas: formRemisiones.join(', '),
     Anticipo_Entregado: Number(document.getElementById('lg-anticipo').value) || 0,
@@ -1191,9 +1366,12 @@ async function saveForm() {
   var header = readHeaderForm();
 
   if (!header.Responsable) { showToast('Indica el responsable', '#e67e22'); return; }
+  if (header.Km_Salida != null && header.Km_Llegada != null && Number(header.Km_Llegada) <= Number(header.Km_Salida)) {
+    showToast('El km de llegada debe ser mayor al km de salida', '#e67e22'); return;
+  }
   var gastosValidos = formGastos
     .filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; })
-    .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor }; });
+    .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor, Galones: g.Concepto === 'Combustible' ? g.Galones : null }; });
   if (!gastosValidos.length) { showToast('Agrega al menos una línea de gasto válida', '#e67e22'); return; }
   var empresasValidas = formEmpresas.filter(function(e) { return e.Empresa; });
   if (!empresasValidas.length) { showToast('Agrega al menos una empresa en el reparto', '#e67e22'); return; }
@@ -1202,6 +1380,12 @@ async function saveForm() {
   var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
   if (totalGastos !== totalReparto) {
     if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
+  }
+
+  // Alta automática de la placa en el catálogo si el usuario escribió una
+  // que no existe todavía (mismo patrón que "cliente nuevo desde pedido").
+  if (header.Placa && !placaExiste(header.Placa)) {
+    await apiPost({ action: 'agregarVehiculo', Placa: header.Placa, Descripcion: '' });
   }
 
   var body = { header: header, items: gastosValidos, empresas: empresasValidas };
@@ -1213,6 +1397,7 @@ async function saveForm() {
     res = await apiPost(Object.assign({ action: 'agregarLegalizacionGastos' }, body));
   }
   if (!res.ok) { showToast('Error al guardar: ' + res.error, '#e74c3c'); return; }
+  await loadVehiculosData(); // refresca catálogo (placa nueva y/o Km_Actual actualizado por el trigger)
 
   showToast('Legalización guardada correctamente', '#27ae60');
   closeForm();
@@ -1270,7 +1455,7 @@ function setPlacaFieldMant(value) {
     sel.value = '';
     otro.style.display = 'none';
     otro.value = '';
-  } else if (PLACAS_FIJAS.indexOf(value) >= 0) {
+  } else if (placaExiste(value)) {
     sel.value = value;
     otro.style.display = 'none';
     otro.value = '';
@@ -1492,6 +1677,12 @@ async function saveFormMant() {
     if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
   }
 
+  // Alta automática de la placa en el catálogo si el usuario escribió una
+  // que no existe todavía (mismo patrón que "cliente nuevo desde pedido").
+  if (header.Placa && !placaExiste(header.Placa)) {
+    await apiPost({ action: 'agregarVehiculo', Placa: header.Placa, Descripcion: '' });
+  }
+
   var body = { header: header, items: gastosValidos, empresas: empresasValidas };
   var res;
   if (editingLegId) {
@@ -1501,6 +1692,7 @@ async function saveFormMant() {
     res = await apiPost(Object.assign({ action: 'agregarLegalizacionGastos' }, body));
   }
   if (!res.ok) { showToast('Error al guardar: ' + res.error, '#e74c3c'); return; }
+  await loadVehiculosData();
 
   showToast('Legalización guardada correctamente', '#27ae60');
   closeFormMant();
@@ -1594,6 +1786,28 @@ function renderVerBody(leg) {
     conciliacionHtml = '<div style="padding:10px 14px;background:#fef3cd;border:1px solid #f9e79f;border-radius:8px;font-size:0.86rem;color:#7d6608">⏳ Pendiente de conciliación.</div>';
   }
 
+  // Kilometraje/rendimiento (piloto, KM_PILOTO_PLACAS): solo informativo,
+  // nunca bloquea la conciliación ni cambia el reparto entre empresas.
+  var kmHtml = '';
+  if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
+    var kmRec = Number(leg.Km_Llegada) - Number(leg.Km_Salida);
+    var galonesComb = items.filter(function(it) { return it.Concepto === 'Combustible'; })
+      .reduce(function(s, it) { return s + (Number(it.Galones) || 0); }, 0);
+    var rendReal = galonesComb > 0 ? (kmRec / galonesComb) : null;
+    var veh = vehiculos.find(function(v) { return v.Placa === leg.Placa; });
+    var rendEsp = (veh && veh.Rendimiento_Esperado != null) ? Number(veh.Rendimiento_Esperado) : null;
+    var alertaRend = '';
+    if (rendReal != null && rendEsp) {
+      var desvio = (rendReal - rendEsp) / rendEsp;
+      if (desvio < -0.25) alertaRend = ' <span style="color:#c0392b;font-weight:700">⚠ muy por debajo de lo esperado (~' + escHtml(String(rendEsp)) + ' km/gal)</span>';
+    }
+    kmHtml = '<div style="grid-column:span 3;padding:8px 12px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px">' +
+      '⛽ <strong>Km recorridos:</strong> ' + escHtml(kmRec.toLocaleString('es-CO')) + ' km' +
+      ' (salida ' + escHtml(Number(leg.Km_Salida).toLocaleString('es-CO')) + ' → llegada ' + escHtml(Number(leg.Km_Llegada).toLocaleString('es-CO')) + ')' +
+      (rendReal != null ? ' · <strong>Rendimiento real:</strong> ' + rendReal.toFixed(1) + ' km/gal' + alertaRend : '') +
+    '</div>';
+  }
+
   var infoGridHtml = esMant ?
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
       '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
@@ -1605,9 +1819,10 @@ function renderVerBody(leg) {
       '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
       '<div><strong>Personas en ruta:</strong> ' + escHtml(leg.No_Personas || '—') + '</div>' +
       '<div><strong>Clientes:</strong> ' + escHtml(leg.Clientes || '—') + '</div>' +
-      '<div><strong>Fecha salida:</strong> ' + escHtml(fmtDate(leg.Fecha_Salida)) + '</div>' +
-      '<div><strong>Fecha llegada:</strong> ' + escHtml(fmtDate(leg.Fecha_Llegada)) + '</div>' +
+      '<div><strong>Fecha salida:</strong> ' + escHtml(fmtDate(leg.Fecha_Salida) + (leg.Hora_Salida ? ' · ' + fmtHora(leg.Hora_Salida) : '')) + '</div>' +
+      '<div><strong>Fecha llegada:</strong> ' + escHtml(fmtDate(leg.Fecha_Llegada) + (leg.Hora_Llegada ? ' · ' + fmtHora(leg.Hora_Llegada) : '')) + '</div>' +
       '<div><strong>Anticipo entregado:</strong> ' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</div>' +
+      kmHtml +
       '<div style="grid-column:span 3"><strong>Remisiones relacionadas:</strong> ' + escHtml(leg.Remisiones_Relacionadas || '—') + '</div>' +
       '<div style="grid-column:span 3"><strong>Observaciones:</strong> ' + escHtml(leg.Observaciones || '—') + '</div>' +
     '</div>';
@@ -1772,13 +1987,16 @@ function exportarPDF() {
     ['Total gastos', fmtMoney(totalGastos)],
     ['Reparto entre empresas', reparto || '—'],
   ] : [
-    ['Fecha de salida', fmtDate(leg.Fecha_Salida)],
-    ['Fecha de llegada', fmtDate(leg.Fecha_Llegada)],
+    ['Fecha de salida', fmtDate(leg.Fecha_Salida) + (leg.Hora_Salida ? ' ' + fmtHora(leg.Hora_Salida) : '')],
+    ['Fecha de llegada', fmtDate(leg.Fecha_Llegada) + (leg.Hora_Llegada ? ' ' + fmtHora(leg.Hora_Llegada) : '')],
     ['Anticipo entregado', fmtMoney(leg.Anticipo_Entregado)],
     ['Total gastos', fmtMoney(totalGastos)],
     ['Reparto entre empresas', reparto || '—'],
     ['Remisiones relacionadas', leg.Remisiones_Relacionadas || '—'],
   ];
+  if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
+    rightFields.push(['Km recorridos', (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km']);
+  }
 
   // El gasto se reparte entre varias empresas del holding (ver "reparto" /
   // right_fields), así que el documento no pertenece a ninguna en particular

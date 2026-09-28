@@ -511,6 +511,11 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, empresas: _addRow(res.data) };
     }
+    if (action === 'getVehiculos') {
+      var res = await _fetchAllRows('Vehiculos', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, vehiculos: _addRow(res.data) };
+    }
 
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
@@ -2436,6 +2441,10 @@ async function _apiPostCore(body) {
         No_Personas: hdrLG.No_Personas || null,
         Fecha_Salida: hdrLG.Fecha_Salida || null,
         Fecha_Llegada: hdrLG.Fecha_Llegada || null,
+        Hora_Salida: hdrLG.Hora_Salida || null,
+        Hora_Llegada: hdrLG.Hora_Llegada || null,
+        Km_Salida: (hdrLG.Km_Salida != null && hdrLG.Km_Salida !== '') ? Number(hdrLG.Km_Salida) : null,
+        Km_Llegada: (hdrLG.Km_Llegada != null && hdrLG.Km_Llegada !== '') ? Number(hdrLG.Km_Llegada) : null,
         Clientes: hdrLG.Clientes || '',
         Remisiones_Relacionadas: hdrLG.Remisiones_Relacionadas || '',
         Anticipo_Entregado: Number(hdrLG.Anticipo_Entregado) || 0,
@@ -2446,7 +2455,7 @@ async function _apiPostCore(body) {
       if (resLG.error) return { ok: false, error: resLG.error.message };
       var idLG = resLG.data.id;
       var rowsItemsLG = itemsLG.map(function(it) {
-        return { Legalizacion_Id: idLG, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, creado_por: _uid() };
+        return { Legalizacion_Id: idLG, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, Galones: (it.Galones != null && it.Galones !== '') ? Number(it.Galones) : null, creado_por: _uid() };
       });
       var resItemsLG = await _sb.from('LegalizacionGastosItems').insert(rowsItemsLG);
       if (resItemsLG.error) return { ok: false, error: resItemsLG.error.message };
@@ -2474,6 +2483,10 @@ async function _apiPostCore(body) {
         No_Personas: hdrLGe.No_Personas || null,
         Fecha_Salida: hdrLGe.Fecha_Salida || null,
         Fecha_Llegada: hdrLGe.Fecha_Llegada || null,
+        Hora_Salida: hdrLGe.Hora_Salida || null,
+        Hora_Llegada: hdrLGe.Hora_Llegada || null,
+        Km_Salida: (hdrLGe.Km_Salida != null && hdrLGe.Km_Salida !== '') ? Number(hdrLGe.Km_Salida) : null,
+        Km_Llegada: (hdrLGe.Km_Llegada != null && hdrLGe.Km_Llegada !== '') ? Number(hdrLGe.Km_Llegada) : null,
         Clientes: hdrLGe.Clientes || '',
         Remisiones_Relacionadas: hdrLGe.Remisiones_Relacionadas || '',
         Anticipo_Entregado: Number(hdrLGe.Anticipo_Entregado) || 0,
@@ -2485,7 +2498,7 @@ async function _apiPostCore(body) {
       var delItemsLG = await _sb.from('LegalizacionGastosItems').delete().eq('Legalizacion_Id', body.id);
       if (delItemsLG.error) return { ok: false, error: delItemsLG.error.message };
       var rowsItemsLGe = itemsLGe.map(function(it) {
-        return { Legalizacion_Id: body.id, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, creado_por: _uid() };
+        return { Legalizacion_Id: body.id, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, Galones: (it.Galones != null && it.Galones !== '') ? Number(it.Galones) : null, creado_por: _uid() };
       });
       var resItemsLGe = await _sb.from('LegalizacionGastosItems').insert(rowsItemsLGe);
       if (resItemsLGe.error) return { ok: false, error: resItemsLGe.error.message };
@@ -2516,6 +2529,32 @@ async function _apiPostCore(body) {
       });
       if (resConcLG.error) return { ok: false, error: resConcLG.error.message };
       return resConcLG.data || { ok: true };
+    }
+
+    // Alta de placa nueva (catálogo Vehiculos): usado tanto por la pestaña
+    // Vehículos como por el auto-alta al escribir una placa que no existe
+    // en el formulario de legalización (mismo patrón que cliente nuevo
+    // desde pedido). Si la placa ya existe no falla, simplemente no hace
+    // nada (evita una carrera con otro usuario dando de alta la misma placa).
+    if (action === 'agregarVehiculo') {
+      var placaV = (body.Placa || '').trim();
+      if (!placaV) return { ok: false, error: 'Falta la placa' };
+      var resV = await _sb.from('Vehiculos').insert({
+        Placa: placaV, Descripcion: (body.Descripcion || '').trim(), creado_por: _uid()
+      }).select('id').single();
+      if (resV.error && resV.error.code !== '23505') return { ok: false, error: resV.error.message };
+      return { ok: true };
+    }
+
+    if (action === 'editarVehiculo') {
+      if (!body.id) return { ok: false, error: 'Falta el id del vehículo' };
+      var updV = { modificado_por: _uid() };
+      if (body.Descripcion != null) updV.Descripcion = body.Descripcion;
+      if (body.Rendimiento_Esperado !== undefined) updV.Rendimiento_Esperado = (body.Rendimiento_Esperado === '' || body.Rendimiento_Esperado == null) ? null : Number(body.Rendimiento_Esperado);
+      if (body.Activo != null) updV.Activo = !!body.Activo;
+      var resVe = await _sb.from('Vehiculos').update(updV).eq('id', body.id);
+      if (resVe.error) return { ok: false, error: resVe.error.message };
+      return { ok: true, updated: 1 };
     }
 
     return { error: 'Accion POST no reconocida: ' + action };

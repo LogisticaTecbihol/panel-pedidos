@@ -127,6 +127,7 @@
   <div style="display:flex;gap:8px;margin-bottom:16px">
     <button class="lg-tab" id="tab-legalizaciones" onclick="switchTab('legalizaciones')" style="background:#1a5276">📋 Legalizaciones</button>
     <button class="lg-tab" id="tab-prorrateo" onclick="switchTab('prorrateo')" style="background:#718096">📊 Prorrateo de gastos</button>
+    <button class="lg-tab" id="tab-vehiculos" onclick="switchTab('vehiculos')" style="background:#718096">🚚 Vehículos</button>
   </div>
 
   <div id="panel-legalizaciones">
@@ -198,6 +199,26 @@
       </div>
     </div>
   </div>
+
+  <div id="panel-vehiculos" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>Vehículos <span id="veh-ct" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-dl" id="veh-btn-nuevo" onclick="openNuevoVehiculo()" style="display:none">+ Nuevo vehículo</button>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Piloto de kilometraje: solo las placas marcadas abajo muestran los campos de km/galones al registrar una legalización de Ruta. Editar rendimiento esperado, descripción o estado activo requiere el permiso de conciliar gastos.</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Placa</th><th>Descripción</th><th style="text-align:right">Rendimiento esperado (km/gal)</th><th style="text-align:right">Km actual conocido</th><th>Piloto km</th><th>Activo</th></tr>
+          </thead>
+          <tbody id="veh-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL: Nueva / Editar legalización -->
@@ -226,12 +247,6 @@
           <label class="ef-label">Placa</label>
           <select class="ef" id="lg-placa-select" onchange="onPlacaSelectChange()">
             <option value="">— Seleccionar —</option>
-            <option value="JRM295 - Camión Blanco">JRM295 - Camión Blanco</option>
-            <option value="LJT165 - Camión Azúl">LJT165 - Camión Azúl</option>
-            <option value="BTI756 - Luv Blanca">BTI756 - Luv Blanca</option>
-            <option value="DBN900 - Mazda">DBN900 - Mazda</option>
-            <option value="SWS985 - Carri Blanca">SWS985 - Carri Blanca</option>
-            <option value="UVS68H - Moto">UVS68H - Moto</option>
             <option value="Otro">Otro (especificar)</option>
           </select>
           <input class="ef" id="lg-placa-otro" type="text" placeholder="Placa del vehículo" style="margin-top:4px;display:none">
@@ -240,6 +255,16 @@
         <div><label class="ef-label">No. Personas en ruta</label><input class="ef" id="lg-personas" type="number" min="1" value="1" style="width:70px"></div>
         <div><label class="ef-label">Fecha de salida</label><input class="ef" id="lg-fecha-salida" type="date"></div>
         <div><label class="ef-label">Fecha de llegada</label><input class="ef" id="lg-fecha-llegada" type="date"></div>
+        <div id="lg-km-wrap" style="display:none;grid-column:span 3;padding:10px 12px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px">
+          <div style="font-size:0.8rem;font-weight:700;color:#1a5276;margin-bottom:8px">Kilometraje (piloto)</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+            <div><label class="ef-label">Km salida</label><input class="ef" id="lg-km-salida" type="number" min="0" step="1"></div>
+            <div><label class="ef-label">Km llegada</label><input class="ef" id="lg-km-llegada" type="number" min="0" step="1"></div>
+            <div><label class="ef-label">Hora de salida</label><input class="ef" id="lg-hora-salida" type="time"></div>
+            <div><label class="ef-label">Hora de llegada</label><input class="ef" id="lg-hora-llegada" type="time"></div>
+          </div>
+          <div id="lg-km-hint" style="font-size:0.76rem;color:#718096;margin-top:6px"></div>
+        </div>
         <div style="grid-column:span 2">
           <label class="ef-label">Cliente(s)</label>
           <div id="lg-clientes-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
@@ -316,12 +341,6 @@
           <label class="ef-label">Placa *</label>
           <select class="ef" id="mant-placa-select" onchange="onPlacaSelectChangeMant()">
             <option value="">— Seleccionar —</option>
-            <option value="JRM295 - Camión Blanco">JRM295 - Camión Blanco</option>
-            <option value="LJT165 - Camión Azúl">LJT165 - Camión Azúl</option>
-            <option value="BTI756 - Luv Blanca">BTI756 - Luv Blanca</option>
-            <option value="DBN900 - Mazda">DBN900 - Mazda</option>
-            <option value="SWS985 - Carri Blanca">SWS985 - Carri Blanca</option>
-            <option value="UVS68H - Moto">UVS68H - Moto</option>
             <option value="Otro">Otro (especificar)</option>
           </select>
           <input class="ef" id="mant-placa-otro" type="text" placeholder="Placa del vehículo" style="margin-top:4px;display:none">
