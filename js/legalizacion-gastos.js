@@ -1411,6 +1411,26 @@ function empresaFromRemisionSigla(remision) {
   return e ? e.value : null;
 }
 
+// Una remisión solo puede estar relacionada en UNA legalización o envío (la
+// base también lo exige: trigger trg_01_remisiones_unicas). Devuelve el motivo
+// por el que NO se puede usar, o '' si está libre. listaForm = las remisiones
+// ya agregadas en el formulario en curso; excluirId = el registro que se está
+// editando (no se compara contra sí mismo). Los registros rechazados no cuentan.
+// Solo ve los registros que el usuario tiene cargados (RLS): la base cubre el resto.
+function remisionRepetidaMsg(codigo, listaForm, excluirId) {
+  var key = String(codigo || '').trim().toUpperCase();
+  if (!key) return '';
+  if ((listaForm || []).some(function(r) { return String(r).trim().toUpperCase() === key; })) {
+    return 'La remisión ' + codigo + ' ya está agregada en este formulario';
+  }
+  var otro = legs.find(function(l) {
+    if (l.id === excluirId || l.Estado_Conciliacion === 'Rechazada') return false;
+    return (l.Remisiones_Relacionadas || '').split(',').some(function(r) { return r.trim().toUpperCase() === key; });
+  });
+  if (otro) return 'La remisión ' + codigo + ' ya está registrada en ' + (otro.Consecutivo || ('#' + otro.id)) + (esEnvio(otro) ? ' (envío)' : ' (legalización)');
+  return '';
+}
+
 function _addEmpresaToList(empresaValue) {
   if (!empresaValue) return;
   if (formEmpresas.some(function(e) { return e.Empresa === empresaValue; })) return;
@@ -1675,6 +1695,8 @@ function addLgRemision() {
   var inp = document.getElementById('lg-remision-nueva');
   var val = inp.value.trim();
   if (!val) return;
+  var repetida = remisionRepetidaMsg(val, formRemisiones, editingLegId);
+  if (repetida) { showToast(repetida, '#e67e22'); inp.focus(); inp.select(); return; }
   formRemisiones.push(val);
   inp.value = '';
   renderLgRemisiones();
@@ -1839,6 +1861,9 @@ async function saveForm() {
   if (header.Km_Salida != null && header.Km_Llegada != null && Number(header.Km_Llegada) <= Number(header.Km_Salida)) {
     showToast('El km de llegada debe ser mayor al km de salida', '#e67e22'); return;
   }
+  // Otro usuario pudo registrar una de estas remisiones desde que se abrió el formulario.
+  var remRepetida = formRemisiones.map(function(r) { return remisionRepetidaMsg(r, [], editingLegId); }).find(function(m) { return m; });
+  if (remRepetida) { showToast(remRepetida, '#e67e22'); return; }
   var gastosValidos = formGastos
     .filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; })
     .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor, Galones: g.Concepto === 'Combustible' ? g.Galones : null }; });
@@ -2222,10 +2247,10 @@ function addEnvRemision() {
   var inp = document.getElementById('env-remision-nueva');
   var val = inp.value.trim();
   if (!val) return;
-  var yaEsta = formRemisionesEnv.some(function(r) { return r.toUpperCase() === val.toUpperCase(); });
+  var repetida = remisionRepetidaMsg(val, formRemisionesEnv, editingLegId);
+  if (repetida) { showToast(repetida, '#e67e22'); inp.focus(); inp.select(); return; }
   inp.value = '';
   inp.focus();
-  if (yaEsta) { showToast('Esa remisión ya está agregada', '#e67e22'); return; }
   formRemisionesEnv.push(val);
   renderEnvRemisiones();
   // La empresa sale de la sigla al inicio del consecutivo (mismo criterio que la ruta).
@@ -2367,6 +2392,9 @@ async function saveFormEnvio() {
   var valor = valorEnvio();
   if (!proveedor) { showToast('Indica el proveedor', '#e67e22'); return; }
   if (valor <= 0) { showToast('Indica el valor del envío', '#e67e22'); return; }
+  // Otro usuario pudo registrar una de estas remisiones desde que se abrió el formulario.
+  var remRepetida = formRemisionesEnv.map(function(r) { return remisionRepetidaMsg(r, [], editingLegId); }).find(function(m) { return m; });
+  if (remRepetida) { showToast(remRepetida, '#e67e22'); return; }
 
   // Reparto vacío ($0 en todas las filas) + remisiones: se calcula por
   // litros/kilos al guardar, para que el usuario no tenga que pedirlo.
