@@ -72,9 +72,10 @@ var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 var remisionProductoMap = {};
 
 // Igual que remisionProductoMap, más las remisiones de Muestras y de
-// Devoluciones. Solo lo usa el botón "Calcular reparto" del formulario
-// (calcularRepartoSugerido): la pestaña Prorrateo sigue con
-// remisionProductoMap, sin cambios.
+// Devoluciones. Lo usan el botón "Calcular reparto" del formulario
+// (calcularRepartoSugerido) y, en la pestaña Prorrateo, solo las
+// legalizaciones de tipo Envío (los envíos suelen llevar muestras); el resto
+// de la pestaña sigue con remisionProductoMap, sin cambios.
 var remisionProductoMapReparto = {};
 
 // Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
@@ -639,8 +640,11 @@ function calcularProrrateoGastos() {
     // _parseRemisionesField aquí, que solo separa por coma cuando detecta "|".
     var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
     var lineas = [];
+    // Un envío suele despachar muestras: sus remisiones se resuelven también
+    // contra Muestras y Devoluciones; para Ruta se mantiene el mapa de siempre.
+    var mapaRem = esEnvio(leg) ? remisionProductoMapReparto : remisionProductoMap;
     codigos.forEach(function(c) {
-      var matches = remisionProductoMap[c.trim().toUpperCase()];
+      var matches = mapaRem[c.trim().toUpperCase()];
       if (matches) matches.forEach(function(m) { lineas.push({ m: m, codigo: c }); });
     });
 
