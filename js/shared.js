@@ -2549,9 +2549,12 @@ async function _apiPostCore(body) {
       // Tipo: 'ABAGO' (por defecto) o 'MATERIA_PRIMA' (planta de producción, kilos/litros
       // directos en Unidad KG|L y proveedor libre). El tipo se fija al crear.
       var esMPRE = body.Tipo === 'MATERIA_PRIMA';
+      // La materia prima llega a una planta: CACHIPAY (empresa PARCELAR) o MOSQUERA
+      // (empresa GREEN); define a qué empresa se cargan sus gastos.
+      if (esMPRE && body.Planta !== 'CACHIPAY' && body.Planta !== 'MOSQUERA') return { ok: false, error: 'Elige la planta (Cachipay o Mosquera)' };
       if (idRE) {
         var updRE = { Remision: codRE, Fecha: body.Fecha || today(), modificado_por: _uid() };
-        if (esMPRE) updRE.Proveedor = (body.Proveedor || '').trim();
+        if (esMPRE) { updRE.Proveedor = (body.Proveedor || '').trim(); updRE.Planta = body.Planta; }
         var resUpdRE = await _sb.from('RemisionesExternas').update(updRE).eq('id', idRE);
         if (resUpdRE.error) return { ok: false, error: resUpdRE.error.code === '23505' ? 'La remisión ' + codRE + ' ya está registrada' : resUpdRE.error.message };
         var resOldRE = await _sb.from('RemisionesExternasItems').select('id').eq('Remision_Id', idRE);
@@ -2559,7 +2562,7 @@ async function _apiPostCore(body) {
         oldItemsRE = (resOldRE.data || []).map(function(r) { return r.id; });
       } else {
         var insRE = { Remision: codRE, Fecha: body.Fecha || today(), creado_por: _uid() };
-        if (esMPRE) { insRE.Tipo = 'MATERIA_PRIMA'; insRE.Proveedor = (body.Proveedor || '').trim(); }
+        if (esMPRE) { insRE.Tipo = 'MATERIA_PRIMA'; insRE.Proveedor = (body.Proveedor || '').trim(); insRE.Planta = body.Planta; }
         var resInsRE = await _sb.from('RemisionesExternas').insert(insRE).select('id').single();
         if (resInsRE.error) return { ok: false, error: resInsRE.error.code === '23505' ? 'La remisión ' + codRE + ' ya está registrada' : resInsRE.error.message };
         idRE = resInsRE.data.id;
