@@ -17,6 +17,10 @@ var existSnapshot = null;
 // Solo se carga para usuarios con menos empresas que el holding: su snapshot local
 // se arma con filas filtradas por RLS y les daría saldos incompletos.
 var saldosHolding = null;
+// Movimientos de las empresas que el usuario NO ve, fusionados entre sí (RPC
+// get_movs_holding_otras). Completan el consolidado del holding del Balance de
+// litros para usuarios con menos empresas. null = no aplica o la RPC falló.
+var litHoldingOtras = null;
 var plantaData = [];
 var plantaSort = { col: 'producir', dir: 'desc' };
 var plantaExpanded = {}; // prodKey → true si su detalle está desplegado
@@ -121,22 +125,7 @@ async function loadReportes() {
       console.warn('No se pudo cargar snapshot de existencias:', e);
     }
 
-    // Usuario con menos empresas que el holding: el snapshot local solo trae
-    // las filas que su RLS le deja ver, así que "Exist. total" de Programación
-    // de planta saldría incompleto. Se piden los saldos agregados al servidor.
-    // Si la RPC falla se cae al snapshot local (comportamiento anterior).
-    saldosHolding = null;
-    if (_rptEmpLimitado() && typeof _sb !== 'undefined' && _sb.rpc) {
-      try {
-        var rs = await _sb.rpc('get_saldos_holding', {
-          p_nc_retorno_desde: (typeof KX_NC_RETORNO_DESDE !== 'undefined') ? KX_NC_RETORNO_DESDE : '2026-09-01'
-        });
-        if (rs.error) console.warn('No se pudo cargar saldos del holding:', rs.error.message);
-        else if (rs.data) saldosHolding = rs.data;
-      } catch (e) {
-        console.warn('No se pudo cargar saldos del holding:', e);
-      }
-    }
+    await _rptCargarHoldingServidor();
 
     populateRptFilters();
     buildReport();
@@ -154,6 +143,37 @@ async function loadReportes() {
       errEl.style.display = 'block';
       retryBtn.style.display = 'inline-block';
     }
+  }
+}
+
+// Usuario con menos empresas que el holding: el snapshot local solo trae las
+// filas que su RLS le deja ver, así que los reportes que consolidan todo el
+// holding (Exist. total de planta/Valorización y los totales del Balance de
+// litros) saldrían incompletos. Se piden al servidor los datos que le faltan:
+//   saldosHolding   → saldos por producto/empresa (get_saldos_holding)
+//   litHoldingOtras → movimientos de las empresas que no ve (get_movs_holding_otras,
+//                     solo si puede ver el Balance de litros)
+// Si una RPC falla queda en null y el reporte cae al snapshot local (comportamiento
+// anterior).
+async function _rptCargarHoldingServidor() {
+  saldosHolding = null;
+  litHoldingOtras = null;
+  if (!_rptEmpLimitado() || typeof _sb === 'undefined' || !_sb.rpc) return;
+  var params = { p_nc_retorno_desde: (typeof KX_NC_RETORNO_DESDE !== 'undefined') ? KX_NC_RETORNO_DESDE : '2026-09-01' };
+  var pedirLitros = _rptPuedeVerLitros();
+  try {
+    var res = await Promise.all([
+      _sb.rpc('get_saldos_holding', params),
+      pedirLitros ? _sb.rpc('get_movs_holding_otras', params) : Promise.resolve(null)
+    ]);
+    if (res[0].error) console.warn('No se pudo cargar saldos del holding:', res[0].error.message);
+    else if (res[0].data) saldosHolding = res[0].data;
+    if (res[1]) {
+      if (res[1].error) console.warn('No se pudo cargar movimientos del holding:', res[1].error.message);
+      else if (Array.isArray(res[1].data)) litHoldingOtras = res[1].data;
+    }
+  } catch (e) {
+    console.warn('No se pudo cargar datos del holding desde el servidor:', e);
   }
 }
 
@@ -2086,6 +2106,11 @@ function exportCumplimiento() {
 //                   informativo: sale de la bodega NC, NO del stock bueno,
 //                   así que NO entra en la Diferencia ni en el cuadre.
 //
+// Usuarios con menos empresas que el holding: su stream local solo trae lo que su
+// RLS deja pasar, así que los KPI y el consolidado del holding saldrían
+// incompletos. Se completa con litHoldingOtras (RPC get_movs_holding_otras): los
+// movimientos de las empresas que no ve, fusionados entre sí (ver _litMovsHolding).
+//
 // Si el snapshot no cargó, el tab muestra un aviso y no calcula nada.
 // Aparecen también referencias con existencia aunque no se movieran.
 // Respeta los filtros de Empresa y "Buscar producto" del encabezado + el
@@ -2187,6 +2212,25 @@ function _litDefaults() {
   if (ha && !ha.value) ha.value = today();
 }
 
+// Empresa "comodín" con la que entran al stream los movimientos de las empresas
+// que el usuario no ve (llegan fusionados: sin nombre de empresa). No es
+// permitida (_rptEmpOK), así que solo suman al consolidado del holding y nunca
+// generan sección propia ni filas en "Sin conversión".
+var LIT_EMPRESA_OTRAS = '(otras empresas del holding)';
+
+// Stream completo del holding para un usuario con menos empresas: sus propias
+// empresas salen del stream local (completo para ellas, su RLS las deja pasar) y
+// las demás de la RPC get_movs_holding_otras. Los movimientos que el stream local
+// trae de empresas ajenas (la otra cara de un traslado) se descartan porque ya
+// vienen completos desde el servidor.
+function _litMovsHolding(local, otras) {
+  var propios = local.filter(function(m) { return _rptEmpOK(String(m.empresa || '').trim()); });
+  var ajenos = otras.map(function(r) {
+    return { empresa: LIT_EMPRESA_OTRAS, producto: r.p, presentacion: r.r, modulo: r.m, tipo: r.t, fecha: r.f, cantidad: r.c };
+  });
+  return propios.concat(ajenos);
+}
+
 function buildLitros() {
   _litDefaults();
 
@@ -2217,6 +2261,8 @@ function buildLitros() {
   function _enPeriodo(f) { return (!desde || f >= desde) && (!hasta || f <= hasta); }
 
   var movs = (typeof existSnapshot !== 'undefined' && existSnapshot && existSnapshot.kxMovimientos) || null;
+  // Usuario con menos empresas: completar el stream con las demás empresas (servidor)
+  if (movs && limitado && litHoldingOtras) movs = _litMovsHolding(movs, litHoldingOtras);
   litSnapshotMissing = !movs;
 
   if (!movs) {
