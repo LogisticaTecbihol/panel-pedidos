@@ -2441,7 +2441,9 @@ async function _apiPostCore(body) {
       var itemsLG = (body.items || []).filter(function(it) { return (it.Concepto || '').trim() || Number(it.Valor) > 0; });
       if (!itemsLG.length) return { ok: false, error: 'Agrega al menos una línea de gasto' };
       var empresasLG = (body.empresas || []).filter(function(e) { return (e.Empresa || '').trim(); });
-      if (!empresasLG.length) return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
+      // El reparto entre empresas es obligatorio salvo en Mantenimiento (se maneja
+      // como el Combustible en Prorrateo: sin reparto queda "Sin reparto asignado").
+      if (!empresasLG.length && (body.header || {}).Tipo !== 'Mantenimiento') return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
       var hdrLG = body.header || {};
       var payloadLG = {
         Fecha: hdrLG.Fecha || today(),
@@ -2470,11 +2472,13 @@ async function _apiPostCore(body) {
       });
       var resItemsLG = await _sb.from('LegalizacionGastosItems').insert(rowsItemsLG);
       if (resItemsLG.error) return { ok: false, error: resItemsLG.error.message };
-      var rowsEmpLG = empresasLG.map(function(e) {
-        return { Legalizacion_Id: idLG, Empresa: e.Empresa || '', Monto: Number(e.Monto) || 0, creado_por: _uid() };
-      });
-      var resEmpLG = await _sb.from('LegalizacionGastosEmpresas').insert(rowsEmpLG);
-      if (resEmpLG.error) return { ok: false, error: resEmpLG.error.message };
+      if (empresasLG.length) {
+        var rowsEmpLG = empresasLG.map(function(e) {
+          return { Legalizacion_Id: idLG, Empresa: e.Empresa || '', Monto: Number(e.Monto) || 0, creado_por: _uid() };
+        });
+        var resEmpLG = await _sb.from('LegalizacionGastosEmpresas').insert(rowsEmpLG);
+        if (resEmpLG.error) return { ok: false, error: resEmpLG.error.message };
+      }
       return { ok: true, id: idLG };
     }
 
@@ -2483,7 +2487,7 @@ async function _apiPostCore(body) {
       var itemsLGe = (body.items || []).filter(function(it) { return (it.Concepto || '').trim() || Number(it.Valor) > 0; });
       if (!itemsLGe.length) return { ok: false, error: 'Agrega al menos una línea de gasto' };
       var empresasLGe = (body.empresas || []).filter(function(e) { return (e.Empresa || '').trim(); });
-      if (!empresasLGe.length) return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
+      if (!empresasLGe.length && (body.header || {}).Tipo !== 'Mantenimiento') return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
       var hdrLGe = body.header || {};
       var updLG = {
         Fecha: hdrLGe.Fecha || today(),
@@ -2515,11 +2519,13 @@ async function _apiPostCore(body) {
       if (resItemsLGe.error) return { ok: false, error: resItemsLGe.error.message };
       var delEmpLG = await _sb.from('LegalizacionGastosEmpresas').delete().eq('Legalizacion_Id', body.id);
       if (delEmpLG.error) return { ok: false, error: delEmpLG.error.message };
-      var rowsEmpLGe = empresasLGe.map(function(e) {
-        return { Legalizacion_Id: body.id, Empresa: e.Empresa || '', Monto: Number(e.Monto) || 0, creado_por: _uid() };
-      });
-      var resEmpLGe = await _sb.from('LegalizacionGastosEmpresas').insert(rowsEmpLGe);
-      if (resEmpLGe.error) return { ok: false, error: resEmpLGe.error.message };
+      if (empresasLGe.length) {
+        var rowsEmpLGe = empresasLGe.map(function(e) {
+          return { Legalizacion_Id: body.id, Empresa: e.Empresa || '', Monto: Number(e.Monto) || 0, creado_por: _uid() };
+        });
+        var resEmpLGe = await _sb.from('LegalizacionGastosEmpresas').insert(rowsEmpLGe);
+        if (resEmpLGe.error) return { ok: false, error: resEmpLGe.error.message };
+      }
       return { ok: true, updated: 1 };
     }
 

@@ -617,6 +617,9 @@ function calcularProrrateoGastos() {
   var combustibleSinAsignarLegs = {};// legId -> Consecutivo
   var combustibleTotalGeneral = 0;
 
+  // Mantenimiento: igual que el Combustible (tabla propia, sin litros/kilos).
+  var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
+
   // Reparte subMonto (la porción de líquidos o de sólidos del viaje) entre
   // las líneas de ese tipo, proporcional a su litros/kilos movidos.
   function _acumularLineas(leg, items, totalUnidad, subMonto, campoUnidad, campoAcumEmp) {
@@ -669,15 +672,46 @@ function calcularProrrateoGastos() {
     });
   }
 
+  // Reparte el total de un Mantenimiento entre las empresas de su reparto
+  // manual, a prorrata del Monto de cada una (igual que el Combustible). El
+  // reparto es opcional: un mantenimiento sin reparto queda en "Sin reparto
+  // asignado".
+  function _acumularMantenimiento(leg, monto) {
+    var totalReparto = totalRepartoOf(leg.id);
+    var rotulo = leg.Consecutivo || ('#' + leg.id);
+    if (totalReparto <= 0) {
+      if (!fEmp) {
+        mantenimiento.sinAsignar += monto;
+        mantenimiento.total += monto;
+        mantenimiento.sinAsignarLegs[leg.id] = rotulo;
+      }
+      return;
+    }
+    empresasOf(leg.id).forEach(function(e) {
+      var eMonto = Number(e.Monto) || 0;
+      if (eMonto <= 0) return;
+      var emp = getSigla(e.Empresa);
+      if (fEmpSigla && emp !== fEmpSigla) return;
+      var m = monto * (eMonto / totalReparto);
+      mantenimiento.porEmpresa[emp] = (mantenimiento.porEmpresa[emp] || 0) + m;
+      mantenimiento.total += m;
+      (mantenimiento.legs[emp] = mantenimiento.legs[emp] || {})[leg.id] = rotulo;
+    });
+  }
+
   legs.forEach(function(leg) {
-    // Mantenimiento (Tipo='Mantenimiento') es un gasto de vehículo, no de
-    // ruta: no tiene remisiones relacionadas ni relación con litros/kilos de
-    // producto, así que queda totalmente fuera de esta pestaña (si no, caía
-    // completo en "Sin identificar").
-    if (leg.Tipo === 'Mantenimiento') return;
     if (leg.Estado_Conciliacion === 'Rechazada') return;
     if (fDesde && (leg.Fecha || '') < fDesde) return;
     if (fHasta && (leg.Fecha || '') > fHasta) return;
+    // Mantenimiento (Tipo='Mantenimiento') es un gasto de vehículo, no de
+    // ruta: no tiene remisiones relacionadas ni relación con litros/kilos de
+    // producto, así que no entra al prorrateo por producto (caería completo en
+    // "Sin identificar"); va en su propia tabla "Mantenimiento por empresa".
+    if (leg.Tipo === 'Mantenimiento') {
+      var totalMant = totalGastosOf(leg.id);
+      if (totalMant > 0) _acumularMantenimiento(leg, totalMant);
+      return;
+    }
     legsPeriodo[leg.id] = true;
 
     var totalCombustible = totalGastosConceptoOf(leg.id, 'Combustible');
@@ -750,7 +784,8 @@ function calcularProrrateoGastos() {
     combustibleLegs: combustibleLegs,
     combustibleSinAsignar: combustibleSinAsignar,
     combustibleSinAsignarLegs: combustibleSinAsignarLegs,
-    combustibleTotalGeneral: combustibleTotalGeneral
+    combustibleTotalGeneral: combustibleTotalGeneral,
+    mantenimiento: mantenimiento
   };
 }
 
@@ -807,39 +842,59 @@ function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
   renderResumenProrrateo(calc);
   renderCombustiblePorEmpresa(calc);
+  renderMantenimientoPorEmpresa(calc);
   renderGastoPorProducto(calc);
   renderGastoPorEmpresa(calc);
+}
+
+// Gastos que no se prorratean por producto (Combustible, Mantenimiento) se
+// muestran aparte, por empresa, según el reparto manual de cada legalización.
+// d = { total, porEmpresa: {emp: monto}, legs: {emp: {legId: consecutivo}},
+// sinAsignar, sinAsignarLegs: {legId: consecutivo} }.
+function _gastoAparteRows(d) {
+  var rows = Object.keys(d.porEmpresa).map(function(emp) {
+    var legs = Object.keys(d.legs[emp] || {}).map(function(id) {
+      return { id: Number(id), consecutivo: d.legs[emp][id] };
+    }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
+    return { label: emp, value: d.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>', legs: legs };
+  }).sort(function(a, b) { return b.value - a.value; });
+
+  if (d.sinAsignar > 0) {
+    var legsSin = Object.keys(d.sinAsignarLegs || {}).map(function(id) {
+      return { id: Number(id), consecutivo: d.sinAsignarLegs[id] };
+    }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
+    rows.push({ label: 'Sin reparto asignado', value: d.sinAsignar, legs: legsSin });
+  }
+
+  rows.forEach(function(r) { r.pct = d.total > 0 ? (r.value / d.total * 100) : 0; });
+  return rows;
+}
+
+function _renderGastoAparte(boxId, d, msgVacio) {
+  var box = document.getElementById(boxId);
+  if (!box) return;
+  if (d.total <= 0) {
+    box.innerHTML = '<div class="empty">' + msgVacio + '</div>';
+    return;
+  }
+  box.innerHTML = lgProrrateoTable(_gastoAparteRows(d), 'Empresa');
 }
 
 // Combustible por empresa: aparte del prorrateo por producto (litros/kilos),
 // repartido según el reparto manual entre empresas de cada legalización.
 function renderCombustiblePorEmpresa(calc) {
-  var box = document.getElementById('gpc-body');
-  if (!box) return;
+  _renderGastoAparte('gpc-body', {
+    total: calc.combustibleTotalGeneral,
+    porEmpresa: calc.combustiblePorEmpresa,
+    legs: calc.combustibleLegs,
+    sinAsignar: calc.combustibleSinAsignar,
+    sinAsignarLegs: calc.combustibleSinAsignarLegs
+  }, 'Sin gastos de Combustible para este período.');
+}
 
-  var total = calc.combustibleTotalGeneral;
-  if (total <= 0) {
-    box.innerHTML = '<div class="empty">Sin gastos de Combustible para este período.</div>';
-    return;
-  }
-
-  var rows = Object.keys(calc.combustiblePorEmpresa).map(function(emp) {
-    var legs = Object.keys(calc.combustibleLegs[emp] || {}).map(function(id) {
-      return { id: Number(id), consecutivo: calc.combustibleLegs[emp][id] };
-    }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
-    return { label: emp, value: calc.combustiblePorEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>', legs: legs };
-  }).sort(function(a, b) { return b.value - a.value; });
-
-  if (calc.combustibleSinAsignar > 0) {
-    var legsSin = Object.keys(calc.combustibleSinAsignarLegs || {}).map(function(id) {
-      return { id: Number(id), consecutivo: calc.combustibleSinAsignarLegs[id] };
-    }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
-    rows.push({ label: 'Sin reparto asignado', value: calc.combustibleSinAsignar, legs: legsSin });
-  }
-
-  rows.forEach(function(r) { r.pct = total > 0 ? (r.value / total * 100) : 0; });
-
-  box.innerHTML = lgProrrateoTable(rows, 'Empresa');
+// Mantenimiento por empresa: mismo tratamiento que el Combustible.
+function renderMantenimientoPorEmpresa(calc) {
+  _renderGastoAparte('gpm-body', calc.mantenimiento, 'Sin gastos de Mantenimiento para este período.');
 }
 
 // Resumen del período: litros y kilos totales movidos y remisiones
@@ -925,7 +980,7 @@ function exportarProrrateoExcel() {
   var calc = calcularProrrateoGastos();
   var total = calc.totalGeneral;
   var empresas = Object.keys(calc.porEmpresa);
-  if (!empresas.length && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0) {
+  if (!empresas.length && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0) {
     showToast('No hay datos para exportar', '#e74c3c');
     return;
   }
@@ -955,27 +1010,39 @@ function exportarProrrateoExcel() {
     });
   }
 
-  var totalComb = calc.combustibleTotalGeneral;
-  var rowsComb = Object.keys(calc.combustiblePorEmpresa)
-    .sort(function(a, b) { return calc.combustiblePorEmpresa[b] - calc.combustiblePorEmpresa[a]; })
-    .map(function(emp) {
-      var legsTxt = Object.keys(calc.combustibleLegs[emp] || {}).map(function(id) { return calc.combustibleLegs[emp][id]; }).sort().join(', ');
-      return {
-        'Empresa': emp,
-        'Monto': Number(calc.combustiblePorEmpresa[emp].toFixed(2)),
-        '% del total': Number((totalComb > 0 ? calc.combustiblePorEmpresa[emp] / totalComb * 100 : 0).toFixed(2)),
-        'Legalizaciones': legsTxt
-      };
-    });
-  if (calc.combustibleSinAsignar > 0) {
-    var legsSinTxt = Object.keys(calc.combustibleSinAsignarLegs || {}).map(function(id) { return calc.combustibleSinAsignarLegs[id]; }).sort().join(', ');
-    rowsComb.push({
-      'Empresa': 'Sin reparto asignado',
-      'Monto': Number(calc.combustibleSinAsignar.toFixed(2)),
-      '% del total': Number((totalComb > 0 ? calc.combustibleSinAsignar / totalComb * 100 : 0).toFixed(2)),
-      'Legalizaciones': legsSinTxt
-    });
+  // Filas de una hoja "aparte" (Combustible / Mantenimiento): una por empresa
+  // (más "Sin reparto asignado" si aplica).
+  function filasAparte(d) {
+    var rowsA = Object.keys(d.porEmpresa)
+      .sort(function(a, b) { return d.porEmpresa[b] - d.porEmpresa[a]; })
+      .map(function(emp) {
+        var legsTxt = Object.keys(d.legs[emp] || {}).map(function(id) { return d.legs[emp][id]; }).sort().join(', ');
+        return {
+          'Empresa': emp,
+          'Monto': Number(d.porEmpresa[emp].toFixed(2)),
+          '% del total': Number((d.total > 0 ? d.porEmpresa[emp] / d.total * 100 : 0).toFixed(2)),
+          'Legalizaciones': legsTxt
+        };
+      });
+    if (d.sinAsignar > 0) {
+      var legsSinTxt = Object.keys(d.sinAsignarLegs || {}).map(function(id) { return d.sinAsignarLegs[id]; }).sort().join(', ');
+      rowsA.push({
+        'Empresa': 'Sin reparto asignado',
+        'Monto': Number(d.sinAsignar.toFixed(2)),
+        '% del total': Number((d.total > 0 ? d.sinAsignar / d.total * 100 : 0).toFixed(2)),
+        'Legalizaciones': legsSinTxt
+      });
+    }
+    return rowsA;
   }
+  var rowsComb = filasAparte({
+    total: calc.combustibleTotalGeneral,
+    porEmpresa: calc.combustiblePorEmpresa,
+    legs: calc.combustibleLegs,
+    sinAsignar: calc.combustibleSinAsignar,
+    sinAsignarLegs: calc.combustibleSinAsignarLegs
+  });
+  var rowsMant = filasAparte(calc.mantenimiento);
 
   var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
@@ -985,6 +1052,11 @@ function exportarProrrateoExcel() {
     var wsComb = XLSX.utils.json_to_sheet(rowsComb);
     wsComb['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, wsComb, 'Combustible');
+  }
+  if (rowsMant.length) {
+    var wsMant = XLSX.utils.json_to_sheet(rowsMant);
+    wsMant['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsMant, 'Mantenimiento');
   }
   XLSX.writeFile(wb, 'prorrateo_gastos_' + today() + '.xlsx');
   showToast('Excel exportado');
@@ -2461,7 +2533,9 @@ function recalcTotalsMant() {
   var totalReparto = formEmpresasMant.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
   document.getElementById('mant-total-gastos').textContent = fmtMoney(totalGastos);
   document.getElementById('mant-total-reparto').textContent = fmtMoney(totalReparto);
-  document.getElementById('mant-reparto-warn').style.display = (totalGastos !== totalReparto) ? 'block' : 'none';
+  // Reparto opcional: sin ninguna empresa elegida no hay descuadre que avisar.
+  var conReparto = formEmpresasMant.some(function(e) { return e.Empresa; });
+  document.getElementById('mant-reparto-warn').style.display = (conReparto && totalGastos !== totalReparto) ? 'block' : 'none';
 }
 
 function openFormMant(id) {
@@ -2539,12 +2613,13 @@ async function saveFormMant() {
     .filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; })
     .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor }; });
   if (!gastosValidos.length) { showToast('Agrega al menos una línea de gasto válida', '#e67e22'); return; }
+  // El reparto entre empresas es opcional en Mantenimiento: sin reparto, el
+  // gasto queda en "Sin reparto asignado" en la pestaña Prorrateo (como el Combustible).
   var empresasValidas = formEmpresasMant.filter(function(e) { return e.Empresa; });
-  if (!empresasValidas.length) { showToast('Agrega al menos una empresa en el reparto', '#e67e22'); return; }
 
   var totalGastos = gastosValidos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
   var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
-  if (totalGastos !== totalReparto) {
+  if (empresasValidas.length && totalGastos !== totalReparto) {
     if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
   }
 

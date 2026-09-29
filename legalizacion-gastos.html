@@ -209,6 +209,15 @@
       </div>
       <div id="gpc-body"></div>
     </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
+        <h3>Mantenimiento por empresa</h3>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Los mantenimientos de vehículos tampoco se prorratean por producto: se reparten aquí según el reparto manual entre empresas de cada uno (opcional). "Sin reparto asignado" agrupa los mantenimientos que no tienen ese reparto cargado.</div>
+      </div>
+      <div id="gpm-body"></div>
+    </div>
     <div class="lg-row">
       <div class="card">
         <div class="card-head">
@@ -430,7 +439,7 @@
         <div style="grid-column:span 2"><label class="ef-label">Observaciones</label><textarea class="ef" id="mant-observaciones" rows="1" style="resize:vertical"></textarea></div>
       </div>
 
-      <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Reparto entre empresas</h3>
+      <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Reparto entre empresas <span style="font-weight:400;color:#718096">(opcional — sin reparto queda en "Sin reparto asignado" en Prorrateo)</span></h3>
       <table>
         <thead><tr><th>Empresa</th><th style="text-align:right">Monto</th><th style="width:40px"></th></tr></thead>
         <tbody id="mant-emp-lines"></tbody>
@@ -583,10 +592,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260929c"></script>
+<script src="js/shared.js?v=20260929d"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260929a"></script>
-<script src="js/legalizacion-gastos.js?v=20260929n"></script>
+<script src="js/legalizacion-gastos.js?v=20260929o"></script>
 </body>
 </html>
