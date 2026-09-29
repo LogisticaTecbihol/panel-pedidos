@@ -2803,13 +2803,31 @@ initAutocomplete(document.getElementById('lg-cliente-nueva'), {
   onSelect: function(c) { addLgCliente(c); }
 });
 
-// Proveedor del formulario de envío: autocompleta con los proveedores ya
-// usados (mismo origen que las líneas de gasto) y completa NIT + DV.
+// Proveedores para el formulario de envío: todos los ya usados en formularios
+// pasados (mismo origen que las líneas de gasto), con los de envíos anteriores
+// primero — los de peajes/combustible/alimentación quedan después.
+function proveedoresConocidosEnvio() {
+  var idsEnvio = {};
+  legs.forEach(function(l) { if (esEnvio(l)) idsEnvio[l.id] = true; });
+  var deEnvio = {};
+  legItems.forEach(function(it) {
+    if (!idsEnvio[it.Legalizacion_Id]) return;
+    var prov = (it.Proveedor || '').trim();
+    if (prov) deEnvio[prov.toLowerCase() + '|' + (it.NIT || '').trim()] = true;
+  });
+  return proveedoresConocidos().map(function(p) {
+    return { proveedor: p.proveedor, nit: p.nit, deEnvio: !!deEnvio[p.proveedor.toLowerCase() + '|' + p.nit] };
+  }).sort(function(a, b) { return (b.deEnvio ? 1 : 0) - (a.deEnvio ? 1 : 0); }); // estable: respeta el orden alfabético
+}
+
+// Proveedor del formulario de envío: autocompleta con los proveedores de
+// formularios pasados (sugiere ya al hacer clic, sin escribir) y completa NIT + DV.
 initAutocomplete(document.getElementById('env-proveedor'), {
-  minChars: 1,
-  items: proveedoresConocidos,
+  minChars: 0,
+  items: proveedoresConocidosEnvio,
   display: function(p) {
-    return '<strong>' + escHtml(p.proveedor) + '</strong>' + (p.nit ? ' <span class="ac-sub">NIT ' + escHtml(p.nit) + '</span>' : '');
+    return '<strong>' + escHtml(p.proveedor) + '</strong>' + (p.nit ? ' <span class="ac-sub">NIT ' + escHtml(p.nit) + '</span>' : '') +
+      (p.deEnvio ? ' <span class="ac-sub">· 📦 envío anterior</span>' : '');
   },
   match: function(p, val) { return p.proveedor.toLowerCase().indexOf(val) >= 0; },
   onSelect: function(p) {

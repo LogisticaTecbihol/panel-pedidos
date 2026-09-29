@@ -3052,7 +3052,7 @@ function initAutocomplete(input, opts) {
 
   function show() {
     var val = input.value.toLowerCase().trim();
-    if (val.length < (opts.minChars || 2)) { dd.style.display = 'none'; return; }
+    if (val.length < (opts.minChars != null ? opts.minChars : 2)) { dd.style.display = 'none'; return; }
     var all = typeof opts.items === 'function' ? opts.items() : opts.items;
     items = all.filter(function(it) { return opts.match(it, val); }).slice(0, 10);
     if (!items.length) { dd.style.display = 'none'; return; }
@@ -3073,7 +3073,7 @@ function initAutocomplete(input, opts) {
   }
 
   input.addEventListener('input', show);
-  input.addEventListener('focus', function() { if (input.value.trim().length >= (opts.minChars || 2)) show(); });
+  input.addEventListener('focus', function() { if (input.value.trim().length >= (opts.minChars != null ? opts.minChars : 2)) show(); });
   input.addEventListener('blur', function() { setTimeout(function() { dd.style.display = 'none'; }, 150); });
   input.addEventListener('keydown', function(e) {
     if (dd.style.display === 'none' || !items.length) return;
