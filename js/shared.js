@@ -2546,19 +2546,26 @@ async function _apiPostCore(body) {
       if (!lineasRE.length) return { ok: false, error: 'Agrega al menos un producto con cantidad' };
       var idRE = body.id || null;
       var oldItemsRE = [];
+      // Tipo: 'ABAGO' (por defecto) o 'MATERIA_PRIMA' (planta de producción, kilos/litros
+      // directos en Unidad KG|L y proveedor libre). El tipo se fija al crear.
+      var esMPRE = body.Tipo === 'MATERIA_PRIMA';
       if (idRE) {
-        var resUpdRE = await _sb.from('RemisionesExternas').update({ Remision: codRE, Fecha: body.Fecha || today(), modificado_por: _uid() }).eq('id', idRE);
+        var updRE = { Remision: codRE, Fecha: body.Fecha || today(), modificado_por: _uid() };
+        if (esMPRE) updRE.Proveedor = (body.Proveedor || '').trim();
+        var resUpdRE = await _sb.from('RemisionesExternas').update(updRE).eq('id', idRE);
         if (resUpdRE.error) return { ok: false, error: resUpdRE.error.code === '23505' ? 'La remisión ' + codRE + ' ya está registrada' : resUpdRE.error.message };
         var resOldRE = await _sb.from('RemisionesExternasItems').select('id').eq('Remision_Id', idRE);
         if (resOldRE.error) return { ok: false, error: resOldRE.error.message };
         oldItemsRE = (resOldRE.data || []).map(function(r) { return r.id; });
       } else {
-        var resInsRE = await _sb.from('RemisionesExternas').insert({ Remision: codRE, Fecha: body.Fecha || today(), creado_por: _uid() }).select('id').single();
+        var insRE = { Remision: codRE, Fecha: body.Fecha || today(), creado_por: _uid() };
+        if (esMPRE) { insRE.Tipo = 'MATERIA_PRIMA'; insRE.Proveedor = (body.Proveedor || '').trim(); }
+        var resInsRE = await _sb.from('RemisionesExternas').insert(insRE).select('id').single();
         if (resInsRE.error) return { ok: false, error: resInsRE.error.code === '23505' ? 'La remisión ' + codRE + ' ya está registrada' : resInsRE.error.message };
         idRE = resInsRE.data.id;
       }
       var rowsRE = lineasRE.map(function(l) {
-        return { Remision_Id: idRE, Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad), creado_por: _uid() };
+        return { Remision_Id: idRE, Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad), Unidad: (esMPRE && (l.Unidad === 'KG' || l.Unidad === 'L')) ? l.Unidad : null, creado_por: _uid() };
       });
       var resItRE = await _sb.from('RemisionesExternasItems').insert(rowsRE);
       if (resItRE.error) {
