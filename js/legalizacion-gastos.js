@@ -1364,7 +1364,9 @@ function updateStats() {
   document.getElementById('s-porconciliar').textContent = porConciliar.length;
   document.getElementById('s-conciliadas').textContent = conciliadas.length;
   document.getElementById('s-total').textContent = propias.length;
-  var valorPend = porConciliar.reduce(function(s, l) { return s + totalGastosOf(l.id); }, 0);
+  // El valor sí suma los envíos (no se concilian, pero son gasto registrado).
+  var valorPend = legs.filter(function(l) { return esEnvio(l) || l.Estado_Conciliacion === 'Por conciliar'; })
+    .reduce(function(s, l) { return s + totalGastosOf(l.id); }, 0);
   document.getElementById('s-valor').textContent = fmtMoney(valorPend);
 }
 
