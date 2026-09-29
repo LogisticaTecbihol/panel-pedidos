@@ -2379,10 +2379,11 @@ async function saveFormEnvio() {
 async function eliminarLegalizacion(id) {
   var leg = legs.find(function(l) { return l.id === id; });
   if (!leg) return;
-  if (!confirm('¿Eliminar la legalización ' + (leg.Consecutivo || '') + '? Esta acción no se puede deshacer.')) return;
+  var esEnv = esEnvio(leg);
+  if (!confirm('¿Eliminar ' + (esEnv ? 'el envío ' : 'la legalización ') + (leg.Consecutivo || '') + '? Esta acción no se puede deshacer.')) return;
   var res = await apiPost({ action: 'eliminarLegalizacionGastos', id: id });
   if (!res.ok) { showToast('Error al eliminar: ' + res.error, '#e74c3c'); return; }
-  showToast('Legalización eliminada', '#e67e22');
+  showToast(esEnv ? 'Envío eliminado' : 'Legalización eliminada', '#e67e22');
   await loadLegalizaciones();
 }
 
