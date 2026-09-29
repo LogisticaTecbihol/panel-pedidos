@@ -1238,12 +1238,56 @@ function estadoBadgeHtml(leg) {
   return '<span class="badge b-rec">⏳ Por conciliar</span>';
 }
 
+// ¿El reparto guardado no cuadra con los gastos? Mismo criterio del aviso del
+// formulario: el reparto debe sumar el total de gastos o, si hay Combustible
+// (que aún no se prorratea), el total sin Combustible. Detecta el reparto que
+// quedó desactualizado al editar los gastos después de calcularlo. Solo aplica
+// a lo que aún se puede editar ('Por conciliar'); en Mantenimiento el reparto
+// es opcional, así que sin montos no hay descuadre. Devuelve null si cuadra o
+// { reparto, esperado, dif, sinComb }.
+function repartoDescuadre(leg) {
+  if (!leg || leg.Estado_Conciliacion !== 'Por conciliar') return null;
+  var esMant = leg.Tipo === 'Mantenimiento';
+  var total = Math.round(totalGastosOf(leg.id));
+  var reparto = Math.round(totalRepartoOf(leg.id));
+  if (esMant && reparto <= 0) return null;
+  var comb = (esMant || esEnvio(leg)) ? 0 : Math.round(totalGastosConceptoOf(leg.id, 'Combustible'));
+  var candidatos = comb > 0 ? [total, total - comb] : [total];
+  if (candidatos.indexOf(reparto) >= 0) return null;
+  var esperado = candidatos.reduce(function(mejor, c) {
+    return Math.abs(reparto - c) < Math.abs(reparto - mejor) ? c : mejor;
+  }, candidatos[0]);
+  return { reparto: reparto, esperado: esperado, dif: reparto - esperado, sinComb: comb > 0 && esperado === total - comb };
+}
+
+// Texto del descuadre, para el tooltip de la marca y el aviso del detalle.
+function repartoDescuadreTxt(d) {
+  return 'El reparto suma ' + fmtMoney(d.reparto) + ' y los gastos' + (d.sinComb ? ' (sin Combustible)' : '') +
+    ' suman ' + fmtMoney(d.esperado) + ' (diferencia ' + (d.dif > 0 ? '+' : '−') + fmtMoney(Math.abs(d.dif)) + ').';
+}
+
+// Marca ⚠ junto a las empresas de una legalización con el reparto desactualizado.
+function marcaDescuadreHtml(leg) {
+  var d = repartoDescuadre(leg);
+  if (!d) return '';
+  return ' <span class="lg-desc" style="cursor:help;color:#b7791f;font-weight:700" title="' + escHtml('Reparto desactualizado. ' + repartoDescuadreTxt(d)) + '">⚠</span>';
+}
+
+// Cuenta (y avisa junto al título de la tabla) las filas mostradas con el reparto desactualizado.
+function actualizarContadorDescuadre(spanId, rows) {
+  var el = document.getElementById(spanId);
+  if (!el) return;
+  var n = rows.filter(function(l) { return repartoDescuadre(l); }).length;
+  el.textContent = n ? ' ⚠ ' + n + ' con el reparto desactualizado' : '';
+}
+
 function empresasBadgesHtml(legId) {
   var emps = empresasOf(legId);
-  if (!emps.length) return '<span style="color:#a0aec0">—</span>';
+  var marca = marcaDescuadreHtml(legs.find(function(l) { return l.id === legId; }));
+  if (!emps.length) return '<span style="color:#a0aec0">—</span>' + marca;
   return emps.map(function(e) {
     return '<span class="sigla-badge sigla-' + escHtml(getSiglaClass(e.Empresa).replace('sigla-', '')) + '" style="font-size:0.7rem;padding:1px 7px;margin:1px" title="' + escHtml(fmtMoney(e.Monto)) + '">' + escHtml(getSigla(e.Empresa)) + '</span>';
-  }).join(' ');
+  }).join(' ') + marca;
 }
 
 // ── Vista detallada ──
@@ -1456,6 +1500,7 @@ function renderTable() {
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
 
   document.getElementById('lg-ct').textContent = '(' + rows.length + ')';
+  actualizarContadorDescuadre('lg-desc-ct', rows);
 
   var canEditMod = AUTH.hasModule('legalizacion_gastos');
   var canDel = AUTH.canDelete();
@@ -1518,6 +1563,7 @@ function renderEnviosTable() {
   var canDel = AUTH.canDelete();
   var total = rows.reduce(function(s, leg) { return s + totalGastosOf(leg.id); }, 0);
   document.getElementById('envl-ct').textContent = '(' + rows.length + ')';
+  actualizarContadorDescuadre('envl-desc-ct', rows);
   document.getElementById('envl-total').textContent = rows.length ? 'Total: ' + fmtMoney(total) : '';
 
   body.innerHTML = rows.map(function(leg) {
@@ -3106,6 +3152,7 @@ function renderVerBody(leg) {
   var esEnv = esEnvio(leg);
   var combVer = totalCombustibleLista(items);
   var repartoSinComb = !esMant && combVer > 0 && totalReparto === totalGastos - combVer;
+  var descVer = repartoDescuadre(leg);
 
   var itemsHtml = items.map(function(it) {
     return '<tr><td>' + escHtml(it.Concepto || '') + '</td><td>' + escHtml(it.Proveedor || '') + '</td><td>' + escHtml(it.NIT || '') + '</td><td style="text-align:right">' + escHtml(fmtMoney(it.Valor)) + '</td></tr>';
@@ -3199,6 +3246,9 @@ function renderVerBody(leg) {
     '<table><thead><tr><th>Empresa</th><th style="text-align:right">Monto</th></tr></thead><tbody>' + empsHtml + '</tbody></table>' +
     '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong>' +
       (repartoSinComb ? ' · <em>El reparto no incluye el Combustible (' + escHtml(fmtMoney(combVer)) + ')</em>' : '') + '</div>' +
+    // Reparto desactualizado (gastos editados después de calcularlo): aviso con la diferencia.
+    (descVer ? '<div style="margin:0 0 14px;padding:8px 12px;background:#fffaf0;border:1px solid #f6ad55;border-radius:8px;font-size:0.84rem;color:#7b341e">⚠ <strong>Reparto desactualizado.</strong> ' +
+      escHtml(repartoDescuadreTxt(descVer)) + ' ' + (esMant ? 'Edita la legalización y ajusta los montos del reparto.' : 'Edita y pulsa ⚖ Calcular reparto para recalcularlo.') + '</div>' : '') +
     // Los envíos no se concilian: sin bloque de conciliación.
     (esEnv ? '' : '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Conciliación</h3>' + conciliacionHtml) +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:16px 0 6px">Soportes adjuntos <span id="lg-adj-count"></span></h3>' +
