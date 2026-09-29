@@ -327,7 +327,10 @@
         <thead><tr><th>Empresa</th><th style="text-align:right">Monto</th><th style="width:40px"></th></tr></thead>
         <tbody id="lg-emp-lines"></tbody>
       </table>
-      <button class="btn-edit" style="margin-top:8px" onclick="addLgEmpresa()">+ Agregar empresa</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-edit" onclick="addLgEmpresa()">+ Agregar empresa</button>
+        <button class="btn-edit" onclick="calcularRepartoForm()" title="Reparte los gastos (sin Combustible) según los litros/kilos de las remisiones relacionadas de cada empresa">⚖ Calcular reparto</button>
+      </div>
 
       <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Líneas de gasto</h3>
       <table>
@@ -340,6 +343,7 @@
         <div>Total gastos: <strong id="lg-total-gastos">$0</strong></div>
         <div>Total repartido: <strong id="lg-total-reparto">$0</strong></div>
         <div id="lg-reparto-warn" style="color:#b7791f;font-weight:700;display:none">⚠ El reparto no coincide con el total de gastos</div>
+        <div id="lg-reparto-info" style="color:#4a5568;display:none"></div>
       </div>
     </div>
     <div class="mftr">
@@ -452,6 +456,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260925f"></script>
-<script src="js/legalizacion-gastos.js?v=20260928d"></script>
+<script src="js/legalizacion-gastos.js?v=20260929a"></script>
 </body>
 </html>

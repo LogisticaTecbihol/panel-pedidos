@@ -61,6 +61,12 @@ var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 // calcularProrrateoGastos().
 var remisionProductoMap = {};
 
+// Igual que remisionProductoMap, más las remisiones de Muestras y de
+// Devoluciones. Solo lo usa el botón "Calcular reparto" del formulario
+// (calcularRepartoSugerido): la pestaña Prorrateo sigue con
+// remisionProductoMap, sin cambios.
+var remisionProductoMapReparto = {};
+
 // Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
 // en registros viejos, un solo código sin "|"). Mismo parseo que kardex.js.
 function _parseRemisionesField(remStr) {
@@ -76,10 +82,14 @@ async function loadClientesConRemision() {
   try {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' }),
-      apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; })
+      apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; })
     ]);
     var res = results[0];
     var resIng = results[1];
+    var resMue = results[2];
+    var resDev = results[3];
     var set = {};
     var remMap = {};
     var prodMap = {};
@@ -129,6 +139,40 @@ async function loadClientesConRemision() {
     clientesConRemisionCache = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
     remisionClienteMap = remMap;
     remisionProductoMap = prodMap;
+
+    // Mapa ampliado para el reparto: copia de prodMap + Muestras + Devoluciones
+    // (misma convención de cantidad que kardex.js: Cant_Entregada, o Cantidad
+    // si no hay). Las órdenes de producción de muestras no despachan; las
+    // devoluciones anuladas/pendientes no movieron producto.
+    var repMap = {};
+    Object.keys(prodMap).forEach(function(k) { repMap[k] = prodMap[k].slice(); });
+    function _addRep(rem, emp, prod, pres, cant) {
+      var key = String(rem || '').trim().toUpperCase();
+      if (!key || cant <= 0) return;
+      (repMap[key] = repMap[key] || []).push({ producto: prod, presentacion: pres, cantidad: cant, empresa: emp });
+    }
+    function _cantDe(r) { return Number(r.Cant_Entregada != null && r.Cant_Entregada !== '' ? r.Cant_Entregada : r.Cantidad) || 0; }
+    if (resMue && resMue.ok) {
+      (resMue.muestras || []).forEach(function(m) {
+        if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
+        _addRep(m.Remision, m.Empresa, m.Producto, m.Presentacion, _cantDe(m));
+      });
+    }
+    if (resDev && resDev.ok) {
+      (resDev.devoluciones || []).forEach(function(d) {
+        var est = (d.Estado || '').toLowerCase();
+        if (est === 'anulado' || est === 'pendiente') return;
+        var cant = _cantDe(d);
+        var vistas = {};
+        [d.Remision, d.Remision_Ingreso, d.Remision_Salida].forEach(function(r) {
+          var key = String(r || '').trim().toUpperCase();
+          if (!key || vistas[key]) return;
+          vistas[key] = true;
+          _addRep(key, d.Empresa, d.Producto, d.Presentacion, cant);
+        });
+      });
+    }
+    remisionProductoMapReparto = repMap;
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
   } catch (e) {
     clientesConRemisionCache = clientesConRemisionCache || [];
@@ -1282,6 +1326,126 @@ function readLgEmpresas() {
   recalcTotals();
 }
 
+// Reparte `total` (pesos enteros) en proporción a `pesos` {clave: peso} con el
+// método del mayor resto, de modo que la suma sea exactamente `total`.
+function _repartirEnteros(pesos, total) {
+  var out = {};
+  total = Math.round(Number(total) || 0);
+  var keys = Object.keys(pesos).filter(function(k) { return pesos[k] > 0; });
+  var suma = keys.reduce(function(s, k) { return s + pesos[k]; }, 0);
+  if (!keys.length || suma <= 0 || total <= 0) return out;
+  var asignado = 0;
+  var restos = keys.map(function(k) {
+    var exacto = total * pesos[k] / suma;
+    var base = Math.floor(exacto);
+    out[k] = base;
+    asignado += base;
+    return { k: k, resto: exacto - base };
+  });
+  restos.sort(function(a, b) { return b.resto - a.resto; });
+  var faltan = total - asignado;
+  for (var i = 0; i < faltan; i++) out[restos[i % restos.length].k] += 1;
+  return out;
+}
+
+// ── Reparto entre empresas sugerido por litros/kilos ──
+// Reparte `monto` (los gastos del viaje SIN Combustible) entre las empresas de
+// las remisiones relacionadas, con la misma lógica de la pestaña Prorrateo:
+// el monto se separa en bolsa de líquidos (por litro) y de sólidos (por kilo),
+// proporcional a cuántas remisiones aportan a cada una, y dentro de cada bolsa
+// cada empresa recibe según los litros/kilos de sus remisiones. Las remisiones
+// se resuelven con remisionProductoMapReparto (Pedidos + Ingresos + Muestras +
+// Devoluciones); las que no se resuelven a litros/kilos se ignoran. Si NINGUNA
+// se resuelve, se reparte por número de remisiones según la sigla del
+// consecutivo. Devuelve { porEmpresa: {empresa: pesos enteros}, metodo,
+// sinResolver: [códigos] }.
+function calcularRepartoSugerido(codigos, monto) {
+  var holding = {};
+  EMPRESAS_HOLDING.forEach(function(e) { holding[e.value] = true; });
+
+  var vistos = {};
+  var codigosUnicos = (codigos || []).map(function(c) { return String(c || '').trim(); }).filter(function(c) {
+    var k = c.toUpperCase();
+    if (!c || vistos[k]) return false;
+    vistos[k] = true;
+    return true;
+  });
+
+  var sinResolver = [];
+  var codLiq = {}, codSol = {}, litEmp = {}, kiloEmp = {};
+  codigosUnicos.forEach(function(c) {
+    var aporta = false;
+    (remisionProductoMapReparto[c.toUpperCase()] || []).forEach(function(m) {
+      if (!holding[m.empresa]) return; // p. ej. GRANEL: no es del reparto
+      var lit = _litParse(m.producto, m.presentacion);
+      var cant = Number(m.cantidad) || 0;
+      var litros = lit.convertible ? lit.litrosUnidad * cant : 0;
+      var kilos = lit.convertibleKilo ? lit.kilosUnidad * cant : 0;
+      if (litros > 0) { codLiq[c] = true; litEmp[m.empresa] = (litEmp[m.empresa] || 0) + litros; aporta = true; }
+      if (kilos > 0) { codSol[c] = true; kiloEmp[m.empresa] = (kiloEmp[m.empresa] || 0) + kilos; aporta = true; }
+    });
+    if (!aporta) sinResolver.push(c);
+  });
+
+  var nLiq = Object.keys(codLiq).length;
+  var nSol = Object.keys(codSol).length;
+  if (nLiq + nSol > 0) {
+    var montoLiq = monto * nLiq / (nLiq + nSol);
+    var montoSol = monto - montoLiq;
+    var totLit = Object.keys(litEmp).reduce(function(s, e) { return s + litEmp[e]; }, 0);
+    var totKilo = Object.keys(kiloEmp).reduce(function(s, e) { return s + kiloEmp[e]; }, 0);
+    var pesos = {};
+    Object.keys(litEmp).forEach(function(e) { pesos[e] = (pesos[e] || 0) + montoLiq * litEmp[e] / totLit; });
+    Object.keys(kiloEmp).forEach(function(e) { pesos[e] = (pesos[e] || 0) + montoSol * kiloEmp[e] / totKilo; });
+    return { porEmpresa: _repartirEnteros(pesos, monto), metodo: 'litros/kilos', sinResolver: sinResolver };
+  }
+
+  var cuenta = {};
+  codigosUnicos.forEach(function(c) {
+    var emp = empresaFromRemisionSigla(c);
+    if (emp) cuenta[emp] = (cuenta[emp] || 0) + 1;
+  });
+  return { porEmpresa: _repartirEnteros(cuenta, monto), metodo: 'remisiones', sinResolver: [] };
+}
+
+// Combustible aparte: por ahora NO se prorratea entre empresas, así que el
+// reparto calculado cubre solo los gastos que no son Combustible.
+function totalCombustibleLista(lista) {
+  return (lista || []).reduce(function(s, g) {
+    return s + (((g.Concepto || '').trim() === 'Combustible') ? (Number(g.Valor) || 0) : 0);
+  }, 0);
+}
+
+function calcularRepartoForm() {
+  readLgGastos();
+  readLgEmpresas();
+  if (!formRemisiones.length) { showToast('Agrega primero las remisiones relacionadas', '#e67e22'); return; }
+  var totalGastos = formGastos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
+  var base = totalGastos - totalCombustibleLista(formGastos);
+  if (base <= 0) { showToast('No hay gastos distintos de Combustible para repartir', '#e67e22'); return; }
+
+  var calc = calcularRepartoSugerido(formRemisiones, base);
+  var emps = Object.keys(calc.porEmpresa);
+  if (!emps.length) { showToast('No se pudo determinar la empresa de las remisiones', '#e67e22'); return; }
+  if (formEmpresas.some(function(e) { return e.Empresa && Number(e.Monto) > 0; }) &&
+      !confirm('Ya hay montos en el reparto. ¿Reemplazarlos por el cálculo por litros/kilos?')) return;
+
+  var nuevo = [];
+  formEmpresas.forEach(function(e) {
+    if (e.Empresa) nuevo.push({ Empresa: e.Empresa, Monto: calc.porEmpresa[e.Empresa] || 0 });
+  });
+  emps.forEach(function(emp) {
+    if (!nuevo.some(function(e) { return e.Empresa === emp; })) nuevo.push({ Empresa: emp, Monto: calc.porEmpresa[emp] });
+  });
+  formEmpresas = nuevo;
+  renderLgEmpresas();
+  recalcTotals();
+
+  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos' : 'número de remisiones') + ' (sin Combustible)';
+  if (calc.sinResolver.length) msg += ' · sin litros/kilos: ' + calc.sinResolver.join(', ');
+  showToast(msg, calc.sinResolver.length ? '#e67e22' : '#27ae60');
+}
+
 // Proveedores usados en gastos previos (de todas las legalizaciones ya
 // cargadas), deduplicados por nombre+NIT, para autocompletar el campo
 // Proveedor. legItems ya está cargado en memoria (loadLegalizaciones), así
@@ -1459,7 +1623,14 @@ function recalcTotals() {
   var totalReparto = formEmpresas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
   document.getElementById('lg-total-gastos').textContent = fmtMoney(totalGastos);
   document.getElementById('lg-total-reparto').textContent = fmtMoney(totalReparto);
-  document.getElementById('lg-reparto-warn').style.display = (totalGastos !== totalReparto) ? 'block' : 'none';
+  // Un reparto que cubre todo salvo el Combustible (ver calcularRepartoForm)
+  // no es un error: se avisa aparte en vez de marcarlo como descuadre.
+  var comb = totalCombustibleLista(formGastos);
+  var sinComb = comb > 0 && totalReparto === totalGastos - comb;
+  document.getElementById('lg-reparto-warn').style.display = (totalGastos !== totalReparto && !sinComb) ? 'block' : 'none';
+  var info = document.getElementById('lg-reparto-info');
+  info.textContent = 'ℹ El reparto no incluye el Combustible (' + fmtMoney(comb) + ')';
+  info.style.display = sinComb ? 'block' : 'none';
 }
 
 // ── Abrir / cerrar formulario (crear o editar) ──
@@ -1570,7 +1741,9 @@ async function saveForm() {
 
   var totalGastos = gastosValidos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
   var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
-  if (totalGastos !== totalReparto) {
+  var combustible = totalCombustibleLista(gastosValidos);
+  var repartoSinCombustible = combustible > 0 && totalReparto === totalGastos - combustible;
+  if (totalGastos !== totalReparto && !repartoSinCombustible) {
     if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
   }
 
@@ -1970,6 +2143,8 @@ function renderVerBody(leg) {
   var totalGastos = totalGastosOf(leg.id);
   var totalReparto = totalRepartoOf(leg.id);
   var esMant = leg.Tipo === 'Mantenimiento';
+  var combVer = totalCombustibleLista(items);
+  var repartoSinComb = !esMant && combVer > 0 && totalReparto === totalGastos - combVer;
 
   var itemsHtml = items.map(function(it) {
     return '<tr><td>' + escHtml(it.Concepto || '') + '</td><td>' + escHtml(it.Proveedor || '') + '</td><td>' + escHtml(it.NIT || '') + '</td><td style="text-align:right">' + escHtml(fmtMoney(it.Valor)) + '</td></tr>';
@@ -2057,7 +2232,8 @@ function renderVerBody(leg) {
     '<table><thead><tr><th>' + (esMant ? 'Detalle' : 'Concepto') + '</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>' +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:14px 0 6px">Reparto entre empresas</h3>' +
     '<table><thead><tr><th>Empresa</th><th style="text-align:right">Monto</th></tr></thead><tbody>' + empsHtml + '</tbody></table>' +
-    '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong></div>' +
+    '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong>' +
+      (repartoSinComb ? ' · <em>El reparto no incluye el Combustible (' + escHtml(fmtMoney(combVer)) + ')</em>' : '') + '</div>' +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Conciliación</h3>' +
     conciliacionHtml +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:16px 0 6px">Soportes adjuntos <span id="lg-adj-count"></span></h3>' +
