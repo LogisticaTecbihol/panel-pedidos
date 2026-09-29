@@ -527,7 +527,10 @@ function totalGastosConceptoOf(legId, concepto) {
 // por producto de arriba y se muestra en su propia tabla "Combustible por
 // empresa", repartido según el reparto manual entre empresas que ya trae
 // cada legalización (tabla "Reparto entre empresas" del formulario) — no
-// según litros/kilos. Un viaje sin ese reparto manual cae en "Sin asignar".
+// según litros/kilos. Un viaje sin ese reparto manual cae en "Sin asignar",
+// y también uno cuyo reparto no incluye el Combustible (reparto = total de
+// gastos − combustible, ver calcularRepartoForm): por ahora el combustible no
+// se prorratea entre empresas.
 function calcularProrrateoGastos() {
   var fEmp = document.getElementById('pf-emp').value;
   var fEmpSigla = fEmp ? getSigla(fEmp) : '';
@@ -577,10 +580,14 @@ function calcularProrrateoGastos() {
 
   // Reparte el monto de Combustible de un viaje entre las empresas de su
   // reparto manual (Reparto entre empresas), a prorrata del Monto de cada
-  // una — NO por litros/kilos, que no aplican a este concepto.
+  // una — NO por litros/kilos, que no aplican a este concepto. Si el reparto
+  // del viaje cubre solo los gastos SIN Combustible (el que calcula el botón
+  // "Calcular reparto"), el combustible no tiene reparto asignado: se queda
+  // en "Sin reparto asignado" en vez de prorratearse con esas proporciones.
   function _acumularCombustible(leg, monto) {
     var totalReparto = totalRepartoOf(leg.id);
-    if (totalReparto <= 0) {
+    var repartoSinCombustible = totalReparto === totalGastosOf(leg.id) - monto;
+    if (totalReparto <= 0 || repartoSinCombustible) {
       if (!fEmp) {
         combustibleSinAsignar += monto;
         combustibleTotalGeneral += monto;
