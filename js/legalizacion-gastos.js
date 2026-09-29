@@ -1805,10 +1805,35 @@ function removeLgRemision(i) {
 // envíos. ctx: 'lg' (Nueva legalización) | 'env' (Nuevo envío).
 var abagoModal = { ctx: 'lg', id: null, lineas: [] };
 
-(function poblarCatalogoAbago() {
+// Sugerencias del campo Producto: primero el catálogo de Abago y después el
+// listado maestro de productos (maestro_productos), sin repetidos. El maestro
+// se carga una sola vez, la primera vez que se abre la ventana.
+var maestroProductosAbago = null;
+
+function poblarCatalogoAbago() {
   var dl = document.getElementById('abago-productos');
-  if (dl) dl.innerHTML = ABAGO_CATALOGO.map(function(p) { return '<option value="' + escHtml(p) + '">'; }).join('');
-})();
+  if (!dl) return;
+  var vistos = {}, nombres = [];
+  ABAGO_CATALOGO.concat((maestroProductosAbago || []).slice().sort(function(a, b) { return a.localeCompare(b, 'es'); })).forEach(function(p) {
+    var k = _prodKey(p);
+    if (!k || vistos[k]) return;
+    vistos[k] = true;
+    nombres.push(p);
+  });
+  dl.innerHTML = nombres.map(function(p) { return '<option value="' + escHtml(p) + '">'; }).join('');
+}
+poblarCatalogoAbago();
+
+async function cargarMaestroProductosAbago() {
+  if (maestroProductosAbago) return;
+  try {
+    var res = await apiGet('getMaestroProductos');
+    if (res && res.ok) {
+      maestroProductosAbago = (res.productos || []).map(function(p) { return String(p.producto || '').trim(); }).filter(function(p) { return p; });
+      poblarCatalogoAbago();
+    }
+  } catch (e) { /* solo sugerencias: sin el maestro queda el catálogo de Abago */ }
+}
 
 function _listaRemisionesForm(ctx) { return ctx === 'env' ? formRemisionesEnv : formRemisiones; }
 
@@ -1838,6 +1863,7 @@ function abrirRemisionExterna(codigo, ctx) {
   document.getElementById('abago-titulo').textContent = ex ? 'Remisión de Chia Abago — ' + ex.Remision : 'Nueva remisión de Chia Abago';
   document.getElementById('abago-btn-eliminar').style.display = ex ? '' : 'none';
   document.getElementById('abago-btn-guardar').disabled = false;
+  cargarMaestroProductosAbago(); // sugerencias del listado maestro (una sola vez, sin bloquear)
   renderAbagoLineas();
   document.getElementById('form-abago-overlay').classList.add('show');
   (ex ? document.querySelector('.abago-prod') : inp.value ? document.querySelector('.abago-prod') : inp).focus();
