@@ -1848,17 +1848,40 @@ function editarRemisionExternaChip(ctx, i) {
   abrirRemisionExterna(_listaRemisionesForm(ctx)[i], ctx);
 }
 
+// Los números de Abago son cortos y pueden coincidir con remisiones antiguas del
+// sistema (muchas son solo un número, ej. "205"), así que al registrarlas se
+// guardan con el prefijo "ABAGO-" (ABAGO-205): nunca chocan con otras.
+var PREFIJO_ABAGO = 'ABAGO-';
+function _numeroSinPrefijoAbago(txt) {
+  return String(txt || '').trim().replace(/^abago[\s\-_:.#]*/i, '').trim();
+}
+function codigoRemisionAbago(txt) {
+  var n = _numeroSinPrefijoAbago(txt);
+  return n ? PREFIJO_ABAGO + n : '';
+}
+
+function actualizarHintCodigoAbago() {
+  var inp = document.getElementById('abago-remision');
+  var hint = document.getElementById('abago-codigo-hint');
+  if (!hint) return;
+  var cod = inp.readOnly ? '' : codigoRemisionAbago(inp.value);
+  hint.textContent = cod ? 'Se guardará como ' + cod : '';
+}
+
 function abrirRemisionExterna(codigo, ctx) {
-  var key = String(codigo || '').trim().toUpperCase();
-  var ex = key ? remisionesExternas[key] : null;
+  var cod0 = String(codigo || '').trim();
+  // ¿Ya está registrada? Se busca tal cual y con el prefijo ABAGO- (el número
+  // escrito en el campo puede venir sin él).
+  var ex = cod0 ? (remisionesExternas[cod0.toUpperCase()] || remisionesExternas[codigoRemisionAbago(cod0).toUpperCase()] || null) : null;
   abagoModal = {
     ctx: ctx || 'lg',
     id: ex ? ex.id : null,
     lineas: ex ? ex.lineas.map(function(l) { return { Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: l.Cantidad }; }) : [{ Producto: '', Presentacion: '', Cantidad: '' }]
   };
   var inp = document.getElementById('abago-remision');
-  inp.value = ex ? ex.Remision : (codigo || '');
+  inp.value = ex ? ex.Remision : _numeroSinPrefijoAbago(cod0);
   inp.readOnly = !!ex; // el número de una remisión ya registrada no se cambia
+  actualizarHintCodigoAbago();
   document.getElementById('abago-fecha').value = ex ? (ex.Fecha || '').slice(0, 10) : today();
   document.getElementById('abago-titulo').textContent = ex ? 'Remisión de Chia Abago — ' + ex.Remision : 'Nueva remisión de Chia Abago';
   document.getElementById('abago-btn-eliminar').style.display = ex ? '' : 'none';
@@ -1954,10 +1977,13 @@ function _setLineasExternasEnMapas(key, lineas) {
 
 async function guardarRemisionExternaForm() {
   leerAbagoLineas();
-  var cod = document.getElementById('abago-remision').value.trim();
+  // Alta: se guarda con el prefijo ABAGO-; en edición el número ya registrado no cambia.
+  var cod = abagoModal.id ? document.getElementById('abago-remision').value.trim() : codigoRemisionAbago(document.getElementById('abago-remision').value);
   var fecha = document.getElementById('abago-fecha').value || today();
   var key = cod.toUpperCase();
   if (!cod) { showToast('Escribe el número de la remisión', '#e67e22'); return; }
+  // Remisiones_Relacionadas es un CSV (y Pedidos.Remisiones usa "|"): el número no puede llevarlos.
+  if (/[,|]/.test(cod)) { showToast('El número de remisión no puede llevar comas ni el signo |', '#e67e22'); return; }
   var lineas = abagoModal.lineas.map(function(l) {
     return { Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad) || 0 };
   }).filter(function(l) { return l.Producto || l.Cantidad > 0; });

@@ -530,7 +530,11 @@
     </div>
     <div class="mbody">
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
-        <div><label class="ef-label">N° de remisión *</label><input class="ef" id="abago-remision" type="text" placeholder="Número que trae la remisión de Abago" autocomplete="off"></div>
+        <div>
+          <label class="ef-label">N° de remisión de Abago *</label>
+          <input class="ef" id="abago-remision" type="text" placeholder="Número que trae la remisión" autocomplete="off" oninput="actualizarHintCodigoAbago()">
+          <div id="abago-codigo-hint" style="font-size:0.74rem;color:#276749;margin-top:3px;min-height:1em"></div>
+        </div>
         <div><label class="ef-label">Fecha</label><input class="ef" id="abago-fecha" type="date"></div>
       </div>
 
@@ -583,6 +587,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260929a"></script>
-<script src="js/legalizacion-gastos.js?v=20260929m"></script>
+<script src="js/legalizacion-gastos.js?v=20260929n"></script>
 </body>
 </html>
