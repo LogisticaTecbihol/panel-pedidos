@@ -1018,8 +1018,12 @@ function estadoLeg(leg) { return esEnvio(leg) ? 'Registrado' : leg.Estado_Concil
 
 // Con Tipo = Envío el filtro de Estado se ignora (un envío nunca está
 // "Por conciliar"), así el usuario ve todos los envíos sin tocar el Estado.
-function pasaFiltroEstado(leg, fEstado, fTipo) {
-  return !fEstado || fTipo === 'Envio' || estadoLeg(leg) === fEstado;
+// conEnvios: la lista principal, cuyo filtro por defecto es "Por conciliar",
+// también muestra los envíos con ese filtro (van con su insignia "Registrado").
+function pasaFiltroEstado(leg, fEstado, fTipo, conEnvios) {
+  if (!fEstado || fTipo === 'Envio') return true;
+  if (conEnvios && fEstado === 'Por conciliar' && esEnvio(leg)) return true;
+  return estadoLeg(leg) === fEstado;
 }
 
 // Proveedores de las líneas de gasto (un envío tiene uno solo), para mostrar
@@ -1251,7 +1255,7 @@ function renderTable() {
   var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
 
   var rows = legs.filter(function(leg) {
-    if (!pasaFiltroEstado(leg, fEstado, fTipo)) return false;
+    if (!pasaFiltroEstado(leg, fEstado, fTipo, true)) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fTxt) {
