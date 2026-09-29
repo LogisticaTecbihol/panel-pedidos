@@ -516,6 +516,17 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, vehiculos: _addRow(res.data) };
     }
+    // Remisiones de proveedores externos (Chia Abago) que no están en el sistema.
+    if (action === 'getRemisionesExternas') {
+      var res = await _fetchAllRows('RemisionesExternas', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, remisiones: _addRow(res.data) };
+    }
+    if (action === 'getRemisionesExternasItems') {
+      var res = await _fetchAllRows('RemisionesExternasItems', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, items: _addRow(res.data) };
+    }
 
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
@@ -2516,6 +2527,49 @@ async function _apiPostCore(body) {
       if (!body.id) return { ok: false, error: 'Falta el id de la legalización' };
       var resDelLG = await _sb.from('LegalizacionGastos').delete().eq('id', body.id);
       if (resDelLG.error) return { ok: false, error: resDelLG.error.message };
+      return { ok: true, deleted: 1 };
+    }
+
+    // Remisión externa (Chia Abago): cabecera + líneas producto/cantidad. Con
+    // body.id edita (las líneas nuevas se insertan antes de borrar las viejas,
+    // para no perder datos si el guardado falla a medias).
+    if (action === 'guardarRemisionExterna') {
+      var codRE = (body.Remision || '').trim();
+      if (!codRE) return { ok: false, error: 'Falta el número de remisión' };
+      var lineasRE = (body.lineas || []).filter(function(l) { return (l.Producto || '').trim() && Number(l.Cantidad) > 0; });
+      if (!lineasRE.length) return { ok: false, error: 'Agrega al menos un producto con cantidad' };
+      var idRE = body.id || null;
+      var oldItemsRE = [];
+      if (idRE) {
+        var resUpdRE = await _sb.from('RemisionesExternas').update({ Remision: codRE, Fecha: body.Fecha || today(), modificado_por: _uid() }).eq('id', idRE);
+        if (resUpdRE.error) return { ok: false, error: resUpdRE.error.code === '23505' ? 'La remisión ' + codRE + ' ya está registrada' : resUpdRE.error.message };
+        var resOldRE = await _sb.from('RemisionesExternasItems').select('id').eq('Remision_Id', idRE);
+        if (resOldRE.error) return { ok: false, error: resOldRE.error.message };
+        oldItemsRE = (resOldRE.data || []).map(function(r) { return r.id; });
+      } else {
+        var resInsRE = await _sb.from('RemisionesExternas').insert({ Remision: codRE, Fecha: body.Fecha || today(), creado_por: _uid() }).select('id').single();
+        if (resInsRE.error) return { ok: false, error: resInsRE.error.code === '23505' ? 'La remisión ' + codRE + ' ya está registrada' : resInsRE.error.message };
+        idRE = resInsRE.data.id;
+      }
+      var rowsRE = lineasRE.map(function(l) {
+        return { Remision_Id: idRE, Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad), creado_por: _uid() };
+      });
+      var resItRE = await _sb.from('RemisionesExternasItems').insert(rowsRE);
+      if (resItRE.error) {
+        if (!body.id) await _sb.from('RemisionesExternas').delete().eq('id', idRE); // alta a medias: no dejar cabecera huérfana
+        return { ok: false, error: resItRE.error.message };
+      }
+      if (oldItemsRE.length) {
+        var resDelRE = await _sb.from('RemisionesExternasItems').delete().in('id', oldItemsRE);
+        if (resDelRE.error) return { ok: false, error: resDelRE.error.message };
+      }
+      return { ok: true, id: idRE };
+    }
+
+    if (action === 'eliminarRemisionExterna') {
+      if (!body.id) return { ok: false, error: 'Falta el id de la remisión' };
+      var resDelExtRE = await _sb.from('RemisionesExternas').delete().eq('id', body.id);
+      if (resDelExtRE.error) return { ok: false, error: resDelExtRE.error.message };
       return { ok: true, deleted: 1 };
     }
 

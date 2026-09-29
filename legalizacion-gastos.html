@@ -349,6 +349,7 @@
           <div style="display:flex;gap:8px">
             <input class="ef" id="lg-remision-nueva" type="text" placeholder="Ej. RESO-RE-0032" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addLgRemision();}">
             <button class="btn-edit" type="button" onclick="addLgRemision()">+ Agregar</button>
+            <button class="btn-edit" type="button" onclick="abrirRemisionExternaDesdeForm('lg')" title="Registrar una remisión de Chia Abago que no está en el sistema (productos y cantidades)">🌿 Remisión Chia Abago</button>
           </div>
         </div>
         <div style="grid-column:span 3"><label class="ef-label">Observaciones</label><textarea class="ef" id="lg-observaciones" rows="2" style="resize:vertical"></textarea></div>
@@ -485,6 +486,7 @@
           <div style="display:flex;gap:8px">
             <input class="ef" id="env-remision-nueva" type="text" placeholder="Ej. RESO-RS-0092" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addEnvRemision();}">
             <button class="btn-edit" type="button" onclick="addEnvRemision()">+ Agregar</button>
+            <button class="btn-edit" type="button" onclick="abrirRemisionExternaDesdeForm('env')" title="Registrar una remisión de Chia Abago que no está en el sistema (productos y cantidades)">🌿 Remisión Chia Abago</button>
           </div>
         </div>
       </div>
@@ -516,6 +518,42 @@
   </div>
 </div>
 
+<!-- MODAL: Remisión de Chia Abago (fuera del sistema) -->
+<div class="overlay" id="form-abago-overlay" style="z-index:210" onclick="if(isBackdropClick(event))cerrarRemisionExterna()">
+  <div class="modal-box" style="max-width:640px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="abago-titulo">Remisión de Chia Abago</h2>
+        <div class="meta"><span>No está en el sistema: solo sirve para relacionarle gastos (no mueve inventario)</span></div>
+      </div>
+      <button class="btn-close" onclick="cerrarRemisionExterna()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+        <div><label class="ef-label">N° de remisión *</label><input class="ef" id="abago-remision" type="text" placeholder="Número que trae la remisión de Abago" autocomplete="off"></div>
+        <div><label class="ef-label">Fecha</label><input class="ef" id="abago-fecha" type="date"></div>
+      </div>
+
+      <h3 style="margin:16px 0 8px;font-size:0.9rem;color:#1a5276">Productos</h3>
+      <table>
+        <thead><tr><th>Producto</th><th style="text-align:right;width:120px">Cantidad</th><th style="width:90px;text-align:right">≈ L / Kg</th><th style="width:40px"></th></tr></thead>
+        <tbody id="abago-lineas"></tbody>
+      </table>
+      <datalist id="abago-productos"></datalist>
+      <button class="btn-edit" style="margin-top:8px" type="button" onclick="addAbagoLinea()">+ Agregar producto</button>
+      <div id="abago-total" style="margin-top:12px;padding:8px 12px;background:#eaf4fb;border:1px solid #aed6f1;border-radius:8px;font-size:0.84rem;color:#2c5282">Sin productos.</div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <button class="btn-cancel" id="abago-btn-eliminar" type="button" style="display:none;color:#c0392b" onclick="eliminarRemisionExternaForm()">🗑 Eliminar</button>
+        <span style="flex:1"></span>
+        <button class="btn-cancel" type="button" onclick="cerrarRemisionExterna()">Cancelar</button>
+        <button class="btn-confirm" id="abago-btn-guardar" type="button" onclick="guardarRemisionExternaForm()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Ver / Conciliar -->
 <div class="overlay" id="ver-overlay" onclick="if(isBackdropClick(event))closeVer()">
   <div class="modal-box" style="max-width:980px">
@@ -541,10 +579,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260929b"></script>
+<script src="js/shared.js?v=20260929c"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260929a"></script>
-<script src="js/legalizacion-gastos.js?v=20260929k"></script>
+<script src="js/legalizacion-gastos.js?v=20260929l"></script>
 </body>
 </html>
