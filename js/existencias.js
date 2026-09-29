@@ -410,7 +410,7 @@
         .catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases',   { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Historico' })
         .catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getDevoluciones',{ columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Fecha_Devolucion,Fecha,Remision,Remision_Ingreso,Empresa,Producto,Presentacion,Historico' })
+      apiGet('getDevoluciones',{ columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Historico' })
         .catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Empresa,Producto,Presentacion' })
         .catch(function() { return { ok: true, ajustes: [] }; }),

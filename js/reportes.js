@@ -13,6 +13,10 @@ var rptSort = { col: 'pendiente', dir: 'desc' };
 
 // Programación de planta + Traslados pendientes
 var existSnapshot = null;
+// Saldos del holding COMPLETO calculados en el servidor (RPC get_saldos_holding).
+// Solo se carga para usuarios con menos empresas que el holding: su snapshot local
+// se arma con filas filtradas por RLS y les daría saldos incompletos.
+var saldosHolding = null;
 var plantaData = [];
 var plantaSort = { col: 'producir', dir: 'desc' };
 var plantaExpanded = {}; // prodKey → true si su detalle está desplegado
@@ -115,6 +119,23 @@ async function loadReportes() {
     } catch (e) {
       existSnapshot = null;
       console.warn('No se pudo cargar snapshot de existencias:', e);
+    }
+
+    // Usuario con menos empresas que el holding: el snapshot local solo trae
+    // las filas que su RLS le deja ver, así que "Exist. total" de Programación
+    // de planta saldría incompleto. Se piden los saldos agregados al servidor.
+    // Si la RPC falla se cae al snapshot local (comportamiento anterior).
+    saldosHolding = null;
+    if (_rptEmpLimitado() && typeof _sb !== 'undefined' && _sb.rpc) {
+      try {
+        var rs = await _sb.rpc('get_saldos_holding', {
+          p_nc_retorno_desde: (typeof KX_NC_RETORNO_DESDE !== 'undefined') ? KX_NC_RETORNO_DESDE : '2026-09-01'
+        });
+        if (rs.error) console.warn('No se pudo cargar saldos del holding:', rs.error.message);
+        else if (rs.data) saldosHolding = rs.data;
+      } catch (e) {
+        console.warn('No se pudo cargar saldos del holding:', e);
+      }
     }
 
     populateRptFilters();
@@ -393,7 +414,9 @@ function switchTab(tab) {
 // Agregado por producto (mismo criterio de normalización que Kardex):
 //   Pendiente total = suma de Cant_Pendiente en líneas con
 //     Cant_Pendiente>0 y Estado_2 NO en {Anulado,Cerrado,Bloqueado,Pendiente de aprobación}.
-//   Existencia holding = suma de existSnapshot.saldos[prod] por empresa.
+//   Existencia holding = suma de existSnapshot.saldos[prod] por empresa
+//     (usuarios con menos empresas: saldosHolding, calculado en el servidor
+//     por get_saldos_holding, porque su snapshot local viene recortado por RLS).
 //   Traslados pend. aprobar = suma de OrdenesCompra con Tipo='Traslado',
 //     Remision vacía y Estado NO 'Anulada' para ese producto.
 //   A producir = max(0, pendiente − existencia − traslados_pend)
@@ -527,7 +550,7 @@ function buildPlanta() {
   // 3) Existencia por empresa desde el snapshot (misma lógica que Kardex)
   var empresasList = _empresasVisibles();                       // columnas visibles al usuario
   var empresasTodas = (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : empresasList;
-  var saldos = (existSnapshot && existSnapshot.saldos) || {};
+  var saldos = saldosHolding || (existSnapshot && existSnapshot.saldos) || {};
 
   // 4) Armar filas
   plantaData = Object.keys(acum).map(function(key) {
