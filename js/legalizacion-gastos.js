@@ -3441,12 +3441,20 @@ function exportarPDF() {
     hide_signatures: esEnv,
     page_format: 'letter',
     logo_key: 'LEGALIZACION',
-    // Más aire arriba y campos largos (Remisiones relacionadas, Cliente(s))
-    // con espacio suficiente para que el texto no toque las líneas del recuadro.
-    top_margin: 8,
+    // Más aire arriba (2 cm de margen superior extra) y campos largos
+    // (Remisiones relacionadas, Cliente(s)) con espacio suficiente para que el
+    // texto no toque las líneas del recuadro. Letra del cuerpo más grande
+    // (datos 9 pt, tabla 9 pt con encabezado 8 pt; por defecto son 8 y 7) y
+    // los interlineados del recuadro crecen con ella.
+    top_margin: 28,
     left_block_ratio: 0.5,
-    info_line_h: 3.4,
+    info_font_size: 9,
+    info_row_gap: 4.6,
+    info_line_h: 4,
     info_pad: 2,
+    info_right_pad: 2.5,
+    body_font_size: 9,
+    head_font_size: 8,
     signatures: [
       { label: 'Emitido por', sub: 'Nombre y firma' },
       { label: 'Despachado / Conductor', sub: 'Nombre y firma' },
@@ -3455,9 +3463,13 @@ function exportarPDF() {
     show_fecha_entrega: false,
     col1_header: esMant ? 'Detalle' : 'Concepto',
     col2_header: 'Proveedor',
-    col1_width: 32,
-    col2_width: 60,
+    // Columnas más anchas para que, con la letra más grande, "Mantenimiento
+    // correctivo" y "Proveedor (NIT …)" sigan cabiendo en una sola línea, y
+    // que ninguna fila se parta entre dos páginas.
+    col1_width: 44,
+    col2_width: 100,
     col2_align: 'left',
+    row_page_break: 'avoid',
     qty_header: 'Valor',
     show_valores: false,
     last_col_header: 'Observaciones',

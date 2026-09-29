@@ -199,10 +199,21 @@ function _drawRemisionCopy(doc, data, palette) {
   //   left_block_ratio  fracción del ancho para el bloque izquierdo (0.58)
   //   info_line_h       mm que se reservan por línea extra de un campo (3)
   //   info_pad          mm extra de aire al pie del recuadro de datos (0)
+  //   info_right_pad    mm de aire entre el texto largo de la derecha y el borde (0)
+  //   info_font_size    pt de los campos del recuadro de datos (8)
+  //   info_row_gap      mm entre filas del recuadro de datos (4)
+  //   body_font_size    pt del cuerpo de la tabla (7)
+  //   head_font_size    pt del encabezado de la tabla (7)
+  //   row_page_break    'avoid' evita partir una fila entre dos páginas ('auto')
   var topM = Number(data.top_margin) || 0;
   var leftRatio = Number(data.left_block_ratio) || 0.58;
   var fieldLineH = Number(data.info_line_h) || 3;
   var infoPad = Number(data.info_pad) || 0;
+  var infoRightPad = Number(data.info_right_pad) || 0;
+  var infoFs = Number(data.info_font_size) || 8;
+  var rowGap = Number(data.info_row_gap) || 4;
+  var bodyFs = Number(data.body_font_size) || 7;
+  var headFs = Number(data.head_font_size) || 7;
   var refLabel = (data.ref_label != null) ? data.ref_label : 'Pedido';
   var docTitle = data.doc_title || 'REMISION';
   var docNumber = (data.doc_number != null && data.doc_number !== '') ? String(data.doc_number) : (data.remision ? String(data.remision) : '');
@@ -291,7 +302,7 @@ function _drawRemisionCopy(doc, data, palette) {
 
     var y = headerH + topM + 8;
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFontSize(8);
+    doc.setFontSize(infoFs);
 
     var totalW = pw - 28;
     var leftBlockW = totalW * leftRatio;
@@ -308,11 +319,10 @@ function _drawRemisionCopy(doc, data, palette) {
     var leftValX = Math.max(16 + leftLabelW + 3, 14 + 26);
     var rightValX = Math.max(rightLabelX + 2 + rightLabelW + 3, rightLabelX + 26);
     var leftValMaxW = (14 + leftBlockW) - leftValX - 4;
-    var rightValMaxW = pw - 14 - rightValX;
+    var rightValMaxW = pw - 14 - rightValX - infoRightPad;
     var maxF = Math.max(left.length, right.length);
     var infoTop = y - 5;
     var midX = 14 + leftBlockW;
-    var rowGap = 4;
     for (var fi = 0; fi < maxF; fi++) {
       var rowH = 0;
       if (fi < left.length) {
@@ -423,10 +433,11 @@ function _drawRemisionCopy(doc, data, palette) {
     head: [tableHead],
     body: tableBody,
     theme: 'grid',
-    headStyles: { fillColor: accent, fontSize: 7, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.2 },
-    bodyStyles: { fontSize: 7, lineColor: [90, 90, 90], lineWidth: 0.3 },
+    headStyles: { fillColor: accent, fontSize: headFs, fontStyle: 'bold', halign: 'center', lineColor: [90, 90, 90], lineWidth: 0.35, cellPadding: 1.2 },
+    bodyStyles: { fontSize: bodyFs, lineColor: [90, 90, 90], lineWidth: 0.3 },
     columnStyles: colStyles,
     margin: { top: pageTopY, left: 14, right: 14, bottom: bottomReserve },
+    rowPageBreak: data.row_page_break || 'auto',
     styles: { cellPadding: 1.2, lineColor: [90, 90, 90], lineWidth: 0.3 },
     tableLineColor: [60, 60, 60],
     tableLineWidth: 0.5,
