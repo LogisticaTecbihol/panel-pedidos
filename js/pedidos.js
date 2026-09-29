@@ -6973,7 +6973,8 @@ var SORT_COLS_DESP = [
   { id:'remision',  label:'Remisión',      fn: function(d) { return (d.remision||'').toLowerCase(); } },
   { id:'cliente',   label:'Cliente',       fn: function(d) { return (d.cliente||'').toLowerCase(); } },
   { id:'fecha',     label:'Fecha',         fn: function(d) { return d.fecha || ''; } },
-  { id:'adjuntos',  label:'📎',            fn: function(d) { return adjuntosIndex[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] ? 1 : 0; }, style:'width:60px;text-align:center' },
+  { id:'valor',     label:'Valor Remisión', fn: function(d) { return d.valor || 0; }, style:'text-align:right' },
+  { id:'adjuntos',  label:'📎',          fn: function(d) { return adjuntosIndex[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] ? 1 : 0; }, style:'width:60px;text-align:center' },
   { id:'uploaders', label:'Adjuntado por', fn: function(d) { return (adjuntosUploaders[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] || []).join(', ').toLowerCase(); } },
   { id:'num_factura',   label:'N° Factura',    fn: function(d) { var f = _despFacturaMap[d.remision]; return f ? (f.num_factura || '').toLowerCase() : ''; } },
   { id:'fecha_factura', label:'Fecha Factura', fn: function(d) { var f = _despFacturaMap[d.remision]; return f ? (f.fecha_factura || '') : ''; } },
@@ -7047,12 +7048,22 @@ async function buildDespachos() {
     if (!p.Remisiones) return;
     var pedAnulado = _pedidoAnulado(p);
     var segs = String(p.Remisiones).split(',');
+    // Valor de la remisión = Σ (cantidad de esa remisión × Valor_Unitario de la
+    // línea), igual que el total de la remisión impresa (_buildRemisionesAgrupadas).
+    // Formato viejo sin '|' ("1281"): no trae cantidad por remisión, se usa
+    // Cant_Entregada de la línea, contada una sola vez.
+    var vUni = Number(p.Valor_Unitario) || 0;
+    var remEstructurada = String(p.Remisiones).indexOf('|') >= 0;
+    var legacyContada = false;
     segs.forEach(function(s) {
       var parts = s.split('|');
       var rem = (parts[0] || '').trim();
       if (!rem) return;
       var fecha = parts[2] || p.Fecha_Ult_Entrega || '';
       var key = (p.Nombre_Empresa || '') + '||' + (p.Consecutivo || '') + '||' + (p.Cliente || '') + '||' + rem;
+      var cant;
+      if (remEstructurada) cant = Number(parts[1]) || 0;
+      else { cant = legacyContada ? 0 : (Number(p.Cant_Entregada) || 0); legacyContada = true; }
       if (!remMap[key]) {
         remMap[key] = {
           empresa: p.Nombre_Empresa || '',
@@ -7060,6 +7071,7 @@ async function buildDespachos() {
           cliente: p.Cliente || '',
           remision: rem,
           fecha: fecha,
+          valor: 0,
           pedidoAnulado: pedAnulado,
           remisionAnulada: !!remAnuladasSet[rem]
         };
@@ -7067,11 +7079,12 @@ async function buildDespachos() {
         if (pedAnulado) remMap[key].pedidoAnulado = true;
         if (remAnuladasSet[rem]) remMap[key].remisionAnulada = true;
       }
+      remMap[key].valor += cant * vUni;
     });
   });
   despachosData = Object.keys(remMap).sort(function(a, b) {
     return remMap[b].fecha.localeCompare(remMap[a].fecha) || a.localeCompare(b);
-  }).map(function(k) { return remMap[k]; });
+  }).map(function(k) { remMap[k].valor = Math.round(remMap[k].valor * 100) / 100; return remMap[k]; });
 
   var selEmp = document.getElementById('desp-f-empresa');
   var prev = selEmp.value;
@@ -7152,7 +7165,7 @@ function renderDespachos() {
 
     var tbody = document.getElementById('desp-body');
     if (!despachosFiltered.length) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:#718096">No hay despachos con los filtros seleccionados.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:#718096">No hay despachos con los filtros seleccionados.</td></tr>';
       return;
     }
 
@@ -7187,6 +7200,7 @@ function renderDespachos() {
         '<td style="font-size:0.82rem">' + escHtml(d.remision) + anulTags + '</td>' +
         '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(d.cliente) + '">' + escHtml(d.cliente) + '</td>' +
         '<td style="font-size:0.82rem">' + fechaFmt + '</td>' +
+        '<td class="money" style="font-size:0.82rem;white-space:nowrap">' + fmtMoney(d.valor || 0) + '</td>' +
         '<td style="text-align:center;font-size:0.9rem">' + badge + '</td>' +
         '<td style="font-size:0.78rem">' + uploadersHtml + '</td>' +
         '<td style="white-space:nowrap">' + numFacCell + '</td>' +
@@ -7224,6 +7238,7 @@ function exportDespachosExcel() {
       'Cliente': d.cliente || '',
       'Consecutivo': d.consecutivo || '',
       'Fecha': fechaCell(d.fecha),
+      'Valor Remisión': d.valor || 0,
       'Adjuntos': adjuntosIndex[key] ? 'Sí' : 'No',
       'Adjuntado por': (adjuntosUploaders[key] || []).join(', '),
       'N° Factura': fac.num_factura || '',
@@ -7234,8 +7249,13 @@ function exportDespachosExcel() {
 
   var ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
-    {wch:12},{wch:14},{wch:30},{wch:14},{wch:12},{wch:10},{wch:24},{wch:14},{wch:14},{wch:26}
+    {wch:12},{wch:14},{wch:30},{wch:14},{wch:12},{wch:16},{wch:10},{wch:24},{wch:14},{wch:14},{wch:26}
   ];
+  // Valor Remisión = columna F (índice 5): formato moneda, sin decimales
+  for (var ri = 0; ri < data.length; ri++) {
+    var cell = ws[XLSX.utils.encode_cell({ c: 5, r: ri + 1 })];
+    if (cell) cell.z = '"$"#,##0';
+  }
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Despachos');
   XLSX.writeFile(wb, 'Despachos_' + today() + '.xlsx');
