@@ -67,9 +67,9 @@ var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 // "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad, empresa}, ...]
 // — la cantidad es la de ESA remisión puntual (una fila de Pedidos puede
 // tener varias entregas parciales bajo remisiones distintas). Cubre entregas
-// de Pedidos e Ingresos (traslados planta↔empresa); Órdenes de Compra,
-// muestras y reenvases todavía no se resuelven aquí. Usado por
-// calcularProrrateoGastos().
+// de Pedidos, Ingresos (traslados planta↔empresa), Cambios de mercancía y
+// remisiones externas; Órdenes de Compra, muestras y reenvases todavía no se
+// resuelven aquí. Usado por calcularProrrateoGastos().
 var remisionProductoMap = {};
 
 // Igual que remisionProductoMap, más las remisiones de Muestras y de
@@ -184,7 +184,8 @@ async function loadClientesConRemision() {
       apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta' }).catch(function() { return { ok: false }; }),
-      apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; })
+      apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
+      apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
     ]);
     var res = results[0];
     var resIng = results[1];
@@ -192,6 +193,7 @@ async function loadClientesConRemision() {
     var resDev = results[3];
     var resExt = results[4];
     var resExtIt = results[5];
+    var resCam = results[6];
     var set = {};
     var remMap = {};
     var prodMap = {};
@@ -236,6 +238,29 @@ async function loadClientesConRemision() {
           var keyO = remOrig.toUpperCase();
           (prodMap[keyO] = prodMap[keyO] || []).push({ producto: ing.Producto, presentacion: ing.Presentacion, cantidad: cant, empresa: ing.Empresa_Origen });
         }
+      });
+    }
+    // Cambios de mercancía: mismo criterio que el Kardex (buildMovimientos). La
+    // remisión de ingreso es de las líneas CAMBIAR (lo que devuelve el cliente);
+    // la de salida es de las líneas ENTREGAR (lo que se le despacha), o de las
+    // CAMBIAR si el cambio no tiene líneas ENTREGAR. Cuentan los cambios Cerrado
+    // y Parcial (cada lado solo si ya tiene su remisión); la cantidad es Cantidad.
+    if (resCam && resCam.ok) {
+      var camGrupo = function(c) { return (c.Empresa || '') + '||' + (c.Consecutivo || c.id); };
+      var camEntregar = {};
+      (resCam.cambios || []).forEach(function(c) { if (c.Tipo_Linea === 'ENTREGAR') camEntregar[camGrupo(c)] = true; });
+      (resCam.cambios || []).forEach(function(c) {
+        var cant = Number(c.Cantidad) || 0;
+        var est = (c.Estado || '').toLowerCase();
+        if (cant <= 0 || (est !== 'cerrado' && est !== 'cerrada' && est !== 'parcial')) return;
+        var tieneEntregar = !!camEntregar[camGrupo(c)];
+        var remIng = c.Tipo_Linea === 'CAMBIAR' ? String(c.Remision_Ingreso || '').trim().toUpperCase() : '';
+        var remSal = ((tieneEntregar && c.Tipo_Linea === 'ENTREGAR') || (!tieneEntregar && c.Tipo_Linea === 'CAMBIAR'))
+          ? String(c.Remision_Salida || '').trim().toUpperCase() : '';
+        [remIng, remSal].forEach(function(key) {
+          if (!key) return;
+          (prodMap[key] = prodMap[key] || []).push({ producto: c.Producto, presentacion: '', cantidad: cant, empresa: c.Empresa });
+        });
       });
     }
     // Remisiones externas (Chia Abago / materia prima): sus líneas entran a
@@ -626,8 +651,8 @@ function totalGastosConceptoOf(legId, concepto) {
 // relacionadas, según los litros movidos de cada uno, y agrega ese mismo
 // prorrateo por SKU y por empresa (la Nombre_Empresa del pedido dueño de
 // cada línea). Es una aproximación: Remisiones_Relacionadas es texto libre y
-// remisionProductoMap solo resuelve entregas de Pedidos (ver
-// loadClientesConRemision). Lo que no se puede vincular a un producto, o
+// remisionProductoMap solo resuelve entregas de Pedidos, Ingresos, Cambios y
+// remisiones externas (ver loadClientesConRemision). Lo que no se puede vincular a un producto, o
 // cuyo producto no es convertible a litros, cae en el bucket "Sin identificar"
 // — el mismo bucket y monto para ambos desgloses.
 //
@@ -1719,8 +1744,8 @@ function _repartirEnteros(pesos, total) {
 // el monto se separa en bolsa de líquidos (por litro) y de sólidos (por kilo),
 // proporcional a cuántas remisiones aportan a cada una, y dentro de cada bolsa
 // cada empresa recibe según los litros/kilos de sus remisiones. Las remisiones
-// se resuelven con remisionProductoMapReparto (Pedidos + Ingresos + Muestras +
-// Devoluciones); las que no se resuelven a litros/kilos se ignoran. Si NINGUNA
+// se resuelven con remisionProductoMapReparto (Pedidos + Ingresos + Cambios +
+// Muestras + Devoluciones); las que no se resuelven a litros/kilos se ignoran. Si NINGUNA
 // se resuelve, se reparte por número de remisiones según la sigla del
 // consecutivo. Devuelve { porEmpresa: {empresa: pesos enteros}, metodo,
 // sinResolver: [códigos] }.
