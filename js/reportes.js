@@ -428,6 +428,13 @@ function switchTab(tab) {
 
 function _normProdRep(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
 
+// Saldos { producto → { empresa → saldo } } para los cálculos de cobertura
+// (Programación de planta y Valorización). Usuarios con menos empresas: los del
+// servidor (saldosHolding); el resto, o si la RPC falló: el snapshot local.
+function _saldosCobertura() {
+  return saldosHolding || (existSnapshot && existSnapshot.saldos) || {};
+}
+
 function _empresasVisibles() {
   var lista = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas)
     ? AUTH.getFilteredEmpresas(EMPRESAS_HOLDING)
@@ -550,7 +557,7 @@ function buildPlanta() {
   // 3) Existencia por empresa desde el snapshot (misma lógica que Kardex)
   var empresasList = _empresasVisibles();                       // columnas visibles al usuario
   var empresasTodas = (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : empresasList;
-  var saldos = saldosHolding || (existSnapshot && existSnapshot.saldos) || {};
+  var saldos = _saldosCobertura();
 
   // 4) Armar filas
   plantaData = Object.keys(acum).map(function(key) {
@@ -915,9 +922,10 @@ function buildValorizacion() {
     });
   });
 
-  // 2) Existencia y traslados pendientes (misma lógica de planta)
-  var empresasList = _empresasVisibles();
-  var saldos = (existSnapshot && existSnapshot.saldos) || {};
+  // 2) Existencia y traslados pendientes (misma lógica de planta: la existencia
+  //    es la del holding completo, aunque el usuario solo vea algunas empresas)
+  var empresasTodas = (typeof EMPRESAS_HOLDING !== 'undefined') ? EMPRESAS_HOLDING : _empresasVisibles();
+  var saldos = _saldosCobertura();
 
   var trasladosByProd = {};
   ordenesCompra.forEach(function(oc) {
@@ -941,7 +949,7 @@ function buildValorizacion() {
     var a = acumProd[key];
     var perEmp = saldos[key] || {};
     var existHolding = 0;
-    empresasList.forEach(function(e) { existHolding += Math.max(0, perEmp[e.value] || 0); });
+    empresasTodas.forEach(function(e) { existHolding += Math.max(0, perEmp[e.value] || 0); });
     var trasladosPend = trasladosByProd[key] || 0;
     var producir = Math.max(0, a.pendiente - existHolding - trasladosPend);
     var estado;
