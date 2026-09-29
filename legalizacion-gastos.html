@@ -106,15 +106,13 @@
         <option value="">Todos</option>
         <option value="Ruta">Ruta</option>
         <option value="Mantenimiento">Mantenimiento</option>
-        <option value="Envio">Envío</option>
       </select>
     </div>
     <div class="fg"><label>Estado</label>
       <select id="f-estado" onchange="renderTable()">
-        <option value="Por conciliar">Por conciliar (y envíos)</option>
+        <option value="Por conciliar">Por conciliar</option>
         <option value="Conciliada">Conciliadas</option>
         <option value="Rechazada">Rechazadas</option>
-        <option value="Registrado">Registrados (envíos)</option>
         <option value="">Todas</option>
       </select>
     </div>
@@ -122,13 +120,13 @@
     <div style="margin-left:auto;display:flex;gap:8px">
       <button class="btn-dl" onclick="openForm()">+ Nueva legalización</button>
       <button class="btn-dl" onclick="openFormMant()">+ Nuevo mantenimiento</button>
-      <button class="btn-dl" onclick="openFormEnvio()">+ Nuevo envío</button>
     </div>
   </div>
 
   <!-- Tabs -->
   <div style="display:flex;gap:8px;margin-bottom:16px">
     <button class="lg-tab" id="tab-legalizaciones" onclick="switchTab('legalizaciones')" style="background:#1a5276">📋 Legalizaciones</button>
+    <button class="lg-tab" id="tab-envios" onclick="switchTab('envios')" style="background:#718096">📦 Envíos</button>
     <button class="lg-tab" id="tab-prorrateo" onclick="switchTab('prorrateo')" style="background:#718096">📊 Prorrateo de gastos</button>
     <button class="lg-tab" id="tab-vehiculos" onclick="switchTab('vehiculos')" style="background:#718096">🚚 Vehículos</button>
     <button class="lg-tab" id="tab-detalle" onclick="switchTab('detalle')" style="background:#718096">🔎 Vista detallada</button>
@@ -144,12 +142,41 @@
         <table>
           <thead>
             <tr>
-              <th>N°</th><th>Fecha</th><th>Responsable</th><th>Tipo</th><th>Ruta / Proveedor</th><th>Empresas</th>
+              <th>N°</th><th>Fecha</th><th>Responsable</th><th>Tipo</th><th>Ruta</th><th>Empresas</th>
               <th style="text-align:right">Total gastos</th><th style="text-align:right">Anticipo</th>
               <th>Estado</th><th>Acciones</th>
             </tr>
           </thead>
           <tbody id="lg-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Envíos (Tipo='Envio'): vista aparte de las legalizaciones -->
+  <div id="panel-envios" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Empresa</label><select id="ef-emp" onchange="renderEnviosTable()"><option value="">Todas</option></select></div>
+      <div class="fg"><label>Desde</label><input type="date" id="ef-desde" onchange="renderEnviosTable()"></div>
+      <div class="fg"><label>Hasta</label><input type="date" id="ef-hasta" onchange="renderEnviosTable()"></div>
+      <div class="fg"><label>Buscar</label><input type="text" id="ef-txt" placeholder="proveedor, NIT, remisión, N°…" style="width:240px" oninput="renderEnviosTable()"></div>
+      <div style="margin-left:auto"><button class="btn-dl" onclick="openFormEnvio()">+ Nuevo envío</button></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Envíos <span id="envl-ct" style="font-weight:400;color:#718096"></span></h3>
+        <span id="envl-total" style="font-size:0.86rem;color:#4a5568;margin-left:auto;margin-right:12px"></span>
+        <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>N°</th><th>Fecha</th><th>Proveedor</th><th>NIT</th><th>Remisiones</th><th>Empresas</th>
+              <th style="text-align:right">Valor</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="envl-body"></tbody>
         </table>
       </div>
     </div>
@@ -518,6 +545,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260929a"></script>
-<script src="js/legalizacion-gastos.js?v=20260929g"></script>
+<script src="js/legalizacion-gastos.js?v=20260929h"></script>
 </body>
 </html>

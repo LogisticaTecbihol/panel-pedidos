@@ -4,12 +4,13 @@
 
 // ── Tabs ──
 function switchTab(tab) {
-  ['legalizaciones', 'prorrateo', 'vehiculos', 'detalle'].forEach(function(t) {
+  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle'].forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
     if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
   });
+  if (tab === 'envios') renderEnviosTable();
   if (tab === 'prorrateo') renderProrrateoGastos();
   if (tab === 'vehiculos') renderVehiculosTab();
   if (tab === 'detalle') renderDetalleTable();
@@ -374,6 +375,7 @@ async function loadLegalizaciones() {
   populateEmpresaSelect('f-emp', 'Todas');
   populateEmpresaSelect('pf-emp', 'Todas');
   populateEmpresaSelect('df-emp', 'Todas');
+  populateEmpresaSelect('ef-emp', 'Todas');
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
   var loadZone = document.getElementById('load-zone');
@@ -1022,12 +1024,9 @@ function estadoLeg(leg) { return esEnvio(leg) ? 'Registrado' : leg.Estado_Concil
 
 // Con Tipo = Envío el filtro de Estado se ignora (un envío nunca está
 // "Por conciliar"), así el usuario ve todos los envíos sin tocar el Estado.
-// conEnvios: la lista principal, cuyo filtro por defecto es "Por conciliar",
-// también muestra los envíos con ese filtro (van con su insignia "Registrado").
-function pasaFiltroEstado(leg, fEstado, fTipo, conEnvios) {
-  if (!fEstado || fTipo === 'Envio') return true;
-  if (conEnvios && fEstado === 'Por conciliar' && esEnvio(leg)) return true;
-  return estadoLeg(leg) === fEstado;
+// (Lo usa la Vista detallada; la lista principal ya no incluye envíos.)
+function pasaFiltroEstado(leg, fEstado, fTipo) {
+  return !fEstado || fTipo === 'Envio' || estadoLeg(leg) === fEstado;
 }
 
 // Proveedores de las líneas de gasto (un envío tiene uno solo), para mostrar
@@ -1259,7 +1258,8 @@ function renderTable() {
   var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
 
   var rows = legs.filter(function(leg) {
-    if (!pasaFiltroEstado(leg, fEstado, fTipo, true)) return false;
+    if (esEnvio(leg)) return false; // los envíos tienen su propia pestaña (renderEnviosTable)
+    if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fTxt) {
@@ -1278,10 +1278,9 @@ function renderTable() {
   document.getElementById('lg-body').innerHTML = rows.map(function(leg) {
     var total = totalGastosOf(leg.id);
     var esMant = leg.Tipo === 'Mantenimiento';
-    var esEnv = esEnvio(leg);
     var acciones = '<button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button>';
     if (leg.Estado_Conciliacion === 'Por conciliar' && canEditMod) {
-      acciones += ' <button class="btn-edit" onclick="' + (esEnv ? 'openFormEnvio' : (esMant ? 'openFormMant' : 'openForm')) + '(' + leg.id + ')">✏️</button>';
+      acciones += ' <button class="btn-edit" onclick="' + (esMant ? 'openFormMant' : 'openForm') + '(' + leg.id + ')">✏️</button>';
     }
     if (leg.Estado_Conciliacion === 'Por conciliar' && canDel) {
       acciones += ' <button class="btn-edit" style="color:#c0392b" onclick="eliminarLegalizacion(' + leg.id + ')">🗑️</button>';
@@ -1291,27 +1290,80 @@ function renderTable() {
       '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
       '<td>' + escHtml(leg.Responsable || '') + '</td>' +
       '<td>' + tipoBadgeHtml(leg) + '</td>' +
-      '<td>' + escHtml(esEnv ? proveedoresTexto(leg.id) : (leg.Recorrido_Ruta || '')) + '</td>' +
+      '<td>' + escHtml(leg.Recorrido_Ruta || '') + '</td>' +
       '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney(total)) + '</td>' +
-      '<td style="text-align:right">' + (esEnv ? '—' : escHtml(fmtMoney(leg.Anticipo_Entregado))) + '</td>' +
+      '<td style="text-align:right">' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</td>' +
       '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td>' + acciones + '</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="10"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
 
   updateStats();
+  renderEnviosTable();
   renderProrrateoGastos();
   renderDetalleTable();
 }
 
+// ── Pestaña Envíos (Tipo='Envio'): vista aparte de las legalizaciones ──
+function renderEnviosTable() {
+  var body = document.getElementById('envl-body');
+  if (!body) return;
+  var fEmp = document.getElementById('ef-emp').value;
+  var fDesde = document.getElementById('ef-desde').value;
+  var fHasta = document.getElementById('ef-hasta').value;
+  var fTxt = (document.getElementById('ef-txt').value || '').toLowerCase().trim();
+
+  function nitDe(leg) { var it = itemsOf(leg.id)[0]; return it ? (it.NIT || '') : ''; }
+
+  var rows = legs.filter(function(leg) {
+    if (!esEnvio(leg)) return false;
+    if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
+    if (fDesde && (leg.Fecha || '') < fDesde) return false;
+    if (fHasta && (leg.Fecha || '') > fHasta) return false;
+    if (fTxt) {
+      var hay = [leg.Consecutivo, proveedoresTexto(leg.id), nitDe(leg), leg.Remisiones_Relacionadas]
+        .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
+      if (hay.indexOf(fTxt) < 0) return false;
+    }
+    return true;
+  }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
+
+  var canEditMod = AUTH.hasModule('legalizacion_gastos');
+  var canDel = AUTH.canDelete();
+  var total = rows.reduce(function(s, leg) { return s + totalGastosOf(leg.id); }, 0);
+  document.getElementById('envl-ct').textContent = '(' + rows.length + ')';
+  document.getElementById('envl-total').textContent = rows.length ? 'Total: ' + fmtMoney(total) : '';
+
+  body.innerHTML = rows.map(function(leg) {
+    var acciones = '<button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button>';
+    if (leg.Estado_Conciliacion === 'Por conciliar' && canEditMod) {
+      acciones += ' <button class="btn-edit" onclick="openFormEnvio(' + leg.id + ')">✏️</button>';
+    }
+    if (leg.Estado_Conciliacion === 'Por conciliar' && canDel) {
+      acciones += ' <button class="btn-edit" style="color:#c0392b" onclick="eliminarLegalizacion(' + leg.id + ')">🗑️</button>';
+    }
+    return '<tr>' +
+      '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
+      '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
+      '<td>' + escHtml(proveedoresTexto(leg.id) || '—') + '</td>' +
+      '<td>' + escHtml(nitDe(leg) || '—') + '</td>' +
+      '<td style="max-width:280px;white-space:normal;font-size:0.8rem">' + escHtml(leg.Remisiones_Relacionadas || '—') + '</td>' +
+      '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
+      '<td style="text-align:right">' + escHtml(fmtMoney(totalGastosOf(leg.id))) + '</td>' +
+      '<td>' + acciones + '</td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="8"><div class="empty">Sin envíos para este filtro.</div></td></tr>';
+}
+
 function updateStats() {
-  // Los envíos no se concilian: no cuentan como pendientes ni conciliadas.
-  var porConciliar = legs.filter(function(l) { return !esEnvio(l) && l.Estado_Conciliacion === 'Por conciliar'; });
-  var conciliadas = legs.filter(function(l) { return !esEnvio(l) && l.Estado_Conciliacion === 'Conciliada'; });
+  // Los envíos no se concilian y tienen su propia pestaña: no cuentan aquí.
+  var propias = legs.filter(function(l) { return !esEnvio(l); });
+  var porConciliar = propias.filter(function(l) { return l.Estado_Conciliacion === 'Por conciliar'; });
+  var conciliadas = propias.filter(function(l) { return l.Estado_Conciliacion === 'Conciliada'; });
   document.getElementById('s-porconciliar').textContent = porConciliar.length;
   document.getElementById('s-conciliadas').textContent = conciliadas.length;
-  document.getElementById('s-total').textContent = legs.length;
+  document.getElementById('s-total').textContent = propias.length;
   var valorPend = porConciliar.reduce(function(s, l) { return s + totalGastosOf(l.id); }, 0);
   document.getElementById('s-valor').textContent = fmtMoney(valorPend);
 }
