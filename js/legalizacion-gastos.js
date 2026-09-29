@@ -2426,6 +2426,12 @@ function exportarPDF() {
     hide_signatures: false,
     page_format: 'letter',
     logo_key: 'LEGALIZACION',
+    // Más aire arriba y campos largos (Remisiones relacionadas, Cliente(s))
+    // con espacio suficiente para que el texto no toque las líneas del recuadro.
+    top_margin: 8,
+    left_block_ratio: 0.5,
+    info_line_h: 3.4,
+    info_pad: 2,
     signatures: [
       { label: 'Emitido por', sub: 'Nombre y firma' },
       { label: 'Despachado / Conductor', sub: 'Nombre y firma' },
