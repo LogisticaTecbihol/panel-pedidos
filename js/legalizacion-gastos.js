@@ -466,7 +466,7 @@ var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Envío', 'Alojam
 
 // Detalle de mantenimiento (líneas de gasto del formulario de mantenimiento,
 // en vez de Concepto); "Otros" pide especificar.
-var MANTENIMIENTO_DETALLE_FIJOS = ['Aceite', 'Llantas', 'Extintor', 'Lavado', 'Mantenimiento correctivo'];
+var MANTENIMIENTO_DETALLE_FIJOS = ['Aceite', 'Llantas', 'Extintor', 'Lavado', 'Mantenimiento correctivo', 'Combustible'];
 
 function parseConceptoLineFor(list, concepto) {
   return list.indexOf(concepto) >= 0 ? { sel: concepto, detail: '' } : { sel: 'Otros', detail: concepto || '' };
