@@ -45,6 +45,16 @@ var formGastosMant = [];
 var formEmpresasMant = [];
 var formMantProveedorACs = [];
 
+// ── Formulario de Envío (Tipo='Envio'): pago de un flete/mensajería de
+// mercancía. Una sola línea de gasto (proveedor, NIT, valor) ligada a
+// remisiones, con reparto entre empresas por litros/kilos (mismo cálculo que
+// "Calcular reparto" del formulario de ruta, sin Combustible). No pasa por
+// conciliación: en BD queda 'Por conciliar' (para seguir editable por RLS) y
+// la interfaz lo muestra como "Registrado" (ver estadoLeg).
+var formEmpresasEnv = [];
+var formRemisionesEnv = [];
+var ENVIO_CONCEPTO = 'Envío';
+
 var legAdjuntosCache = [];
 
 // Clientes con al menos una remisión real generada (Pedidos.Remisiones no
@@ -994,13 +1004,41 @@ function renderGastoPorEmpresa(calc) {
   box.innerHTML = lgProrrateoTable(rows, 'Empresa');
 }
 
+function esEnvio(leg) { return !!leg && leg.Tipo === 'Envio'; }
+
+// Nombre legible del tipo (para Excel y filtros).
+function tipoLabel(leg) {
+  if (esEnvio(leg)) return 'Envío';
+  return leg.Tipo === 'Mantenimiento' ? 'Mantenimiento' : 'Ruta';
+}
+
+// Estado tal como lo ve el usuario: los envíos no se concilian, así que se
+// muestran como "Registrado" aunque en BD queden 'Por conciliar'.
+function estadoLeg(leg) { return esEnvio(leg) ? 'Registrado' : leg.Estado_Conciliacion; }
+
+// Con Tipo = Envío el filtro de Estado se ignora (un envío nunca está
+// "Por conciliar"), así el usuario ve todos los envíos sin tocar el Estado.
+function pasaFiltroEstado(leg, fEstado, fTipo) {
+  return !fEstado || fTipo === 'Envio' || estadoLeg(leg) === fEstado;
+}
+
+// Proveedores de las líneas de gasto (un envío tiene uno solo), para mostrar
+// y para buscar en la lista.
+function proveedoresTexto(legId) {
+  var seen = {};
+  return itemsOf(legId).map(function(it) { return (it.Proveedor || '').trim(); })
+    .filter(function(p) { if (!p || seen[p]) return false; seen[p] = true; return true; }).join(', ');
+}
+
 function tipoBadgeHtml(leg) {
+  if (esEnvio(leg)) return '<span class="badge b-abierto">📦 Envío</span>';
   return (leg.Tipo === 'Mantenimiento')
     ? '<span class="badge b-fac">🔧 Mantenimiento</span>'
     : '<span class="badge b-par">🚚 Ruta</span>';
 }
 
 function estadoBadgeHtml(leg) {
+  if (esEnvio(leg)) return '<span class="badge b-cerrado">📦 Registrado</span>';
   if (leg.Estado_Conciliacion === 'Conciliada') return '<span class="badge b-ent">✅ Conciliada</span>';
   if (leg.Estado_Conciliacion === 'Rechazada') {
     return '<span class="badge b-anulado" title="' + escHtml(leg.Motivo_Rechazo || '') + '">❌ Rechazada</span>';
@@ -1043,13 +1081,13 @@ function _detalleLegsFiltrados() {
   var fTxt = (document.getElementById('df-txt').value || '').toLowerCase().trim();
 
   return legs.filter(function(leg) {
-    if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
+    if (!pasaFiltroEstado(leg, fEstado, fTipo)) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fDesde && (leg.Fecha || '') < fDesde) return false;
     if (fHasta && (leg.Fecha || '') > fHasta) return false;
     if (fTxt) {
-      var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes, leg.Placa]
+      var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes, leg.Placa, proveedoresTexto(leg.id)]
         .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
       if (hay.indexOf(fTxt) < 0) return false;
     }
@@ -1159,7 +1197,7 @@ function exportarDetalleExcel() {
         dataLinea.push({
           'N°': leg.Consecutivo || '',
           'Fecha': fmtDate(leg.Fecha),
-          'Tipo': leg.Tipo || 'Ruta',
+          'Tipo': tipoLabel(leg),
           'Responsable': leg.Responsable || '',
           'Placa': leg.Placa || '',
           'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
@@ -1167,7 +1205,7 @@ function exportarDetalleExcel() {
           'Proveedor': it.Proveedor || '',
           'NIT': it.NIT || '',
           'Valor': Number(it.Valor) || 0,
-          'Estado': leg.Estado_Conciliacion || ''
+          'Estado': estadoLeg(leg) || ''
         });
       });
     });
@@ -1183,7 +1221,7 @@ function exportarDetalleExcel() {
       return {
         'N°': leg.Consecutivo || '',
         'Fecha': fmtDate(leg.Fecha),
-        'Tipo': leg.Tipo || 'Ruta',
+        'Tipo': tipoLabel(leg),
         'Responsable': leg.Responsable || '',
         'Placa': leg.Placa || '',
         'Ruta': leg.Recorrido_Ruta || '',
@@ -1194,7 +1232,7 @@ function exportarDetalleExcel() {
         'Total gastos': totalGastosOf(leg.id),
         'Anticipo': Number(leg.Anticipo_Entregado) || 0,
         'Km': km,
-        'Estado': leg.Estado_Conciliacion || '',
+        'Estado': estadoLeg(leg) || '',
         'Observaciones': leg.Observaciones || ''
       };
     });
@@ -1213,11 +1251,11 @@ function renderTable() {
   var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
 
   var rows = legs.filter(function(leg) {
-    if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
+    if (!pasaFiltroEstado(leg, fEstado, fTipo)) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fTxt) {
-      var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes]
+      var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes, proveedoresTexto(leg.id)]
         .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
       if (hay.indexOf(fTxt) < 0) return false;
     }
@@ -1232,9 +1270,10 @@ function renderTable() {
   document.getElementById('lg-body').innerHTML = rows.map(function(leg) {
     var total = totalGastosOf(leg.id);
     var esMant = leg.Tipo === 'Mantenimiento';
+    var esEnv = esEnvio(leg);
     var acciones = '<button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button>';
     if (leg.Estado_Conciliacion === 'Por conciliar' && canEditMod) {
-      acciones += ' <button class="btn-edit" onclick="' + (esMant ? 'openFormMant' : 'openForm') + '(' + leg.id + ')">✏️</button>';
+      acciones += ' <button class="btn-edit" onclick="' + (esEnv ? 'openFormEnvio' : (esMant ? 'openFormMant' : 'openForm')) + '(' + leg.id + ')">✏️</button>';
     }
     if (leg.Estado_Conciliacion === 'Por conciliar' && canDel) {
       acciones += ' <button class="btn-edit" style="color:#c0392b" onclick="eliminarLegalizacion(' + leg.id + ')">🗑️</button>';
@@ -1244,10 +1283,10 @@ function renderTable() {
       '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
       '<td>' + escHtml(leg.Responsable || '') + '</td>' +
       '<td>' + tipoBadgeHtml(leg) + '</td>' +
-      '<td>' + escHtml(leg.Recorrido_Ruta || '') + '</td>' +
+      '<td>' + escHtml(esEnv ? proveedoresTexto(leg.id) : (leg.Recorrido_Ruta || '')) + '</td>' +
       '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney(total)) + '</td>' +
-      '<td style="text-align:right">' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</td>' +
+      '<td style="text-align:right">' + (esEnv ? '—' : escHtml(fmtMoney(leg.Anticipo_Entregado))) + '</td>' +
       '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td>' + acciones + '</td>' +
     '</tr>';
@@ -1259,8 +1298,9 @@ function renderTable() {
 }
 
 function updateStats() {
-  var porConciliar = legs.filter(function(l) { return l.Estado_Conciliacion === 'Por conciliar'; });
-  var conciliadas = legs.filter(function(l) { return l.Estado_Conciliacion === 'Conciliada'; });
+  // Los envíos no se concilian: no cuentan como pendientes ni conciliadas.
+  var porConciliar = legs.filter(function(l) { return !esEnvio(l) && l.Estado_Conciliacion === 'Por conciliar'; });
+  var conciliadas = legs.filter(function(l) { return !esEnvio(l) && l.Estado_Conciliacion === 'Conciliada'; });
   document.getElementById('s-porconciliar').textContent = porConciliar.length;
   document.getElementById('s-conciliadas').textContent = conciliadas.length;
   document.getElementById('s-total').textContent = legs.length;
@@ -2104,6 +2144,230 @@ async function saveFormMant() {
   else if (editingLegId) openVer(editingLegId);
 }
 
+// ── Formulario de Envío (Tipo='Envio') ──
+// Fecha + proveedor + NIT + valor + remisiones, con reparto entre empresas
+// por litros/kilos (calcularRepartoSugerido, el mismo cálculo del botón
+// "Calcular reparto" de la ruta). Sin responsable, placa, anticipo ni
+// conciliación.
+
+function renderEnvRemisiones() {
+  var box = document.getElementById('env-remisiones-chips');
+  box.innerHTML = formRemisionesEnv.length ? formRemisionesEnv.map(function(r, i) {
+    return '<span class="badge b-par" style="display:inline-flex;align-items:center;gap:6px">' + escHtml(r) +
+      '<span onclick="removeEnvRemision(' + i + ')" style="cursor:pointer;font-weight:700" title="Quitar">✕</span></span>';
+  }).join('') : '<span style="color:#a0aec0;font-size:0.82rem">Sin remisiones agregadas.</span>';
+}
+
+function addEnvRemision() {
+  var inp = document.getElementById('env-remision-nueva');
+  var val = inp.value.trim();
+  if (!val) return;
+  var yaEsta = formRemisionesEnv.some(function(r) { return r.toUpperCase() === val.toUpperCase(); });
+  inp.value = '';
+  inp.focus();
+  if (yaEsta) { showToast('Esa remisión ya está agregada', '#e67e22'); return; }
+  formRemisionesEnv.push(val);
+  renderEnvRemisiones();
+  // La empresa sale de la sigla al inicio del consecutivo (mismo criterio que la ruta).
+  var empAuto = empresaFromRemisionSigla(val);
+  if (empAuto) _addEmpresaToListEnv(empAuto);
+  recalcTotalsEnv();
+}
+
+function removeEnvRemision(i) {
+  formRemisionesEnv.splice(i, 1);
+  renderEnvRemisiones();
+  recalcTotalsEnv();
+}
+
+function renderEnvEmpresas() {
+  document.getElementById('env-emp-lines').innerHTML = formEmpresasEnv.map(function(e, i) {
+    return '<tr>' +
+      '<td><select class="ef env-emp-select" data-line="' + i + '" onchange="readEnvEmpresas()">' + empresaRowOptionsHtml(e.Empresa) + '</select></td>' +
+      '<td><input class="ef env-emp-monto" data-line="' + i + '" type="number" min="0" step="1" value="' + (e.Monto || '') + '" style="text-align:right;width:140px" oninput="readEnvEmpresas()"></td>' +
+      '<td style="text-align:center"><button onclick="removeEnvEmpresa(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="3"><div class="no-lines">Sin empresas en el reparto.</div></td></tr>';
+}
+
+function addEnvEmpresa() {
+  formEmpresasEnv.push({ Empresa: '', Monto: '' });
+  renderEnvEmpresas();
+}
+
+function removeEnvEmpresa(i) {
+  formEmpresasEnv.splice(i, 1);
+  renderEnvEmpresas();
+  recalcTotalsEnv();
+}
+
+function _addEmpresaToListEnv(empresaValue) {
+  if (!empresaValue) return;
+  if (formEmpresasEnv.some(function(e) { return e.Empresa === empresaValue; })) return;
+  var emptyIdx = formEmpresasEnv.findIndex(function(e) { return !e.Empresa; });
+  if (emptyIdx >= 0) formEmpresasEnv[emptyIdx].Empresa = empresaValue;
+  else formEmpresasEnv.push({ Empresa: empresaValue, Monto: '' });
+  renderEnvEmpresas();
+}
+
+function readEnvEmpresas() {
+  document.querySelectorAll('.env-emp-select').forEach(function(sel) {
+    var i = Number(sel.dataset.line);
+    if (formEmpresasEnv[i]) formEmpresasEnv[i].Empresa = sel.value;
+  });
+  document.querySelectorAll('.env-emp-monto').forEach(function(inp) {
+    var i = Number(inp.dataset.line);
+    if (formEmpresasEnv[i]) formEmpresasEnv[i].Monto = Number(inp.value) || 0;
+  });
+  recalcTotalsEnv();
+}
+
+function valorEnvio() { return Number(document.getElementById('env-valor').value) || 0; }
+
+function recalcTotalsEnv() {
+  var totalGastos = valorEnvio();
+  var totalReparto = formEmpresasEnv.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
+  document.getElementById('env-total-gastos').textContent = fmtMoney(totalGastos);
+  document.getElementById('env-total-reparto').textContent = fmtMoney(totalReparto);
+  // Con el reparto en $0 no hay descuadre que avisar: se calcula al guardar.
+  document.getElementById('env-reparto-warn').style.display = (totalReparto > 0 && totalGastos !== totalReparto) ? 'block' : 'none';
+  document.getElementById('env-reparto-info').style.display = (totalReparto === 0 && totalGastos > 0 && formRemisionesEnv.length) ? 'block' : 'none';
+}
+
+// Calcula el reparto por litros/kilos y lo vuelca en el formulario: conserva
+// las filas de empresa que ya hay (con su nuevo monto, o 0) y agrega las que
+// aparecen en el cálculo. Devuelve { ok, motivo?, calc? }.
+function _aplicarRepartoEnv() {
+  var valor = valorEnvio();
+  if (!formRemisionesEnv.length) return { ok: false, motivo: 'Agrega primero las remisiones' };
+  if (valor <= 0) return { ok: false, motivo: 'Indica primero el valor del envío' };
+  var calc = calcularRepartoSugerido(formRemisionesEnv, valor);
+  var emps = Object.keys(calc.porEmpresa);
+  if (!emps.length) return { ok: false, motivo: 'No se pudo determinar la empresa de las remisiones' };
+  var nuevo = [];
+  formEmpresasEnv.forEach(function(e) {
+    if (e.Empresa) nuevo.push({ Empresa: e.Empresa, Monto: calc.porEmpresa[e.Empresa] || 0 });
+  });
+  emps.forEach(function(emp) {
+    if (!nuevo.some(function(e) { return e.Empresa === emp; })) nuevo.push({ Empresa: emp, Monto: calc.porEmpresa[emp] });
+  });
+  formEmpresasEnv = nuevo;
+  renderEnvEmpresas();
+  recalcTotalsEnv();
+  return { ok: true, calc: calc };
+}
+
+function _msgRepartoCalculado(calc) {
+  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos' : 'número de remisiones');
+  if (calc.sinResolver.length) msg += ' · sin litros/kilos: ' + calc.sinResolver.join(', ');
+  return msg;
+}
+
+function calcularRepartoEnv() {
+  readEnvEmpresas();
+  if (formEmpresasEnv.some(function(e) { return e.Empresa && Number(e.Monto) > 0; }) &&
+      !confirm('Ya hay montos en el reparto. ¿Reemplazarlos por el cálculo por litros/kilos?')) return;
+  var r = _aplicarRepartoEnv();
+  if (!r.ok) { showToast(r.motivo, '#e67e22'); return; }
+  showToast(_msgRepartoCalculado(r.calc), r.calc.sinResolver.length ? '#e67e22' : '#27ae60');
+}
+
+function openFormEnvio(id) {
+  editingLegId = id || null;
+  var leg = null;
+  if (editingLegId) {
+    leg = legs.find(function(l) { return l.id === editingLegId; });
+    if (!leg) return;
+  }
+  var it = leg ? (itemsOf(leg.id)[0] || {}) : {};
+  var nd = splitNitDv(it.NIT);
+  document.getElementById('form-env-titulo').textContent = leg ? 'Editar ' + (leg.Consecutivo || '') : 'Nuevo envío';
+  document.getElementById('env-fecha').value = leg ? (leg.Fecha || '').slice(0, 10) : today();
+  document.getElementById('env-proveedor').value = it.Proveedor || '';
+  document.getElementById('env-nit').value = nd.nit || '';
+  document.getElementById('env-dv').value = nd.dv || '';
+  document.getElementById('env-valor').value = it.Valor || '';
+  document.getElementById('env-remision-nueva').value = '';
+  formRemisionesEnv = leg ? (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; }) : [];
+  formEmpresasEnv = leg ? empresasOf(leg.id).map(function(e) { return { Empresa: e.Empresa, Monto: e.Monto }; }) : [];
+  if (!formEmpresasEnv.length) formEmpresasEnv = [{ Empresa: '', Monto: '' }];
+  renderEnvRemisiones();
+  renderEnvEmpresas();
+  recalcTotalsEnv();
+  document.getElementById('form-env-overlay').classList.add('show');
+}
+
+function closeFormEnvio() {
+  document.getElementById('form-env-overlay').classList.remove('show');
+}
+
+async function saveFormEnvio() {
+  readEnvEmpresas();
+  var proveedor = document.getElementById('env-proveedor').value.trim();
+  var valor = valorEnvio();
+  if (!proveedor) { showToast('Indica el proveedor', '#e67e22'); return; }
+  if (valor <= 0) { showToast('Indica el valor del envío', '#e67e22'); return; }
+
+  // Reparto vacío ($0 en todas las filas) + remisiones: se calcula por
+  // litros/kilos al guardar, para que el usuario no tenga que pedirlo.
+  var repartoActual = formEmpresasEnv.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
+  var autoCalc = null;
+  if (repartoActual === 0 && formRemisionesEnv.length) {
+    var r = _aplicarRepartoEnv();
+    if (r.ok) autoCalc = r.calc;
+  }
+
+  var empresasValidas = formEmpresasEnv.filter(function(e) { return e.Empresa; });
+  if (!empresasValidas.length) { showToast('Agrega al menos una empresa en el reparto', '#e67e22'); return; }
+  if (!formRemisionesEnv.length &&
+      !confirm('No agregaste remisiones: el costo quedará como "Sin identificar" en el prorrateo de gastos. ¿Guardar de todas formas?')) return;
+
+  var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
+  if (valor !== totalReparto) {
+    if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el valor del envío (' + fmtMoney(valor) + '). ¿Guardar de todas formas?')) return;
+  }
+
+  var header = {
+    Fecha: document.getElementById('env-fecha').value || today(),
+    Tipo: 'Envio',
+    Responsable: '',
+    Placa: '',
+    Recorrido_Ruta: '',
+    No_Personas: null,
+    Fecha_Salida: null,
+    Fecha_Llegada: null,
+    Km_Salida: null,
+    Km_Llegada: null,
+    Clientes: '',
+    Remisiones_Relacionadas: formRemisionesEnv.join(', '),
+    Anticipo_Entregado: 0,
+    Observaciones: ''
+  };
+  var items = [{
+    Concepto: ENVIO_CONCEPTO,
+    Proveedor: proveedor,
+    NIT: joinNitDv(document.getElementById('env-nit').value, document.getElementById('env-dv').value),
+    Valor: valor,
+    Galones: null
+  }];
+
+  var body = { header: header, items: items, empresas: empresasValidas };
+  var res;
+  if (editingLegId) {
+    body.id = editingLegId;
+    res = await apiPost(Object.assign({ action: 'editarLegalizacionGastos' }, body));
+  } else {
+    res = await apiPost(Object.assign({ action: 'agregarLegalizacionGastos' }, body));
+  }
+  if (!res.ok) { showToast('Error al guardar: ' + res.error, '#e74c3c'); return; }
+
+  showToast(autoCalc ? 'Envío guardado. ' + _msgRepartoCalculado(autoCalc) : 'Envío guardado correctamente', '#27ae60');
+  closeFormEnvio();
+  await loadLegalizaciones();
+  if (res.id) openVer(res.id);
+  else if (editingLegId) openVer(editingLegId);
+}
+
 async function eliminarLegalizacion(id) {
   var leg = legs.find(function(l) { return l.id === id; });
   if (!leg) return;
@@ -2118,7 +2382,8 @@ function editarDesdeVer() {
   var id = verLegId;
   var leg = legs.find(function(l) { return l.id === id; });
   closeVer();
-  if (leg && leg.Tipo === 'Mantenimiento') openFormMant(id);
+  if (esEnvio(leg)) openFormEnvio(id);
+  else if (leg && leg.Tipo === 'Mantenimiento') openFormMant(id);
   else openForm(id);
 }
 
@@ -2129,7 +2394,9 @@ function openVer(id) {
   if (!leg) return;
 
   document.getElementById('ver-titulo').innerHTML = escHtml(leg.Consecutivo || '') + ' ' + tipoBadgeHtml(leg);
-  document.getElementById('ver-meta').textContent = 'Responsable: ' + (leg.Responsable || '—') + ' · Fecha: ' + fmtDate(leg.Fecha);
+  document.getElementById('ver-meta').textContent = esEnvio(leg)
+    ? 'Fecha: ' + fmtDate(leg.Fecha)
+    : 'Responsable: ' + (leg.Responsable || '—') + ' · Fecha: ' + fmtDate(leg.Fecha);
 
   var editBtn = document.getElementById('ver-btn-editar');
   editBtn.style.display = (leg.Estado_Conciliacion === 'Por conciliar' && AUTH.hasModule('legalizacion_gastos')) ? 'inline-block' : 'none';
@@ -2150,6 +2417,7 @@ function renderVerBody(leg) {
   var totalGastos = totalGastosOf(leg.id);
   var totalReparto = totalRepartoOf(leg.id);
   var esMant = leg.Tipo === 'Mantenimiento';
+  var esEnv = esEnvio(leg);
   var combVer = totalCombustibleLista(items);
   var repartoSinComb = !esMant && combVer > 0 && totalReparto === totalGastos - combVer;
 
@@ -2173,7 +2441,7 @@ function renderVerBody(leg) {
       '<strong>❌ Rechazada</strong> por ' + escHtml(leg.Conciliado_Por || '—') + ' el ' + escHtml(fmtDate(leg.Fecha_Conciliacion)) + '<br>' +
       'Motivo: ' + escHtml(leg.Motivo_Rechazo || '—') +
     '</div>';
-  } else if (AUTH.canConciliarGastos()) {
+  } else if (!esEnv && AUTH.canConciliarGastos()) {
     conciliacionHtml =
       '<div style="padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">' +
         '<div style="font-weight:700;color:#92400e;margin-bottom:8px;font-size:0.86rem">Conciliar legalización</div>' +
@@ -2213,7 +2481,11 @@ function renderVerBody(leg) {
     '</div>';
   }
 
-  var infoGridHtml = esMant ?
+  var infoGridHtml = esEnv ?
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
+      '<div style="grid-column:span 3"><strong>Remisiones relacionadas:</strong> ' + escHtml(leg.Remisiones_Relacionadas || '—') + '</div>' +
+    '</div>' :
+    esMant ?
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
       '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
       (leg.Km_Llegada != null ? '<div><strong>Kilometraje registrado:</strong> ' + escHtml(Number(leg.Km_Llegada).toLocaleString('es-CO')) + ' km</div>' : '') +
@@ -2235,14 +2507,14 @@ function renderVerBody(leg) {
 
   document.getElementById('ver-body').innerHTML =
     infoGridHtml +
-    '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">' + (esMant ? 'Líneas de gasto (detalle de mantenimiento)' : 'Líneas de gasto') + '</h3>' +
+    '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">' + (esEnv ? 'Envío' : (esMant ? 'Líneas de gasto (detalle de mantenimiento)' : 'Líneas de gasto')) + '</h3>' +
     '<table><thead><tr><th>' + (esMant ? 'Detalle' : 'Concepto') + '</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>' +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:14px 0 6px">Reparto entre empresas</h3>' +
     '<table><thead><tr><th>Empresa</th><th style="text-align:right">Monto</th></tr></thead><tbody>' + empsHtml + '</tbody></table>' +
     '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong>' +
       (repartoSinComb ? ' · <em>El reparto no incluye el Combustible (' + escHtml(fmtMoney(combVer)) + ')</em>' : '') + '</div>' +
-    '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Conciliación</h3>' +
-    conciliacionHtml +
+    // Los envíos no se concilian: sin bloque de conciliación.
+    (esEnv ? '' : '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Conciliación</h3>' + conciliacionHtml) +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:16px 0 6px">Soportes adjuntos <span id="lg-adj-count"></span></h3>' +
     (AUTH.hasModule('legalizacion_gastos') && leg.Estado_Conciliacion === 'Por conciliar' ?
       '<input type="file" id="lg-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleAdjuntoUploadLG(this)" style="margin-bottom:8px">' : '') +
@@ -2374,10 +2646,13 @@ function exportarPDF() {
   var emps = empresasOf(leg.id);
   var totalGastos = totalGastosOf(leg.id);
   var esMant = leg.Tipo === 'Mantenimiento';
+  var esEnv = esEnvio(leg);
 
   var reparto = emps.map(function(e) { return getSigla(e.Empresa) + ': ' + fmtMoney(e.Monto); }).join('  ·  ');
 
-  var leftFields = esMant ? [
+  var leftFields = esEnv ? [
+    ['Remisiones relacionadas', leg.Remisiones_Relacionadas || '—'],
+  ] : esMant ? [
     ['Responsable', leg.Responsable || ''],
     ['Placa', leg.Placa || '—'],
     ['Observaciones', leg.Observaciones || '—'],
@@ -2389,7 +2664,10 @@ function exportarPDF() {
     ['Cliente(s)', leg.Clientes || ''],
     ['Observaciones', leg.Observaciones || '—'],
   ];
-  var rightFields = esMant ? [
+  var rightFields = esEnv ? [
+    ['Total envío', fmtMoney(totalGastos)],
+    ['Reparto entre empresas', reparto || '—'],
+  ] : esMant ? [
     ['Anticipo entregado', fmtMoney(leg.Anticipo_Entregado)],
     ['Total gastos', fmtMoney(totalGastos)],
     ['Reparto entre empresas', reparto || '—'],
@@ -2401,7 +2679,7 @@ function exportarPDF() {
     ['Reparto entre empresas', reparto || '—'],
     ['Remisiones relacionadas', leg.Remisiones_Relacionadas || '—'],
   ];
-  if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
+  if (!esMant && !esEnv && leg.Km_Salida != null && leg.Km_Llegada != null) {
     rightFields.push(['Km recorridos', (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km']);
   }
   if (esMant && leg.Km_Llegada != null) {
@@ -2416,14 +2694,15 @@ function exportarPDF() {
   var data = {
     empresa: 'Polinizando Futuro',
     consecutivo: leg.Consecutivo,
-    doc_title: esMant ? 'LEGALIZACION DE MANTENIMIENTO' : 'LEGALIZACION DE GASTOS',
+    doc_title: esEnv ? 'REGISTRO DE ENVIO' : (esMant ? 'LEGALIZACION DE MANTENIMIENTO' : 'LEGALIZACION DE GASTOS'),
     doc_number: leg.Consecutivo,
     date_label: 'Fecha',
     ref_label: null,
     fecha_entrega: fmtDate(leg.Fecha),
-    file_prefix: esMant ? 'Legalizacion_Mantenimiento' : 'Legalizacion_Gastos',
+    file_prefix: esEnv ? 'Registro_Envio' : (esMant ? 'Legalizacion_Mantenimiento' : 'Legalizacion_Gastos'),
     copies: ['ORIGINAL - CONTABILIDAD'],
-    hide_signatures: false,
+    // El envío es un registro, no una legalización que se firme.
+    hide_signatures: esEnv,
     page_format: 'letter',
     logo_key: 'LEGALIZACION',
     // Más aire arriba y campos largos (Remisiones relacionadas, Cliente(s))
@@ -2461,6 +2740,23 @@ initAutocomplete(document.getElementById('lg-cliente-nueva'), {
   display: function(c) { return '<strong>' + escHtml(c) + '</strong>'; },
   match: function(c, val) { return c.toLowerCase().indexOf(val) >= 0; },
   onSelect: function(c) { addLgCliente(c); }
+});
+
+// Proveedor del formulario de envío: autocompleta con los proveedores ya
+// usados (mismo origen que las líneas de gasto) y completa NIT + DV.
+initAutocomplete(document.getElementById('env-proveedor'), {
+  minChars: 1,
+  items: proveedoresConocidos,
+  display: function(p) {
+    return '<strong>' + escHtml(p.proveedor) + '</strong>' + (p.nit ? ' <span class="ac-sub">NIT ' + escHtml(p.nit) + '</span>' : '');
+  },
+  match: function(p, val) { return p.proveedor.toLowerCase().indexOf(val) >= 0; },
+  onSelect: function(p) {
+    document.getElementById('env-proveedor').value = p.proveedor;
+    var nd = splitNitDv(p.nit);
+    document.getElementById('env-nit').value = nd.nit;
+    document.getElementById('env-dv').value = nd.dv;
+  }
 });
 
 loadLegalizaciones();

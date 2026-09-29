@@ -106,6 +106,7 @@
         <option value="">Todos</option>
         <option value="Ruta">Ruta</option>
         <option value="Mantenimiento">Mantenimiento</option>
+        <option value="Envio">Envío</option>
       </select>
     </div>
     <div class="fg"><label>Estado</label>
@@ -113,6 +114,7 @@
         <option value="Por conciliar">Por conciliar</option>
         <option value="Conciliada">Conciliadas</option>
         <option value="Rechazada">Rechazadas</option>
+        <option value="Registrado">Registrados (envíos)</option>
         <option value="">Todas</option>
       </select>
     </div>
@@ -120,6 +122,7 @@
     <div style="margin-left:auto;display:flex;gap:8px">
       <button class="btn-dl" onclick="openForm()">+ Nueva legalización</button>
       <button class="btn-dl" onclick="openFormMant()">+ Nuevo mantenimiento</button>
+      <button class="btn-dl" onclick="openFormEnvio()">+ Nuevo envío</button>
     </div>
   </div>
 
@@ -141,7 +144,7 @@
         <table>
           <thead>
             <tr>
-              <th>N°</th><th>Fecha</th><th>Responsable</th><th>Tipo</th><th>Ruta</th><th>Empresas</th>
+              <th>N°</th><th>Fecha</th><th>Responsable</th><th>Tipo</th><th>Ruta / Proveedor</th><th>Empresas</th>
               <th style="text-align:right">Total gastos</th><th style="text-align:right">Anticipo</th>
               <th>Estado</th><th>Acciones</th>
             </tr>
@@ -229,6 +232,7 @@
           <option value="">Todos</option>
           <option value="Ruta">Ruta</option>
           <option value="Mantenimiento">Mantenimiento</option>
+          <option value="Envio">Envío</option>
         </select>
       </div>
       <div class="fg"><label>Estado</label>
@@ -237,6 +241,7 @@
           <option value="Por conciliar">Por conciliar</option>
           <option value="Conciliada">Conciliadas</option>
           <option value="Rechazada">Rechazadas</option>
+          <option value="Registrado">Registrados (envíos)</option>
         </select>
       </div>
       <div class="fg"><label>Desde</label><input type="date" id="df-desde" onchange="renderDetalleTable()"></div>
@@ -427,6 +432,63 @@
   </div>
 </div>
 
+<!-- MODAL: Nuevo / Editar envío -->
+<div class="overlay" id="form-env-overlay" onclick="if(isBackdropClick(event))closeFormEnvio()">
+  <div class="modal-box" style="max-width:760px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="form-env-titulo">Nuevo envío</h2></div>
+      <button class="btn-close" onclick="closeFormEnvio()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <div><label class="ef-label">Fecha</label><input class="ef" id="env-fecha" type="date"></div>
+        <div style="grid-column:span 2"><label class="ef-label">Proveedor *</label><input class="ef" id="env-proveedor" type="text" placeholder="Transportadora / proveedor del envío" autocomplete="off"></div>
+        <div>
+          <label class="ef-label">NIT</label>
+          <div style="display:flex;gap:4px">
+            <input class="ef" id="env-nit" type="text" placeholder="NIT" style="flex:1;min-width:0">
+            <input class="ef" id="env-dv" type="text" placeholder="DV" maxlength="2" style="width:52px;text-align:center">
+          </div>
+        </div>
+        <div><label class="ef-label">Valor ($) *</label><input class="ef" id="env-valor" type="number" min="0" step="1" oninput="recalcTotalsEnv()" style="text-align:right"></div>
+        <div></div>
+        <div style="grid-column:span 3">
+          <label class="ef-label">Remisiones relacionadas</label>
+          <div id="env-remisiones-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+          <div style="display:flex;gap:8px">
+            <input class="ef" id="env-remision-nueva" type="text" placeholder="Ej. RESO-RS-0092" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addEnvRemision();}">
+            <button class="btn-edit" type="button" onclick="addEnvRemision()">+ Agregar</button>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Reparto entre empresas</h3>
+      <table>
+        <thead><tr><th>Empresa</th><th style="text-align:right">Monto</th><th style="width:40px"></th></tr></thead>
+        <tbody id="env-emp-lines"></tbody>
+      </table>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-edit" onclick="addEnvEmpresa()">+ Agregar empresa</button>
+        <button class="btn-edit" onclick="calcularRepartoEnv()" title="Reparte el valor del envío según los litros/kilos de las remisiones relacionadas de cada empresa">⚖ Calcular reparto</button>
+      </div>
+
+      <div style="margin-top:14px;padding:10px 14px;background:#eaf4fb;border:1px solid #aed6f1;border-radius:8px;font-size:0.86rem;display:flex;gap:24px;flex-wrap:wrap">
+        <div>Valor del envío: <strong id="env-total-gastos">$0</strong></div>
+        <div>Total repartido: <strong id="env-total-reparto">$0</strong></div>
+        <div id="env-reparto-warn" style="color:#b7791f;font-weight:700;display:none">⚠ El reparto no coincide con el valor del envío</div>
+        <div id="env-reparto-info" style="color:#4a5568;display:none">ℹ El reparto se calculará por litros/kilos al guardar</div>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="closeFormEnvio()">Cancelar</button>
+        <button class="btn-confirm" onclick="saveFormEnvio()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Ver / Conciliar -->
 <div class="overlay" id="ver-overlay" onclick="if(isBackdropClick(event))closeVer()">
   <div class="modal-box" style="max-width:980px">
@@ -452,10 +514,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260928c"></script>
+<script src="js/shared.js?v=20260929a"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260921d"></script>
 <script src="js/pdf-remision.js?v=20260929a"></script>
-<script src="js/legalizacion-gastos.js?v=20260929c"></script>
+<script src="js/legalizacion-gastos.js?v=20260929d"></script>
 </body>
 </html>
