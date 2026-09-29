@@ -310,6 +310,51 @@ function exportarRemisionesOC(row) {
   generarRemisionesTrasladoPDF(_grupoOC(r));
 }
 
+// Envía la OC a otros usuarios del panel (bandeja 🔔): siempre la Solicitud
+// de OC y, si alguna línea del grupo ya tiene remisión cargada, también las
+// Remisiones de traslado como segundo PDF. El destinatario se elige en el
+// modal de NOTIF.openModalEnviar.
+function _enviarGrupoOC(r) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) { showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return; }
+  if (typeof generarSolicitudOCPDF !== 'function' || typeof generarRemisionesTrasladoPDF !== 'function') { showToast('PDF no disponible (jsPDF no cargó)', '#e74c3c'); return; }
+  var grupo = _grupoOC(r);
+  var cons = String(r.Consecutivo || '').trim();
+
+  // generarRemisionesTrasladoPDF toma las remisiones de grupo[0]; si esa línea
+  // no está legalizada pero otra hermana sí, la que tiene remisión va primero.
+  var conRem = grupo.filter(function(o) { return String(o.Remision || '').trim() || String(o.Remision_Origen || '').trim(); })[0];
+  var grupoRem = conRem ? [conRem].concat(grupo.filter(function(o) { return o !== conRem; })) : null;
+
+  var extras = [];
+  if (grupoRem) {
+    extras.push({
+      meta: { modulo: 'ordenes', referencia: cons, titulo: 'Remisiones de traslado OC ' + cons },
+      buildDoc: function() {
+        var b = generarRemisionesTrasladoPDF(grupoRem, { return_doc: true });
+        return b ? b.doc : null;
+      }
+    });
+  }
+
+  NOTIF.openModalEnviar({
+    modulo: 'ordenes',
+    referencia: cons,
+    titulo: 'Solicitud de OC ' + cons,
+    buildDoc: function() {
+      var b = generarSolicitudOCPDF(grupo, { return_doc: true });
+      return b ? b.doc : null;
+    },
+    extras: extras
+  });
+}
+
+function enviarOC(row) {
+  var r = null;
+  for (var i = 0; i < ordenes.length; i++) if (ordenes[i].__row === row) { r = ordenes[i]; break; }
+  if (!r) { showToast('OC no encontrada', '#e74c3c'); return; }
+  _enviarGrupoOC(r);
+}
+
 // Solicitud de compra automática pendiente por legalizar:
 // OC generada desde el flujo de asignación de entrega en Pedidos
 // (Tipo='Traslado', con Ref_Pedido) donde aún no se ha cargado la
@@ -382,6 +427,8 @@ function renderOCTable() {
     var btnPdfSol = '<button class="btn-pdf-oc" onclick="exportarSolicitudOC(' + (r.__row||0) + ')" title="Descargar Solicitud de OC (PDF, agrupa todos los productos)">📄</button>';
     var btnPdfRem = '<button class="btn-pdf-oc" onclick="exportarRemisionesOC(' + (r.__row||0) + ')" title="' + (tieneRems ? 'Descargar Remisiones Destino y Origen (PDF)' : 'Aún no hay remisiones cargadas — legalizar primero') + '"' + (tieneRems ? '' : ' style="opacity:0.4"') + '>📦</button>';
 
+    var btnEnviar = '<button class="btn-pdf-oc" onclick="enviarOC(' + (r.__row||0) + ')" title="Enviar a un usuario del panel: Solicitud de OC (+ Remisiones si ya están cargadas)">📨</button>';
+
     var apr = r.Estado_Aprobacion || 'Por aprobar';
     var aprBadge;
     if (apr === 'Aprobada') {
@@ -421,6 +468,7 @@ function renderOCTable() {
         aprBtns +
         btnPdfSol +
         btnPdfRem +
+        btnEnviar +
         (AUTH.canEdit() ? '<button class="btn-edit" onclick="openEditOC(' + r.__row + ')" title="Editar">✏️</button>' : '') +
         (AUTH.canDelete() ? '<button class="btn-del" onclick="openDeleteOC(' + i + ',' + (r.__row||0) + ')" title="Eliminar">🗑️</button>' : '') +
       '</div></td>' +
@@ -684,8 +732,10 @@ function openNewOC() {
   // Botones PDF sólo aplican al editar una OC existente; ocultar aquí.
   var btnSol = document.getElementById('btn-oc-pdf-solicitud');
   var btnRem = document.getElementById('btn-oc-pdf-remisiones');
+  var btnEnv = document.getElementById('btn-oc-enviar');
   if (btnSol) btnSol.style.display = 'none';
   if (btnRem) btnRem.style.display = 'none';
+  if (btnEnv) btnEnv.style.display = 'none';
   _applyAprobacionLockOC({ Estado_Aprobacion: 'Aprobada' });
   _previewConsecutivoOC();
   document.getElementById('oc-overlay').classList.add('show');
@@ -723,8 +773,10 @@ function closeOCModal() {
   closeAllOCAutocomplete();
   var btnSol = document.getElementById('btn-oc-pdf-solicitud');
   var btnRem = document.getElementById('btn-oc-pdf-remisiones');
+  var btnEnv = document.getElementById('btn-oc-enviar');
   if (btnSol) btnSol.style.display = 'none';
   if (btnRem) btnRem.style.display = 'none';
+  if (btnEnv) btnEnv.style.display = 'none';
 }
 
 document.getElementById('oc-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeOCModal(); });
@@ -820,6 +872,8 @@ function openEditOC(row) {
   // sólo si al menos una de las remisiones está cargada).
   var btnSol = document.getElementById('btn-oc-pdf-solicitud');
   var btnRem = document.getElementById('btn-oc-pdf-remisiones');
+  var btnEnv = document.getElementById('btn-oc-enviar');
+  if (btnEnv) btnEnv.style.display = 'inline-block';
   if (btnSol) btnSol.style.display = 'inline-block';
   if (btnRem) {
     var tieneRems = String(r.Remision || '').trim() || String(r.Remision_Origen || '').trim();
@@ -855,6 +909,10 @@ function exportarRemisionesOCDesdeModal() {
   if (!editOrden) { showToast('Abre una OC primero', '#e67e22'); return; }
   if (typeof generarRemisionesTrasladoPDF !== 'function') { showToast('PDF no disponible (jsPDF no cargó)', '#e74c3c'); return; }
   generarRemisionesTrasladoPDF(_grupoOC(editOrden));
+}
+function enviarOCDesdeModal() {
+  if (!editOrden) { showToast('Abre una OC primero', '#e67e22'); return; }
+  _enviarGrupoOC(editOrden);
 }
 
 // ── Save ──

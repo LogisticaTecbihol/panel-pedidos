@@ -561,7 +561,8 @@ function _ocProductosParaPDF(ocs) {
 // Solicitud de OC — documento tipo "orden de compra emitida".
 // Header con Empresa Destino (quien solicita), listado de productos,
 // info de origen/destino/fecha/ref pedido/estado. Sin firmas.
-function generarSolicitudOCPDF(ocs) {
+function generarSolicitudOCPDF(ocs, opts) {
+  opts = opts || {};
   if (!ocs || !ocs.length) return;
   var doc = _nuevoPdfDoc();
   var hdr = ocs[0];
@@ -606,7 +607,7 @@ function generarSolicitudOCPDF(ocs) {
     _drawRemisionCopyFooter(doc, 'SOLICITUD DE OC', palette, p - startPage + 1, total, genStamp);
   }
   var fname = 'Solicitud_OC_' + (siglaDest || 'DEST') + '_' + (siglaOrig || 'ORIG') + '_' + (hdr.Consecutivo || '') + '.pdf';
-  if (data.return_doc) return { doc: doc, filename: fname };
+  if (opts.return_doc) return { doc: doc, filename: fname };
   doc.save(fname);
 }
 
