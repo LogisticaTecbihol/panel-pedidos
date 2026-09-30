@@ -1376,6 +1376,38 @@ async function _notifyAprobadoresClienteNuevo(info) {
   } catch (e) { /* silencioso */ }
 }
 
+// 1b) Solo a Cartera, a modo informativo: se dio de alta un cliente nuevo desde un
+//     pedido que NO necesita aprobación (p.ej. PARCELAR está exceptuada).
+async function _notifyCarteraClienteNuevoInfo(info) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers || !NOTIF.getDirectorio) return;
+  try {
+    var dir = await NOTIF.getDirectorio();
+    var ids = (dir || [])
+      .filter(function(u) { return u.activo && u.rol === 'cartera'; })
+      .map(function(u) { return u.id; });
+    if (!ids.length) return;
+    await NOTIF.notifyUsers({
+      para_ids: ids,
+      modulo: 'pedidos',
+      referencia: String(info.consecutivo || ''),
+      titulo: '🆕 Cliente nuevo: ' + info.sigla + ' #' + info.consecutivo + ' — ' + info.cliente,
+      mensaje: 'Informativo, no requiere aprobación · ' + info.nLineas + ' línea(s) · Total: ' + fmtMoney(info.total) + (info.nit ? ' · NIT ' + info.nit : '')
+    });
+  } catch (e) { /* silencioso */ }
+}
+
+// Estado_2 que la BD le dio al pedido recién creado (el trigger decide si nace
+// 'Pendiente de aprobación'); null si no se pudo leer.
+async function _estado2PedidoCreado(empresa, consecutivo, cliente) {
+  try {
+    var r = await _sb.from('Pedidos').select('Estado_2')
+      .eq('Nombre_Empresa', empresa).eq('Consecutivo', String(consecutivo)).eq('Cliente', cliente)
+      .order('id', { ascending: false }).limit(1);
+    if (r.error || !r.data || !r.data.length) return null;
+    return r.data[0].Estado_2 || 'Abierto';
+  } catch (e) { return null; }
+}
+
 // 2) A quien creó el pedido cuando Cartera/admin lo aprueba o rechaza.
 async function _notifyCreadorAprobacionPedido(c, aprobar, nota) {
   if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
@@ -5644,7 +5676,7 @@ async function guardarNuevoPedido() {
     // ahí y queda marcado como "nuevo" en el módulo Clientes. Sin NIT no se
     // crea nada. No bloquea la creación del pedido si algo falla.
     var _nitNuevo = document.getElementById('nv-nit').value.trim();
-    var _pendAprob = false; // el pedido de un cliente nuevo queda pendiente de aprobación (trigger en la BD)
+    var _cliCreado = false; // el cliente se dio de alta en Clientes con este pedido
     if (_nitNuevo) {
       try {
         var _cliNuevo = await apiPost({
@@ -5661,16 +5693,24 @@ async function guardarNuevoPedido() {
         });
         if (_cliNuevo && _cliNuevo.ok && _cliNuevo.created) {
           clientesCache = null;
-          _pendAprob = true;
+          _cliCreado = true;
         }
       } catch (e) { /* no bloquea la creación del pedido */ }
     }
 
-    if (_pendAprob && !esHistoricoPed) {
-      await _notifyAprobadoresClienteNuevo({
+    // Si el pedido queda "Pendiente de aprobación" lo decide el trigger de la BD (no
+    // depende de que el cliente sea nuevo: PARCELAR está exceptuada y un cliente ya
+    // cargado sin pedidos previos sí queda pendiente), así que se lee el estado real.
+    var _pendAprob = false;
+    if (!esHistoricoPed) {
+      var _e2Nuevo = await _estado2PedidoCreado(empresa, consecutivo, cliente);
+      _pendAprob = _e2Nuevo === null ? _cliCreado : _e2Nuevo === 'Pendiente de aprobación';
+      var _infoAviso = {
         sigla: getSigla(empresa), consecutivo: consecutivo, cliente: cliente,
         nit: _nitNuevo, nLineas: productosValidos.length, total: totalOrden
-      });
+      };
+      if (_pendAprob) await _notifyAprobadoresClienteNuevo(_infoAviso);
+      else if (_cliCreado) await _notifyCarteraClienteNuevoInfo(_infoAviso);
     }
 
     await agregarProductosNuevosAlMaestro(productosValidos, empresa);
@@ -5700,7 +5740,7 @@ async function guardarNuevoPedido() {
     closeNuevo();
     showToast(_pendAprob
       ? '⏳ Cliente nuevo: pedido creado y PENDIENTE DE APROBACIÓN de Cartera'
-      : '✅ Pedido creado: ' + (result.added||0) + ' línea(s) agregadas', _pendAprob ? '#d97706' : undefined);
+      : '✅ Pedido creado: ' + (result.added||0) + ' línea(s) agregadas' + (_cliCreado ? ' · cliente nuevo registrado en Clientes' : ''), _pendAprob ? '#d97706' : undefined);
     await loadFromAPI();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
