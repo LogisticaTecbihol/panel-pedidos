@@ -394,10 +394,61 @@ var NOTIF = (function() {
   }
 
   // ────────────────────────────────────────────────────────────
+  // Destino de un aviso de solo texto (sin PDF)
+  // Se deduce de modulo + referencia + titulo (la tabla no guarda una URL),
+  // así que también sirve para los avisos ya existentes. Los títulos los arman
+  // pedidos.js / cartera.js / muestras.js / ordenes.js / crm.js: "<sigla> #<n>".
+  // Si el formato cambia, el destino degrada al módulo con ?buscar=<referencia>.
+  // ────────────────────────────────────────────────────────────
+  var MOD_PAGE = {
+    pedidos:      'pedidos.html',
+    devoluciones: 'devoluciones.html',
+    cambios:      'devoluciones.html',
+    muestras:     'muestras.html',
+    ordenes:      'ordenes.html',
+    ingresos:     'ingresos.html',
+    reenvases:    'reenvases.html',
+    kardex:       'kardex.html',
+    reportes:     'reportes.html',
+    crm:          'crm.html',
+    cartera:      'cartera.html',
+    reabastecimiento:    'reabastecimiento.html',
+    legalizacion_gastos: 'legalizacion-gastos.html'
+  };
+
+  function destino(row) {
+    if (!row || row.storage_path) return null;
+    var mod = row.modulo;
+    var page = MOD_PAGE[mod];
+    if (!page) return null;
+    var tit = row.titulo || '';
+    var ref = row.referencia || '';
+    var q = {};
+
+    if (mod === 'pedidos' || mod === 'muestras') {
+      // El N° se numera por empresa → hay que filtrar también por la sigla del título.
+      var m = tit.match(/:\s*([^#:←]+?)\s+#/);
+      if (ref) q.buscar = ref;
+      if (m) q.empresa = m[1];
+      // Pedido de cliente nuevo pendiente: lo resuelve Cartera, no Pedidos.
+      if (mod === 'pedidos' && /por aprobar/i.test(tit)) page = 'cartera.html';
+    } else if (mod === 'ordenes') {
+      if (ref) q.buscar = ref;                 // OC-<destino>-<origen>-<n> es único
+    } else if (mod === 'crm') {
+      var c = tit.match(/:\s*(.+)$/);          // "🧲 Nuevo lead asignado: <contacto>"
+      if (c) q.buscar = c[1].trim();
+    }
+
+    var qs = new URLSearchParams(q).toString();
+    return page + (qs ? '?' + qs : '');
+  }
+
+  // ────────────────────────────────────────────────────────────
   // Abrir un ítem
   // ────────────────────────────────────────────────────────────
   async function openItem(row) {
     if (!row) return;
+    var dest = null;
     if (row.storage_path) {
       var sig = await _sb.storage.from(BUCKET).createSignedUrl(row.storage_path, 3600);
       if (sig.error || !sig.data || !sig.data.signedUrl) {
@@ -405,6 +456,8 @@ var NOTIF = (function() {
         return;
       }
       window.open(sig.data.signedUrl, '_blank', 'noopener');
+    } else {
+      dest = destino(row);
     }
     if (!row.leida) {
       var upd = await _sb.from('notificaciones')
@@ -416,6 +469,7 @@ var NOTIF = (function() {
         if (_dropOpen) _renderDrop();
       }
     }
+    if (dest) window.location.href = dest;
   }
 
   // ────────────────────────────────────────────────────────────
@@ -835,6 +889,7 @@ var NOTIF = (function() {
     loadUnread: loadUnread,
     subscribe: subscribe,
     openItem: openItem,
+    destino: destino,
     compartirPDF: compartirPDF,
     openModalEnviar: openModalEnviar,
     getDirectorio: _loadDirectorio,

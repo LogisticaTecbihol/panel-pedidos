@@ -243,6 +243,11 @@
       var toggleBtn = _isAdmin
         ? '<button class="np-act-btn" data-toggle="' + r.id + '" title="' + (r.leida ? 'Marcar como no leída' : 'Marcar como leída') + '">' + (r.leida ? '↻' : '✓') + '</button>'
         : '';
+      var openBtn = r.storage_path
+        ? '<button class="np-act-btn" data-open="' + r.id + '" title="Abrir PDF">📄 Abrir</button>'
+        : (NOTIF.destino(r)
+            ? '<button class="np-act-btn" data-open="' + r.id + '" title="Ir al módulo">↗ Abrir</button>'
+            : '');
       return '<tr class="np-row ' + (r.leida ? '' : 'unread') + '" data-id="' + r.id + '">' +
         checkTd +
         '<td><span class="np-state-dot ' + (r.leida ? '' : 'unread') + '"></span>' + (r.leida ? '<span style="color:#a0aec0;font-size:0.75rem">Leída</span>' : '<span style="color:#e74c3c;font-size:0.75rem;font-weight:700">Nueva</span>') + '</td>' +
@@ -252,7 +257,7 @@
         '<td>' + recipientName + '</td>' +
         '<td>' + senderName + '</td>' +
         '<td onclick="event.stopPropagation()">' +
-          '<button class="np-act-btn" data-open="' + r.id + '" title="Abrir PDF">📄 Abrir</button>' +
+          openBtn +
           toggleBtn +
         '</td>' +
       '</tr>';
@@ -314,11 +319,14 @@
     if (!row) return;
     if (typeof NOTIF !== 'undefined' && NOTIF.openItem) {
       if (!_isAdmin) {
-        // Solo abrir el PDF sin marcar como leída
+        // Solo abrir el PDF (o ir al módulo) sin marcar como leída
         if (row.storage_path) {
           var sig = await _sb.storage.from('pedidos-adjuntos').createSignedUrl(row.storage_path, 3600);
           if (sig.data && sig.data.signedUrl) window.open(sig.data.signedUrl, '_blank', 'noopener');
           else showToast('No se pudo abrir el PDF', '#e74c3c');
+        } else {
+          var dest = NOTIF.destino(row);
+          if (dest) window.location.href = dest;
         }
       } else {
         await NOTIF.openItem(row);
