@@ -701,11 +701,21 @@ function carFiltrarClibit(list) {
   });
 }
 
+// Empresas (únicas, por sigla) donde el cliente tiene ese Estado; el Estado es por empresa.
+function carEmpresasConEstado(regs, estado) {
+  var emps = {};
+  regs.forEach(function(r) { if (r.Estado === estado && r.Nombre_Empresa) emps[r.Nombre_Empresa] = true; });
+  return Object.keys(emps).sort(function(a, b) { return getSigla(a).localeCompare(getSigla(b)); });
+}
+
 function carEstadoClienteBadge(regs) {
   var estCli = carEstadoCliente(regs);
   if (!regs.length) return '<span class="car-pill mid">No está en Clientes</span>';
   if (estCli === CAR_SUSP) return '<span class="car-pill over">Suspendido</span>';
-  if (estCli === CAR_BLOQ) return '<span class="car-pill over">Bloqueado por cartera</span>';
+  if (estCli === CAR_BLOQ) {
+    return '<span class="car-pill over">Bloqueado por cartera</span> ' +
+      carEmpresasConEstado(regs, CAR_BLOQ).map(carSiglaHtml).join(' ');
+  }
   if (estCli === 'Inactivo') return '<span class="car-pill mid">Inactivo</span>';
   return '<span class="car-pill ok">Activo</span>';
 }
@@ -742,7 +752,9 @@ function carExportClibit() {
   var lista = carFiltrarClibit(carClientesConBitacora());
   var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Estado actual', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
   lista.forEach(function(x) {
-    filas.push([x.cliente, x.nit, x.empresas.join(' / '), carEstadoCliente(x.regs) || 'No está en Clientes', x.total,
+    var estTxt = carEstadoCliente(x.regs) || 'No está en Clientes';
+    if (estTxt === CAR_BLOQ) estTxt += ' (' + carEmpresasConEstado(x.regs, CAR_BLOQ).map(getSigla).join(', ') + ')';
+    filas.push([x.cliente, x.nit, x.empresas.join(' / '), estTxt, x.total,
       x.ultFecha ? fmtDate(x.ultFecha) : '', x.ultTipo || '', x.ultGestion || '']);
   });
   carXlsx('cartera_clientes_con_bitacora', 'Con bitácora', filas);
