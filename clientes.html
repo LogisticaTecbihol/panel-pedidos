@@ -13,6 +13,7 @@
 <style>
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .detail-grid.triple { grid-template-columns: 1fr 1fr 1fr; }
+.ef:disabled { background: #f7fafc; color: #718096; cursor: not-allowed; }
 @media (max-width: 700px) {
   .detail-grid, .detail-grid.triple { grid-template-columns: 1fr; }
 }
@@ -155,6 +156,7 @@
       <button class="btn-close" onclick="closeEdit()">✕</button>
     </div>
     <div class="mbody">
+      <div id="ed-sede-info" style="display:none;background:#ebf4ff;border:1px solid #bee3f8;color:#2c5282;border-radius:8px;padding:10px 12px;font-size:0.8rem;line-height:1.45;margin-bottom:14px"></div>
       <div class="detail-grid">
         <div>
           <label class="ef-label">Empresa *</label>
@@ -268,6 +270,7 @@
     </div>
     <div class="mbody" id="det-body" style="padding:20px 24px;max-height:65vh;overflow-y:auto"></div>
     <div class="mftr">
+      <div class="mftr-btns" id="det-acciones" style="display:none"></div>
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="closeDetail()">Cerrar</button>
       </div>
@@ -400,6 +403,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260930a"></script>
 <script src="js/colombia-geo.js"></script>
-<script src="js/clientes.js?v=20260925a"></script>
+<script src="js/clientes.js?v=20260930a"></script>
 </body>
 </html>

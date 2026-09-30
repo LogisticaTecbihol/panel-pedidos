@@ -751,6 +751,20 @@ function openGroupDetail(groupIdx) {
     html += _auditoriaHtml(first, false);
   }
 
+  // Acciones en el pie del modal (siempre visibles aunque el cliente tenga muchas sedes).
+  var acc = document.getElementById('det-acciones');
+  if (_canAddSede()) {
+    var _hayEmpresa = g.records.some(function(r) { return (r.Nombre_Empresa || '').trim(); });
+    acc.innerHTML =
+      '<button class="btn-confirm" onclick="openNuevaSede(' + groupIdx + ',\'sucursal\')"' +
+        (_hayEmpresa ? '' : ' disabled title="El cliente aún no tiene empresa: usa Asignar a otra empresa"') + '>➕ Nueva sucursal</button>' +
+      '<button class="btn-confirm" style="background:#2c3e50" onclick="openNuevaSede(' + groupIdx + ',\'empresa\')">🏢 Asignar a otra empresa</button>';
+    acc.style.display = '';
+  } else {
+    acc.innerHTML = '';
+    acc.style.display = 'none';
+  }
+
   document.getElementById('det-body').innerHTML = html;
   document.getElementById('detail-overlay').style.display = 'flex';
 }
@@ -823,7 +837,163 @@ function _clearForm() {
   _gateEstadoClienteSelect('Activo');
 }
 
+// ── Nueva sucursal / asignar a otra empresa (solo admin y cartera) ──
+// Reutilizan el modal de Agregar/Editar con los datos del cliente precargados.
+//  · 'sucursal': mismo cliente y misma empresa, otra sede (municipio/dirección).
+//  · 'empresa':  el cliente se AGREGA a otra empresa (conserva las actuales). Si solo
+//    tenía el registro sin empresa, se completa ese registro en vez de duplicarlo.
+// Es una restricción de interfaz: la RLS de ClientesUnicos no cambia.
+var _sedeCtx = null;
+
+function _canAddSede() {
+  return typeof AUTH !== 'undefined' &&
+    !!((AUTH.isAdmin && AUTH.isAdmin()) || (AUTH.isCartera && AUTH.isCartera()));
+}
+
+// Registro del que se copian los datos: el de estado más restrictivo (así un
+// cliente bloqueado no queda Activo en la otra sede por accidente); a igual
+// estado, el primero.
+function _refRecordSede(records) {
+  var best = null;
+  records.forEach(function(r) {
+    if (!best || _EST_RANK[_estadoNorm(r.Estado)] < _EST_RANK[_estadoNorm(best.Estado)]) best = r;
+  });
+  return best;
+}
+
+function _setIdentidadBloqueada(bloq) {
+  ['ed-cliente', 'ed-tipo-id', 'ed-identificacion'].forEach(function(id) {
+    document.getElementById(id).disabled = bloq;
+  });
+}
+
+function _resetSedeMode() {
+  _sedeCtx = null;
+  _setIdentidadBloqueada(false);
+  var info = document.getElementById('ed-sede-info');
+  info.style.display = 'none';
+  info.innerHTML = '';
+}
+
+function _fillSedeForm(ref, records, limpiarUbicacion) {
+  // Teléfono/correo/tipo de ID: si el registro de referencia no los tiene, se
+  // toma el primero que los tenga en el grupo.
+  function dato(campo) {
+    if (ref[campo] && ref[campo] !== '0') return ref[campo];
+    for (var i = 0; i < records.length; i++) {
+      if (records[i][campo] && records[i][campo] !== '0') return records[i][campo];
+    }
+    return '';
+  }
+  document.getElementById('ed-cliente').value = ref.Cliente || '';
+  document.getElementById('ed-tipo-id').value = dato('Tipo_Identificacion');
+  document.getElementById('ed-identificacion').value = ref.Identificacion || _bestId(records);
+  document.getElementById('ed-telefono').value = dato('Telefono');
+  document.getElementById('ed-correo').value = dato('Correo_Electronico');
+  document.getElementById('ed-direccion').value = limpiarUbicacion ? '' : (ref.Direccion || '');
+  document.getElementById('ed-direccion-envio').value = limpiarUbicacion ? '' : (ref.Direccion_Envio || '');
+  document.getElementById('ed-departamento').value = limpiarUbicacion ? '' : (ref.Departamento || '');
+  _populateMunis('ed-departamento', 'ed-municipio');
+  document.getElementById('ed-municipio').value = limpiarUbicacion ? '' : (ref.Municipio || '');
+  document.getElementById('ed-cupo').value = ref.Cupo_Credito || '';
+  document.getElementById('ed-plazo').value = ref.Plazo_Pago || '';
+  document.getElementById('ed-lista-precio').value = ref.Lista_Precio || '';
+  document.getElementById('ed-estado').value = _estadoNorm(ref.Estado);
+  document.getElementById('ed-obs-cartera').value = ref.Observaciones_Cartera || '';
+  _gateEstadoClienteSelect(_estadoNorm(ref.Estado));
+  var sig = (ref.Nombre_Empresa || '').trim() ? getSigla(ref.Nombre_Empresa) : '';
+  document.getElementById('ed-estado-hint').textContent = sig
+    ? 'Estado copiado de ' + sig + '; cada empresa tiene su propio estado.' : '';
+}
+
+function openNuevaSede(groupIdx, mode) {
+  var g = currentGroups[groupIdx];
+  if (!g || !_canAddSede()) return;
+  var idNorm = _normalizeId(_bestId(g.records));
+  if (!idNorm) {
+    showToast('Este cliente no tiene identificación (NIT/CC). Edítalo para agregársela antes de crear sedes.', '#e74c3c');
+    return;
+  }
+  var conEmpresa = g.records.filter(function(r) { return (r.Nombre_Empresa || '').trim(); });
+  var sinEmpresa = g.records.filter(function(r) { return !(r.Nombre_Empresa || '').trim(); });
+  var nombre = g.records[0].Cliente || 'cliente';
+  var selEmp = document.getElementById('ed-empresa');
+  var info = document.getElementById('ed-sede-info');
+  var ref, opciones = [], msg;
+
+  _resetSedeMode();
+  editingId = null;
+  _populateDeptos('ed-departamento');
+
+  if (mode === 'sucursal') {
+    if (!conEmpresa.length) {
+      showToast('El cliente aún no tiene empresa: usa "Asignar a otra empresa".', '#e67e22');
+      return;
+    }
+    var vistas = {};
+    conEmpresa.forEach(function(r) {
+      var e = r.Nombre_Empresa.trim();
+      if (!vistas[e]) { vistas[e] = true; opciones.push({ value: e, label: getSigla(e) }); }
+    });
+    ref = _refRecordSede(conEmpresa.filter(function(r) { return r.Nombre_Empresa.trim() === opciones[0].value; }));
+    document.getElementById('ed-titulo').textContent = '➕ Nueva sucursal — ' + nombre;
+    msg = 'Nueva sede de <strong>' + escHtml(nombre) + '</strong> en la empresa que elijas. Se copiaron sus datos de contacto y las condiciones comerciales; ' +
+      'indica el <strong>municipio y la dirección</strong> de la nueva sucursal. El nombre y la identificación no se pueden cambiar aquí.';
+  } else {
+    var tiene = {};
+    conEmpresa.forEach(function(r) { tiene[r.Nombre_Empresa.trim()] = true; });
+    EMPRESAS_HOLDING.forEach(function(e) {
+      if (!tiene[e.value]) opciones.push({ value: e.value, label: e.sigla });
+    });
+    if (!opciones.length) {
+      showToast('El cliente ya está asignado a todas las empresas.', '#e67e22');
+      return;
+    }
+    ref = _refRecordSede(conEmpresa.length ? conEmpresa : g.records);
+    document.getElementById('ed-titulo').textContent = '🏢 Asignar a otra empresa — ' + nombre;
+    msg = 'Se agrega <strong>' + escHtml(nombre) + '</strong> a otra empresa; ' + (conEmpresa.length ? 'sigue en las actuales. ' : '') +
+      'Se copiaron sus datos' + (conEmpresa.length ? ' de ' + escHtml(getSigla(ref.Nombre_Empresa)) : '') + ': revisa cupo, plazo, lista de precio y estado, que pueden ser distintos en cada empresa. ' +
+      'El nombre y la identificación no se pueden cambiar aquí.';
+    if (!conEmpresa.length) {
+      editingId = sinEmpresa[0].id;
+      msg += '<br><strong>Este cliente aún no tenía empresa:</strong> se le asignará en su registro actual (no se crea uno nuevo).';
+    }
+  }
+
+  selEmp.innerHTML = (mode === 'sucursal' ? '' : '<option value="">— Seleccionar —</option>') +
+    opciones.map(function(o) { return '<option value="' + escHtml(o.value) + '">' + escHtml(o.label) + '</option>'; }).join('');
+  _fillSedeForm(ref, g.records, mode === 'sucursal');
+  selEmp.value = mode === 'sucursal' ? opciones[0].value : '';
+  _setIdentidadBloqueada(true);
+  info.innerHTML = msg;
+  info.style.display = '';
+  _sedeCtx = { mode: mode, idNorm: idNorm, conEmpresa: conEmpresa, records: g.records, fillId: editingId };
+  closeDetail();
+  document.getElementById('edit-overlay').style.display = 'flex';
+}
+
+// En 'sucursal' con varias empresas, al cambiar de empresa se recargan las
+// condiciones comerciales de esa empresa (la ubicación sigue en blanco).
+document.getElementById('ed-empresa').addEventListener('change', function() {
+  if (!_sedeCtx || _sedeCtx.mode !== 'sucursal') return;
+  var emp = this.value;
+  var recs = _sedeCtx.conEmpresa.filter(function(r) { return r.Nombre_Empresa.trim() === emp; });
+  if (!recs.length) return;
+  _fillSedeForm(_refRecordSede(recs), _sedeCtx.records, true);
+});
+
+// Tras guardar una sede, vuelve a abrir el detalle del mismo cliente.
+function _reabrirDetalleGrupo(idNorm) {
+  if (!idNorm) return;
+  var idx = -1;
+  currentGroups.some(function(g, i) {
+    if (_normalizeId(_bestId(g.records)) === idNorm) { idx = i; return true; }
+  });
+  if (idx >= 0) openGroupDetail(idx);
+}
+
 function openNuevoCliente() {
+  _resetSedeMode();
   editingId = null;
   document.getElementById('ed-titulo').textContent = '➕ Agregar Cliente';
   _populateEdEmpresa('ed-empresa');
@@ -835,6 +1005,7 @@ function openNuevoCliente() {
 function openEditCliente(id) {
   var c = clientesData.find(function(x) { return x.id === id; });
   if (!c) return;
+  _resetSedeMode();
   editingId = id;
   document.getElementById('ed-titulo').textContent = '✏️ Editar Cliente';
   _populateEdEmpresa('ed-empresa');
@@ -866,6 +1037,7 @@ function openEditCliente(id) {
 function closeEdit() {
   document.getElementById('edit-overlay').style.display = 'none';
   editingId = null;
+  _resetSedeMode();
 }
 
 async function saveEdit() {
@@ -873,6 +1045,9 @@ async function saveEdit() {
   var cliente = document.getElementById('ed-cliente').value.trim();
   if (!empresa) { showToast('Selecciona la empresa', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
+  if (_sedeCtx && _sedeCtx.mode === 'sucursal' && !document.getElementById('ed-municipio').value) {
+    showToast('Selecciona el municipio de la nueva sucursal', '#e74c3c'); return;
+  }
 
   var btn = document.getElementById('btn-save');
   btn.disabled = true;
@@ -902,6 +1077,18 @@ async function saveEdit() {
 
   try {
     var result;
+    // Sede nueva: misma empresa + NIT + municipio + dirección de envío ya existe
+    // (lo mismo que impide el índice único de la BD, con un mensaje claro).
+    if (_sedeCtx) {
+      var _dup = clientesData.some(function(x) {
+        return x.id !== editingId &&
+          (x.Nombre_Empresa || '').trim() === payload.Nombre_Empresa &&
+          (x.Identificacion || '').trim() === payload.Identificacion &&
+          (x.Municipio || '') === payload.Municipio &&
+          (x.Direccion_Envio || '') === payload.Direccion_Envio;
+      });
+      if (_dup) throw new Error('ya existe una sede de este cliente en ' + getSigla(payload.Nombre_Empresa) + ' con ese municipio y dirección de envío');
+    }
     if (editingId) {
       payload.action = 'editarClienteUnico';
       payload.row = editingId;
@@ -910,11 +1097,20 @@ async function saveEdit() {
       payload.action = 'agregarClienteUnico';
       result = await apiPost(payload);
     }
-    if (!result.ok) throw new Error(result.error || 'Error al guardar');
+    if (!result.ok) {
+      if (/ClientesUnicos_empresa_nit_mun_dir_uq|duplicate key/i.test(result.error || '')) {
+        throw new Error('ya existe una sede de este cliente en ' + getSigla(payload.Nombre_Empresa) + ' con ese municipio y dirección de envío');
+      }
+      throw new Error(result.error || 'Error al guardar');
+    }
 
+    var _ctx = _sedeCtx;
     closeEdit();
-    showToast('✅ Cliente guardado correctamente');
+    showToast(!_ctx ? '✅ Cliente guardado correctamente'
+      : _ctx.mode === 'sucursal' ? '✅ Sucursal agregada en ' + getSigla(payload.Nombre_Empresa)
+      : '✅ Cliente asignado a ' + getSigla(payload.Nombre_Empresa));
     await loadClientes();
+    if (_ctx) _reabrirDetalleGrupo(_ctx.idNorm);
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
   } finally {
