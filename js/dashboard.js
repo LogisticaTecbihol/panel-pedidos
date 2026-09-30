@@ -1316,7 +1316,7 @@ function buildTopComerciales(orders, fEmp) {
 
   var notaEl = document.getElementById('com-nota');
   if (notaEl) {
-    var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). "Cerrado s/entregar" = pedidos Recibido + Cerrado (se cerraron sin despacharse). Aun así, otros estados (Parcial+Cerrado, Bloqueado por cartera) pueden dejar un residuo fuera de las tres columnas.'];
+    var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). "Cerrado s/entregar" = pedidos Recibido + Cerrado (se cerraron sin despacharse). Aun así, otros estados (Parcial+Cerrado, Bloqueado por cartera) pueden dejar un residuo fuera de las tres columnas. "% Cumpl." = (Entregado + Cerrado s/entregar) / Pedido: los pedidos cerrados sin entregar cuentan como cumplidos, por eso puede dar 100% aunque lo entregado sea menor (Entregado / Pedido = porcentaje de lo realmente despachado).'];
     if (sinPrecio > 0) notas.push('⚠️ ' + sinPrecio.toLocaleString('es-CO') + ' línea(s) sin precio no suman al valor');
     if (sinComercial > 0) notas.push(sinComercial.toLocaleString('es-CO') + ' orden(es) sin comercial asignado');
     notas.push('Las columnas "Tend." muestran los últimos 12 meses (histórico, no el período filtrado); ▲/▼/→ compara el último mes vs. el anterior.');
@@ -1337,8 +1337,10 @@ function buildTopComerciales(orders, fEmp) {
   var trend = dTrend12mByKey(ordersHist, function(o) { return o.comercial || null; });
 
   tbody.innerHTML = arr.map(function(r) {
-    var pct = r.vPed > 0 ? Math.round((r.vEnt / r.vPed) * 100) : 0;
-    var penColor = pct >= 75 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#e74c3c';
+    // El color de Pendiente depende de cuánto pesa el pendiente en el pedido
+    // (≤10% verde, ≤30% naranja, más rojo), no de lo entregado.
+    var pesoPen = r.vPed > 0 ? r.vPen / r.vPed : 0;
+    var penColor = pesoPen <= 0.10 ? '#27ae60' : pesoPen <= 0.30 ? '#e67e22' : '#e74c3c';
     var pctCumpl = r.vPed > 0 ? Math.round(((r.vEnt + r.vCer) / r.vPed) * 100) : 0;
     var cumplColor = pctCumpl >= 75 ? '#27ae60' : pctCumpl >= 40 ? '#e67e22' : '#e74c3c';
     var serieMes = trend.byKey[r.comercial] || {};
