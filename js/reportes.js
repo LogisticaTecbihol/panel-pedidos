@@ -130,6 +130,13 @@ async function loadReportes() {
     populateRptFilters();
     buildReport();
 
+    // Sin acceso a "Productos pendientes" (la pestaña que abre por defecto):
+    // arrancar en la primera pestaña disponible.
+    if (!_rptPuedeVerPendientes()) {
+      var panelPend = document.getElementById('panel-pendientes');
+      if (panelPend && panelPend.style.display !== 'none') switchTab('planta', true);
+    }
+
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
     setSyncStatus('ok', 'Conectado a la nube. Última actualización: ' + new Date().toLocaleTimeString('es-CO'));
@@ -410,8 +417,11 @@ function _logAccesoReporte(reporte) {
 }
 
 // ── Tabs ──
-function switchTab(tab) {
+// noLog=true cuando la pestaña se abre sola al cargar la página (no es una
+// consulta deliberada del usuario, así que no se registra en Auditoría).
+function switchTab(tab, noLog) {
   if (tab === 'litros' && !_rptPuedeVerLitros()) { showToast('No tienes permiso para ver este reporte', '#e74c3c'); return; }
+  if (tab === 'pendientes' && !_rptPuedeVerPendientes()) { showToast('No tienes permiso para ver este reporte', '#e74c3c'); return; }
   var tabs = ['pendientes', 'planta', 'traslados', 'remisiones', 'valorizacion', 'cumplimiento', 'litros'];
   tabs.forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
@@ -419,7 +429,7 @@ function switchTab(tab) {
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
     if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
   });
-  if (tab === 'planta') { buildPlanta(); _logAccesoReporte('programacion_planta'); }
+  if (tab === 'planta') { buildPlanta(); if (!noLog) _logAccesoReporte('programacion_planta'); }
   if (tab === 'traslados') buildTraslados();
   if (tab === 'remisiones') buildRemisiones();
   if (tab === 'valorizacion') buildValorizacion();
@@ -488,10 +498,21 @@ function _rptPuedeVerLitros() {
   var rol = prof ? prof.rol : '';
   return rol === 'editor' || rol === 'gerente_iaso';
 }
+// ¿puede abrir la pestaña "Productos pendientes"? Solo admin.
+function _rptPuedeVerPendientes() {
+  if (typeof AUTH === 'undefined') return true;
+  return !!(AUTH.isAdmin && AUTH.isAdmin());
+}
 // Aplica el gating de pestañas por rol. Llamar tras _authReady.
 function _rptAplicarPermisos() {
   var btn = document.getElementById('tab-litros');
   if (btn) btn.style.display = _rptPuedeVerLitros() ? '' : 'none';
+  if (!_rptPuedeVerPendientes()) {
+    var btnPend = document.getElementById('tab-pendientes');
+    var panelPend = document.getElementById('panel-pendientes');
+    if (btnPend) btnPend.style.display = 'none';
+    if (panelPend) panelPend.style.display = 'none';
+  }
 }
 
 function buildPlanta() {
