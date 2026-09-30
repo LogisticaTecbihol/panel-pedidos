@@ -682,7 +682,7 @@ function carClientesConBitacora() {
     x.regs = regs;
     var emps = {};
     regs.forEach(function(r) { if (r.Nombre_Empresa) emps[r.Nombre_Empresa] = true; });
-    x.empresas = Object.keys(emps);
+    x.empresas = Object.keys(emps).sort(function(a, b) { return getSigla(a).localeCompare(getSigla(b)); });
   });
   out.sort(function(a, b) { return (b.ultFecha || '').localeCompare(a.ultFecha || '') || a.cliente.localeCompare(b.cliente); });
   return out;
@@ -716,7 +716,7 @@ function carRenderClibit(all) {
   document.getElementById('clibit-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
 
   if (!lista.length) {
-    document.getElementById('clibit-body').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;padding:26px">' +
+    document.getElementById('clibit-body').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">' +
       (all.length ? 'Ningún cliente con bitácora coincide con los filtros.' : 'Todavía no hay entradas de bitácora registradas.') + '</td></tr>';
     return;
   }
@@ -726,7 +726,9 @@ function carRenderClibit(all) {
     var verLink = x.nit
       ? '<a class="btn-dl" href="clientes.html?buscar=' + encodeURIComponent(x.nit) + '" style="text-decoration:none">👁️ Ver en Clientes</a>'
       : '';
+    var empHtml = x.empresas.length ? x.empresas.map(carSiglaHtml).join(' ') : '—';
     return '<tr><td>' + escHtml(x.cliente || '—') + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
+      '<td>' + empHtml + '</td>' +
       '<td>' + carEstadoClienteBadge(x.regs) + '</td>' +
       '<td style="text-align:center">' + x.total + '</td>' +
       '<td>' + (x.ultFecha ? escHtml(fmtDate(x.ultFecha)) : '—') + '</td>' +
@@ -738,9 +740,9 @@ function carRenderClibit(all) {
 
 function carExportClibit() {
   var lista = carFiltrarClibit(carClientesConBitacora());
-  var filas = [['Cliente', 'NIT', 'Estado actual', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
+  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Estado actual', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
   lista.forEach(function(x) {
-    filas.push([x.cliente, x.nit, carEstadoCliente(x.regs) || 'No está en Clientes', x.total,
+    filas.push([x.cliente, x.nit, x.empresas.join(' / '), carEstadoCliente(x.regs) || 'No está en Clientes', x.total,
       x.ultFecha ? fmtDate(x.ultFecha) : '', x.ultTipo || '', x.ultGestion || '']);
   });
   carXlsx('cartera_clientes_con_bitacora', 'Con bitácora', filas);
