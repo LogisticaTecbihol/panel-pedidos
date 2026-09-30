@@ -10,6 +10,7 @@ function switchTab(tab) {
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
     if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
   });
+  updateStats(); // los indicadores dependen de la pestaña (filtro de fechas de Prorrateo)
   if (tab === 'envios') renderEnviosTable();
   if (tab === 'prorrateo') renderProrrateoGastos();
   if (tab === 'vehiculos') renderVehiculosTab();
@@ -928,6 +929,7 @@ function lgProrrateoTable(rows, headerLabel) {
 }
 
 function renderProrrateoGastos() {
+  updateStats(); // el rango Desde/Hasta también afecta los indicadores de arriba
   var calc = calcularProrrateoGastos();
   renderResumenProrrateo(calc);
   renderCombustiblePorEmpresa(calc);
@@ -1612,16 +1614,43 @@ function renderEnviosTable() {
   }).join('') || '<tr><td colspan="8"><div class="empty">Sin envíos para este filtro.</div></td></tr>';
 }
 
+// Período de los indicadores: mientras la pestaña Prorrateo está abierta, el
+// rango Desde/Hasta de esa pestaña (#pf-desde/#pf-hasta) también recorta los
+// indicadores de arriba, con la misma regla por Fecha que calcularProrrateoGastos.
+// En las demás pestañas los indicadores siguen mostrando todo (no hay filtro de
+// fechas visible ahí y se vería un total que no cuadra con la tabla).
+function _periodoIndicadores() {
+  var panel = document.getElementById('panel-prorrateo');
+  if (!panel || panel.style.display === 'none') return { desde: '', hasta: '' };
+  return {
+    desde: document.getElementById('pf-desde').value,
+    hasta: document.getElementById('pf-hasta').value
+  };
+}
+
 function updateStats() {
+  var per = _periodoIndicadores();
+  var legs_ = legs.filter(function(l) {
+    if (per.desde && (l.Fecha || '') < per.desde) return false;
+    if (per.hasta && (l.Fecha || '') > per.hasta) return false;
+    return true;
+  });
+  var nota = document.getElementById('s-periodo');
+  if (nota) {
+    nota.style.display = (per.desde || per.hasta) ? 'block' : 'none';
+    nota.textContent = '📅 Indicadores filtrados por el período de Prorrateo: ' +
+      (per.desde ? 'desde ' + fmtDate(per.desde) : 'desde el inicio') + ' ' +
+      (per.hasta ? 'hasta ' + fmtDate(per.hasta) : 'hasta hoy');
+  }
   // Los envíos no se concilian y tienen su propia pestaña: no cuentan aquí.
-  var propias = legs.filter(function(l) { return !esEnvio(l); });
+  var propias = legs_.filter(function(l) { return !esEnvio(l); });
   var porConciliar = propias.filter(function(l) { return l.Estado_Conciliacion === 'Por conciliar'; });
   var conciliadas = propias.filter(function(l) { return l.Estado_Conciliacion === 'Conciliada'; });
   document.getElementById('s-porconciliar').textContent = porConciliar.length;
   document.getElementById('s-conciliadas').textContent = conciliadas.length;
   document.getElementById('s-total').textContent = propias.length;
   // El valor sí suma los envíos (no se concilian, pero son gasto registrado).
-  var valorPend = legs.filter(function(l) { return esEnvio(l) || l.Estado_Conciliacion === 'Por conciliar'; })
+  var valorPend = legs_.filter(function(l) { return esEnvio(l) || l.Estado_Conciliacion === 'Por conciliar'; })
     .reduce(function(s, l) { return s + totalGastosOf(l.id); }, 0);
   document.getElementById('s-valor').textContent = fmtMoney(valorPend);
 }
