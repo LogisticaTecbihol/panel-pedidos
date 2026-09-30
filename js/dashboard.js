@@ -1285,26 +1285,32 @@ function buildDevoluciones(dev, orders, fEmp) {
 function buildTopComerciales(orders, fEmp) {
   var map = {};
   var sinComercial = 0, sinPrecio = 0;
-  var totPed = 0, totPen = 0, totCer = 0;
+  var totPed = 0, totPen = 0, totCer = 0, totBloq = 0;
 
   orders.forEach(function(o) {
     sinPrecio += o.lineasSinPrecio;
     var com = o.comercial;
     if (!com) { sinComercial++; return; }
-    if (!map[com]) map[com] = { comercial: com, ordenes: 0, vPed: 0, vEnt: 0, vPen: 0, vCer: 0 };
+    if (!map[com]) map[com] = { comercial: com, ordenes: 0, vPed: 0, vEnt: 0, vPen: 0, vCer: 0, vBloq: 0 };
     var m = map[com];
     // Recibido + Cerrado = se cerró sin entregarse (Entregado ya queda en 0
     // para estas líneas) — no cuenta como Entregado ni como Pendiente, así
     // que se aparta aquí para que Pedido = Entregado + Pendiente + Cerrado.
     var vCerrado = (o.status === 'Recibido' && o.estado2 === 'Cerrado') ? (o.valorPedido - o.valorEntregado) : 0;
+    // Bloqueado por cartera: lo que no se entregó y tampoco cuenta como
+    // Pendiente (las líneas bloqueadas se excluyen de Pendiente). Se resta el
+    // pendiente por si la orden mezcla líneas bloqueadas y abiertas.
+    var vBloq = (o.estado2 === 'Bloqueado por cartera') ? (o.valorPedido - o.valorEntregado - o.valorPendiente) : 0;
     m.ordenes++;
     m.vPed += o.valorPedido;
     m.vEnt += o.valorEntregado;
     m.vPen += o.valorPendiente;
     m.vCer += vCerrado;
+    m.vBloq += vBloq;
     totPed += o.valorPedido;
     totPen += o.valorPendiente;
     totCer += vCerrado;
+    totBloq += vBloq;
   });
 
   var arr = Object.values(map);
@@ -1312,11 +1318,11 @@ function buildTopComerciales(orders, fEmp) {
   arr = arr.slice(0, 10);
 
   var subEl = document.getElementById('com-sub');
-  if (subEl) subEl.textContent = 'Pedido ' + dMoneyM(totPed) + ' · pendiente ' + dMoneyM(totPen) + ' · cerrado s/entregar ' + dMoneyM(totCer);
+  if (subEl) subEl.textContent = 'Pedido ' + dMoneyM(totPed) + ' · pendiente ' + dMoneyM(totPen) + ' · cerrado s/entregar ' + dMoneyM(totCer) + ' · bloqueado cartera ' + dMoneyM(totBloq);
 
   var notaEl = document.getElementById('com-nota');
   if (notaEl) {
-    var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). "Cerrado s/entregar" = pedidos Recibido + Cerrado (se cerraron sin despacharse). Aun así, otros estados (Parcial+Cerrado, Bloqueado por cartera) pueden dejar un residuo fuera de las tres columnas. "% Cumpl." = (Entregado + Cerrado s/entregar) / Pedido: los pedidos cerrados sin entregar cuentan como cumplidos, por eso puede dar 100% aunque lo entregado sea menor (Entregado / Pedido = porcentaje de lo realmente despachado).'];
+    var notas = ['"Pendiente" = ventas aún por despachar: excluye pedidos anulados, cerrados, alistados y bloqueados por cartera (mismo criterio que Reportes › Valorización ventas). "Cerrado s/entregar" = pedidos Recibido + Cerrado (se cerraron sin despacharse). "Bloqueado cartera" = lo no entregado de pedidos con Estado 2 Bloqueado por cartera (no cuenta como Pendiente ni como Cerrado). Aun así, otros estados (Parcial+Cerrado) pueden dejar un residuo fuera de las cuatro columnas. "% Cumpl." = (Entregado + Cerrado s/entregar) / Pedido: los pedidos cerrados sin entregar cuentan como cumplidos, por eso puede dar 100% aunque lo entregado sea menor (Entregado / Pedido = porcentaje de lo realmente despachado).'];
     if (sinPrecio > 0) notas.push('⚠️ ' + sinPrecio.toLocaleString('es-CO') + ' línea(s) sin precio no suman al valor');
     if (sinComercial > 0) notas.push(sinComercial.toLocaleString('es-CO') + ' orden(es) sin comercial asignado');
     notas.push('Las columnas "Tend." muestran los últimos 12 meses (histórico, no el período filtrado); ▲/▼/→ compara el último mes vs. el anterior.');
@@ -1326,7 +1332,7 @@ function buildTopComerciales(orders, fEmp) {
 
   var tbody = document.getElementById('tb-comerciales');
   if (!arr.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
     return;
   }
 
@@ -1355,6 +1361,7 @@ function buildTopComerciales(orders, fEmp) {
       '<td class="money" style="color:#27ae60">' + dMoneyM(r.vEnt) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + penColor + '">' + dMoneyM(r.vPen) + '</td>' +
       '<td class="money" style="color:#718096">' + dMoneyM(r.vCer) + '</td>' +
+      '<td class="money" style="color:#718096">' + dMoneyM(r.vBloq) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + cumplColor + '">' + pctCumpl + '%</td>' +
     '</tr>';
   }).join('');
