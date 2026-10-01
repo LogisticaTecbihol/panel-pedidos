@@ -516,6 +516,14 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, vehiculos: _addRow(res.data) };
     }
+    // Auditoría del consecutivo (huecos de LEG y ENV). La arma el servidor
+    // (SECURITY DEFINER) porque el RLS de LegalizacionGastos filtra por empresa
+    // y un cálculo en el navegador mostraría huecos falsos.
+    if (action === 'getAuditoriaConsecutivoLegalizaciones') {
+      var res = await _sb.rpc('get_auditoria_consecutivo_legalizacion_gastos');
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, auditoria: res.data };
+    }
     // Remisiones de proveedores externos (Chia Abago) que no están en el sistema.
     if (action === 'getRemisionesExternas') {
       var res = await _fetchAllRows('RemisionesExternas', cols);
@@ -2625,6 +2633,33 @@ async function _apiPostCore(body) {
       var resVe = await _sb.from('Vehiculos').update(updV).eq('id', body.id);
       if (resVe.error) return { ok: false, error: resVe.error.message };
       return { ok: true, updated: 1 };
+    }
+
+    // Nota de revisión de un número faltante del consecutivo (una por Serie+Numero).
+    // Con body.id actualiza la nota existente; sin id la crea (si otro usuario la
+    // creó mientras tanto, el UNIQUE lo avisa en vez de pisarla).
+    if (action === 'guardarNotaConsecutivoLegalizacion') {
+      var notaCL = (body.Nota || '').trim();
+      if (!notaCL) return { ok: false, error: 'Escribe la nota de revisión' };
+      if (body.id) {
+        var resNu = await _sb.from('LegalizacionGastosConsecutivoNotas').update({ Nota: notaCL, modificado_por: _uid() }).eq('id', body.id);
+        if (resNu.error) return { ok: false, error: resNu.error.message };
+        return { ok: true, updated: 1 };
+      }
+      if ((body.Serie !== 'LEG' && body.Serie !== 'ENV') || !(Number(body.Numero) > 0)) return { ok: false, error: 'Falta la serie o el número' };
+      var resNi = await _sb.from('LegalizacionGastosConsecutivoNotas').insert({
+        Serie: body.Serie, Numero: Number(body.Numero), Nota: notaCL, creado_por: _uid()
+      });
+      if (resNi.error) return { ok: false, error: resNi.error.code === '23505' ? 'Otro usuario ya escribió una nota para este número. Actualiza la pestaña.' : resNi.error.message };
+      return { ok: true, inserted: 1 };
+    }
+
+    // Quitar la nota reabre el hueco como "Pendiente" (queda en audit_log).
+    if (action === 'eliminarNotaConsecutivoLegalizacion') {
+      if (!body.id) return { ok: false, error: 'Falta el id de la nota' };
+      var resNd = await _sb.from('LegalizacionGastosConsecutivoNotas').delete().eq('id', body.id);
+      if (resNd.error) return { ok: false, error: resNd.error.message };
+      return { ok: true, deleted: 1 };
     }
 
     return { error: 'Accion POST no reconocida: ' + action };

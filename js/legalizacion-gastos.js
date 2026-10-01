@@ -4,7 +4,7 @@
 
 // ── Tabs ──
 function switchTab(tab) {
-  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle'].forEach(function(t) {
+  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle', 'consecutivo'].forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
@@ -15,6 +15,7 @@ function switchTab(tab) {
   if (tab === 'prorrateo') renderProrrateoGastos();
   if (tab === 'vehiculos') renderVehiculosTab();
   if (tab === 'detalle') renderDetalleTable();
+  if (tab === 'consecutivo') loadConsecutivoData(); // siempre fresco: otros usuarios crean/borran/anotan
 }
 
 var LEG_BUCKET = 'legalizacion-gastos-adjuntos';
@@ -633,6 +634,257 @@ async function openNuevoVehiculo() {
   if (!res.ok) { showToast('Error al agregar: ' + res.error, '#e74c3c'); return; }
   showToast('Vehículo agregado', '#27ae60');
   await loadVehiculosData();
+}
+
+// ── Consecutivo: auditoría de huecos (pestaña "Consecutivo") ──
+// La auditoría la arma el servidor (get_auditoria_consecutivo_legalizacion_gastos,
+// SECURITY DEFINER): el RLS de LegalizacionGastos filtra por empresa, así que
+// calcularla aquí con `legs` mostraría huecos falsos a un usuario restringido.
+// Trae una fila por cada número de 1 al último emitido de cada serie (LEG, ENV);
+// los huecos llevan el motivo (de audit_log) y la nota de revisión, si la hay.
+var consAuditoria = null; // { generado, series: [{serie, ultimo, siguiente, existentes, huecos, pendientes, filas}] }
+var consNotaModal = null; // { serie, numero, notaId } del modal de nota abierto
+
+var CONS_SERIE_NOMBRE = { LEG: 'Ruta y Mantenimiento', ENV: 'Envíos' };
+
+async function loadConsecutivoData() {
+  var res = await apiGet('getAuditoriaConsecutivoLegalizaciones');
+  if (!res.ok) {
+    showToast('Error al cargar el consecutivo: ' + res.error, '#e74c3c');
+    var errBox = document.getElementById('cons-body');
+    if (errBox && !consAuditoria) errBox.innerHTML = '<tr><td colspan="7"><div class="empty">No se pudo cargar el consecutivo.</div></td></tr>';
+    return;
+  }
+  consAuditoria = res.auditoria || null;
+  renderConsecutivoTab();
+}
+
+function _consFechaHora(iso) {
+  var d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d)) return '';
+  return d.toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function _consTipoLabel(tipo) { return tipoLabel({ Tipo: tipo }); }
+
+// Qué pasó con un número que falta: { clase: 'del' | 'ren' | 'sin', titulo, sub }.
+function _consMotivo(f) {
+  if (f.existe) return null;
+  var m = f.motivo;
+  if (!m) {
+    return { clase: 'sin', titulo: 'Sin rastro en la auditoría',
+      sub: 'El contador entregó este número pero no hay registro de una legalización creada o eliminada con él (guardado fallido o borrado fuera del sistema).' };
+  }
+  var quien = m.usuario || 'Sistema (cambio directo en la base de datos)';
+  var cuando = _consFechaHora(m.cuando);
+  if (m.accion === 'UPDATE') {
+    return { clase: 'ren', titulo: 'Renumerada como ' + (m.renumerada_a || '—'), sub: cuando + ' · ' + quien };
+  }
+  var d = m.detalle || {};
+  var era = [d.tipo ? _consTipoLabel(d.tipo) : '', d.fecha ? fmtDate(d.fecha) : '', d.responsable || '', d.ruta || '', d.placa || '']
+    .filter(function(x) { return x; }).join(' · ');
+  return { clase: 'del', titulo: 'Eliminada', sub: cuando + ' · ' + quien + (era ? ' · Era: ' + era : '') };
+}
+
+function _consMotivoHtml(f) {
+  var mo = _consMotivo(f);
+  if (!mo) return '<span style="color:#a0aec0">—</span>';
+  var icono = mo.clase === 'del' ? '🗑️' : (mo.clase === 'ren' ? '↪️' : '⚠️');
+  var color = mo.clase === 'sin' ? 'color:#c0392b;' : '';
+  return icono + ' <strong style="' + color + '">' + escHtml(mo.titulo) + '</strong>' +
+    '<div style="font-size:0.74rem;color:#718096;margin-top:2px">' + escHtml(mo.sub) + '</div>';
+}
+
+function _consMotivoTexto(f) {
+  var mo = _consMotivo(f);
+  return mo ? mo.titulo + ' — ' + mo.sub : '';
+}
+
+function _consFilasFiltradas() {
+  if (!consAuditoria) return [];
+  var fSerie = document.getElementById('cf-serie').value;
+  var modo = document.getElementById('cf-modo').value;
+  var out = [];
+  (consAuditoria.series || []).forEach(function(s) {
+    if (fSerie && s.serie !== fSerie) return;
+    (s.filas || []).forEach(function(f) {
+      if (modo !== 'todos' && f.existe) return;
+      if (modo === 'pendientes' && f.nota) return;
+      out.push({ serie: s.serie, f: f });
+    });
+  });
+  return out;
+}
+
+function _consBuscarFila(serie, numero) {
+  var s = consAuditoria && (consAuditoria.series || []).find(function(x) { return x.serie === serie; });
+  return s ? (s.filas || []).find(function(f) { return f.numero === numero; }) : null;
+}
+
+function _consResumenHtml() {
+  var series = consAuditoria.series || [];
+  var huecos = 0, pend = 0, sinRastroPend = 0;
+  series.forEach(function(s) {
+    huecos += s.huecos;
+    pend += s.pendientes;
+    (s.filas || []).forEach(function(f) { if (!f.existe && !f.nota && !f.motivo) sinRastroPend++; });
+  });
+
+  var banner;
+  if (!huecos) {
+    banner = '<div style="background:#f0fff4;border:1px solid #9ae6b4;color:#276749;padding:10px 14px;border-radius:8px;font-weight:700;font-size:0.9rem">✅ Consecutivo completo: no hay huecos en ninguna serie.</div>';
+  } else if (!pend) {
+    banner = '<div style="background:#f0fff4;border:1px solid #9ae6b4;color:#276749;padding:10px 14px;border-radius:8px;font-weight:700;font-size:0.9rem">✅ ' + huecos + (huecos === 1 ? ' hueco, revisado.' : ' huecos, todos revisados.') + '</div>';
+  } else {
+    banner = '<div style="background:#fffaf0;border:1px solid #fbd38d;color:#b7791f;padding:10px 14px;border-radius:8px;font-weight:700;font-size:0.9rem">⚠️ ' +
+      pend + (pend === 1 ? ' hueco pendiente de revisión' : ' huecos pendientes de revisión') + ' (de ' + huecos + ' en total)' +
+      (sinRastroPend ? ' · <span style="color:#c0392b">' + sinRastroPend + ' sin rastro en la auditoría</span>' : '') + '</div>';
+  }
+
+  var filas = series.map(function(s) {
+    var rango = s.ultimo > 0 ? s.serie + '-00001 a ' + s.serie + '-' + String(s.ultimo).padStart(5, '0') : '—';
+    return '<tr>' +
+      '<td><strong>' + escHtml(s.serie) + '</strong> <span style="color:#718096">' + escHtml(CONS_SERIE_NOMBRE[s.serie] || '') + '</span></td>' +
+      '<td>' + escHtml(rango) + '</td>' +
+      '<td style="text-align:right">' + s.existentes + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + (s.huecos ? '#b7791f' : '#276749') + '">' + s.huecos + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + (s.pendientes ? '#c0392b' : '#276749') + '">' + s.pendientes + '</td>' +
+      '<td>' + escHtml(s.serie + '-' + String(s.siguiente).padStart(5, '0')) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  return banner +
+    '<div style="overflow-x:auto;margin-top:12px"><table><thead><tr>' +
+    '<th>Serie</th><th>Números emitidos</th><th style="text-align:right">Existentes</th><th style="text-align:right">Huecos</th><th style="text-align:right">Pendientes de revisión</th><th>Próximo N°</th>' +
+    '</tr></thead><tbody>' + filas + '</tbody></table></div>';
+}
+
+function renderConsecutivoTab() {
+  var box = document.getElementById('cons-body');
+  var ctEl = document.getElementById('cons-ct');
+  var resumenEl = document.getElementById('cons-resumen');
+  var genEl = document.getElementById('cons-generado');
+  if (!box) return;
+  if (!consAuditoria) {
+    box.innerHTML = '<tr><td colspan="7"><div class="empty">Cargando…</div></td></tr>';
+    return;
+  }
+
+  if (resumenEl) resumenEl.innerHTML = _consResumenHtml();
+  if (genEl) genEl.textContent = 'Consultado: ' + _consFechaHora(consAuditoria.generado);
+
+  var puedeAnotar = AUTH.canConciliarGastos();
+  var rows = _consFilasFiltradas();
+  if (ctEl) ctEl.textContent = '(' + rows.length + ')';
+
+  box.innerHTML = rows.map(function(r) {
+    var f = r.f;
+    var leg = f.existe ? legs.find(function(l) { return l.id === f.id; }) : null;
+    var numCell = leg
+      ? '<a href="javascript:void(0)" onclick="openVer(' + leg.id + ')" style="color:#1a5276;font-weight:700">' + escHtml(f.consecutivo) + '</a>'
+      : '<strong>' + escHtml(f.consecutivo) + '</strong>';
+    var estadoCell = f.existe
+      ? '<span style="color:#276749;font-weight:600">✓ Existe</span>'
+      : (f.nota ? '<span class="badge b-ent">✔ Revisado</span>' : '<span class="badge b-rec">⏳ Pendiente</span>');
+    var notaCell = f.nota
+      ? escHtml(f.nota.texto) + '<div style="font-size:0.74rem;color:#718096;margin-top:2px">' + escHtml(f.nota.por || '') + (f.nota.cuando ? ' · ' + escHtml(_consFechaHora(f.nota.cuando)) : '') + '</div>'
+      : '<span style="color:#a0aec0">—</span>';
+    var accionCell = (!f.existe && puedeAnotar)
+      ? '<button class="btn-edit" onclick="openNotaConsecutivo(\'' + r.serie + '\', ' + f.numero + ')">' + (f.nota ? '✏️ Editar nota' : '✍️ Agregar nota') + '</button>'
+      : '';
+    return '<tr>' +
+      '<td style="white-space:nowrap">' + numCell + '</td>' +
+      '<td style="white-space:nowrap">' + estadoCell + '</td>' +
+      '<td>' + (f.existe ? escHtml(_consTipoLabel(f.tipo)) : '<span style="color:#a0aec0">—</span>') + '</td>' +
+      '<td>' + (f.existe ? escHtml(fmtDate(f.fecha)) : '<span style="color:#a0aec0">—</span>') + '</td>' +
+      '<td style="min-width:260px">' + _consMotivoHtml(f) + '</td>' +
+      '<td style="min-width:200px">' + notaCell + '</td>' +
+      '<td style="white-space:nowrap">' + accionCell + '</td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="7"><div class="empty">' + (document.getElementById('cf-modo').value === 'todos' ? 'Sin números.' : 'Sin huecos para mostrar. ✅') + '</div></td></tr>';
+}
+
+function openNotaConsecutivo(serie, numero) {
+  if (!AUTH.canConciliarGastos()) return;
+  var f = _consBuscarFila(serie, numero);
+  if (!f || f.existe) return;
+  consNotaModal = { serie: serie, numero: numero, notaId: f.nota ? f.nota.id : null };
+  document.getElementById('cons-nota-titulo').textContent = 'Revisión de ' + f.consecutivo;
+  document.getElementById('cons-nota-meta').textContent = 'Número faltante en la serie ' + serie;
+  document.getElementById('cons-nota-motivo').innerHTML = _consMotivoHtml(f);
+  document.getElementById('cons-nota-texto').value = f.nota ? f.nota.texto : '';
+  document.getElementById('cons-nota-btn-quitar').style.display = f.nota ? 'inline-block' : 'none';
+  document.getElementById('form-cons-overlay').classList.add('show');
+  document.getElementById('cons-nota-texto').focus();
+}
+
+function closeNotaConsecutivo() {
+  document.getElementById('form-cons-overlay').classList.remove('show');
+  consNotaModal = null;
+}
+
+async function guardarNotaConsecutivo() {
+  if (!consNotaModal) return;
+  var texto = document.getElementById('cons-nota-texto').value.trim();
+  if (!texto) { showToast('Escribe la nota de revisión', '#e67e22'); return; }
+  var btn = document.getElementById('cons-nota-btn-guardar');
+  btn.disabled = true;
+  var res = await apiPost({
+    action: 'guardarNotaConsecutivoLegalizacion',
+    id: consNotaModal.notaId, Serie: consNotaModal.serie, Numero: consNotaModal.numero, Nota: texto
+  });
+  btn.disabled = false;
+  if (!res.ok) { showToast('Error: ' + res.error, '#e74c3c'); return; }
+  closeNotaConsecutivo();
+  showToast('Revisión guardada', '#27ae60');
+  await loadConsecutivoData();
+}
+
+async function quitarNotaConsecutivo() {
+  if (!consNotaModal || !consNotaModal.notaId) return;
+  if (!confirm('¿Quitar la revisión de este número? El hueco volverá a quedar como Pendiente.')) return;
+  var res = await apiPost({ action: 'eliminarNotaConsecutivoLegalizacion', id: consNotaModal.notaId });
+  if (!res.ok) { showToast('Error: ' + res.error, '#e74c3c'); return; }
+  closeNotaConsecutivo();
+  showToast('Revisión quitada', '#27ae60');
+  await loadConsecutivoData();
+}
+
+// Exporta lo que se ve (respeta Serie y Mostrar) más una hoja de resumen por serie.
+function exportarConsecutivoExcel() {
+  var rows = _consFilasFiltradas();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(r) {
+    var f = r.f;
+    return {
+      'Serie': r.serie,
+      'N°': f.consecutivo,
+      'Estado': f.existe ? 'Existe' : 'Falta',
+      'Revisión': f.existe ? '' : (f.nota ? 'Revisado' : 'Pendiente'),
+      'Tipo': f.existe ? _consTipoLabel(f.tipo) : '',
+      'Fecha': f.existe ? fmtDate(f.fecha) : '',
+      'Qué pasó': _consMotivoTexto(f),
+      'Nota de revisión': f.nota ? f.nota.texto : '',
+      'Nota por': f.nota ? (f.nota.por || '') : '',
+      'Nota fecha': f.nota ? _consFechaHora(f.nota.cuando) : ''
+    };
+  });
+  var resumen = (consAuditoria.series || []).map(function(s) {
+    return {
+      'Serie': s.serie,
+      'Descripción': CONS_SERIE_NOMBRE[s.serie] || '',
+      'Último emitido': s.ultimo,
+      'Existentes': s.existentes,
+      'Huecos': s.huecos,
+      'Pendientes de revisión': s.pendientes,
+      'Próximo N°': s.serie + '-' + String(s.siguiente).padStart(5, '0')
+    };
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Consecutivo');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), 'Resumen');
+  XLSX.writeFile(wb, 'consecutivo_legalizaciones_' + today() + '.xlsx');
+  showToast('Excel exportado');
 }
 
 // ── Helpers de datos ──

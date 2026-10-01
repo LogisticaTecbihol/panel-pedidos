@@ -131,6 +131,7 @@
     <button class="lg-tab" id="tab-prorrateo" onclick="switchTab('prorrateo')" style="background:#718096">📊 Prorrateo de gastos</button>
     <button class="lg-tab" id="tab-vehiculos" onclick="switchTab('vehiculos')" style="background:#718096">🚚 Vehículos</button>
     <button class="lg-tab" id="tab-detalle" onclick="switchTab('detalle')" style="background:#718096">🔎 Vista detallada</button>
+    <button class="lg-tab" id="tab-consecutivo" onclick="switchTab('consecutivo')" style="background:#718096">🧮 Consecutivo</button>
   </div>
 
   <div id="panel-legalizaciones">
@@ -296,6 +297,53 @@
         <h3>Vista detallada <span id="df-ct" style="font-weight:400;color:#718096"></span></h3>
       </div>
       <div style="overflow-x:auto" id="detalle-body"></div>
+    </div>
+  </div>
+
+  <!-- Consecutivo: auditoría de huecos de LEG y ENV -->
+  <div id="panel-consecutivo" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Serie</label>
+        <select id="cf-serie" onchange="renderConsecutivoTab()">
+          <option value="">Todas</option>
+          <option value="LEG">LEG — Ruta y Mantenimiento</option>
+          <option value="ENV">ENV — Envíos</option>
+        </select>
+      </div>
+      <div class="fg"><label>Mostrar</label>
+        <select id="cf-modo" onchange="renderConsecutivoTab()">
+          <option value="huecos">Solo huecos</option>
+          <option value="pendientes">Solo huecos pendientes de revisión</option>
+          <option value="todos">Todos los números</option>
+        </select>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn-dl" onclick="exportarConsecutivoExcel()">📥 Exportar Excel</button>
+        <button class="btn-dl" onclick="loadConsecutivoData()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
+        <h3>Estado del consecutivo</h3>
+        <span id="cons-generado" style="font-size:0.78rem;color:#718096"></span>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Cada serie lleva su propio contador: LEG (rutas y mantenimientos) y ENV (envíos). Un hueco es un número que el contador ya entregó pero no tiene legalización. El motivo sale del registro de auditoría; "Pendiente" significa que nadie ha dejado una nota de revisión.</div>
+      </div>
+      <div id="cons-resumen" style="padding:0 20px 16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Números del consecutivo <span id="cons-ct" style="font-weight:400;color:#718096"></span></h3>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>N°</th><th>Estado</th><th>Tipo</th><th>Fecha</th><th>Qué pasó</th><th>Nota de revisión</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="cons-body"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -591,6 +639,33 @@
   </div>
 </div>
 
+<!-- MODAL: Nota de revisión de un hueco del consecutivo -->
+<div class="overlay" id="form-cons-overlay" onclick="if(isBackdropClick(event))closeNotaConsecutivo()">
+  <div class="modal-box" style="max-width:560px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="cons-nota-titulo">Revisión del consecutivo</h2>
+        <div class="meta"><span id="cons-nota-meta"></span></div>
+      </div>
+      <button class="btn-close" onclick="closeNotaConsecutivo()">✕</button>
+    </div>
+    <div class="mbody">
+      <div id="cons-nota-motivo" style="font-size:0.84rem;color:#4a5568;margin-bottom:12px"></div>
+      <label class="ef-label">Nota de revisión *</label>
+      <textarea class="ef" id="cons-nota-texto" rows="4" maxlength="1000" placeholder="Ej. Registro de prueba del piloto de kilometraje, no cuenta." style="resize:vertical"></textarea>
+      <div style="font-size:0.74rem;color:#718096;margin-top:4px">Al guardar, el hueco queda como "Revisado". Quedan registrados quién y cuándo.</div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <button class="btn-cancel" id="cons-nota-btn-quitar" type="button" style="display:none;color:#c0392b" onclick="quitarNotaConsecutivo()">↩ Quitar revisión</button>
+        <span style="flex:1"></span>
+        <button class="btn-cancel" type="button" onclick="closeNotaConsecutivo()">Cancelar</button>
+        <button class="btn-confirm" id="cons-nota-btn-guardar" type="button" onclick="guardarNotaConsecutivo()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Ver / Conciliar -->
 <div class="overlay" id="ver-overlay" onclick="if(isBackdropClick(event))closeVer()">
   <div class="modal-box" style="max-width:980px">
@@ -616,10 +691,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20260929f"></script>
+<script src="js/shared.js?v=20261001a"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260930a"></script>
 <script src="js/pdf-remision.js?v=20260929c"></script>
-<script src="js/legalizacion-gastos.js?v=20260930a"></script>
+<script src="js/legalizacion-gastos.js?v=20261001a"></script>
 </body>
 </html>
