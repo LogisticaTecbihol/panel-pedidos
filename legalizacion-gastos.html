@@ -23,6 +23,7 @@
 .lg-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
 @media (max-width:900px){.lg-row{grid-template-columns:1fr}}
 .gpp-note{font-size:.78rem;color:#718096;margin:-4px 0 14px}
+.btn-clear-sort{display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:600}
 .gpp-group{padding:0 20px 18px}
 .gpp-group:last-child{padding-bottom:20px}
 .gpp-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e2e8f0}
@@ -133,21 +134,21 @@
     <button class="lg-tab" id="tab-detalle" onclick="switchTab('detalle')" style="background:#718096">🔎 Vista detallada</button>
     <button class="lg-tab" id="tab-consecutivo" onclick="switchTab('consecutivo')" style="background:#718096">🧮 Consecutivo</button>
   </div>
+  <div class="gpp-note" id="lg-sort-hint" style="margin:-6px 0 12px">↕ Para ordenar, haz clic en el encabezado de una columna (↑ ascendente, ↓ descendente; un tercer clic la quita). Haz clic en más columnas para ordenar por varios campos: el número indica la prioridad. Shift + clic quita una columna del orden.</div>
 
   <div id="panel-legalizaciones">
     <div class="card">
       <div class="card-head">
         <h3>Legalizaciones <span id="lg-ct" style="font-weight:400;color:#718096"></span><span id="lg-desc-ct" style="font-weight:600;color:#b7791f;font-size:0.82rem"></span></h3>
-        <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-clear-sort" id="btn-clear-sort-leg" onclick="clearSortLg('leg')" title="Quitar el orden de columnas">✕ Limpiar orden</button>
+          <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr>
-              <th>N°</th><th>Fecha</th><th>Responsable</th><th>Tipo</th><th>Ruta</th><th>Empresas</th>
-              <th style="text-align:right">Total gastos</th><th style="text-align:right">Anticipo</th>
-              <th>Estado</th><th>Acciones</th>
-            </tr>
+            <tr id="lg-head"></tr>
           </thead>
           <tbody id="lg-body"></tbody>
         </table>
@@ -168,15 +169,15 @@
       <div class="card-head">
         <h3>Envíos <span id="envl-ct" style="font-weight:400;color:#718096"></span><span id="envl-desc-ct" style="font-weight:600;color:#b7791f;font-size:0.82rem"></span></h3>
         <span id="envl-total" style="font-size:0.86rem;color:#4a5568;margin-left:auto;margin-right:12px"></span>
-        <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-clear-sort" id="btn-clear-sort-env" onclick="clearSortLg('env')" title="Quitar el orden de columnas">✕ Limpiar orden</button>
+          <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr>
-              <th>N°</th><th>Fecha</th><th>Proveedor</th><th>NIT</th><th>Remisiones</th><th>Empresas</th>
-              <th style="text-align:right">Valor</th><th>Acciones</th>
-            </tr>
+            <tr id="envl-head"></tr>
           </thead>
           <tbody id="envl-body"></tbody>
         </table>
@@ -246,7 +247,10 @@
     <div class="card">
       <div class="card-head">
         <h3>Vehículos <span id="veh-ct" style="font-weight:400;color:#718096"></span></h3>
-        <button class="btn-dl" id="veh-btn-nuevo" onclick="openNuevoVehiculo()" style="display:none">+ Nuevo vehículo</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-clear-sort" id="btn-clear-sort-veh" onclick="clearSortLg('veh')" title="Quitar el orden de columnas">✕ Limpiar orden</button>
+          <button class="btn-dl" id="veh-btn-nuevo" onclick="openNuevoVehiculo()" style="display:none">+ Nuevo vehículo</button>
+        </div>
       </div>
       <div style="padding:12px 20px 0">
         <div class="gpp-note">Piloto de kilometraje: solo las placas marcadas abajo muestran los campos de km/galones al registrar una legalización de Ruta. Editar rendimiento esperado, descripción o estado activo requiere el permiso de conciliar gastos.</div>
@@ -254,7 +258,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr><th>Placa</th><th>Descripción</th><th style="text-align:right">Rendimiento esperado (km/gal)</th><th style="text-align:right">Km actual conocido</th><th>Piloto km</th><th>Activo</th></tr>
+            <tr id="veh-head"></tr>
           </thead>
           <tbody id="veh-body"></tbody>
         </table>
@@ -290,6 +294,7 @@
       <button class="lg-tab" id="df-modo-legalizacion" onclick="setDetalleModo('legalizacion')" style="background:#1a5276">📄 Por legalización</button>
       <button class="lg-tab" id="df-modo-linea" onclick="setDetalleModo('linea')" style="background:#718096">🧾 Por línea de gasto</button>
       <span style="flex:1"></span>
+      <button class="btn-clear-sort" id="btn-clear-sort-det" onclick="clearSortLg(detalleSortKey())" title="Quitar el orden de columnas">✕ Limpiar orden</button>
       <button class="btn-dl" onclick="exportarDetalleExcel()">📥 Exportar Excel</button>
     </div>
     <div class="card">
@@ -317,7 +322,8 @@
           <option value="todos">Todos los números</option>
         </select>
       </div>
-      <div style="margin-left:auto;display:flex;gap:8px">
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <button class="btn-clear-sort" id="btn-clear-sort-cons" onclick="clearSortLg('cons')" title="Quitar el orden de columnas">✕ Limpiar orden</button>
         <button class="btn-dl" onclick="exportarConsecutivoExcel()">📥 Exportar Excel</button>
         <button class="btn-dl" onclick="loadConsecutivoData()">🔄 Actualizar</button>
       </div>
@@ -339,7 +345,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr><th>N°</th><th>Estado</th><th>Tipo</th><th>Fecha</th><th>Qué pasó</th><th>Nota de revisión</th><th>Acciones</th></tr>
+            <tr id="cons-head"></tr>
           </thead>
           <tbody id="cons-body"></tbody>
         </table>
@@ -695,6 +701,6 @@
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260930a"></script>
 <script src="js/pdf-remision.js?v=20260929c"></script>
-<script src="js/legalizacion-gastos.js?v=20261001a"></script>
+<script src="js/legalizacion-gastos.js?v=20261001b"></script>
 </body>
 </html>

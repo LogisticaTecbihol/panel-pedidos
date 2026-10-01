@@ -16,6 +16,8 @@ function switchTab(tab) {
   if (tab === 'vehiculos') renderVehiculosTab();
   if (tab === 'detalle') renderDetalleTable();
   if (tab === 'consecutivo') loadConsecutivoData(); // siempre fresco: otros usuarios crean/borran/anotan
+  var hint = document.getElementById('lg-sort-hint'); // Prorrateo no tiene tablas ordenables
+  if (hint) hint.style.display = (tab === 'prorrateo') ? 'none' : 'block';
 }
 
 var LEG_BUCKET = 'legalizacion-gastos-adjuntos';
@@ -572,6 +574,193 @@ async function loadLegalizaciones() {
   }
 }
 
+// ── Ordenamiento por columnas ──
+// Mismo comportamiento que Ingresos/Órdenes: clic en el encabezado ordena
+// ascendente, otro clic descendente y un tercero la quita; cada columna que se
+// agrega suma un criterio de desempate (el badge numerado es su prioridad) y
+// Shift+clic la quita. Sin criterios, cada tabla conserva su orden de siempre
+// (Fecha descendente, N° ascendente en Consecutivo, Placa en Vehículos), que
+// también desempata entre filas iguales (el sort es estable). Los vacíos van
+// siempre al final, en ascendente y en descendente.
+//
+// Un orden por tabla (clave): leg, env, detleg (Vista detallada por
+// legalización), detlin (Vista detallada por línea de gasto), veh y cons.
+// Cada columna es { id, label, fn(fila) [, right] }; sin fn no es ordenable
+// (Acciones). fn devuelve texto o número; vacío = null o ''.
+var lgSort = {};
+
+function _empresasSortTxt(leg) {
+  return empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa); }).sort().join(', ');
+}
+
+// Km recorridos (Ruta) u odómetro (Mantenimiento) como número, para ordenar la
+// columna Km de la Vista detallada. null si el viaje no está en el piloto.
+function _detalleKmNum(leg) {
+  if (leg.Tipo !== 'Mantenimiento' && leg.Km_Salida != null && leg.Km_Llegada != null) return Number(leg.Km_Llegada) - Number(leg.Km_Salida);
+  if (leg.Tipo === 'Mantenimiento' && leg.Km_Llegada != null) return Number(leg.Km_Llegada);
+  return null;
+}
+
+// NIT del proveedor de un envío (tiene una sola línea de gasto).
+function nitEnvioDe(leg) { var it = itemsOf(leg.id)[0]; return it ? (it.NIT || '') : ''; }
+
+var LG_SORT_COLS = {
+  leg: [
+    { id: 'n', label: 'N°', fn: function(l) { return l.Consecutivo || ''; } },
+    { id: 'fecha', label: 'Fecha', fn: function(l) { return l.Fecha || ''; } },
+    { id: 'responsable', label: 'Responsable', fn: function(l) { return l.Responsable || ''; } },
+    { id: 'tipo', label: 'Tipo', fn: function(l) { return tipoLabel(l); } },
+    { id: 'ruta', label: 'Ruta', fn: function(l) { return l.Recorrido_Ruta || ''; } },
+    { id: 'empresas', label: 'Empresas', fn: _empresasSortTxt },
+    { id: 'total', label: 'Total gastos', right: true, fn: function(l) { return totalGastosOf(l.id); } },
+    { id: 'anticipo', label: 'Anticipo', right: true, fn: function(l) { return Number(l.Anticipo_Entregado) || 0; } },
+    { id: 'estado', label: 'Estado', fn: function(l) { return estadoLeg(l) || ''; } },
+    { id: 'acciones', label: 'Acciones' }
+  ],
+  env: [
+    { id: 'n', label: 'N°', fn: function(l) { return l.Consecutivo || ''; } },
+    { id: 'fecha', label: 'Fecha', fn: function(l) { return l.Fecha || ''; } },
+    { id: 'proveedor', label: 'Proveedor', fn: function(l) { return proveedoresTexto(l.id); } },
+    { id: 'nit', label: 'NIT', fn: nitEnvioDe },
+    { id: 'remisiones', label: 'Remisiones', fn: function(l) { return l.Remisiones_Relacionadas || ''; } },
+    { id: 'empresas', label: 'Empresas', fn: _empresasSortTxt },
+    { id: 'valor', label: 'Valor', right: true, fn: function(l) { return totalGastosOf(l.id); } },
+    { id: 'acciones', label: 'Acciones' }
+  ],
+  detleg: [
+    { id: 'n', label: 'N°', fn: function(l) { return l.Consecutivo || ''; } },
+    { id: 'fecha', label: 'Fecha', fn: function(l) { return l.Fecha || ''; } },
+    { id: 'tipo', label: 'Tipo', fn: function(l) { return tipoLabel(l); } },
+    { id: 'responsable', label: 'Responsable', fn: function(l) { return l.Responsable || ''; } },
+    { id: 'placa', label: 'Placa', fn: function(l) { return l.Placa || ''; } },
+    { id: 'ruta', label: 'Ruta', fn: function(l) { return l.Recorrido_Ruta || ''; } },
+    { id: 'clientes', label: 'Clientes', fn: function(l) { return l.Clientes || ''; } },
+    { id: 'remisiones', label: 'Remisiones', fn: function(l) { return l.Remisiones_Relacionadas || ''; } },
+    { id: 'empresas', label: 'Empresas', fn: _empresasSortTxt },
+    { id: 'gastos', label: 'Gastos', fn: function(l) { return itemsOf(l.id).map(function(it) { return it.Concepto || ''; }).filter(Boolean).join(', '); } },
+    { id: 'total', label: 'Total gastos', right: true, fn: function(l) { return totalGastosOf(l.id); } },
+    { id: 'anticipo', label: 'Anticipo', right: true, fn: function(l) { return Number(l.Anticipo_Entregado) || 0; } },
+    { id: 'km', label: 'Km', fn: _detalleKmNum },
+    { id: 'estado', label: 'Estado', fn: function(l) { return estadoLeg(l) || ''; } },
+    { id: 'observaciones', label: 'Observaciones', fn: function(l) { return l.Observaciones || ''; } },
+    { id: 'acciones', label: 'Acciones' }
+  ],
+  detlin: [
+    { id: 'n', label: 'N°', fn: function(x) { return x.leg.Consecutivo || ''; } },
+    { id: 'fecha', label: 'Fecha', fn: function(x) { return x.leg.Fecha || ''; } },
+    { id: 'tipo', label: 'Tipo', fn: function(x) { return tipoLabel(x.leg); } },
+    { id: 'responsable', label: 'Responsable', fn: function(x) { return x.leg.Responsable || ''; } },
+    { id: 'placa', label: 'Placa', fn: function(x) { return x.leg.Placa || ''; } },
+    { id: 'empresas', label: 'Empresas', fn: function(x) { return _empresasSortTxt(x.leg); } },
+    { id: 'concepto', label: 'Concepto', fn: function(x) { return x.it.Concepto || ''; } },
+    { id: 'proveedor', label: 'Proveedor', fn: function(x) { return x.it.Proveedor || ''; } },
+    { id: 'nit', label: 'NIT', fn: function(x) { return x.it.NIT || ''; } },
+    { id: 'valor', label: 'Valor', right: true, fn: function(x) { return Number(x.it.Valor) || 0; } },
+    { id: 'estado', label: 'Estado', fn: function(x) { return estadoLeg(x.leg) || ''; } },
+    { id: 'acciones', label: 'Acciones' }
+  ],
+  veh: [
+    { id: 'placa', label: 'Placa', fn: function(v) { return v.Placa || ''; } },
+    { id: 'desc', label: 'Descripción', fn: function(v) { return v.Descripcion || ''; } },
+    { id: 'rend', label: 'Rendimiento esperado (km/gal)', right: true, fn: function(v) { return v.Rendimiento_Esperado != null ? Number(v.Rendimiento_Esperado) : null; } },
+    { id: 'km', label: 'Km actual conocido', right: true, fn: function(v) { return Number(v.Km_Actual) || 0; } },
+    { id: 'piloto', label: 'Piloto km', fn: function(v) { return KM_PILOTO_PLACAS.indexOf(v.Placa) >= 0 ? 'Sí' : 'No'; } },
+    { id: 'activo', label: 'Activo', fn: function(v) { return v.Activo !== false ? 'Sí' : 'No'; } }
+  ],
+  cons: [
+    { id: 'n', label: 'N°', fn: function(r) { return r.f.consecutivo; } },
+    { id: 'estado', label: 'Estado', fn: function(r) { return r.f.existe ? 'Existe' : (r.f.nota ? 'Revisado' : 'Pendiente'); } },
+    { id: 'tipo', label: 'Tipo', fn: function(r) { return r.f.existe ? _consTipoLabel(r.f.tipo) : ''; } },
+    { id: 'fecha', label: 'Fecha', fn: function(r) { return r.f.existe ? (r.f.fecha || '') : ''; } },
+    { id: 'motivo', label: 'Qué pasó', fn: function(r) { var m = _consMotivo(r.f); return m ? m.titulo : ''; } },
+    { id: 'nota', label: 'Nota de revisión', fn: function(r) { return r.f.nota ? r.f.nota.texto : ''; } },
+    { id: 'acciones', label: 'Acciones' }
+  ]
+};
+
+// Qué volver a dibujar al cambiar el orden de cada tabla (solo esa tabla: no
+// recalcula Prorrateo ni los indicadores).
+var LG_SORT_RENDER = {
+  leg: function() { renderLegTable(); },
+  env: function() { renderEnviosTable(); },
+  detleg: function() { renderDetalleTable(); },
+  detlin: function() { renderDetalleTable(); },
+  veh: function() { renderVehiculosTab(); },
+  cons: function() { renderConsecutivoTab(); }
+};
+
+function detalleSortKey() { return detalleModo === 'linea' ? 'detlin' : 'detleg'; }
+
+function toggleSortLg(key, id, e) {
+  var levels = lgSort[key] = lgSort[key] || [];
+  var idx = levels.findIndex(function(l) { return l.id === id; });
+  if (e && e.shiftKey) { if (idx >= 0) levels.splice(idx, 1); }
+  else if (idx >= 0) { if (levels[idx].dir === 'asc') levels[idx].dir = 'desc'; else levels.splice(idx, 1); }
+  else { levels.push({ id: id, dir: 'asc' }); }
+  LG_SORT_RENDER[key]();
+}
+
+function clearSortLg(key) {
+  lgSort[key] = [];
+  LG_SORT_RENDER[key]();
+}
+
+// Celdas <th> de una tabla: las ordenables llevan flecha, badge de prioridad
+// (si hay más de un criterio) y el clic que alterna el orden.
+function sortHeadCellsHtml(key) {
+  var levels = lgSort[key] || [];
+  return LG_SORT_COLS[key].map(function(col) {
+    var right = col.right ? ' style="text-align:right"' : '';
+    if (!col.fn) return '<th' + right + '>' + col.label + '</th>';
+    var idx = levels.findIndex(function(l) { return l.id === col.id; });
+    var active = idx >= 0;
+    var cls = 'sortable' + (active ? (levels[idx].dir === 'asc' ? ' sort-asc' : ' sort-desc') : '');
+    var badge = levels.length > 1 && active ? '<span class="sort-badge">' + (idx + 1) + '</span>' : '';
+    return '<th class="' + cls + '"' + right + ' title="Clic: ordenar · Shift + clic: quitar del orden" onclick="toggleSortLg(\'' + key + '\',\'' + col.id + '\',event)">' +
+      col.label + badge + '<span class="sort-icon"></span></th>';
+  }).join('');
+}
+
+// Dibuja el encabezado de una tabla con <tr id="headId"> y muestra u oculta su
+// botón "Limpiar orden" según haya criterios activos.
+function renderSortHead(key, headId, btnId) {
+  var head = headId && document.getElementById(headId);
+  if (head) head.innerHTML = sortHeadCellsHtml(key);
+  syncClearSortBtn(key, btnId || ('btn-clear-sort-' + key));
+}
+
+function syncClearSortBtn(key, btnId) {
+  var btn = document.getElementById(btnId);
+  if (btn) btn.style.display = (lgSort[key] || []).length ? 'inline-block' : 'none';
+}
+
+// Devuelve las filas ordenadas según los criterios activos de la tabla (o las
+// mismas filas si no hay). Calcula la clave de cada fila una sola vez.
+function applySortLg(key, rows) {
+  var levels = lgSort[key] || [];
+  if (!levels.length) return rows;
+  var cols = LG_SORT_COLS[key];
+  var crit = levels.map(function(l) {
+    var c = cols.find(function(x) { return x.id === l.id; });
+    return c && c.fn ? { fn: c.fn, dir: l.dir } : null;
+  }).filter(Boolean);
+  if (!crit.length) return rows;
+  return rows.map(function(r, i) { return { r: r, i: i, k: crit.map(function(c) { return c.fn(r); }) }; })
+    .sort(function(a, b) {
+      for (var i = 0; i < crit.length; i++) {
+        var va = a.k[i], vb = b.k[i];
+        var ea = va === null || va === undefined || va === '';
+        var eb = vb === null || vb === undefined || vb === '';
+        if (ea || eb) { if (ea && eb) continue; return ea ? 1 : -1; } // vacíos siempre al final
+        var cmp = (typeof va === 'string' || typeof vb === 'string')
+          ? String(va).localeCompare(String(vb), 'es', { numeric: true, sensitivity: 'base' })
+          : va - vb;
+        if (cmp !== 0) return crit[i].dir === 'asc' ? cmp : -cmp;
+      }
+      return a.i - b.i;
+    }).map(function(x) { return x.r; });
+}
+
 // ── Catálogo de Vehículos (pestaña "Vehículos") ──
 async function loadVehiculosData() {
   var res = await apiGet('getVehiculos');
@@ -590,7 +779,8 @@ function renderVehiculosTab() {
   if (btnNuevo) btnNuevo.style.display = AUTH.hasModule('legalizacion_gastos') ? 'inline-block' : 'none';
   var puedeEditar = AUTH.canConciliarGastos();
 
-  var rows = vehiculos.slice().sort(function(a, b) { return a.Placa.localeCompare(b.Placa, 'es'); });
+  var rows = applySortLg('veh', vehiculos.slice().sort(function(a, b) { return a.Placa.localeCompare(b.Placa, 'es'); }));
+  renderSortHead('veh', 'veh-head');
   if (ctEl) ctEl.textContent = '(' + rows.length + ')';
 
   box.innerHTML = rows.map(function(v) {
@@ -713,7 +903,7 @@ function _consFilasFiltradas() {
       out.push({ serie: s.serie, f: f });
     });
   });
-  return out;
+  return applySortLg('cons', out); // la tabla y el Excel respetan el orden elegido
 }
 
 function _consBuscarFila(serie, numero) {
@@ -765,6 +955,7 @@ function renderConsecutivoTab() {
   var resumenEl = document.getElementById('cons-resumen');
   var genEl = document.getElementById('cons-generado');
   if (!box) return;
+  renderSortHead('cons', 'cons-head');
   if (!consAuditoria) {
     box.innerHTML = '<tr><td colspan="7"><div class="empty">Cargando…</div></td></tr>';
     return;
@@ -1630,17 +1821,25 @@ function renderDetalleTable() {
   var rows = _detalleLegsFiltrados();
   var ctEl = document.getElementById('df-ct');
 
+  syncClearSortBtn(detalleSortKey(), 'btn-clear-sort-det');
   if (detalleModo === 'linea') {
-    var lineas = [];
-    rows.forEach(function(leg) {
-      itemsOf(leg.id).forEach(function(it) { lineas.push({ leg: leg, it: it }); });
-    });
+    var lineas = _detalleLineas(rows);
     if (ctEl) ctEl.textContent = '(' + lineas.length + ' línea' + (lineas.length === 1 ? '' : 's') + ' · ' + rows.length + ' legalización' + (rows.length === 1 ? '' : 'es') + ')';
     box.innerHTML = _detalleTablaLinea(lineas);
   } else {
     if (ctEl) ctEl.textContent = '(' + rows.length + ')';
-    box.innerHTML = _detalleTablaLegalizacion(rows);
+    box.innerHTML = _detalleTablaLegalizacion(applySortLg('detleg', rows));
   }
+}
+
+// Una entrada por línea de gasto de las legalizaciones dadas, ya con el orden
+// elegido en la vista "Por línea de gasto" (la tabla y el Excel la comparten).
+function _detalleLineas(rows) {
+  var lineas = [];
+  rows.forEach(function(leg) {
+    itemsOf(leg.id).forEach(function(it) { lineas.push({ leg: leg, it: it }); });
+  });
+  return applySortLg('detlin', lineas);
 }
 
 function _detalleTablaLegalizacion(rows) {
@@ -1666,11 +1865,7 @@ function _detalleTablaLegalizacion(rows) {
       '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
     '</tr>';
   }).join('');
-  return '<table><thead><tr>' +
-    '<th>N°</th><th>Fecha</th><th>Tipo</th><th>Responsable</th><th>Placa</th><th>Ruta</th><th>Clientes</th>' +
-    '<th>Remisiones</th><th>Empresas</th><th>Gastos</th><th style="text-align:right">Total gastos</th>' +
-    '<th style="text-align:right">Anticipo</th><th>Km</th><th>Estado</th><th>Observaciones</th><th>Acciones</th>' +
-    '</tr></thead><tbody>' + body + '</tbody></table>';
+  return '<table><thead><tr>' + sortHeadCellsHtml('detleg') + '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
 function _detalleTablaLinea(lineas) {
@@ -1692,43 +1887,38 @@ function _detalleTablaLinea(lineas) {
       '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
     '</tr>';
   }).join('');
-  return '<table><thead><tr>' +
-    '<th>N°</th><th>Fecha</th><th>Tipo</th><th>Responsable</th><th>Placa</th><th>Empresas</th>' +
-    '<th>Concepto</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th><th>Estado</th><th>Acciones</th>' +
-    '</tr></thead><tbody>' + body + '</tbody></table>';
+  return '<table><thead><tr>' + sortHeadCellsHtml('detlin') + '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
 // Exporta la misma vista activa (por legalización o por línea de gasto),
-// respetando los filtros df-* actuales.
+// respetando los filtros df-* y el orden de columnas actuales.
 function exportarDetalleExcel() {
   var rows = _detalleLegsFiltrados();
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
   var wb = XLSX.utils.book_new();
   if (detalleModo === 'linea') {
-    var dataLinea = [];
-    rows.forEach(function(leg) {
-      itemsOf(leg.id).forEach(function(it) {
-        dataLinea.push({
-          'N°': leg.Consecutivo || '',
-          'Fecha': fmtDate(leg.Fecha),
-          'Tipo': tipoLabel(leg),
-          'Responsable': leg.Responsable || '',
-          'Placa': leg.Placa || '',
-          'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
-          'Concepto': it.Concepto || '',
-          'Proveedor': it.Proveedor || '',
-          'NIT': it.NIT || '',
-          'Valor': Number(it.Valor) || 0,
-          'Estado': estadoLeg(leg) || ''
-        });
-      });
+    var dataLinea = _detalleLineas(rows).map(function(x) {
+      var leg = x.leg, it = x.it;
+      return {
+        'N°': leg.Consecutivo || '',
+        'Fecha': fmtDate(leg.Fecha),
+        'Tipo': tipoLabel(leg),
+        'Responsable': leg.Responsable || '',
+        'Placa': leg.Placa || '',
+        'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+        'Concepto': it.Concepto || '',
+        'Proveedor': it.Proveedor || '',
+        'NIT': it.NIT || '',
+        'Valor': Number(it.Valor) || 0,
+        'Estado': estadoLeg(leg) || ''
+      };
     });
     if (!dataLinea.length) { showToast('No hay líneas de gasto para exportar', '#e74c3c'); return; }
     var wsLinea = XLSX.utils.json_to_sheet(dataLinea);
     XLSX.utils.book_append_sheet(wb, wsLinea, 'Por linea de gasto');
   } else {
-    var dataLeg = rows.map(function(leg) {
+    var dataLeg = applySortLg('detleg', rows).map(function(leg) {
       var esMant = leg.Tipo === 'Mantenimiento';
       var km = '';
       if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) km = Number(leg.Km_Llegada) - Number(leg.Km_Salida);
@@ -1759,7 +1949,18 @@ function exportarDetalleExcel() {
 }
 
 // ── Tabla ──
+// Todo lo que depende de los filtros de Legalizaciones: la lista, los
+// indicadores y las demás pestañas que se recalculan con ella.
 function renderTable() {
+  renderLegTable();
+  updateStats();
+  renderEnviosTable();
+  renderProrrateoGastos();
+  renderDetalleTable();
+}
+
+// Solo la lista de Legalizaciones (también la redibuja el cambio de orden).
+function renderLegTable() {
   var fEmp = document.getElementById('f-emp').value;
   var fTipo = document.getElementById('f-tipo').value;
   var fEstado = document.getElementById('f-estado').value;
@@ -1777,6 +1978,8 @@ function renderTable() {
     }
     return true;
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
+  rows = applySortLg('leg', rows);
+  renderSortHead('leg', 'lg-head');
 
   document.getElementById('lg-ct').textContent = '(' + rows.length + ')';
   actualizarContadorDescuadre('lg-desc-ct', rows);
@@ -1807,11 +2010,6 @@ function renderTable() {
       '<td>' + acciones + '</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="10"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
-
-  updateStats();
-  renderEnviosTable();
-  renderProrrateoGastos();
-  renderDetalleTable();
 }
 
 // ── Pestaña Envíos (Tipo='Envio'): vista aparte de las legalizaciones ──
@@ -1823,20 +2021,20 @@ function renderEnviosTable() {
   var fHasta = document.getElementById('ef-hasta').value;
   var fTxt = (document.getElementById('ef-txt').value || '').toLowerCase().trim();
 
-  function nitDe(leg) { var it = itemsOf(leg.id)[0]; return it ? (it.NIT || '') : ''; }
-
   var rows = legs.filter(function(leg) {
     if (!esEnvio(leg)) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fDesde && (leg.Fecha || '') < fDesde) return false;
     if (fHasta && (leg.Fecha || '') > fHasta) return false;
     if (fTxt) {
-      var hay = [leg.Consecutivo, proveedoresTexto(leg.id), nitDe(leg), leg.Remisiones_Relacionadas]
+      var hay = [leg.Consecutivo, proveedoresTexto(leg.id), nitEnvioDe(leg), leg.Remisiones_Relacionadas]
         .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
       if (hay.indexOf(fTxt) < 0) return false;
     }
     return true;
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
+  rows = applySortLg('env', rows);
+  renderSortHead('env', 'envl-head');
 
   var canEditMod = AUTH.hasModule('legalizacion_gastos');
   var canDel = AUTH.canDelete();
@@ -1857,7 +2055,7 @@ function renderEnviosTable() {
       '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
       '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
       '<td>' + escHtml(proveedoresTexto(leg.id) || '—') + '</td>' +
-      '<td>' + escHtml(nitDe(leg) || '—') + '</td>' +
+      '<td>' + escHtml(nitEnvioDe(leg) || '—') + '</td>' +
       '<td style="max-width:280px;white-space:normal;font-size:0.8rem">' + escHtml(leg.Remisiones_Relacionadas || '—') + '</td>' +
       '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney(totalGastosOf(leg.id))) + '</td>' +
