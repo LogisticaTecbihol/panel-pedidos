@@ -18,6 +18,12 @@
 .json-block { background:#f7fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px; font-family:'Cascadia Code','Fira Code',monospace; font-size:0.78rem; white-space:pre-wrap; word-break:break-all; max-height:300px; overflow-y:auto; color:#2d3748; }
 .diff-added { color:#27ae60; font-weight:600; }
 .diff-removed { color:#e74c3c; font-weight:600; }
+.rem-hit { background:#fff3cd; padding:0 3px; border-radius:3px; font-weight:700; color:#2d3748; }
+.badge-menciona { background:#e6f4ea; color:#1e7e34; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; white-space:nowrap; }
+.badge-otro { background:#edf2f7; color:#718096; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; white-space:nowrap; }
+.rem-otro td { color:#718096; }
+.rem-cambio { font-size:0.8rem; line-height:1.5; max-width:520px; word-break:break-word; }
+.rem-cambio .k { font-weight:700; color:#2d3748; }
 .audit-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
 .audit-detail-grid h4 { font-size:0.82rem; color:#718096; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
 @media (max-width:700px) { .audit-detail-grid { grid-template-columns:1fr; } }
@@ -86,6 +92,7 @@
   <!-- TABS -->
   <div style="display:flex;gap:8px;margin-bottom:16px">
     <button class="btn-dl" id="atab-btn-cambios" onclick="showAuditTab('cambios')" style="background:#1a5276">📝 Cambios</button>
+    <button class="btn-dl" id="atab-btn-remision" onclick="showAuditTab('remision')" style="background:#718096">🔎 Historial de remisión</button>
     <button class="btn-dl" id="atab-btn-consultas" onclick="showAuditTab('consultas')" style="background:#718096">👁️ Consultas de reportes</button>
   </div>
 
@@ -178,6 +185,64 @@
 
   </div><!-- /atab-cambios -->
 
+  <!-- ══════════ TAB: HISTORIAL DE REMISIÓN ══════════ -->
+  <div id="atab-remision" style="display:none">
+
+  <div class="stats">
+    <div class="sc" style="border-color:#1a5276"><div class="num" id="r-total" style="color:#1a5276">0</div><div class="lbl">Movimientos</div></div>
+    <div class="sc" style="border-color:#27ae60"><div class="num" id="r-menciona" style="color:#27ae60">0</div><div class="lbl">Mencionan la remisión</div></div>
+    <div class="sc" style="border-color:#8e44ad"><div class="num" id="r-usuarios" style="color:#8e44ad">0</div><div class="lbl">Usuarios distintos</div></div>
+    <div class="sc" style="border-color:#e67e22"><div class="num" id="r-modulos" style="color:#e67e22">0</div><div class="lbl">Módulos distintos</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg">
+      <label>N° de remisión:</label>
+      <input class="ef" type="text" id="r-q" placeholder="Ej. IASO-RS-0112" style="min-width:220px" autocomplete="off">
+    </div>
+    <div class="fg" style="align-self:flex-end">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+        <input type="checkbox" id="r-solo-menciona" onchange="applyRemFilters()">
+        Solo cambios que mencionan la remisión
+      </label>
+    </div>
+    <button class="btn-dl" onclick="buscarRemision()" style="background:#1a5276">🔎 Buscar</button>
+    <button class="btn-dl" onclick="clearRemision()">✕ Limpiar</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>🔎 Historial de remisión <span id="r-row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="exportRemisionCSV()">📥 Exportar CSV</button>
+      </div>
+    </div>
+    <div style="padding:8px 20px;font-size:0.8rem;color:#4a5568;background:#f7fafc;border-bottom:1px solid #e2e8f0">
+      Escriba el número de la remisión para ver, en orden cronológico, <strong>quién la creó o modificó, cuándo, en qué módulo y qué cambió</strong>. Se busca en todos los módulos y en todo el registro de auditoría. Las filas <strong>«Mismo registro»</strong> son otros cambios (cantidad, estado…) del mismo documento que no repiten el número de la remisión. Haga clic en una fila para ver el detalle completo.
+    </div>
+    <div id="r-aviso" style="display:none;padding:8px 20px;font-size:0.82rem;background:#fffaf0;border-bottom:1px solid #fbd38d;color:#7b341e"></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:155px">Fecha / Hora</th>
+            <th>Usuario</th>
+            <th style="width:90px">Acción</th>
+            <th>Módulo</th>
+            <th>Qué cambió</th>
+            <th style="width:110px">Relación</th>
+          </tr>
+        </thead>
+        <tbody id="r-body">
+          <tr><td colspan="6" style="text-align:center;padding:32px;color:#718096">Escriba un número de remisión y pulse Buscar.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="r-pagination" style="display:flex;justify-content:center;gap:8px;padding:14px 0"></div>
+  </div>
+
+  </div><!-- /atab-remision -->
+
   <!-- ══════════ TAB: CONSULTAS DE REPORTES ══════════ -->
   <div id="atab-consultas" style="display:none">
 
@@ -263,6 +328,6 @@
 <script src="js/shared.js?v=20260928b"></script>
 <script src="js/auth.js?v=20260923a"></script>
 <script src="js/notificaciones.js?v=20260930a"></script>
-<script src="js/auditoria.js?v=20260908a"></script>
+<script src="js/auditoria.js?v=20261001a"></script>
 </body>
 </html>

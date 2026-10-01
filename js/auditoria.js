@@ -216,7 +216,10 @@ function buildSummary(r) {
 }
 
 function showDetail(idx) {
-  var r = filteredData[idx];
+  openDetail(filteredData[idx]);
+}
+
+function openDetail(r) {
   if (!r) return;
 
   var badgeClass = r.accion === 'INSERT' ? 'badge-insert' : r.accion === 'UPDATE' ? 'badge-update' : 'badge-delete';
@@ -309,13 +312,15 @@ var REPORTE_LABELS = {
 };
 function reporteLabel(id) { return REPORTE_LABELS[id] || id || '—'; }
 
+var AUDIT_TABS = ['cambios', 'remision', 'consultas'];
+
 function showAuditTab(tab) {
-  var isConsultas = tab === 'consultas';
-  document.getElementById('atab-cambios').style.display = isConsultas ? 'none' : 'block';
-  document.getElementById('atab-consultas').style.display = isConsultas ? 'block' : 'none';
-  document.getElementById('atab-btn-cambios').style.background = isConsultas ? '#718096' : '#1a5276';
-  document.getElementById('atab-btn-consultas').style.background = isConsultas ? '#1a5276' : '#718096';
-  if (isConsultas && !consultasLoaded) loadConsultas();
+  AUDIT_TABS.forEach(function(t) {
+    document.getElementById('atab-' + t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('atab-btn-' + t).style.background = t === tab ? '#1a5276' : '#718096';
+  });
+  if (tab === 'consultas' && !consultasLoaded) loadConsultas();
+  if (tab === 'remision') document.getElementById('r-q').focus();
 }
 
 async function loadConsultas() {
@@ -469,4 +474,313 @@ function exportConsultasCSV() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('CSV exportado con ' + consultaFiltered.length + ' registros');
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// PESTAÑA: HISTORIAL DE REMISIÓN
+// Quién creó o modificó una remisión, cuándo, en qué módulo y qué cambió.
+// La búsqueda corre en el servidor (RPC get_historial_remision, solo admin):
+// busca el número en TODAS las columnas "remision*" del audit_log y trae,
+// además, el resto del historial de los mismos registros (menciona = false),
+// porque un UPDATE solo guarda las columnas que cambiaron y no repite el
+// número de la remisión.
+// ══════════════════════════════════════════════════════════════
+
+var REM_TABLA_LABELS = {
+  Pedidos: 'Pedidos',
+  EntregasPedido: 'Entrega de pedido',
+  Ingresos: 'Ingresos',
+  OrdenesCompra: 'Órdenes de compra',
+  Devoluciones: 'Devoluciones',
+  CambiosMercancia: 'Cambios',
+  SolicitudMuestras: 'Muestras',
+  Reenvases: 'Salidas a producción',
+  KardexNC: 'Kardex NC',
+  RemisionesAnuladas: 'Remisión anulada',
+  RemisionesExternas: 'Remisión externa',
+  RemisionesExternasItems: 'Ítem de remisión externa',
+  LegalizacionGastos: 'Legalización de gastos',
+  apartados_pedido: 'Apartado de pedido',
+  apartados_muestra: 'Apartado de muestra'
+};
+// Campos que, en una creación o eliminación, vale la pena mostrar además de la remisión.
+var REM_PREFERIDOS = ['Producto', 'Presentacion', 'Cantidad', 'Cliente', 'Empresa', 'Consecutivo', 'Estado'];
+var REM_MAX_LINEAS = 8;
+
+var remData = [];
+var remFiltered = [];
+var remPage = 1;
+var remQuery = '';
+var remRe = null;
+var remTotal = 0;
+var remTruncado = false;
+var remSeq = 0;
+
+document.getElementById('r-q').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') buscarRemision();
+});
+
+function remTablaLabel(t) { return REM_TABLA_LABELS[t] || t || '—'; }
+
+// Misma regla que el servidor: el número no puede ir pegado a otro carácter
+// alfanumérico (0044 no coincide con 00441), sin distinguir mayúsculas.
+function remBuildRe(q) {
+  var esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|[^A-Za-z0-9])' + esc + '([^A-Za-z0-9]|$)', 'i');
+}
+
+function remIsKey(k) { return /remision/i.test(k) && k !== 'Remision_Id'; }
+
+function remValText(v) {
+  if (v === null || v === undefined) return '';
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+
+// Valor acotado y escapado; resalta el número buscado si el campo es una remisión.
+function remValHtml(k, v) {
+  var s = remValText(v);
+  if (s === '') return '<em style="color:#a0aec0">(vacío)</em>';
+  var html = escHtml(s.length > 70 ? s.slice(0, 67) + '…' : s);
+  if (remIsKey(k) && remRe && remRe.test(s)) return '<span class="rem-hit" title="' + escHtml(s) + '">' + html + '</span>';
+  if (s.length > 70) return '<span title="' + escHtml(s) + '">' + html + '</span>';
+  return html;
+}
+
+// Pedidos.Remisiones es una lista "num|cant|fecha,num|cant|fecha": se muestra
+// qué entrada se agregó (＋) o se quitó (－) en vez de las dos listas completas.
+function remSplitList(v) {
+  return remValText(v).split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+}
+
+function remEntryHtml(x) {
+  var p = x.split('|');
+  var label = (p[0] || '(sin número)') + (p.length > 1 ? ' · cant. ' + p[1] : '') + (p.length > 2 ? ' · ' + p[2] : '');
+  var h = escHtml(label);
+  return remRe && remRe.test(p[0]) ? '<span class="rem-hit">' + h + '</span>' : h;
+}
+
+function remListDiffHtml(antes, despues) {
+  var a = remSplitList(antes);
+  var d = remSplitList(despues);
+  var parts = [];
+  d.filter(function(x) { return a.indexOf(x) < 0; }).forEach(function(x) {
+    parts.push('<span class="diff-added">＋</span> ' + remEntryHtml(x));
+  });
+  a.filter(function(x) { return d.indexOf(x) < 0; }).forEach(function(x) {
+    parts.push('<span class="diff-removed">－</span> ' + remEntryHtml(x));
+  });
+  return parts.length ? parts.join('<br>') : '<span style="color:#718096">sin cambios en la lista</span>';
+}
+
+// Celda "Qué cambió": en una edición, campo: antes → después; en una creación o
+// eliminación, la(s) remisión(es) del registro y sus datos principales.
+function remCambioHtml(r) {
+  var lines = [];
+  if (r.accion === 'UPDATE') {
+    var antes = r.datos_antes || {};
+    var despues = r.datos_despues || {};
+    Object.keys(despues).forEach(function(k) {
+      if (k === 'Remisiones') {
+        lines.push('<span class="k">' + escHtml(k) + '</span>:<br>' + remListDiffHtml(antes[k], despues[k]));
+      } else {
+        lines.push('<span class="k">' + escHtml(k) + '</span>: <span class="diff-removed">' + remValHtml(k, antes[k]) +
+          '</span> → <span class="diff-added">' + remValHtml(k, despues[k]) + '</span>');
+      }
+    });
+    if (!lines.length) lines.push('<span style="color:#718096">Sin cambios</span>');
+  } else {
+    var snap = (r.accion === 'DELETE' ? r.datos_antes : r.datos_despues) || {};
+    var show = Object.keys(snap).filter(function(k) { return remIsKey(k) && remValText(snap[k]) !== ''; });
+    REM_PREFERIDOS.forEach(function(k) {
+      if (remValText(snap[k]) !== '' && show.indexOf(k) < 0) show.push(k);
+    });
+    show.forEach(function(k) {
+      lines.push('<span class="k">' + escHtml(k) + '</span>: ' + remValHtml(k, snap[k]));
+    });
+    if (!lines.length) lines.push('<span style="color:#718096">' + (r.accion === 'DELETE' ? 'Registro eliminado' : 'Registro creado') + '</span>');
+  }
+  if (lines.length > REM_MAX_LINEAS) {
+    var extra = lines.length - REM_MAX_LINEAS;
+    lines = lines.slice(0, REM_MAX_LINEAS);
+    lines.push('<span style="color:#718096">… y ' + extra + ' campo' + (extra === 1 ? '' : 's') + ' más (clic para ver todo)</span>');
+  }
+  return '<div class="rem-cambio">' + lines.join('<br>') + '</div>';
+}
+
+function remUsuarioHtml(r) {
+  if (r.usuario_nombre) {
+    return '<strong>' + escHtml(r.usuario_nombre) + '</strong>' +
+      (r.usuario_email ? '<br><span style="font-size:0.76rem;color:#718096">' + escHtml(r.usuario_email) + '</span>' : '');
+  }
+  return escHtml(r.usuario_email || 'Sistema');
+}
+
+async function buscarRemision() {
+  var q = document.getElementById('r-q').value.trim();
+  if (q.length < 3) { showToast('Escriba al menos 3 caracteres del número de remisión', '#e74c3c'); return; }
+
+  var seq = ++remSeq;
+  document.getElementById('r-body').innerHTML =
+    '<tr><td colspan="6" style="text-align:center;padding:32px;color:#718096">Buscando el historial de «' + escHtml(q) + '»…</td></tr>';
+  document.getElementById('r-pagination').innerHTML = '';
+  setSyncStatus('syncing', 'Buscando el historial de la remisión ' + q + '...');
+
+  try {
+    var res = await _sb.rpc('get_historial_remision', { p_remision: q });
+    if (seq !== remSeq) return;   // llegó una búsqueda más nueva
+    if (res.error) throw new Error(res.error.message);
+
+    var out = res.data || {};
+    remQuery = q;
+    remRe = remBuildRe(q);
+    remTotal = out.total || 0;
+    remTruncado = !!out.truncado;
+    // El servidor responde de lo más reciente a lo más antiguo; aquí se lee como historia.
+    remData = (out.filas || []).slice().reverse();
+    applyRemFilters();
+    setSyncStatus('ok', 'Conectado a la nube. ' + remData.length + ' movimientos para la remisión ' + q + '.');
+  } catch (err) {
+    if (seq !== remSeq) return;
+    remData = [];
+    remQuery = '';
+    remRe = null;
+    applyRemFilters();
+    setSyncStatus('error', 'Error al buscar la remisión: ' + err.message);
+    showToast('Error al buscar la remisión: ' + err.message, '#e74c3c');
+  }
+}
+
+function clearRemision() {
+  remSeq++;
+  document.getElementById('r-q').value = '';
+  document.getElementById('r-solo-menciona').checked = false;
+  remData = [];
+  remQuery = '';
+  remRe = null;
+  remTotal = 0;
+  remTruncado = false;
+  applyRemFilters();
+  document.getElementById('r-q').focus();
+}
+
+function applyRemFilters() {
+  var solo = document.getElementById('r-solo-menciona').checked;
+  remFiltered = remData.filter(function(r) { return !solo || r.menciona; });
+  updateRemStats();
+  remPage = 1;
+  renderRemTable();
+}
+
+function updateRemStats() {
+  var menciona = 0, usuarios = {}, modulos = {};
+  remFiltered.forEach(function(r) {
+    if (r.menciona) menciona++;
+    usuarios[r.usuario_email || r.usuario_nombre || 'Sistema'] = true;
+    modulos[r.tabla] = true;
+  });
+  document.getElementById('r-total').textContent = remFiltered.length;
+  document.getElementById('r-menciona').textContent = menciona;
+  document.getElementById('r-usuarios').textContent = Object.keys(usuarios).length;
+  document.getElementById('r-modulos').textContent = Object.keys(modulos).length;
+
+  var aviso = document.getElementById('r-aviso');
+  if (remTruncado) {
+    aviso.textContent = 'Hay ' + remTotal + ' movimientos para esta búsqueda; se muestran solo los ' + remData.length +
+      ' más recientes. Escriba el número completo de la remisión para acotarla.';
+    aviso.style.display = '';
+  } else {
+    aviso.style.display = 'none';
+  }
+}
+
+function renderRemTable() {
+  var start = (remPage - 1) * PAGE_SIZE;
+  var page = remFiltered.slice(start, start + PAGE_SIZE);
+  var html = '';
+
+  if (!page.length) {
+    var msg = remQuery
+      ? 'No se encontró ninguna remisión «' + escHtml(remQuery) + '» en el registro de auditoría. Revise que el número esté completo; las remisiones emitidas antes de activarse la auditoría no tienen historial.'
+      : 'Escriba un número de remisión y pulse Buscar.';
+    html = '<tr><td colspan="6" style="text-align:center;padding:32px;color:#718096">' + msg + '</td></tr>';
+  } else {
+    page.forEach(function(r, i) {
+      var badgeClass = r.accion === 'INSERT' ? 'badge-insert' : r.accion === 'UPDATE' ? 'badge-update' : 'badge-delete';
+      var accionLabel = r.accion === 'INSERT' ? 'Creación' : r.accion === 'UPDATE' ? 'Edición' : 'Eliminación';
+      html += '<tr class="audit-row' + (r.menciona ? '' : ' rem-otro') + '" onclick="showRemDetail(' + (start + i) + ')">' +
+        '<td style="white-space:nowrap;font-size:0.82rem">' + formatTimestamp(r.created_at) + '</td>' +
+        '<td>' + remUsuarioHtml(r) + '</td>' +
+        '<td><span class="' + badgeClass + '">' + accionLabel + '</span></td>' +
+        '<td>' + escHtml(remTablaLabel(r.tabla)) +
+          '<br><span style="font-size:0.74rem;color:#a0aec0">ID ' + escHtml(String(r.registro_id || '—')) + '</span></td>' +
+        '<td>' + remCambioHtml(r) + '</td>' +
+        '<td>' + (r.menciona
+          ? '<span class="badge-menciona">Menciona</span>'
+          : '<span class="badge-otro">Mismo registro</span>') + '</td>' +
+        '</tr>';
+    });
+  }
+
+  document.getElementById('r-body').innerHTML = html;
+  document.getElementById('r-row-ct').textContent = remQuery ? '(' + remFiltered.length + ' movimientos de «' + remQuery + '»)' : '';
+  renderRemPagination();
+}
+
+function renderRemPagination() {
+  var totalPages = Math.ceil(remFiltered.length / PAGE_SIZE);
+  if (totalPages <= 1) { document.getElementById('r-pagination').innerHTML = ''; return; }
+
+  var html = '';
+  if (remPage > 1) {
+    html += '<button class="btn-dl" onclick="goRemPage(' + (remPage - 1) + ')">← Anterior</button>';
+  }
+  html += '<span style="padding:8px 12px;font-size:0.85rem;color:#4a5568">Página ' + remPage + ' de ' + totalPages + '</span>';
+  if (remPage < totalPages) {
+    html += '<button class="btn-dl" onclick="goRemPage(' + (remPage + 1) + ')">Siguiente →</button>';
+  }
+  document.getElementById('r-pagination').innerHTML = html;
+}
+
+function goRemPage(p) {
+  remPage = p;
+  renderRemTable();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function showRemDetail(idx) {
+  openDetail(remFiltered[idx]);
+}
+
+function exportRemisionCSV() {
+  if (!remFiltered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+
+  function cell(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }
+
+  var headers = ['Fecha','Usuario','Email','Acción','Módulo','Registro_ID','Relación','Campos_modificados','Datos_Antes','Datos_Después'];
+  var rows = [headers.join(',')];
+
+  remFiltered.forEach(function(r) {
+    rows.push([
+      cell(formatTimestamp(r.created_at)),
+      cell(r.usuario_nombre || ''),
+      cell(r.usuario_email || ''),
+      cell(r.accion === 'INSERT' ? 'Creación' : r.accion === 'UPDATE' ? 'Edición' : 'Eliminación'),
+      cell(remTablaLabel(r.tabla)),
+      cell(r.registro_id || ''),
+      cell(r.menciona ? 'Menciona la remisión' : 'Mismo registro'),
+      cell(r.accion === 'UPDATE' ? Object.keys(r.datos_despues || {}).join(', ') : ''),
+      cell(JSON.stringify(r.datos_antes || {})),
+      cell(JSON.stringify(r.datos_despues || {}))
+    ].join(','));
+  });
+
+  var blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'historial_remision_' + remQuery.replace(/[^A-Za-z0-9_-]/g, '') + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exportado con ' + remFiltered.length + ' movimientos');
 }
