@@ -279,13 +279,17 @@ async function _avisarContabilidadTrasladoTardio(pedidoId, ocRow) {
     var built = generarRemisionesTrasladoPDF(grupo, { return_doc: true, contabilidad: true });
     if (!built || !built.doc) return;
 
-    var contab = await NOTIF.resolverContabilidad(info.empresa);
+    // La del pedido y, además, las dueñas de las remisiones de traslado
+    // (RE = destino, RS = origen) que lleva este PDF.
+    var refs = NOTIF.refsDeOCs(r);
+    var contab = await NOTIF.resolverContabilidad(info.empresa, { empresas: refs.empresas, remisiones: refs.remisiones });
     if (!contab.contabIds.length) return;
 
     await NOTIF.enviarPDFContabilidad(built.doc, {
       modulo: 'ordenes', referencia: r.Consecutivo,
       titulo: 'Complemento traslado OC ' + r.Consecutivo + ' — Pedido ' + info.empresa + ' #' + info.consecutivo,
       docLabel: 'Remisión de traslado (complemento tardío)',
+      empresas: refs.empresas, remisiones: refs.remisiones,
       contabIds: contab.contabIds, contabNames: contab.contabNames
     });
   } catch (e) { console.error('Aviso tardío contabilidad (traslado) error', e); }
@@ -336,10 +340,17 @@ function _enviarGrupoOC(r) {
     });
   }
 
+  // Contabilidad: si ya hay remisiones de traslado, reciben copia las de las
+  // empresas dueñas de esos consecutivos (RE = destino, RS = origen). El PDF de
+  // remisiones imprime solo las de la fila cabecera (grupoRem[0]).
+  var refs = NOTIF.refsDeOCs(grupoRem ? grupoRem[0] : null);
+
   NOTIF.openModalEnviar({
     modulo: 'ordenes',
     referencia: cons,
     titulo: 'Solicitud de OC ' + cons,
+    empresas: refs.empresas,
+    remisiones: refs.remisiones,
     buildDoc: function() {
       var b = generarSolicitudOCPDF(grupo, { return_doc: true });
       return b ? b.doc : null;

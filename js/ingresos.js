@@ -646,6 +646,10 @@ function enviarRemisionIngreso(btn) {
     referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + remNum,
     titulo: 'Remisión ingreso #' + remNum + ' — ' + (g.Origen || ''),
     empresa: empresa,
+    // Una RE (entrada) es de la empresa destino y una RS de la origen: ambas
+    // contabilidades reciben copia, y la sigla del consecutivo también cuenta.
+    empresas: [g.Empresa_Origen, g.Empresa_Destino],
+    remisiones: [remDest, remOrig],
     triggerBtn: btn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
@@ -1082,7 +1086,15 @@ var _pendingContabIng = null;
 async function confirmarYRegistrarIngreso() {
   var empresa = document.getElementById('ing-empresa-origen').value || document.getElementById('ing-empresa-destino').value || '';
   if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
-    var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'ingresos');
+    // La RE que se genera al guardar es de la empresa destino (ej. GREEN →
+    // PARCELAR da PARCELAR-RE-####): su contabilidad debe recibirla, no solo la
+    // de la empresa origen.
+    var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'ingresos', {
+      empresas: [
+        document.getElementById('ing-empresa-origen').value,
+        document.getElementById('ing-empresa-destino').value
+      ]
+    });
     if (!r.confirmed) return;
     _pendingContabIng = r;
   }
@@ -1142,6 +1154,8 @@ async function confirmAndSaveIngreso() {
             modulo: 'ingresos', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + _remIng,
             titulo: 'Remisión ingreso #' + _remIng + ' — ' + (origen || ''),
             docLabel: 'Remisión',
+            empresas: [empresa_origen, empresa_destino],
+            remisiones: [result.remision_destino, result.remision_origen],
             contabIds: _pendingContabIng.contabIds, contabNames: _pendingContabIng.contabNames,
             destinoLabel: _pendingContabIng.destinoLabel
           });

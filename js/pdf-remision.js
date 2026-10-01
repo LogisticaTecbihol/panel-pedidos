@@ -176,6 +176,10 @@ function enviarRemisionPDF(data, meta) {
     referencia: meta.referencia,
     titulo: meta.titulo,
     empresa: data.empresa || meta.empresa || null,
+    empresas: meta.empresas || null,
+    // La sigla de cada consecutivo (PARCELAR-RE-0069) define qué contabilidad
+    // recibe la copia, además de la de data.empresa.
+    remisiones: [data.remision, data.doc_number].concat(meta.remisiones || []),
     triggerBtn: meta.triggerBtn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true }));

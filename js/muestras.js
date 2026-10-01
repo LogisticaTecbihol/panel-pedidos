@@ -2063,6 +2063,10 @@ function exportarMuestraRemisionPDF(opts) {
       referencia: (ctx.consec || '') + ' · Rem ' + remision,
       titulo: 'Remisión muestras #' + remision + ' — ' + (head.Solicitante || 'sin solicitante'),
       empresa: head.Empresa || '',
+      // El PDF incluye las remisiones de traslado de las OC: su contabilidad
+      // (RE = destino, RS = origen) también recibe copia.
+      empresas: NOTIF.refsDeOCs(ocGroups.map(function(g) { return g && g[0]; })).empresas,
+      remisiones: [remision].concat(NOTIF.refsDeOCs(ocGroups.map(function(g) { return g && g[0]; })).remisiones),
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));

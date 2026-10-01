@@ -28,6 +28,9 @@ var NOTIF = (function() {
   var _enviadasCache = null;
   var _contabilidadMapPromise = null;
   var AUTO_CONTAB_MODS = ['pedidos', 'ingresos', 'devoluciones', 'cambios', 'muestras', 'reenvases'];
+  // true si la última consulta de contabilidad por empresa falló: el mapa queda
+  // vacío y NO significa "esa empresa no tiene contabilidad".
+  var _contabMapFallo = false;
 
   function _loadContabilidadMap() {
     if (_contabilidadMapPromise) return _contabilidadMapPromise;
@@ -35,16 +38,74 @@ var NOTIF = (function() {
       if (res.error) {
         console.error('NOTIF list_contabilidad_por_empresa', res.error);
         _contabilidadMapPromise = null;
+        _contabMapFallo = true;
         return {};
       }
+      _contabMapFallo = false;
       var map = {};
       (res.data || []).forEach(function(r) {
         if (!map[r.empresa_sigla]) map[r.empresa_sigla] = [];
         if (map[r.empresa_sigla].indexOf(r.usuario_id) < 0) map[r.empresa_sigla].push(r.usuario_id);
       });
       return map;
+    }).catch(function(e) {
+      console.error('NOTIF list_contabilidad_por_empresa', e);
+      _contabilidadMapPromise = null;
+      _contabMapFallo = true;
+      return {};
     });
     return _contabilidadMapPromise;
+  }
+
+  // Consecutivos de remisión que genera el panel: SIGLA-RE-0069 (entrada) y
+  // SIGLA-RS-0044 (salida). La sigla del prefijo dice de qué empresa es la
+  // remisión, y por tanto a qué contabilidad le toca recibirla.
+  var _RE_CONSEC_REMISION = /\b(PARCELAR|GREEN|RESO|IASO|IAS|GRANEL)-R[ES]-\d+/gi;
+
+  // Siglas de empresa referenciadas en los consecutivos de remisión que
+  // aparezcan en `textos` (números sueltos, títulos, referencias…).
+  function siglasDeRemisiones(textos) {
+    var out = [];
+    [].concat(textos == null ? [] : textos).forEach(function(t) {
+      if (t == null) return;
+      (String(t).match(_RE_CONSEC_REMISION) || []).forEach(function(m) {
+        var sg = m.split('-')[0].toUpperCase();
+        if (out.indexOf(sg) < 0) out.push(sg);
+      });
+    });
+    return out;
+  }
+
+  // Siglas cuya contabilidad debe recibir el PDF: las empresas dadas (nombre o
+  // sigla) más las de los consecutivos de remisión que lleva el documento.
+  function _siglasContab(empresas, remisiones) {
+    var out = [];
+    function add(sg) { if (sg && out.indexOf(sg) < 0) out.push(sg); }
+    [].concat(empresas == null ? [] : empresas).forEach(function(e) {
+      e = (e == null ? '' : String(e)).trim();
+      if (e) add((typeof getSigla === 'function') ? getSigla(e) : e);
+    });
+    siglasDeRemisiones(remisiones).forEach(add);
+    return out;
+  }
+
+  // Para PDFs que llevan remisiones de traslado de OC: la entrada (Remision)
+  // es de la empresa destino y la salida (Remision_Origen) de la origen.
+  // Acepta una fila de OrdenesCompra, o arrays (anidados) de filas. Devuelve
+  // { remisiones, empresas } para pasar tal cual a openModalEnviar /
+  // enviarPDFContabilidad: los números (la sigla del prefijo manda) y, para los
+  // números manuales sin sigla, la empresa que les corresponde por posición.
+  function refsDeOCs(ocs) {
+    var rem = [], emp = [];
+    (function walk(x) {
+      if (!x) return;
+      if (Array.isArray(x)) { x.forEach(walk); return; }
+      var re = String(x.Remision || '').trim();
+      var rs = String(x.Remision_Origen || '').trim();
+      if (re) { rem.push(re); emp.push(x.Empresa_Destino); }
+      if (rs) { rem.push(rs); emp.push(x.Empresa_Origen); }
+    })(ocs);
+    return { remisiones: rem, empresas: emp };
   }
 
   // Directorio de usuarios (id, nombre, email, rol, activo) resuelto vía
@@ -109,6 +170,9 @@ var NOTIF = (function() {
       '.notif-send-msg { width: 100%; padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 7px; font-size: 0.86rem; resize: vertical; min-height: 60px; outline: none; margin-top: 12px; font-family: inherit; }' +
       '.notif-send-msg:focus { border-color: #1a5276; }' +
       '.notif-send-label { display: block; font-size: 0.8rem; font-weight: 700; color: #1a5276; margin-bottom: 6px; }' +
+      '.notif-contab-fijo { background: #f4ecf7; border: 1px solid #d7bde2; border-radius: 8px; padding: 9px 12px; margin-bottom: 14px; font-size: 0.82rem; color: #4a235a; line-height: 1.5; }' +
+      '.notif-contab-fijo .sg { display: inline-block; background: #7d3c98; color: white; border-radius: 9px; padding: 0 7px; font-size: 0.7rem; font-weight: 700; margin-left: 2px; }' +
+      '.notif-contab-fijo.warn { background: #fdf2e9; border-color: #f0b27a; color: #784212; }' +
       '';
     var s = document.createElement('style');
     s.textContent = css;
@@ -543,6 +607,7 @@ var NOTIF = (function() {
           '<button class="btn-close" title="Cerrar">✕</button>' +
         '</div>' +
         '<div class="mbody">' +
+          '<div class="notif-contab-fijo" style="display:none"></div>' +
           '<label class="notif-send-label">Destinatarios</label>' +
           '<input type="text" class="notif-send-search" placeholder="Buscar por nombre o email…">' +
           '<div class="notif-send-users"><div style="padding:20px;text-align:center;color:#718096;font-size:0.84rem">Cargando…</div></div>' +
@@ -573,11 +638,43 @@ var NOTIF = (function() {
 
     var users = await _loadUsuarios();
     var seleccion = {};
+
+    // Contabilidad: recibe siempre copia (no se puede desmarcar). Salen de la
+    // empresa del documento, de `meta.empresas` y de la sigla de cada
+    // consecutivo de remisión que lleva el PDF (PARCELAR-RE-0069 → PARCELAR).
+    function resolverFijos() {
+      return resolverContabilidad(meta.empresa || [], {
+        empresas: meta.empresas,
+        remisiones: [meta.titulo, meta.referencia].concat(meta.remisiones || [])
+      });
+    }
+    var contab = { contabIds: [], usuarios: [], siglas: [], fallo: false };
+    try { contab = await resolverFijos(); }
+    catch (e) { console.error('Auto-contabilidad lookup failed', e); contab.fallo = true; }
+    var fijoBox = overlay.querySelector('.notif-contab-fijo');
+    if (contab.usuarios.length) {
+      fijoBox.innerHTML = '🔒 <b>Contabilidad (recibe siempre copia):</b> ' + contab.usuarios.map(function(u) {
+        return escHtml(u.nombre) + ' <span class="sg">' + escHtml(u.siglas.join(' + ')) + '</span>';
+      }).join(' · ');
+      fijoBox.style.display = '';
+    } else if (contab.fallo) {
+      fijoBox.className = 'notif-contab-fijo warn';
+      fijoBox.innerHTML = '⚠ No se pudo consultar la contabilidad destinataria; se reintentará al enviar.';
+      fijoBox.style.display = '';
+    }
+    var fijos = {};
+    contab.contabIds.forEach(function(id) { fijos[id] = true; });
+    users = users.filter(function(u) { return !fijos[u.id]; });
+    // Con contabilidad fija ya hay a quién enviar aunque no se marque a nadie.
+    function actualizarConfirm() {
+      btnConfirm.disabled = Object.keys(seleccion).length === 0 && contab.contabIds.length === 0;
+    }
+
     // Remisión de GRANEL: producción queda preseleccionada como destinatario.
     if (meta.empresa && (typeof _esGranel === 'function') && _esGranel(meta.empresa)) {
       users.forEach(function(u) { if (u.rol === 'produccion') seleccion[u.id] = true; });
-      btnConfirm.disabled = Object.keys(seleccion).length === 0;
     }
+    actualizarConfirm();
 
     function render(filter) {
       var f = (filter || '').toLowerCase().trim();
@@ -602,7 +699,7 @@ var NOTIF = (function() {
         cb.addEventListener('change', function() {
           var id = cb.getAttribute('data-id');
           if (cb.checked) seleccion[id] = true; else delete seleccion[id];
-          btnConfirm.disabled = Object.keys(seleccion).length === 0;
+          actualizarConfirm();
         });
       });
     }
@@ -612,22 +709,32 @@ var NOTIF = (function() {
 
     btnConfirm.addEventListener('click', async function() {
       var dests = Object.keys(seleccion);
-      if (!dests.length) return;
+      if (!dests.length && !contab.contabIds.length) return;
       btnConfirm.disabled = true;
       btnConfirm.textContent = 'Enviando…';
       var mensaje = (msg.value || '').trim() || null;
       var totalSent = 0;
       var errores = [];
 
-      if (meta.empresa && AUTO_CONTAB_MODS.indexOf(meta.modulo) >= 0) {
-        try {
-          var sigla = (typeof getSigla === 'function') ? getSigla(meta.empresa) : meta.empresa;
-          var contabMap = await _loadContabilidadMap();
-          var contabIds = contabMap[sigla] || [];
-          contabIds.forEach(function(cid) {
-            if (cid !== _uid && dests.indexOf(cid) < 0) dests.push(cid);
-          });
-        } catch (e) { console.error('Auto-contabilidad lookup failed', e); }
+      // Si la consulta de contabilidad falló al abrir, se reintenta aquí: no se
+      // envía sin poder garantizar que la contabilidad de la empresa lo reciba.
+      var cfinal = contab;
+      if (contab.fallo) {
+        try { cfinal = await resolverFijos(); } catch (e) { cfinal = { contabIds: [], fallo: true }; }
+        if (cfinal.fallo) {
+          showToast('No se pudo verificar la contabilidad destinataria. Reintenta en un momento.', '#e74c3c');
+          btnConfirm.disabled = false;
+          btnConfirm.textContent = 'Enviar';
+          return;
+        }
+      }
+      cfinal.contabIds.forEach(function(cid) {
+        if (cid !== _uid && dests.indexOf(cid) < 0) dests.push(cid);
+      });
+      if (!dests.length) {
+        btnConfirm.disabled = false;
+        btnConfirm.textContent = 'Enviar';
+        return;
       }
 
       var jobs = [{ buildDoc: meta.buildDoc, m: { modulo: meta.modulo, referencia: meta.referencia || null, titulo: meta.titulo } }];
@@ -764,23 +871,47 @@ var NOTIF = (function() {
   // (que sí pregunta antes de guardar) como por avisos automáticos
   // disparados desde otro flujo (ej. legalización tardía de una OC de
   // traslado en ordenes.js).
-  async function resolverContabilidad(empresa) {
-    if (!empresa) return { contabIds: [], contabNames: '' };
+  //
+  // `empresa` es el nombre (o sigla) de la empresa del documento, o un array.
+  // opts.empresas   otras empresas cuya contabilidad también debe recibirlo.
+  // opts.remisiones números/textos con consecutivos de remisión: la sigla de
+  //                 cada SIGLA-RE-0069 / SIGLA-RS-0044 agrega esa empresa.
+  // Devuelve { contabIds, contabNames, usuarios:[{id,nombre,siglas}], siglas,
+  // fallo }. `fallo` = no se pudo consultar el mapa de contabilidad: una lista
+  // vacía en ese caso NO prueba que la empresa no tenga contabilidad.
+  async function resolverContabilidad(empresa, opts) {
+    opts = opts || {};
+    var siglas = _siglasContab([].concat(empresa == null ? [] : empresa, opts.empresas || []), opts.remisiones);
+    var vacio = { contabIds: [], contabNames: '', usuarios: [], siglas: siglas, fallo: false };
+    if (!siglas.length) return vacio;
     if (!_uid && typeof AUTH !== 'undefined' && AUTH.getUser) {
       var u0 = AUTH.getUser(); if (u0) _uid = u0.id;
     }
-    var sigla = (typeof getSigla === 'function') ? getSigla(empresa) : empresa;
     var contabMap = await _loadContabilidadMap();
-    var contabIds = (contabMap[sigla] || []).filter(function(id) { return id !== _uid; });
-    if (!contabIds.length) return { contabIds: [], contabNames: '' };
+    vacio.fallo = _contabMapFallo;
+    var porUsuario = {};
+    var orden = [];
+    siglas.forEach(function(sg) {
+      (contabMap[sg] || []).forEach(function(id) {
+        if (id === _uid) return;
+        if (!porUsuario[id]) { porUsuario[id] = []; orden.push(id); }
+        if (porUsuario[id].indexOf(sg) < 0) porUsuario[id].push(sg);
+      });
+    });
+    if (!orden.length) return vacio;
 
     var dir = await _loadDirectorio();
-    var contabUsers = dir.filter(function(u) { return contabIds.indexOf(u.id) >= 0 && u.activo; });
-    if (!contabUsers.length) return { contabIds: [], contabNames: '' };
+    var usuarios = dir.filter(function(u) { return porUsuario[u.id] && u.activo; }).map(function(u) {
+      return { id: u.id, nombre: u.nombre || u.email, siglas: porUsuario[u.id] };
+    });
+    if (!usuarios.length) return vacio;
 
     return {
-      contabIds: contabUsers.map(function(u) { return u.id; }),
-      contabNames: contabUsers.map(function(u) { return u.nombre || u.email; }).join(', ')
+      contabIds: usuarios.map(function(u) { return u.id; }),
+      contabNames: usuarios.map(function(u) { return u.nombre; }).join(', '),
+      usuarios: usuarios,
+      siglas: siglas,
+      fallo: vacio.fallo
     };
   }
 
@@ -798,15 +929,22 @@ var NOTIF = (function() {
     };
   }
 
-  async function confirmarEnvioContabilidad(empresa, modulo) {
+  // opts.empresas / opts.remisiones: igual que en resolverContabilidad, para los
+  // casos en que ya al guardar se sabe que el documento toca a otra empresa
+  // (ej. un ingreso por traslado: la RE es de la empresa destino).
+  async function confirmarEnvioContabilidad(empresa, modulo, opts) {
     if (!empresa || AUTO_CONTAB_MODS.indexOf(modulo) < 0) return { confirmed: true, contabIds: [] };
-    var sigla = (typeof getSigla === 'function') ? getSigla(empresa) : empresa;
-    var resuelto = await resolverContabilidad(empresa);
+    var resuelto = await resolverContabilidad(empresa, opts);
+    var siglasConContab = [];
+    resuelto.usuarios.forEach(function(u) {
+      u.siglas.forEach(function(sg) { if (siglasConContab.indexOf(sg) < 0) siglasConContab.push(sg); });
+    });
+    var sigla = (siglasConContab.length ? siglasConContab : resuelto.siglas).join(' + ');
     var names = resuelto.contabNames;
     var ids = resuelto.contabIds.slice();
     var destinoLabel = 'Contabilidad';
     // Bodega GRANEL: la remisión también va al usuario de producción.
-    if ((typeof _esGranel === 'function') && _esGranel(empresa)) {
+    if (typeof empresa === 'string' && (typeof _esGranel === 'function') && _esGranel(empresa)) {
       var prod = await resolverProduccion();
       if (!prod.ids.length) {
         showToast('⚠ No hay un usuario activo con rol Producción: la remisión de GRANEL no se enviará a producción.', '#e67e22');
@@ -853,13 +991,38 @@ var NOTIF = (function() {
   // compartirPDF ({ ok, sent, errors }) o { ok:false, error }.
   //   meta.docLabel:    etiqueta del documento ('Remisión', 'Paquete', …). Default 'PDF'.
   //   meta.accionManual: nombre de un botón visible para reenviar a mano si falla.
+  //   meta.remisiones / meta.empresas: consecutivos de remisión y empresas que
+  //                     lleva el PDF. Además de lo confirmado al guardar
+  //                     (meta.contabIds), se suma la contabilidad de cada
+  //                     empresa cuya sigla aparezca en un consecutivo (también se
+  //                     leen meta.titulo y meta.referencia), así la remisión
+  //                     PARCELAR-RE-0069 llega a la contabilidad de PARCELAR
+  //                     aunque el flujo haya partido de otra empresa.
   async function enviarPDFContabilidad(doc, meta) {
-    if (!meta || !meta.contabIds || !meta.contabIds.length) return { ok: false, error: 'sin destinatarios' };
-    var ids = meta.contabIds.filter(function(id) { return id !== _uid; });
+    if (!meta) return { ok: false, error: 'sin destinatarios' };
+    var ids = (meta.contabIds || []).filter(function(id) { return id !== _uid; });
+    var nombres = meta.contabNames ? [meta.contabNames] : [];
+    var falloExtra = false, siglasExtra = [];
+    try {
+      var extra = await resolverContabilidad(meta.empresa || [], {
+        empresas: meta.empresas,
+        remisiones: [meta.titulo, meta.referencia].concat(meta.remisiones || [])
+      });
+      falloExtra = extra.fallo;
+      siglasExtra = extra.siglas;
+      extra.usuarios.forEach(function(u) {
+        if (ids.indexOf(u.id) < 0) { ids.push(u.id); nombres.push(u.nombre); }
+      });
+    } catch (e) { console.error('enviarPDFContabilidad: contabilidad por consecutivo', e); falloExtra = true; }
+    if (falloExtra && siglasExtra.length) {
+      showToast('⚠ No se pudo verificar la contabilidad de ' + siglasExtra.join(' + ') +
+                ': revisa que le haya llegado la remisión.' +
+                (meta.accionManual ? ' Reenvíala con "' + meta.accionManual + '".' : ''), '#e67e22');
+    }
     if (!ids.length) return { ok: false, error: 'sin destinatarios' };
     var etiqueta = meta.docLabel || 'PDF';
     var destino = meta.destinoLabel || 'Contabilidad';
-    var quien = meta.contabNames ? ' (' + meta.contabNames + ')' : '';
+    var quien = nombres.length ? ' (' + nombres.join(', ') + ')' : '';
     var manual = meta.accionManual ? ' Reenvíalo manualmente con "' + meta.accionManual + '".' : '';
     try {
       var result = await compartirPDF(doc, {
@@ -901,6 +1064,8 @@ var NOTIF = (function() {
     confirmarEnvioContabilidad: confirmarEnvioContabilidad,
     enviarPDFContabilidad: enviarPDFContabilidad,
     resolverContabilidad: resolverContabilidad,
+    siglasDeRemisiones: siglasDeRemisiones,
+    refsDeOCs: refsDeOCs,
     resolverProduccion: resolverProduccion
   };
 })();

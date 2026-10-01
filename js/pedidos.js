@@ -3582,17 +3582,23 @@ async function guardarTodo() {
         showToast('⚠ No se pudo armar el paquete; se descargó solo la remisión.', '#e67e22');
       }
 
-      if (_pendingContab && _pendingContab.contabIds && _pendingContab.contabIds.length && typeof NOTIF !== 'undefined') {
+      // Se envía aunque la contabilidad del pedido no esté definida: el paquete
+      // puede llevar remisiones de traslado de otras empresas, y NOTIF suma la
+      // contabilidad de cada una.
+      if (_pendingContab && typeof NOTIF !== 'undefined') {
         try {
           var _cr = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, { contabilidad: true });
           if (!_cr) throw new Error('no se pudo armar el paquete PDF');
+          var _refsOC = NOTIF.refsDeOCs(_ocGroupsPkg);
           await NOTIF.enviarPDFContabilidad(_cr, {
             modulo: 'pedidos', referencia: rem,
             titulo: 'Paquete Pedido ' + c.Consecutivo + ' — Rem ' + rem +
                     (_ocGroupsPkg.length ? ' + OC' : ''),
             docLabel: 'Paquete',
             accionManual: 'Enviar Pedido',
-            contabIds: _pendingContab.contabIds, contabNames: _pendingContab.contabNames
+            empresas: _refsOC.empresas,
+            remisiones: [rem].concat(_refsOC.remisiones),
+            contabIds: _pendingContab.contabIds || [], contabNames: _pendingContab.contabNames
           });
         } catch (e) {
           console.error('Auto-send contabilidad error', e);
@@ -6292,6 +6298,10 @@ async function _exportarRemisionEspecifica(rem, opts) {
       titulo: 'Paquete Pedido #' + (c.Consecutivo || '') + ' — Rem ' + rem.remision +
               (ocGroupsPkg.length ? ' + OC' : '') + ' — ' + (data.cliente || 'sin cliente'),
       empresa: c.Nombre_Empresa || '',
+      // El paquete incluye las remisiones de traslado de las OC: la contabilidad
+      // de las empresas dueñas de esos consecutivos también recibe copia.
+      empresas: NOTIF.refsDeOCs(ocGroupsPkg).empresas,
+      remisiones: [rem.remision].concat(NOTIF.refsDeOCs(ocGroupsPkg).remisiones),
       triggerBtn: opts.triggerBtn || null,
       buildDoc: function() {
         return _construirPaquetePedidoPDF(dataPedidoPkg, data, ocGroupsPkg, { contabilidad: true });

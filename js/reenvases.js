@@ -1042,6 +1042,10 @@ function enviarRemisionReenvase(btn) {
     referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + remNum,
     titulo: 'Remisión salida #' + remNum + ' — ' + (EMPRESAS_SIGLA[g.Empresa] || g.Empresa || ''),
     empresa: empresa,
+    // El PDF lleva también la remisión de ENTRADA (empresa destino): su
+    // contabilidad debe recibirla.
+    empresas: remDestNum ? [g.Empresa_Destino || empresa] : null,
+    remisiones: [remNum, remDestNum],
     triggerBtn: btn || null,
     buildDoc: function() {
       var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
