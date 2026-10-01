@@ -1948,6 +1948,30 @@ function exportarDetalleExcel() {
   showToast('Excel exportado');
 }
 
+// Exporta la lista de la pestaña Legalizaciones tal como se ve: mismas filas
+// (filtros Empresa/Tipo/Estado/Buscar), mismo orden y mismas columnas.
+function exportarLegalizacionesExcel() {
+  var rows = _legsListaFiltradas();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(leg) {
+    return {
+      'N°': leg.Consecutivo || '',
+      'Fecha': fmtDate(leg.Fecha),
+      'Responsable': leg.Responsable || '',
+      'Tipo': tipoLabel(leg),
+      'Ruta': leg.Recorrido_Ruta || '',
+      'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+      'Total gastos': totalGastosOf(leg.id),
+      'Anticipo': Number(leg.Anticipo_Entregado) || 0,
+      'Estado': estadoLeg(leg) || ''
+    };
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Legalizaciones');
+  XLSX.writeFile(wb, 'legalizaciones_' + today() + '.xlsx');
+  showToast('Excel exportado');
+}
+
 // ── Tabla ──
 // Todo lo que depende de los filtros de Legalizaciones: la lista, los
 // indicadores y las demás pestañas que se recalculan con ella.
@@ -1959,8 +1983,9 @@ function renderTable() {
   renderDetalleTable();
 }
 
-// Solo la lista de Legalizaciones (también la redibuja el cambio de orden).
-function renderLegTable() {
+// Filas de la lista de Legalizaciones según los filtros f-* y el orden de
+// columnas elegido (la tabla y el Excel comparten esta misma lista).
+function _legsListaFiltradas() {
   var fEmp = document.getElementById('f-emp').value;
   var fTipo = document.getElementById('f-tipo').value;
   var fEstado = document.getElementById('f-estado').value;
@@ -1978,7 +2003,12 @@ function renderLegTable() {
     }
     return true;
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
-  rows = applySortLg('leg', rows);
+  return applySortLg('leg', rows);
+}
+
+// Solo la lista de Legalizaciones (también la redibuja el cambio de orden).
+function renderLegTable() {
+  var rows = _legsListaFiltradas();
   renderSortHead('leg', 'lg-head');
 
   document.getElementById('lg-ct').textContent = '(' + rows.length + ')';
