@@ -196,6 +196,20 @@ var AUTH = (function() {
       if (!hasModule(mod)) el.style.display = 'none';
     });
 
+    // Contabilidad no ve el menú «Admin» (donde vive Auditoría para el administrador):
+    // se le agrega el acceso directo antes de ese menú, o al final si no existe.
+    if (_profile && _profile.rol === 'contabilidad') {
+      var nav = document.querySelector('.navbar');
+      if (nav && !nav.querySelector(':scope > a[href="auditoria.html"]')) {
+        var linkAud = document.createElement('a');
+        linkAud.href = 'auditoria.html';
+        linkAud.textContent = '🔍 Auditoría';
+        if (/auditoria\.html$/.test(location.pathname)) linkAud.className = 'active';
+        var refAdmin = document.getElementById('nav-admin-dropdown');
+        nav.insertBefore(linkAud, refAdmin && refAdmin.parentNode === nav ? refAdmin : null);
+      }
+    }
+
     // Campanita de notificaciones (si el módulo está cargado en la página).
     if (typeof NOTIF !== 'undefined' && NOTIF.mountBell) {
       NOTIF.mountBell(el);
@@ -307,6 +321,13 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'admin';
   }
 
+  // Quién puede abrir el panel Auditoría: admin (todo) y contabilidad (solo los
+  // documentos de sus empresas). El recorte lo hace el servidor con las RPC
+  // get_audit_log_empresa / get_historial_remision; audit_log sigue admin-only.
+  function canAudit() {
+    return !!(_profile && (_profile.rol === 'admin' || _profile.rol === 'contabilidad'));
+  }
+
   function canDelete() {
     return _profile && _profile.rol === 'admin';
   }
@@ -413,6 +434,7 @@ var AUTH = (function() {
     canApproveOC: canApproveOC,
     canConciliarGastos: canConciliarGastos,
     canManageUsers: canManageUsers,
+    canAudit: canAudit,
     isAdmin: isAdmin,
     canAutoConsec: canAutoConsec,
     canDevolverMuestra: canDevolverMuestra,

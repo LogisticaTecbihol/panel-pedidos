@@ -3,20 +3,45 @@ var auditData = [];
 var filteredData = [];
 var PAGE_SIZE = 50;
 var currentPage = 1;
+// true cuando el usuario no es admin (contabilidad): los datos llegan filtrados por empresa.
+var AUDIT_SCOPED = false;
 
 (async function() {
   await _authReady;
 
-  if (!AUTH.canManageUsers()) {
+  if (!AUTH.canAudit()) {
     document.getElementById('load-zone').innerHTML =
       '<div style="font-size:2.5rem;margin-bottom:12px">🔒</div>' +
       '<h2 style="color:#e74c3c">Acceso restringido</h2>' +
-      '<p>Solo los administradores pueden ver el registro de auditoría.</p>';
+      '<p>Solo los administradores y el área contable pueden ver el registro de auditoría.</p>';
     return;
   }
 
+  // Contabilidad (no admin): ve solo los documentos de sus empresas. El recorte
+  // lo hace el servidor (RPC); aquí solo se ocultan las secciones que no aplican.
+  AUDIT_SCOPED = !AUTH.canManageUsers();
+  if (AUDIT_SCOPED) applyScopedAuditUI();
+
   await loadAudit();
 })();
+
+function applyScopedAuditUI() {
+  AUDIT_TABS = ['cambios', 'remision'];
+  document.getElementById('atab-btn-consultas').style.display = 'none';
+
+  // «Usuarios» no es un documento de empresa: el servidor no lo envía.
+  var optUsuarios = document.querySelector('#f-tabla option[value="usuarios"]');
+  if (optUsuarios) optUsuarios.remove();
+
+  var siglas = AUTH.getCompanies().map(function(c) { return c.sigla; });
+  var note = document.getElementById('scope-note');
+  note.textContent = siglas.length
+    ? 'Está viendo solo los cambios de documentos donde participa su empresa (' + siglas.join(', ') +
+      '): pedidos, entregas, ingresos, órdenes de compra, devoluciones, cambios, muestras, salidas a producción y Kardex. ' +
+      'En traslados entre empresas aparecen si su empresa es origen o destino.'
+    : 'No tiene empresas asignadas, por eso no hay registros para mostrar. Pida al administrador que se las asigne.';
+  note.style.display = '';
+}
 
 async function loadAudit() {
   var loadZone = document.getElementById('load-zone');
@@ -26,10 +51,12 @@ async function loadAudit() {
   setSyncStatus('syncing', 'Cargando registros de auditoría...');
 
   try {
-    var res = await _sb.from('audit_log')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5000);
+    var res = AUDIT_SCOPED
+      ? await _sb.rpc('get_audit_log_empresa', { p_limit: 5000 })
+      : await _sb.from('audit_log')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5000);
 
     if (res.error) throw new Error(res.error.message);
 
