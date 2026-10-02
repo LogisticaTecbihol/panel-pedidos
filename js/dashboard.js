@@ -1,5 +1,7 @@
 // ── Dashboard State ──
 var dPedidos = [];
+var dPedidosConsig = [];  // pedidos en consignación: salen de dPedidos (no son ventas) pero se cuentan aparte
+var dConsigIds = {};      // id de Pedidos → 1, para marcar los despachos de EntregasPedido que son de consignación
 var dDevoluciones = [];
 var dIngresos = [];
 var dOrdenes = [];
@@ -41,6 +43,12 @@ function dEsBodegaIasoExcluida(p) {
 function dEsPedidoConsignacionExplicito(p) {
   var v = (p.Consignacion || '').trim();
   return v === 'Si' || v === 'Sí';
+}
+
+// Pedido en consignación = cualquiera de los tres criterios que lo sacan de
+// dPedidos (traslado a bodega, bodega de IASO, campo Consignación = Sí).
+function dEsConsignacion(p) {
+  return !!p.Bodega_Consignacion_Id || dEsBodegaIasoExcluida(p) || dEsPedidoConsignacionExplicito(p);
 }
 
 // Rango de fechas por defecto al abrir el dashboard (fecha del pedido — desde).
@@ -338,13 +346,13 @@ async function loadDashboard() {
 
   try {
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion' }),
+      apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getMuestras', { columns: 'Empresa,Estado,Fecha_Solicitud,Fecha_Despacho,Cantidad,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getReenvases', { columns: 'Empresa,Cantidad,Fecha,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getEntregasPedido', { columns: 'empresa_pedido,empresa_stock,producto,cantidad,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
+      apiGet('getEntregasPedido', { columns: 'pedido_id,empresa_pedido,empresa_stock,producto,cantidad,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
       apiGet('getCambios', { columns: 'Empresa,Estado,Fecha_Solicitud,Producto,Cantidad' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getInventarioFisico', { columns: 'Empresa,Producto,Presentacion,Cantidad_Fisica,Cantidad_Sistema,Diferencia,Fecha_Conteo,Observaciones' }).catch(function() { return { ok: true, conteos: [] }; }),
       apiGet('getClientesAll', { columns: 'Cliente,Identificacion,Nombre_Empresa,Cliente_Nuevo,creado_en' }).catch(function() { return { ok: true, clientes: [] }; })
@@ -352,20 +360,11 @@ async function loadDashboard() {
 
     if (!results[0].ok) throw new Error(results[0].error || 'Error al cargar pedidos');
 
-    dPedidos = (results[0].pedidos || []).filter(function(p) {
-      // Excluye encabezados repetidos y los pedidos que son bodegas en
-      // consignación (no ventas a cliente final, así que no deben inflar
-      // KPIs, Top clientes/comerciales, OTD, etc.):
-      //  - Bodega_Consignacion_Id: traslado creado con el botón "Nuevo
-      //    Traslado" — solo de ahora en adelante, no retroactivo.
-      //  - dEsBodegaIasoExcluida: "Bodega COATOL"/"Bodega Espinal" de IASO —
-      //    retroactivo.
-      //  - dEsPedidoConsignacionExplicito: campo "Pedido en Consignación" =
-      //    Sí — retroactivo, cualquier empresa.
-      //  - GRANEL: aislada de los consolidados igual que en el resto del
-      //    panel; sus pedidos solo se ven dentro del módulo Pedidos.
+    var pedidosValidos = (results[0].pedidos || []).filter(function(p) {
+      // Excluye encabezados repetidos y GRANEL (aislada de los consolidados
+      // igual que en el resto del panel; sus pedidos solo se ven dentro del
+      // módulo Pedidos).
       return p.Nombre_Empresa !== 'Nombre_Empresa' && p.Cliente !== 'Cliente'
-        && !p.Bodega_Consignacion_Id && !dEsBodegaIasoExcluida(p) && !dEsPedidoConsignacionExplicito(p)
         && !_esGranel(p.Nombre_Empresa);
     }).map(function(p) {
       if (!p.Cant_Entregada && p.Cant_Entregada !== 0) {
@@ -377,6 +376,16 @@ async function loadDashboard() {
       p.Cant_Pendiente = Math.max(0, (Number(p.Cantidad) || 0) - (Number(p.Cant_Entregada) || 0));
       return p;
     });
+
+    // Los pedidos en consignación no son ventas a cliente final, así que no
+    // deben inflar KPIs, Top clientes/comerciales, OTD, etc. (ver
+    // dEsConsignacion). Se apartan en dPedidosConsig para contarlos aparte:
+    // los despachos de EntregasPedido sí los incluyen, y sin este conteo el
+    // total de órdenes no cuadra con el de entregas.
+    dPedidos = pedidosValidos.filter(function(p) { return !dEsConsignacion(p); });
+    dPedidosConsig = pedidosValidos.filter(dEsConsignacion);
+    dConsigIds = {};
+    dPedidosConsig.forEach(function(p) { if (p.id != null) dConsigIds[p.id] = 1; });
 
     dDevoluciones = results[1].devoluciones || [];
     dIngresos = results[2].ingresos || [];
@@ -510,9 +519,12 @@ function dRangoPrevio(desde, hasta) {
 function dSlice(fEmp, desde, hasta) {
   function r(f) { return _fechaEnRango(f, desde, hasta); }
   var ped = dPedidos.filter(function(p) { return (!fEmp || p.Nombre_Empresa === fEmp) && r(p.Fecha_Pedido); });
+  var cons = dPedidosConsig.filter(function(p) { return (!fEmp || p.Nombre_Empresa === fEmp) && r(p.Fecha_Pedido); });
   return {
     ped: ped,
     orders: dBuildOrders(ped),
+    cons: cons,
+    consOrders: dBuildOrders(cons),
     dev: dDevoluciones.filter(function(d) { return (!fEmp || d.Empresa === fEmp) && r(d.Fecha); }),
     oc: dOrdenes.filter(function(o) { return (!fEmp || o.Empresa_Destino === fEmp || o.Empresa_Origen === fEmp) && r(o.Fecha); }),
     mue: dMuestras.filter(function(m) { return (m.Tipo_Solicitud || 'Despacho') !== 'Produccion' && (!fEmp || m.Empresa === fEmp) && r(m.Fecha_Solicitud); }),
@@ -545,7 +557,7 @@ function buildDashboard() {
   document.getElementById('dash-ts').textContent = 'Actualizado: ' + new Date().toLocaleString('es-CO') + rangoTxt;
   renderRangeChip(fEmp, fDesde, fHasta);
 
-  buildKPIs(cur.orders, cur.ped, cur.dev, cur.oc, fEmp, kpiPrev, fDesde, fHasta);
+  buildKPIs(cur.orders, cur.ped, cur.dev, cur.oc, fEmp, kpiPrev, fDesde, fHasta, cur.consOrders, cur.cons);
   buildKPIsMoney(cur.orders, cur.ped, cur.dev, fEmp, fDesde, fHasta, kpiPrev);
   buildPedidosPorMes(fEmp);
   buildEntregasPorMes(fEmp);
@@ -703,7 +715,7 @@ function dDelta(cur, prev, moreIsGood) {
 }
 
 // ── 1. KPI Cards ──
-function buildKPIs(orders, ped, dev, oc, fEmp, prev, fDesde, fHasta) {
+function buildKPIs(orders, ped, dev, oc, fEmp, prev, fDesde, fHasta, consOrders, consPed) {
   var today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -745,6 +757,14 @@ function buildKPIs(orders, ped, dev, oc, fEmp, prev, fDesde, fHasta) {
   var html = '';
   html += kpiCard('', totalOrdenes.toLocaleString('es-CO'), 'Total ordenes', abiertas + ' abiertas · ' + lineas.toLocaleString('es-CO') + ' lineas',
     p && dDelta(totalOrdenes, p.ordenes, true), 'pedidos.html' + (empQS ? '?' + empQS.slice(1) : ''));
+
+  // Pedidos en consignación del mismo período/empresa: no suman a "Total
+  // ordenes" (no son ventas), pero sus despachos sí están en Entregas por mes.
+  // Sin enlace: Pedidos no tiene filtro por consignación y mostraría todo.
+  var consUds = consPed.reduce(function(s, l) { return s + (Number(l.Cantidad) || 0); }, 0);
+  html += kpiCard('purple', consOrders.length.toLocaleString('es-CO'), 'Pedidos en consignación',
+    'no suman a Total ordenes · ' + consPed.length.toLocaleString('es-CO') + ' lineas · ' + consUds.toLocaleString('es-CO') + ' uds');
+
   html += kpiCard('teal', tasaEntrega + '%', 'Tasa de entrega', ordCompletas.toLocaleString('es-CO') + ' / ' + ordNoAnul.length.toLocaleString('es-CO') + ' ordenes completas (a hoy)',
     p && dDelta(tasaEntrega, p.tasaEntrega, true));
 
@@ -1708,6 +1728,7 @@ function buildPedidosPorMes(fEmp) {
 // ── Entregas por mes (EntregasPedido — datos desde ago-2026) ──
 function buildEntregasPorMes(fEmp) {
   var map = {};
+  var nTot = 0, nCons = 0;   // despachos del gráfico y cuántos son de pedidos en consignación
   dEntregas.forEach(function(e) {
     if (fEmp && e.empresa_pedido !== fEmp) return;
     var mes = String(e.fecha || '').slice(0, 7);
@@ -1715,10 +1736,14 @@ function buildEntregasPorMes(fEmp) {
     if (!map[mes]) map[mes] = { n: 0, uds: 0 };
     map[mes].n++;
     map[mes].uds += Number(e.cantidad) || 0;
+    nTot++;
+    if (dConsigIds[e.pedido_id]) nCons++;
   });
   var meses = Object.keys(map).sort();
   var subEl = document.getElementById('entmes-sub');
-  if (subEl) subEl.textContent = meses.length ? ('desde ' + dMesLbl(meses[0]) + ' · ' + dEntregas.length + ' despachos') : 'sin datos (el módulo registra desde ago-2026)';
+  if (subEl) subEl.textContent = meses.length
+    ? ('desde ' + dMesLbl(meses[0]) + ' · ' + nTot + ' despachos' + (nCons ? ' · ' + nCons + ' de consignación' : ''))
+    : 'sin datos (el módulo registra desde ago-2026)';
   dMixedChart('cv-entregas-mes', meses.map(dMesLbl), [
     { label: 'Despachos', tipo: 'bar', yAxis: 'y', color: '#8e44ad', data: meses.map(function(m) { return map[m].n; }) },
     { label: 'Uds', tipo: 'line', yAxis: 'y2', color: '#e67e22', data: meses.map(function(m) { return map[m].uds; }) }
