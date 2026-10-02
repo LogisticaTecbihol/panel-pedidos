@@ -229,6 +229,7 @@
     <button class="btn-export" id="tab-historico" onclick="switchPedidoTab('historico')" style="background:#718096" title="El resto de pedidos — solo consulta">📁 Histórico</button>
     <button class="btn-export" id="tab-detalle" onclick="switchPedidoTab('detalle')" style="background:#718096">📑 Vista detallada</button>
     <button class="btn-export" id="tab-despachos" onclick="switchPedidoTab('despachos')" style="background:#718096;display:none">🚚 Despachos</button>
+    <button class="btn-export" id="tab-cargashist" onclick="switchPedidoTab('cargashist')" style="background:#718096;display:none" title="Solo admin — pedidos de carga histórica (anteriores al 2026-07-01) para validarlos">📜 Cargas históricas</button>
   </div>
 
   <div id="panel-ordenes">
@@ -272,6 +273,34 @@
             <tr id="det-head"></tr>
           </thead>
           <tbody id="det-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel Cargas históricas (solo admin, solo consulta) -->
+  <div id="panel-cargashist" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>📜 Cargas históricas <span id="ch-count" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="ch-f-origen" onchange="renderCargasHist()" title="Origen del registro" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+            <option value="">Origen: todos</option>
+            <option value="marcada">📜 Marcadas como carga histórica</option>
+            <option value="premarca">Pre-corte sin marca</option>
+          </select>
+          <button class="btn-dl" onclick="exportCargasHistExcel()" style="background:#217346">📊 Exportar Excel</button>
+        </div>
+      </div>
+      <div style="padding:8px 18px;font-size:0.78rem;color:#718096;border-bottom:1px solid #edf2f7">
+        Solo consulta · pedidos con fecha anterior al 2026-07-01 o registrados con la casilla «Carga histórica». Usa los filtros de arriba para acotar.
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr id="ch-head"></tr>
+          </thead>
+          <tbody id="ch-body"></tbody>
         </table>
       </div>
     </div>
@@ -947,6 +976,6 @@
 <script src="js/colombia-geo.js?v=20260826a"></script>
 <script src="js/existencias.js?v=20260929a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/pedidos.js?v=20261001a"></script>
+<script src="js/pedidos.js?v=20261002a"></script>
 </body>
 </html>

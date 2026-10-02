@@ -1017,6 +1017,7 @@ async function loadFromAPI() {
     populateFilters();
     renderTable();
     initDespachosTab();
+    initCargasHistTab();
 
     // La mayoría de los pedidos de gerente_iaso (IASO) terminan en Histórico
     // (ya entregados/cerrados); abrir ahí por defecto en la primera carga
@@ -1722,7 +1723,11 @@ function esPedidoActivo(c) {
   return enGestion && (st === 'Recibido' || st === 'Parcial');
 }
 
-function filtered() {
+// opts.cargasHist = true: la pestaña "Cargas históricas" (ver renderCargasHist)
+// reutiliza los filtros globales pero ignora el ámbito Activos/Histórico y la
+// casilla "Mostrar cargas históricas"; en su lugar aplica el filtro de origen.
+function filtered(opts) {
+  var chMode = !!(opts && opts.cargasHist);
   var fe = document.getElementById('f-emp').value;
   var fcomEl = document.getElementById('f-com');
   var fcom = fcomEl ? fcomEl.value : '';
@@ -1742,7 +1747,8 @@ function filtered() {
   var fMostrarHist = document.getElementById('f-mostrar-historicos');
   var mostrarHistoricos = !!(fMostrarHist && fMostrarHist.checked);
   return consecs.filter(function(c) {
-    if (!mostrarHistoricos && c.Historico) return false;
+    if (chMode) { if (!_chOrigenOk(c)) return false; }
+    else if (!mostrarHistoricos && c.Historico) return false;
     if (fe && c.Nombre_Empresa !== fe) return false;
     if (fcom && (c.Comercial||'').trim() !== fcom) return false;
     if (fc && (c.Cliente||'').toLowerCase().indexOf(fc.toLowerCase()) < 0) return false;
@@ -1759,9 +1765,11 @@ function filtered() {
       var any = prods.some(function(p) { return p.toLowerCase().indexOf(fp) >= 0; });
       if (!any) return false;
     }
-    var esActivo = esPedidoActivo(c);
-    if (pedidoScope === 'activos' && !esActivo) return false;
-    if (pedidoScope === 'historico' && esActivo) return false;
+    if (!chMode) {
+      var esActivo = esPedidoActivo(c);
+      if (pedidoScope === 'activos' && !esActivo) return false;
+      if (pedidoScope === 'historico' && esActivo) return false;
+    }
     var est = c._cStatus || 'Recibido';
     if (fs && norm(est) !== norm(fs)) return false;
     if (fs2) { var e2 = c._cEstado2 || 'Abierto'; if (e2 !== fs2) return false; }
@@ -1787,6 +1795,7 @@ function clearFilters() {
   var fd = document.getElementById('f-fec-desde'); if (fd) fd.value = '';
   var fh = document.getElementById('f-fec-hasta'); if (fh) fh.value = '';
   var fMostrarHistClr = document.getElementById('f-mostrar-historicos'); if (fMostrarHistClr) fMostrarHistClr.checked = false;
+  var chOrClr = document.getElementById('ch-f-origen'); if (chOrClr) chOrClr.value = '';
   _muniSelected = [];
   _renderMuniToggle();
   _renderMuniOptions();
@@ -1886,6 +1895,11 @@ function renderTable() {
   if (ordTitle) ordTitle.textContent = pedidoScope === 'historico' ? 'Histórico de pedidos (consulta)' : 'Órdenes activas';
 
   renderHeader();
+
+  // Antes del return temprano de abajo: si la pestaña Cargas históricas está
+  // abierta debe refrescarse aunque el ámbito Activos/Histórico quede vacío.
+  var chPanel = document.getElementById('panel-cargashist');
+  if (chPanel && chPanel.style.display !== 'none') renderCargasHist();
 
   var tbody = document.getElementById('t-body');
   if (!rows.length) {
@@ -5757,15 +5771,16 @@ async function guardarNuevoPedido() {
 
 // ── Tab switching ──
 // 'activos' e 'historico' comparten el panel de órdenes (cambian el ámbito de filtrado);
-// 'detalle' y 'despachos' son paneles propios.
+// 'detalle', 'despachos' y 'cargashist' son paneles propios.
 function switchPedidoTab(tab) {
+  if (tab === 'cargashist' && !AUTH.isAdmin()) return;
   var scopeTab = (tab === 'activos' || tab === 'historico');
   if (scopeTab) {
     if (pedidoScope !== tab) currentPage = 1;
     pedidoScope = tab;
   }
 
-  ['activos', 'historico', 'detalle', 'despachos'].forEach(function(t) {
+  ['activos', 'historico', 'detalle', 'despachos', 'cargashist'].forEach(function(t) {
     var btn = document.getElementById('tab-' + t);
     if (btn) btn.style.background = t === tab ? '#1a5276' : '#718096';
   });
@@ -5779,10 +5794,20 @@ function switchPedidoTab(tab) {
   if (panelDet) panelDet.style.display = tab === 'detalle' ? 'block' : 'none';
   var panelDesp = document.getElementById('panel-despachos');
   if (panelDesp) panelDesp.style.display = tab === 'despachos' ? 'block' : 'none';
+  var panelCh = document.getElementById('panel-cargashist');
+  if (panelCh) panelCh.style.display = tab === 'cargashist' ? 'block' : 'none';
 
   if (scopeTab) renderTable();
   if (tab === 'detalle') renderDetalle();
   if (tab === 'despachos') buildDespachos();
+  if (tab === 'cargashist') renderCargasHist();
+}
+
+// La pestaña "Cargas históricas" es solo para admin (único rol que crea
+// registros con Historico = true); el botón nace oculto y se muestra aquí.
+function initCargasHistTab() {
+  var btn = document.getElementById('tab-cargashist');
+  if (btn && AUTH.isAdmin()) btn.style.display = 'inline-block';
 }
 
 function initDespachosTab() {
@@ -5993,6 +6018,220 @@ function exportDetalleExcel() {
   XLSX.utils.book_append_sheet(wb, ws, 'Detalle');
   XLSX.writeFile(wb, 'detalle_pedidos_' + today() + '.xlsx');
   showToast('Excel exportado: ' + rows.length + ' líneas', '#27ae60');
+}
+
+// ── Cargas históricas (solo admin, solo consulta) ──
+// Vista para validar lo cargado antes del corte de saldo inicial: los pedidos
+// registrados con la casilla "Carga histórica" (Historico = true) más
+// cualquier pedido con Fecha_Pedido anterior al corte aunque no se haya
+// marcado. La columna Origen distingue ambos casos. Reutiliza los filtros
+// globales de la página vía filtered({ cargasHist: true }).
+var CARGA_HIST_CORTE = '2026-07-01';
+var chSort = [{ col: 'fecha', dir: 'desc' }, { col: 'consecutivo', dir: 'desc' }];
+
+// 'marcada' = Historico = true; 'premarca' = fecha < corte sin marcar; '' = no entra.
+function _chOrigen(c) {
+  if (c.Historico) return 'marcada';
+  var f = String(c.Fecha_Pedido || '').slice(0, 10);
+  return (f && f < CARGA_HIST_CORTE) ? 'premarca' : '';
+}
+
+// Pertenece a la vista y cumple el selector de origen del panel.
+function _chOrigenOk(c) {
+  var o = _chOrigen(c);
+  if (!o) return false;
+  var sel = document.getElementById('ch-f-origen');
+  var v = sel ? sel.value : '';
+  return !v || v === o;
+}
+
+// Datos que no están en el encabezado del pedido (consecs): cantidades,
+// archivo fuente y quién/cuándo lo cargó salen de sus líneas.
+function _chResumen(c) {
+  var lines = getLinesFor(c);
+  var pedida = 0, entregada = 0, fuente = '';
+  lines.forEach(function(l) {
+    pedida += Number(l.Cantidad) || 0;
+    entregada += Number(l.Cant_Entregada) || 0;
+    if (!fuente && l.Archivo_Fuente) fuente = String(l.Archivo_Fuente).trim();
+  });
+  var aud = _auditoriaAgg(lines) || {};
+  return {
+    c: c, origen: _chOrigen(c), pedida: pedida, entregada: entregada, fuente: fuente,
+    cargadoPor: aud.creado_por_nombre || '', cargadoEn: aud.creado_en || ''
+  };
+}
+
+var CH_COLS = [
+  { id: 'origen',      label: 'Origen',        fn: function(r) { return r.origen; } },
+  { id: 'empresa',     label: 'Empresa',       fn: function(r) { return getSigla(r.c.Nombre_Empresa); } },
+  { id: 'consecutivo', label: 'Consecutivo',   fn: function(r) { return Number(r.c.Consecutivo) || 0; } },
+  { id: 'cliente',     label: 'Cliente',       fn: function(r) { return (r.c.Cliente || '').toLowerCase(); } },
+  { id: 'fecha',       label: 'Fecha Pedido',  fn: function(r) { return +new Date(r.c.Fecha_Pedido || 0); } },
+  { id: 'comercial',   label: 'Comercial',     fn: function(r) { return (r.c.Comercial || '').toLowerCase(); } },
+  { id: 'total',       label: 'Total Orden',   fn: function(r) { return Number(r.c.Total_Orden) || 0; }, num: true },
+  { id: 'productos',   label: 'Productos',     fn: function(r) { return r.c._cLines || 0; }, num: true },
+  { id: 'pedida',      label: 'Cant. Pedida',  fn: function(r) { return r.pedida; }, num: true },
+  { id: 'entregada',   label: 'Cant. Entregada', fn: function(r) { return r.entregada; }, num: true },
+  { id: 'estado',      label: 'Estado',        fn: function(r) { return r.c._cStatus || 'Recibido'; } },
+  { id: 'estado2',     label: 'Estado 2',      fn: function(r) { return r.c._cEstado2 || 'Abierto'; } },
+  { id: 'fuente',      label: 'Fuente',        fn: function(r) { return r.fuente.toLowerCase(); } },
+  { id: 'cargado',     label: 'Cargado',       fn: function(r) { return r.cargadoEn ? +new Date(r.cargadoEn) : 0; } },
+];
+
+function toggleChSort(col, e) {
+  var shift = e && e.shiftKey;
+  var def = CH_COLS.filter(function(c) { return c.id === col; })[0];
+  var dir = def && def.num ? 'desc' : 'asc';
+  var idx = chSort.findIndex(function(l) { return l.col === col; });
+  if (shift) {
+    if (idx >= 0) chSort.splice(idx, 1);
+    else chSort.push({ col: col, dir: dir });
+  } else if (idx >= 0) {
+    if (chSort[idx].dir === 'asc') chSort[idx].dir = 'desc';
+    else chSort.splice(idx, 1);
+  } else {
+    chSort = [{ col: col, dir: dir }];
+  }
+  renderCargasHist();
+}
+
+// Filas filtradas (filtros globales + origen) y ordenadas, ya resumidas.
+function _chBuildRows() {
+  var rows = filtered({ cargasHist: true }).map(_chResumen);
+  if (!chSort.length) return rows;
+  return rows.sort(function(a, b) {
+    for (var s = 0; s < chSort.length; s++) {
+      var def = CH_COLS.filter(function(c) { return c.id === chSort[s].col; })[0];
+      if (!def) continue;
+      var va = def.fn(a), vb = def.fn(b);
+      var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+      if (cmp !== 0) return chSort[s].dir === 'asc' ? cmp : -cmp;
+    }
+    return 0;
+  });
+}
+
+function renderCargasHist() {
+  var rows = _chBuildRows();
+
+  var lineas = 0, total = 0;
+  rows.forEach(function(r) { lineas += r.c._cLines || 0; total += Number(r.c.Total_Orden) || 0; });
+  document.getElementById('ch-count').textContent =
+    '(' + rows.length + ' pedido' + (rows.length === 1 ? '' : 's') + ' · ' + lineas + ' línea' + (lineas === 1 ? '' : 's') + ' · ' + fmtMoney(total) + ')';
+
+  document.getElementById('ch-head').innerHTML = '<th>#</th>' + CH_COLS.map(function(col) {
+    var idx = chSort.findIndex(function(l) { return l.col === col.id; });
+    var cls = idx >= 0 ? (chSort[idx].dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    var badge = idx >= 0 && chSort.length > 1 ? '<span style="font-size:0.6rem;vertical-align:super;color:#2980b9">' + (idx + 1) + '</span>' : '';
+    return '<th class="sortable ' + cls + '" onclick="toggleChSort(\'' + col.id + '\',event)">' + col.label + badge + '<span class="sort-icon"></span></th>';
+  }).join('') + '<th>Acción</th>';
+
+  var tbody = document.getElementById('ch-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="' + (CH_COLS.length + 2) + '"><div class="empty">No hay pedidos de carga histórica con los filtros seleccionados.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function(r, i) {
+    var c = r.c;
+    var est = c._cStatus || 'Recibido';
+    var est2 = c._cEstado2 || 'Abierto';
+    var badgeEst = est === 'Recibido' ? 'b-rec' : est === 'Parcial' ? 'b-par' : est === 'Alistado' ? 'b-alistado' : est === 'Facturado' ? 'b-fac' : 'b-ent';
+    var badgeEst2 = est2 === 'Abierto' ? 'b-abierto' : est2 === 'Alistado' ? 'b-alistado' : est2 === 'Cerrado' ? 'b-cerrado' : est2 === 'Bloqueado por cartera' ? 'b-bloqueado' : est2 === 'Pendiente de aprobación' ? 'b-pendiente-aprob' : est2 === 'Entregado por proveedor' ? 'b-entregado-prov' : 'b-anulado';
+    var origenHtml = r.origen === 'marcada'
+      ? '<span title="Registrado con la casilla «Carga histórica»" style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:12px;font-size:0.74rem;font-weight:700;white-space:nowrap">📜 Carga histórica</span>'
+      : '<span title="Fecha anterior al ' + CARGA_HIST_CORTE + ' sin la marca de carga histórica" style="background:#e2e8f0;color:#4a5568;padding:2px 9px;border-radius:12px;font-size:0.74rem;font-weight:700;white-space:nowrap">Pre-corte</span>';
+    var cargadoHtml = r.cargadoPor || r.cargadoEn
+      ? escHtml(r.cargadoPor || '—') + '<div style="color:#a0aec0;font-size:0.7rem">' + _fmtAudTs(r.cargadoEn) + '</div>'
+      : '<span style="color:#cbd5e0">—</span>';
+    return '<tr>' +
+      '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+      '<td>' + origenHtml + '</td>' +
+      '<td title="' + escHtml(c.Nombre_Empresa || '') + '"><span class="sigla-badge ' + getSiglaClass(c.Nombre_Empresa) + '">' + escHtml(getSigla(c.Nombre_Empresa)) + '</span></td>' +
+      '<td style="text-align:center;font-weight:700">' + escHtml(c.Consecutivo || '') + '</td>' +
+      '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(c.Cliente || '') + '">' + escHtml(c.Cliente || '—') + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(c.Fecha_Pedido) + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(c.Comercial || '—') + '</td>' +
+      '<td class="money">' + fmtMoney(c.Total_Orden) + '</td>' +
+      '<td style="text-align:center">' + (c._cLines || 0) + '</td>' +
+      '<td class="money">' + r.pedida.toLocaleString('es-CO') + '</td>' +
+      '<td class="money">' + r.entregada.toLocaleString('es-CO') + '</td>' +
+      '<td><span class="badge ' + badgeEst + '">' + escHtml(est) + '</span></td>' +
+      '<td><span class="badge ' + badgeEst2 + '">' + escHtml(est2) + '</span></td>' +
+      '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.76rem" title="' + escHtml(r.fuente) + '">' + (r.fuente ? escHtml(r.fuente) : '<span style="color:#cbd5e0">—</span>') + '</td>' +
+      '<td style="font-size:0.76rem;white-space:nowrap">' + cargadoHtml + '</td>' +
+      '<td><button class="btn-ver" onclick="openDetail(' + c._idx + ')">👁 Ver pedido</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// Dos hojas: una fila por pedido (control de totales) y una por línea
+// (para cotejar producto a producto contra el documento original).
+function exportCargasHistExcel() {
+  var rows = _chBuildRows();
+  if (!rows.length) { showToast('No hay pedidos para exportar', '#e74c3c'); return; }
+
+  var origenTxt = function(o) { return o === 'marcada' ? 'Carga histórica' : 'Pre-corte'; };
+  var f10 = function(v) { return String(v || '').slice(0, 10); };
+
+  var pedidosData = rows.map(function(r) {
+    var c = r.c;
+    return {
+      'Origen': origenTxt(r.origen),
+      'Empresa': getSigla(c.Nombre_Empresa),
+      'Consecutivo': c.Consecutivo || '',
+      'Cliente': c.Cliente || '',
+      'NIT': c.NIT || '',
+      'Fecha Pedido': f10(c.Fecha_Pedido),
+      'Comercial': c.Comercial || '',
+      'Municipio': c.Municipio || '',
+      'Total Orden': Number(c.Total_Orden) || 0,
+      'Productos': c._cLines || 0,
+      'Cant. Pedida': r.pedida,
+      'Cant. Entregada': r.entregada,
+      'Estado': c._cStatus || 'Recibido',
+      'Estado 2': c._cEstado2 || 'Abierto',
+      'Archivo fuente': r.fuente,
+      'Cargado por': r.cargadoPor,
+      'Cargado en': r.cargadoEn ? _fmtAudTs(r.cargadoEn) : ''
+    };
+  });
+
+  var lineasData = [];
+  rows.forEach(function(r) {
+    var c = r.c;
+    getLinesFor(c).forEach(function(l) {
+      lineasData.push({
+        'Origen': origenTxt(r.origen),
+        'Empresa': getSigla(c.Nombre_Empresa),
+        'Consecutivo': c.Consecutivo || '',
+        'Cliente': c.Cliente || '',
+        'Fecha Pedido': f10(c.Fecha_Pedido),
+        'Producto': l.Producto || '',
+        'Presentación': l.Presentacion || '',
+        'Cantidad': Number(l.Cantidad) || 0,
+        'Valor Unitario': Number(l.Valor_Unitario) || 0,
+        'Valor Total': Number(l.Valor_Total) || 0,
+        'Bonificado': l.Bonificado || '',
+        'Cant. Entregada': Number(l.Cant_Entregada) || 0,
+        'Cant. Pendiente': Number(l.Cant_Pendiente) || 0,
+        'Estado': l.Estado_Entrega || 'Recibido',
+        'Remisiones': l.Remisiones || '',
+        'Fecha Últ. Entrega': f10(l.Fecha_Ult_Entrega)
+      });
+    });
+  });
+
+  var wb = XLSX.utils.book_new();
+  var wsP = XLSX.utils.json_to_sheet(pedidosData);
+  wsP['!cols'] = [{wch:16},{wch:10},{wch:12},{wch:30},{wch:14},{wch:12},{wch:18},{wch:16},{wch:14},{wch:10},{wch:12},{wch:14},{wch:12},{wch:12},{wch:34},{wch:22},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, wsP, 'Pedidos');
+  var wsL = XLSX.utils.json_to_sheet(lineasData);
+  wsL['!cols'] = [{wch:16},{wch:10},{wch:12},{wch:30},{wch:12},{wch:28},{wch:16},{wch:10},{wch:14},{wch:14},{wch:10},{wch:14},{wch:14},{wch:12},{wch:28},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, wsL, 'Líneas');
+  XLSX.writeFile(wb, 'cargas_historicas_pedidos_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' pedidos · ' + lineasData.length + ' líneas', '#27ae60');
 }
 
 // ── Export órdenes a Excel ──
