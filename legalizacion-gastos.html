@@ -126,13 +126,14 @@
   </div>
 
   <!-- Tabs -->
-  <div style="display:flex;gap:8px;margin-bottom:16px">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
     <button class="lg-tab" id="tab-legalizaciones" onclick="switchTab('legalizaciones')" style="background:#1a5276">📋 Legalizaciones</button>
     <button class="lg-tab" id="tab-envios" onclick="switchTab('envios')" style="background:#718096">📦 Envíos</button>
     <button class="lg-tab" id="tab-prorrateo" onclick="switchTab('prorrateo')" style="background:#718096">📊 Prorrateo de gastos</button>
     <button class="lg-tab" id="tab-vehiculos" onclick="switchTab('vehiculos')" style="background:#718096">🚚 Vehículos</button>
     <button class="lg-tab" id="tab-detalle" onclick="switchTab('detalle')" style="background:#718096">🔎 Vista detallada</button>
     <button class="lg-tab" id="tab-consecutivo" onclick="switchTab('consecutivo')" style="background:#718096">🧮 Consecutivo</button>
+    <button class="lg-tab" id="tab-remisiones" onclick="switchTab('remisiones')" style="background:#718096">🗂️ Remisiones externas</button>
   </div>
   <div class="gpp-note" id="lg-sort-hint" style="margin:-6px 0 12px">↕ Para ordenar, haz clic en el encabezado de una columna (↑ ascendente, ↓ descendente; un tercer clic la quita). Haz clic en más columnas para ordenar por varios campos: el número indica la prioridad. Shift + clic quita una columna del orden.</div>
 
@@ -349,6 +350,57 @@
             <tr id="cons-head"></tr>
           </thead>
           <tbody id="cons-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remisiones externas: Chia Abago y materia prima registradas fuera del sistema -->
+  <div id="panel-remisiones" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Tipo</label>
+        <select id="rf-tipo" onchange="renderRemisionesExternasTab()">
+          <option value="">Todas</option>
+          <option value="ABAGO">Chia Abago</option>
+          <option value="MATERIA_PRIMA">Materia prima</option>
+        </select>
+      </div>
+      <div class="fg"><label>Planta</label>
+        <select id="rf-planta" onchange="renderRemisionesExternasTab()">
+          <option value="">Todas</option>
+          <option value="CACHIPAY">Cachipay</option>
+          <option value="MOSQUERA">Mosquera</option>
+        </select>
+      </div>
+      <div class="fg"><label>Uso</label>
+        <select id="rf-uso" onchange="renderRemisionesExternasTab()">
+          <option value="">Todas</option>
+          <option value="usada">Usadas en una legalización/envío</option>
+          <option value="sinusar">Sin usar</option>
+        </select>
+      </div>
+      <div class="fg"><label>Desde</label><input type="date" id="rf-desde" onchange="renderRemisionesExternasTab()"></div>
+      <div class="fg"><label>Hasta</label><input type="date" id="rf-hasta" onchange="renderRemisionesExternasTab()"></div>
+      <div class="fg"><label>Buscar</label><input type="text" id="rf-txt" placeholder="remisión, producto, proveedor, N°…" style="width:240px" oninput="renderRemisionesExternasTab()"></div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <button class="btn-clear-sort" id="btn-clear-sort-ext" onclick="clearSortLg('ext')" title="Quitar el orden de columnas">✕ Limpiar orden</button>
+        <button class="btn-dl" onclick="exportarRemisionesExternasExcel()">📥 Exportar Excel</button>
+        <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Remisiones externas <span id="ext-ct" style="font-weight:400;color:#718096"></span></h3>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Remisiones de Chia Abago y de materia prima de la planta que no están en el sistema; se registran desde una legalización o un envío. Aquí ves sus productos y dónde se usan, y puedes corregirlas con "✎ Ver / editar". "Kg / L" es lo que cuenta para el reparto y el Prorrateo. "Usada en" solo lista las legalizaciones y envíos que tu usuario puede ver (no cuenta las rechazadas); una remisión usada no se puede eliminar ni renumerar. El filtro Planta aplica solo a materia prima.</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr id="ext-head"></tr>
+          </thead>
+          <tbody id="ext-body"></tbody>
         </table>
       </div>
     </div>
@@ -702,6 +754,6 @@
 <script src="js/auth.js?v=20261001a"></script>
 <script src="js/notificaciones.js?v=20261001a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/legalizacion-gastos.js?v=20261002a"></script>
+<script src="js/legalizacion-gastos.js?v=20261002b"></script>
 </body>
 </html>

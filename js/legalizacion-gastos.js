@@ -4,7 +4,7 @@
 
 // ── Tabs ──
 function switchTab(tab) {
-  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle', 'consecutivo'].forEach(function(t) {
+  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle', 'consecutivo', 'remisiones'].forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
@@ -16,6 +16,7 @@ function switchTab(tab) {
   if (tab === 'vehiculos') renderVehiculosTab();
   if (tab === 'detalle') renderDetalleTable();
   if (tab === 'consecutivo') loadConsecutivoData(); // siempre fresco: otros usuarios crean/borran/anotan
+  if (tab === 'remisiones') renderRemisionesExternasTab();
   var hint = document.getElementById('lg-sort-hint'); // Prorrateo no tiene tablas ordenables
   if (hint) hint.style.display = (tab === 'prorrateo') ? 'none' : 'block';
 }
@@ -187,7 +188,7 @@ async function loadClientesConRemision() {
       apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta' }).catch(function() { return { ok: false }; }),
+      apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
       apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
       apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
     ]);
@@ -273,7 +274,8 @@ async function loadClientesConRemision() {
     if (resExt && resExt.ok && resExtIt && resExtIt.ok) {
       var extPorId = {};
       (resExt.remisiones || []).forEach(function(r) {
-        var o = { id: r.id, Remision: r.Remision, Fecha: r.Fecha, Tipo: r.Tipo || 'ABAGO', Proveedor: r.Proveedor || '', Planta: r.Planta || null, lineas: [] };
+        var o = { id: r.id, Remision: r.Remision, Fecha: r.Fecha, Tipo: r.Tipo || 'ABAGO', Proveedor: r.Proveedor || '', Planta: r.Planta || null,
+                  creado_por_nombre: r.creado_por_nombre || '', creado_en: r.creado_en || null, modificado_en: r.modificado_en || null, lineas: [] };
         extPorId[r.id] = o;
         remisionesExternas[String(r.Remision || '').trim().toUpperCase()] = o;
       });
@@ -328,6 +330,7 @@ async function loadClientesConRemision() {
     }
     remisionProductoMapReparto = repMap;
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
+    renderRemisionesExternasTab();
   } catch (e) {
     clientesConRemisionCache = clientesConRemisionCache || [];
   }
@@ -558,6 +561,7 @@ async function loadLegalizaciones() {
     renderVehiculosTab();
 
     renderTable();
+    renderRemisionesExternasTab(); // "Usada en" depende de legs
 
     loadZone.style.display = 'none';
     mainEl.style.display = 'block';
@@ -584,7 +588,8 @@ async function loadLegalizaciones() {
 // siempre al final, en ascendente y en descendente.
 //
 // Un orden por tabla (clave): leg, env, detleg (Vista detallada por
-// legalización), detlin (Vista detallada por línea de gasto), veh y cons.
+// legalización), detlin (Vista detallada por línea de gasto), veh, cons y ext
+// (Remisiones externas; su orden de siempre es la más recién registrada primero).
 // Cada columna es { id, label, fn(fila) [, right] }; sin fn no es ordenable
 // (Acciones). fn devuelve texto o número; vacío = null o ''.
 var lgSort = {};
@@ -675,6 +680,19 @@ var LG_SORT_COLS = {
     { id: 'motivo', label: 'Qué pasó', fn: function(r) { var m = _consMotivo(r.f); return m ? m.titulo : ''; } },
     { id: 'nota', label: 'Nota de revisión', fn: function(r) { return r.f.nota ? r.f.nota.texto : ''; } },
     { id: 'acciones', label: 'Acciones' }
+  ],
+  ext: [
+    { id: 'n', label: 'Remisión', fn: function(r) { return r.ex.Remision || ''; } },
+    { id: 'tipo', label: 'Tipo', fn: function(r) { return REMISION_TIPOS[r.ex.Tipo || 'ABAGO'].nombre; } },
+    { id: 'fecha', label: 'Fecha', fn: function(r) { return r.ex.Fecha || ''; } },
+    { id: 'proveedor', label: 'Proveedor', fn: function(r) { return r.ex.Proveedor || ''; } },
+    { id: 'planta', label: 'Planta', fn: function(r) { return _plantaExternaTxt(r.ex) === '—' ? '' : _plantaExternaTxt(r.ex); } },
+    { id: 'empresa', label: 'Se carga a', fn: function(r) { return _empresaExternaTxt(r.ex); } },
+    { id: 'productos', label: 'Productos', fn: function(r) { return r.ex.lineas.map(function(l) { return l.Producto || ''; }).join(', '); } },
+    { id: 'cantidad', label: 'Kg / L', fn: function(r) { return r.kl.kilos + r.kl.litros || null; } },
+    { id: 'uso', label: 'Usada en', fn: function(r) { return r.uso.map(function(l) { return l.Consecutivo || ''; }).join(', '); } },
+    { id: 'registro', label: 'Registrada', fn: function(r) { return r.ex.creado_en || ''; } },
+    { id: 'acciones', label: 'Acciones' }
   ]
 };
 
@@ -686,7 +704,8 @@ var LG_SORT_RENDER = {
   detleg: function() { renderDetalleTable(); },
   detlin: function() { renderDetalleTable(); },
   veh: function() { renderVehiculosTab(); },
-  cons: function() { renderConsecutivoTab(); }
+  cons: function() { renderConsecutivoTab(); },
+  ext: function() { renderRemisionesExternasTab(); }
 };
 
 function detalleSortKey() { return detalleModo === 'linea' ? 'detlin' : 'detleg'; }
@@ -2575,7 +2594,8 @@ async function cargarMaestroProductosAbago() {
   } catch (e) { /* solo sugerencias: sin el maestro queda el catálogo de Abago */ }
 }
 
-function _listaRemisionesForm(ctx) { return ctx === 'env' ? formRemisionesEnv : formRemisiones; }
+// ctx 'tab' (pestaña Remisiones externas): no hay formulario, así que no hay lista.
+function _listaRemisionesForm(ctx) { return ctx === 'env' ? formRemisionesEnv : (ctx === 'tab' ? [] : formRemisiones); }
 
 // Botones "🌿 Chia Abago" / "🏭 Materia prima": usan el número que ya esté escrito en el campo.
 function abrirRemisionExternaDesdeForm(ctx, tipo) {
@@ -2834,29 +2854,50 @@ async function guardarRemisionExternaForm() {
   btn.disabled = false;
   if (!res || !res.ok) { showToast('No se pudo guardar la remisión: ' + ((res && res.error) || 'error'), '#e74c3c'); return; }
 
-  var ex = { id: res.id, Remision: cod, Fecha: fecha, Tipo: tipo, Proveedor: esMP ? proveedor : (abagoModal.id && remisionesExternas[key] ? remisionesExternas[key].Proveedor : ''), Planta: planta, lineas: lineas };
+  // Los datos de auditoría se conservan (la pestaña Remisiones externas los muestra).
+  var prev = remisionesExternas[key];
+  var ahora = new Date().toISOString();
+  var ex = { id: res.id, Remision: cod, Fecha: fecha, Tipo: tipo, Proveedor: esMP ? proveedor : (abagoModal.id && prev ? prev.Proveedor : ''), Planta: planta, lineas: lineas,
+             creado_por_nombre: prev ? prev.creado_por_nombre : ((AUTH.getProfile() || {}).nombre || ''),
+             creado_en: prev ? prev.creado_en : ahora,
+             modificado_en: prev ? ahora : null };
   remisionesExternas[key] = ex;
   _setLineasExternasEnMapas(key, ex);
   poblarSugerenciasMP();
 
-  // La remisión queda relacionada en el formulario que la pidió, con su fila
-  // ("CHIA ABAGO" / "MATERIAS PRIMAS") en el reparto.
   var ctx = abagoModal.ctx;
-  var empresaExt = empresaDeRemisionExterna(ex);
-  if (!yaEnForm) lista.push(cod);
-  if (ctx === 'env') {
-    renderEnvRemisiones();
-    _addEmpresaToListEnv(empresaExt);
-    recalcTotalsEnv();
-    document.getElementById('env-remision-nueva').value = '';
+  var msgGuardada = 'Remisión ' + cod + ' registrada (' + nombreTipo + ')';
+  var colorMsg = '#27ae60';
+  if (ctx === 'tab') {
+    // Desde la pestaña no hay formulario al que relacionarla. Si ya está en
+    // alguna legalización/envío, su reparto manual entre empresas NO se recalcula
+    // solo: si cambió la planta o las cantidades hay que revisarlo.
+    var enUso = (_usoRemisionesExternas()[key] || []).map(function(l) { return l.Consecutivo || ('#' + l.id); });
+    msgGuardada = 'Remisión ' + cod + ' actualizada (' + nombreTipo + ')';
+    if (enUso.length) {
+      msgGuardada += '. Está en ' + enUso.join(', ') + ': si cambiaste la planta o las cantidades, revisa su reparto entre empresas (⚖ Calcular reparto)';
+      colorMsg = '#e67e22';
+    }
   } else {
-    renderLgRemisiones();
-    _addEmpresaToList(empresaExt);
-    document.getElementById('lg-remision-nueva').value = '';
+    // La remisión queda relacionada en el formulario que la pidió, con su fila
+    // ("CHIA ABAGO" / "MATERIAS PRIMAS") en el reparto.
+    var empresaExt = empresaDeRemisionExterna(ex);
+    if (!yaEnForm) lista.push(cod);
+    if (ctx === 'env') {
+      renderEnvRemisiones();
+      _addEmpresaToListEnv(empresaExt);
+      recalcTotalsEnv();
+      document.getElementById('env-remision-nueva').value = '';
+    } else {
+      renderLgRemisiones();
+      _addEmpresaToList(empresaExt);
+      document.getElementById('lg-remision-nueva').value = '';
+    }
   }
   renderProrrateoGastos();
+  renderRemisionesExternasTab();
   cerrarRemisionExterna();
-  showToast('Remisión ' + cod + ' registrada (' + nombreTipo + ')', '#27ae60');
+  showToast(msgGuardada, colorMsg);
 }
 
 async function eliminarRemisionExternaForm() {
@@ -2877,8 +2918,184 @@ async function eliminarRemisionExternaForm() {
   renderLgRemisiones();
   renderEnvRemisiones();
   renderProrrateoGastos();
+  renderRemisionesExternasTab();
   cerrarRemisionExterna();
   showToast('Remisión ' + cod + ' eliminada', '#27ae60');
+}
+
+// ── Remisiones externas: listado (pestaña "Remisiones externas") ──
+// Lista las remisiones de Chia Abago y de materia prima registradas fuera del
+// sistema (las de `remisionesExternas`, ya cargadas con sus productos) y las
+// legalizaciones/envíos donde se usan. "✎ Ver / editar" abre la misma ventana
+// que el ✎ de los formularios, con ctx 'tab': no toca ningún formulario.
+
+// CODIGO -> [legalizaciones/envíos] que relacionan esa remisión externa. Igual
+// que la protección de la BD, las rechazadas no cuentan; `legs` es lo que el
+// usuario puede ver (RLS por empresa).
+function _usoRemisionesExternas() {
+  var uso = {};
+  legs.forEach(function(leg) {
+    if (leg.Estado_Conciliacion === 'Rechazada') return;
+    (leg.Remisiones_Relacionadas || '').split(',').forEach(function(c) {
+      var k = c.trim().toUpperCase();
+      if (!k || !remisionesExternas[k]) return;
+      var l = uso[k] = uso[k] || [];
+      if (l.indexOf(leg) < 0) l.push(leg);
+    });
+  });
+  return uso;
+}
+
+function _plantaExternaTxt(ex) {
+  if (PLANTAS_MP[ex.Planta]) return PLANTAS_MP[ex.Planta].nombre;
+  return ex.Tipo === 'MATERIA_PRIMA' ? 'Sin planta' : '—';
+}
+
+// Grupo/empresa a la que se cargan sus gastos (sigla; los grupos externos, con su nombre).
+function _empresaExternaTxt(ex) {
+  var e = empresaDeRemisionExterna(ex);
+  return esEmpresaExterna(e) ? e : getSigla(e);
+}
+
+// "2.000 Kg · ROOTFIT" / "12 und · CREOLINA X LITRO" (Abago: unidades por presentación).
+function _lineaExternaTxt(l) {
+  var cant = (Number(l.Cantidad) || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 });
+  var u = l.Unidad === 'KG' ? ' Kg' : (l.Unidad === 'L' ? ' L' : ' und');
+  return cant + u + ' · ' + (l.Producto || '') + (l.Presentacion ? ' (' + l.Presentacion + ')' : '');
+}
+
+// Litros y kilos que aporta la remisión (lo mismo que usa el reparto y el Prorrateo).
+function _litKiloExterna(ex) {
+  var tot = { litros: 0, kilos: 0 };
+  ex.lineas.forEach(function(l) {
+    if (!(l.Cantidad > 0)) return;
+    var lk = _litKiloDeLinea(_lineaExternaAMapa(ex, l));
+    tot.litros += lk.litros;
+    tot.kilos += lk.kilos;
+  });
+  return tot;
+}
+
+function _litKiloExternaTxt(kl) {
+  return [kl.litros > 0 ? _litFmtLg(kl.litros) : null, kl.kilos > 0 ? _kiloFmtLg(kl.kilos) : null].filter(Boolean).join(' · ') || '—';
+}
+
+// Filas de la pestaña según los filtros rf-* y el orden elegido (la tabla y el
+// Excel comparten esta lista). Sin orden: la más recién registrada primero.
+// {ex, uso: [leg], kl: {litros, kilos}}
+function _remisionesExternasFilas() {
+  var fTipo = document.getElementById('rf-tipo').value;
+  var fPlanta = document.getElementById('rf-planta').value;
+  var fUso = document.getElementById('rf-uso').value;
+  var fDesde = document.getElementById('rf-desde').value;
+  var fHasta = document.getElementById('rf-hasta').value;
+  var fTxt = document.getElementById('rf-txt').value.trim().toLowerCase();
+  var uso = _usoRemisionesExternas();
+
+  var rows = Object.keys(remisionesExternas).map(function(k) {
+    var ex = remisionesExternas[k];
+    return { ex: ex, uso: uso[k] || [], kl: _litKiloExterna(ex) };
+  }).filter(function(r) {
+    var ex = r.ex;
+    var fecha = String(ex.Fecha || '').slice(0, 10);
+    if (fTipo && (ex.Tipo || 'ABAGO') !== fTipo) return false;
+    if (fPlanta && ex.Planta !== fPlanta) return false;
+    if (fUso === 'usada' && !r.uso.length) return false;
+    if (fUso === 'sinusar' && r.uso.length) return false;
+    if (fDesde && fecha < fDesde) return false;
+    if (fHasta && fecha > fHasta) return false;
+    if (fTxt) {
+      var hay = [ex.Remision, ex.Proveedor, ex.creado_por_nombre, _plantaExternaTxt(ex)]
+        .concat(ex.lineas.map(function(l) { return l.Producto; }))
+        .concat(r.uso.map(function(l) { return l.Consecutivo; }))
+        .join(' ').toLowerCase();
+      if (hay.indexOf(fTxt) < 0) return false;
+    }
+    return true;
+  });
+  rows.sort(function(a, b) { return b.ex.id - a.ex.id; });
+  return applySortLg('ext', rows);
+}
+
+function renderRemisionesExternasTab() {
+  var box = document.getElementById('ext-body');
+  if (!box) return;
+  var ctEl = document.getElementById('ext-ct');
+  var puedeEditar = AUTH.hasModule('legalizacion_gastos');
+  var total = Object.keys(remisionesExternas).length;
+  var rows = _remisionesExternasFilas();
+  renderSortHead('ext', 'ext-head');
+  if (ctEl) ctEl.textContent = '(' + rows.length + (rows.length !== total ? ' de ' + total : '') + ')';
+
+  box.innerHTML = rows.map(function(r) {
+    var ex = r.ex;
+    var esMP = ex.Tipo === 'MATERIA_PRIMA';
+    var tipoBadge = esMP
+      ? '<span class="badge" style="background:#feebc8;color:#7b341e">🏭 Materia prima</span>'
+      : '<span class="badge b-ent">🌿 Chia Abago</span>';
+    var emp = _empresaExternaTxt(ex);
+    var productos = ex.lineas.map(function(l) { return escHtml(_lineaExternaTxt(l)); }).join('<br>') || '<span style="color:#a0aec0">Sin productos</span>';
+    var usoHtml = r.uso.length
+      ? r.uso.slice().sort(function(a, b) { return String(a.Consecutivo || '').localeCompare(String(b.Consecutivo || ''), 'es'); }).map(function(l) {
+          return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.Consecutivo || ('#' + l.id)) + '</a>';
+        }).join(', ')
+      : '<span style="color:#a0aec0">Sin usar</span>';
+    var modif = ex.modificado_en && ex.creado_en && (new Date(ex.modificado_en) - new Date(ex.creado_en)) > 60000
+      ? '<div class="ac-sub">Modificada ' + escHtml(_fmtAudTs(ex.modificado_en)) + '</div>' : '';
+    return '<tr>' +
+      '<td><strong>' + escHtml(ex.Remision) + '</strong></td>' +
+      '<td>' + tipoBadge + '</td>' +
+      '<td>' + escHtml(fmtDate(ex.Fecha)) + '</td>' +
+      '<td>' + escHtml(ex.Proveedor || '—') + '</td>' +
+      '<td>' + escHtml(_plantaExternaTxt(ex)) + '</td>' +
+      '<td><span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span></td>' +
+      '<td style="white-space:normal;min-width:200px">' + productos + '</td>' +
+      '<td style="white-space:nowrap">' + escHtml(_litKiloExternaTxt(r.kl)) + '</td>' +
+      '<td style="white-space:normal;min-width:110px">' + usoHtml + '</td>' +
+      '<td>' + escHtml(ex.creado_por_nombre || '—') + '<div class="ac-sub">' + escHtml(_fmtAudTs(ex.creado_en)) + '</div>' + modif + '</td>' +
+      '<td>' + (puedeEditar ? '<button class="btn-ver" onclick="editarRemisionExternaTab(' + ex.id + ')">✎ Ver / editar</button>' : '') + '</td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="11"><div class="empty">' + (total ? 'Sin remisiones externas para este filtro.' : 'Aún no hay remisiones externas registradas.') + '</div></td></tr>';
+}
+
+function editarRemisionExternaTab(id) {
+  var ex = Object.keys(remisionesExternas).map(function(k) { return remisionesExternas[k]; }).filter(function(e) { return e.id === id; })[0];
+  if (ex) abrirRemisionExterna(ex.Remision, 'tab');
+}
+
+// Excel de la pestaña tal como se ve (mismos filtros y orden): una fila por
+// producto de cada remisión.
+function exportarRemisionesExternasExcel() {
+  var rows = _remisionesExternasFilas();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = [];
+  rows.forEach(function(r) {
+    var ex = r.ex;
+    var base = {
+      'Remisión': ex.Remision,
+      'Tipo': ex.Tipo === 'MATERIA_PRIMA' ? 'Materia prima' : 'Chia Abago',
+      'Fecha': fmtDate(ex.Fecha),
+      'Proveedor': ex.Proveedor || '',
+      'Planta': _plantaExternaTxt(ex) === '—' ? '' : _plantaExternaTxt(ex),
+      'Se carga a': _empresaExternaTxt(ex)
+    };
+    var cierre = {
+      'Usada en': r.uso.map(function(l) { return l.Consecutivo; }).join(', '),
+      'Registrada por': ex.creado_por_nombre || '',
+      'Fecha de registro': _fmtAudTs(ex.creado_en)
+    };
+    (ex.lineas.length ? ex.lineas : [null]).forEach(function(l) {
+      data.push(Object.assign({}, base, {
+        'Producto / materia prima': l ? l.Producto : '',
+        'Cantidad': l ? Number(l.Cantidad) || 0 : '',
+        'Unidad': l ? (l.Unidad === 'KG' ? 'Kg' : (l.Unidad === 'L' ? 'L' : 'Unidades')) : ''
+      }, cierre));
+    });
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Remisiones externas');
+  XLSX.writeFile(wb, 'remisiones_externas_' + today() + '.xlsx');
+  showToast('Excel exportado');
 }
 
 // ── Formulario: clientes visitados (lista, sugeridos desde Pedidos con remisión) ──
