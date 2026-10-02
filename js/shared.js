@@ -2571,7 +2571,8 @@ async function _apiPostCore(body) {
       var idRE = body.id || null;
       var oldItemsRE = [];
       // Tipo: 'ABAGO' (por defecto) o 'MATERIA_PRIMA' (planta de producción, kilos/litros
-      // directos en Unidad KG|L y proveedor libre). El tipo se fija al crear.
+      // directos en Unidad KG|L, o UND = unidades por presentación como en Abago, y
+      // proveedor libre). El tipo se fija al crear.
       var esMPRE = body.Tipo === 'MATERIA_PRIMA';
       // La materia prima llega a una planta: CACHIPAY (empresa PARCELAR) o MOSQUERA
       // (empresa GREEN); define a qué empresa se cargan sus gastos.
@@ -2592,7 +2593,7 @@ async function _apiPostCore(body) {
         idRE = resInsRE.data.id;
       }
       var rowsRE = lineasRE.map(function(l) {
-        return { Remision_Id: idRE, Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad), Unidad: (esMPRE && (l.Unidad === 'KG' || l.Unidad === 'L')) ? l.Unidad : null, creado_por: _uid() };
+        return { Remision_Id: idRE, Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad), Unidad: (esMPRE && (l.Unidad === 'KG' || l.Unidad === 'L' || l.Unidad === 'UND')) ? l.Unidad : null, creado_por: _uid() };
       });
       var resItRE = await _sb.from('RemisionesExternasItems').insert(rowsRE);
       if (resItRE.error) {

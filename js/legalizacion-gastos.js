@@ -97,13 +97,19 @@ var remisionesExternas = {};
 
 // Tipos de remisión externa. Abago: unidades por presentación (el nombre del
 // producto trae la presentación). Materia prima: kilos o litros directos
-// (Unidad KG|L). El número se guarda con prefijo para no chocar con remisiones
+// (Unidad KG|L|UND). El número se guarda con prefijo para no chocar con remisiones
 // antiguas del sistema que son solo un número (ej. ABAGO-205, MP-205).
 var REMISION_TIPOS = {
   ABAGO: { empresa: EMPRESA_ABAGO, prefijo: 'ABAGO-', nombre: 'Chia Abago', re: /^abago[\s\-_:.#]*/i },
   MATERIA_PRIMA: { empresa: EMPRESA_MP, prefijo: 'MP-', nombre: 'materia prima', re: /^mp[\s\-_:.#]+/i }
 };
 function esEmpresaExterna(emp) { return emp === EMPRESA_ABAGO || emp === EMPRESA_MP; }
+
+// Unidad de cada línea de una remisión de materia prima: kilos y litros directos,
+// o Unidades (UND), que como en Chia Abago solo entran al reparto si el nombre del
+// producto trae la presentación (ej. "SULFATO X 25 KILOS", ver _litKiloDeLinea).
+var UNIDADES_MP = [{ v: 'KG', t: 'Kg' }, { v: 'L', t: 'L' }, { v: 'UND', t: 'Unidades' }];
+function _unidadMP(v) { return v === 'L' || v === 'UND' ? v : 'KG'; }
 
 // Planta de destino de una remisión de materia prima; define la empresa a la
 // que se cargan sus gastos (misma relación de ORIGEN_EMPRESA en ingresos.js).
@@ -2725,7 +2731,8 @@ function renderAbagoLineas() {
     return '<tr>' +
       '<td><input class="ef abago-prod" data-line="' + i + '" type="text" list="' + (esMP ? 'mp-productos' : 'abago-productos') + '" autocomplete="off" placeholder="' + (esMP ? 'Materia prima (elige de la lista o escribe)' : 'Producto (elige de la lista o escribe)') + '" value="' + escHtml(l.Producto || '') + '" oninput="onAbagoLineaInput()"></td>' +
       '<td><input class="ef abago-cant" data-line="' + i + '" type="number" min="0" step="any" value="' + (l.Cantidad || '') + '" style="text-align:right" oninput="onAbagoLineaInput()"></td>' +
-      (esMP ? '<td><select class="ef abago-uni" data-line="' + i + '" style="min-width:76px" onchange="onAbagoLineaInput()"><option value="KG"' + (l.Unidad !== 'L' ? ' selected' : '') + '>Kg</option><option value="L"' + (l.Unidad === 'L' ? ' selected' : '') + '>L</option></select></td>' : '') +
+      (esMP ? '<td><select class="ef abago-uni" data-line="' + i + '" style="min-width:96px" onchange="onAbagoLineaInput()">' +
+        UNIDADES_MP.map(function(u) { return '<option value="' + u.v + '"' + (_unidadMP(l.Unidad) === u.v ? ' selected' : '') + '>' + u.t + '</option>'; }).join('') + '</select></td>' : '') +
       '<td class="abago-eq" data-line="' + i + '" style="text-align:right;color:#718096;font-size:0.8rem"></td>' +
       '<td style="text-align:center"><button type="button" onclick="removeAbagoLinea(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
     '</tr>';
@@ -2744,7 +2751,7 @@ function leerAbagoLineas() {
   });
   document.querySelectorAll('.abago-uni').forEach(function(sel) {
     var l = abagoModal.lineas[Number(sel.dataset.line)];
-    if (l) l.Unidad = sel.value === 'L' ? 'L' : 'KG';
+    if (l) l.Unidad = _unidadMP(sel.value);
   });
 }
 
@@ -2820,7 +2827,7 @@ async function guardarRemisionExternaForm() {
   // Remisiones_Relacionadas es un CSV (y Pedidos.Remisiones usa "|"): el número no puede llevarlos.
   if (/[,|]/.test(cod)) { showToast('El número de remisión no puede llevar comas ni el signo |', '#e67e22'); return; }
   var lineas = abagoModal.lineas.map(function(l) {
-    return { Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad) || 0, Unidad: esMP ? (l.Unidad === 'L' ? 'L' : 'KG') : null };
+    return { Producto: (l.Producto || '').trim(), Presentacion: (l.Presentacion || '').trim(), Cantidad: Number(l.Cantidad) || 0, Unidad: esMP ? _unidadMP(l.Unidad) : null };
   }).filter(function(l) { return l.Producto || l.Cantidad > 0; });
   if (!lineas.length) { showToast('Agrega al menos ' + (esMP ? 'una materia prima' : 'un producto') + ' con su cantidad', '#e67e22'); return; }
   if (lineas.some(function(l) { return !l.Producto || !(l.Cantidad > 0); })) {
@@ -2843,8 +2850,14 @@ async function guardarRemisionExternaForm() {
     if (repetida) { showToast(repetida, '#e67e22'); return; }
   }
 
-  // Materia prima siempre trae kilos/litros; en Abago se avisa lo que no se pueda convertir.
-  var sinConv = esMP ? [] : lineas.filter(function(l) { var p = _litParse(l.Producto, l.Presentacion); return !p.convertible && !p.convertibleKilo; });
+  // Materia prima en Kg o L ya trae kilos/litros; en Abago y en las líneas de
+  // materia prima en Unidades se avisa lo que no se pueda convertir (el nombre del
+  // producto debe traer la presentación, ej. "SULFATO X 25 KILOS").
+  var sinConv = lineas.filter(function(l) {
+    if (esMP && l.Unidad !== 'UND') return false;
+    var p = _litParse(l.Producto, l.Presentacion);
+    return !p.convertible && !p.convertibleKilo;
+  });
   if (sinConv.length && !confirm('Estos productos no tienen litros/kilos reconocibles y no entrarán al reparto:\n\n• ' +
       sinConv.map(function(l) { return l.Producto; }).join('\n• ') + '\n\n¿Guardar de todos modos?')) return;
 
