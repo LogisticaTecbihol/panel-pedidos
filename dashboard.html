@@ -147,6 +147,35 @@
   /* ── SELECT dentro de dash-card-head (movimientos por producto) ── */
   .dash-card-head .mp-select { padding: 6px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.82rem; font-family: inherit; outline: none; background: white; max-width: 280px; }
   .dash-card-head .mp-select:focus { border-color: #1a5276; }
+
+  /* ── PESTAÑAS ── */
+  .dash-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .dash-tab {
+    background: #718096; color: white; border: none; padding: 9px 18px;
+    border-radius: 8px; font-size: 0.86rem; font-weight: 700; font-family: inherit;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .dash-tab:hover { background: #4a5568; }
+  .dash-tab.active { background: #1a5276; }
+
+  /* ── MOVIMIENTOS POR EMPRESA ── */
+  .mov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; margin-bottom: 18px; }
+  .mov-card {
+    background: white; border-radius: 12px; padding: 16px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07); border-top: 5px solid #1a5276;
+  }
+  .mov-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .mov-name { font-size: 0.8rem; color: #718096; font-weight: 600; line-height: 1.25; }
+  .mov-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #edf2f7; }
+  .mov-row:last-child { border-bottom: none; }
+  .mov-ico { font-size: 1.05rem; width: 22px; text-align: center; flex-shrink: 0; }
+  .mov-lbl { flex: 1; font-size: 0.84rem; font-weight: 600; color: #2d3748; }
+  .mov-lbl small { display: block; font-size: 0.72rem; font-weight: 400; color: #718096; }
+  .mov-val { font-size: 1.15rem; font-weight: 800; color: #1a5276; font-variant-numeric: tabular-nums; }
+  .mov-val.zero { color: #cbd5e0; }
+  .mov-sec { margin: 12px 0 2px; padding-top: 10px; border-top: 2px solid #e2e8f0; font-size: 0.72rem; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.4px; }
+  .mov-nota { font-size: 0.74rem; color: #718096; line-height: 1.55; padding: 0 4px; }
+  .mov-nota p { margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -209,9 +238,15 @@
     <span id="sync-msg">Conectado a la nube.</span>
   </div>
 
+  <!-- Pestañas -->
+  <div class="dash-tabs">
+    <button class="dash-tab active" id="tab-resumen" onclick="switchDashTab('resumen')">📊 Resumen general</button>
+    <button class="dash-tab" id="tab-movimientos" onclick="switchDashTab('movimientos')">🏢 Movimientos por empresa</button>
+  </div>
+
   <!-- Filters -->
   <div class="dash-filters">
-    <div class="fg"><label>Empresa</label><select id="df-emp"><option value="">Todas</option></select></div>
+    <div class="fg" id="df-emp-fg"><label>Empresa</label><select id="df-emp"><option value="">Todas</option></select></div>
     <div class="fg"><label>Desde</label><input type="date" id="df-desde" title="Fecha del pedido — desde" style="width:150px"></div>
     <div class="fg"><label>Hasta</label><input type="date" id="df-hasta" title="Fecha del pedido — hasta" style="width:150px"></div>
     <button onclick="clearDashFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar</button>
@@ -227,6 +262,9 @@
       </div>
     </div>
   </div>
+
+  <!-- ═══ Pestaña: Resumen general ═══ -->
+  <div id="panel-resumen">
 
   <div class="dash-ts" id="dash-ts"></div>
 
@@ -448,6 +486,15 @@
     </div>
   </div>
 
+  </div><!-- /panel-resumen -->
+
+  <!-- ═══ Pestaña: Movimientos por empresa ═══ -->
+  <div id="panel-movimientos" style="display:none">
+    <div id="mov-chip"></div>
+    <div class="mov-grid" id="mov-grid"></div>
+    <div class="mov-nota" id="mov-nota"></div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
@@ -458,6 +505,6 @@
 <script src="js/auth.js?v=20261001a"></script>
 <script src="js/notificaciones.js?v=20261001a"></script>
 <script src="js/existencias.js?v=20260929a"></script>
-<script src="js/dashboard.js?v=20261002a"></script>
+<script src="js/dashboard.js?v=20261002b"></script>
 </body>
 </html>

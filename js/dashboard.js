@@ -347,13 +347,13 @@ async function loadDashboard() {
   try {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion' }),
-      apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total' }).catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha' }).catch(function() { return { ok: true, ingresos: [] }; }),
+      apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total,Cliente,Vendedor' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha,Origen,Responsable,Remision_Origen,Remision_Destino,Reenvase_Ref' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras', { columns: 'Empresa,Estado,Fecha_Solicitud,Fecha_Despacho,Cantidad,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases', { columns: 'Empresa,Cantidad,Fecha,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      apiGet('getMuestras', { columns: 'id,Empresa,Consecutivo,Estado,Fecha_Solicitud,Fecha_Despacho,Cantidad,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getReenvases', { columns: 'Empresa,Empresa_Destino,Planta,Remision,Remision_Destino,Bodega,Cantidad,Fecha,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getEntregasPedido', { columns: 'pedido_id,empresa_pedido,empresa_stock,producto,cantidad,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
-      apiGet('getCambios', { columns: 'Empresa,Estado,Fecha_Solicitud,Producto,Cantidad' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Fecha_Solicitud,Producto,Cantidad' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getInventarioFisico', { columns: 'Empresa,Producto,Presentacion,Cantidad_Fisica,Cantidad_Sistema,Diferencia,Fecha_Conteo,Observaciones' }).catch(function() { return { ok: true, conteos: [] }; }),
       apiGet('getClientesAll', { columns: 'Cliente,Identificacion,Nombre_Empresa,Cliente_Nuevo,creado_en' }).catch(function() { return { ok: true, clientes: [] }; })
     ]);
@@ -583,6 +583,7 @@ function buildDashboard() {
   buildCalidadDatos(cur.ped, fEmp);
   buildClientesNuevos(fEmp, fDesde, fHasta);
   buildMovimientosPorProducto(fEmp, fDesde, fHasta);
+  if (dActiveTab === 'movimientos') buildMovimientosEmpresa();
 }
 
 // ── Existencias (snapshot Kardex) ──
@@ -612,13 +613,16 @@ function dStockTotals(fEmp) {
 }
 
 // ── Chip de rango + empresa activos (encima de los KPI) ──
+function dRangoLabel(fDesde, fHasta) {
+  if (dActivePreset && DASH_PRESET_LBL[dActivePreset]) return DASH_PRESET_LBL[dActivePreset];
+  if (!fDesde && !fHasta) return 'Todo el histórico';
+  return (fDesde ? fmtDate(fDesde) : 'inicio') + ' → ' + (fHasta ? fmtDate(fHasta) : 'hoy');
+}
+
 function renderRangeChip(fEmp, fDesde, fHasta) {
   var el = document.getElementById('dash-range-chip');
   if (!el) return;
-  var rango;
-  if (dActivePreset && DASH_PRESET_LBL[dActivePreset]) rango = DASH_PRESET_LBL[dActivePreset];
-  else if (!fDesde && !fHasta) rango = 'Todo el histórico';
-  else rango = (fDesde ? fmtDate(fDesde) : 'inicio') + ' → ' + (fHasta ? fmtDate(fHasta) : 'hoy');
+  var rango = dRangoLabel(fDesde, fHasta);
   var empTxt = fEmp
     ? ' · <span class="emp">' + escHtml(dGetSigla(fEmp)) + '</span>'
     : ' · Todas las empresas';
@@ -2333,6 +2337,182 @@ function buildClientesNuevos(fEmp, fDesde, fHasta) {
       '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.valor) + '</td>' +
     '</tr>';
   }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Pestañas (Resumen general · Movimientos por empresa)
+// ══════════════════════════════════════════════════════════════
+var dActiveTab = 'resumen';
+
+function switchDashTab(tab) {
+  dActiveTab = (tab === 'movimientos') ? 'movimientos' : 'resumen';
+  var esMov = dActiveTab === 'movimientos';
+  document.getElementById('panel-resumen').style.display = esMov ? 'none' : 'block';
+  document.getElementById('panel-movimientos').style.display = esMov ? 'block' : 'none';
+  document.getElementById('tab-resumen').classList.toggle('active', !esMov);
+  document.getElementById('tab-movimientos').classList.toggle('active', esMov);
+  // La pestaña de movimientos muestra TODAS las empresas lado a lado: el filtro
+  // de empresa no aplica (Desde/Hasta y los rangos rápidos sí).
+  document.getElementById('df-emp-fg').style.display = esMov ? 'none' : '';
+  if (esMov) {
+    buildMovimientosEmpresa();
+  } else {
+    // Los gráficos reconstruidos mientras el panel estaba oculto midieron 0 px.
+    Object.keys(_dashCharts).forEach(function(id) { try { _dashCharts[id].resize(); } catch (e) {} });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Movimientos por empresa
+// ──────────────────────────────────────────────────────────────
+// Por empresa del holding: nº de DOCUMENTOS (no líneas) de pedidos, ingresos,
+// órdenes de compra, salidas a producción, cambios, devoluciones y muestras, y
+// nº de remisiones distintas de entrada (RE) y de salida (RS).
+//  · Documento = mismo agrupamiento que usa cada módulo (pedidos.js keyOf,
+//    ingresos.js keyOfIng, reenvases.js keyOfRe, devoluciones.js devGroupKey,
+//    cambios/muestras = empresa + consecutivo, OC = origen|destino|consecutivo).
+//  · Ingresos y OC tienen origen y destino: cuentan en AMBAS empresas (como en
+//    dSlice); el total del holding los cuenta una sola vez.
+//  · Pedidos excluye los de consignación (dPedidosConsig, igual que el resto del
+//    dashboard); se informan aparte en el mismo renglón.
+//  · Remisiones = números distintos del stream del Kardex (dExist.kxMovimientos):
+//    solo los que movieron inventario, sin anuladas ni Bodega NC / ajustes.
+// ══════════════════════════════════════════════════════════════
+var D_MOV_CAMPOS = ['ped', 'pedConsig', 'ing', 'oc', 'ree', 'cam', 'dev', 'mue', 'remRE', 'remRS'];
+var D_MOV_MODULOS_SIN_REMISION_DOC = { 'Bodega NC': 1, 'Ajuste': 1, 'Saldo Inicial': 1 };
+
+function dMovPorEmpresa(desde, hasta) {
+  var cur = dSlice('', desde, hasta);
+  function vacio(extra) {
+    var o = extra || {};
+    D_MOV_CAMPOS.forEach(function(c) { o[c] = 0; });
+    return o;
+  }
+  var porSigla = {}, filas = [];
+  dHoldingEmpresas().forEach(function(e) {
+    var f = vacio({ sigla: e.sigla, nombre: e.value });
+    porSigla[e.sigla] = f;
+    filas.push(f);
+  });
+  var tot = vacio();
+  var visto = {};
+
+  // Cuenta un documento (clave única por campo) en cada empresa visible que
+  // participa; en el total del holding entra una sola vez.
+  function contar(campo, clave, empresas) {
+    var base = campo + '||' + clave;
+    var alguna = false;
+    empresas.forEach(function(n) {
+      var f = porSigla[dGetSigla(n)];
+      if (!f) return;
+      alguna = true;
+      var k = base + '||' + f.sigla;
+      if (visto[k]) return;
+      visto[k] = 1;
+      f[campo]++;
+    });
+    if (alguna && !visto[base]) { visto[base] = 1; tot[campo]++; }
+  }
+  function j(arr) { return arr.map(function(v) { return v == null ? '' : String(v).trim(); }).join('||'); }
+
+  cur.orders.forEach(function(o) { contar('ped', o.key, [o.empresa]); });
+  cur.consOrders.forEach(function(o) { contar('pedConsig', o.key, [o.empresa]); });
+
+  cur.ing.forEach(function(i) {
+    contar('ing', j([i.Fecha, i.Origen, i.Empresa_Origen, i.Empresa_Destino, i.Responsable, i.Remision_Origen, i.Remision_Destino, i.Reenvase_Ref]),
+      [i.Empresa_Origen, i.Empresa_Destino]);
+  });
+
+  cur.oc.forEach(function(o) {
+    contar('oc', j([o.Empresa_Origen, o.Empresa_Destino, o.Consecutivo || o.id]), [o.Empresa_Origen, o.Empresa_Destino]);
+  });
+
+  // Salidas a producción: solo la empresa que despacha (en un traslado la
+  // destino recibe una entrada, no una salida).
+  cur.ree.forEach(function(r) {
+    var bod = (r.Bodega === 'Productos Buenos' || !r.Bodega) ? 'Producto Terminado' : r.Bodega;
+    contar('ree', j([r.Fecha, r.Empresa, r.Empresa_Destino, r.Planta, r.Remision, r.Remision_Destino, bod]), [r.Empresa]);
+  });
+
+  cur.cam.forEach(function(c) { contar('cam', j([c.Empresa, c.Consecutivo || c.id]), [c.Empresa]); });
+  cur.dev.forEach(function(d) { contar('dev', j([d.Empresa, d.Cliente, d.Vendedor, d.Fecha]), [d.Empresa]); });
+  cur.mue.forEach(function(m) { contar('mue', j([m.Empresa, m.Consecutivo || m.id]), [m.Empresa]); });
+
+  // Remisiones de entrada (RE) y salida (RS) que movieron inventario.
+  var remDisponible = !!(dExist && dExist.kxMovimientos);
+  if (remDisponible) {
+    dExist.kxMovimientos.forEach(function(m) {
+      if (D_MOV_MODULOS_SIN_REMISION_DOC[m.modulo]) return;
+      var rem = String(m.remision || '').trim();
+      if (!rem || !_fechaEnRango(m.fecha, desde, hasta)) return;
+      contar(m.tipo === 'Entrada' ? 'remRE' : 'remRS', rem, [m.empresa]);
+    });
+  }
+
+  return { filas: filas, total: tot, remDisponible: remDisponible };
+}
+
+function buildMovimientosEmpresa() {
+  var gridEl = document.getElementById('mov-grid');
+  var chipEl = document.getElementById('mov-chip');
+  var notaEl = document.getElementById('mov-nota');
+  if (!gridEl) return;
+
+  var fDesde = document.getElementById('df-desde').value;
+  var fHasta = document.getElementById('df-hasta').value;
+  chipEl.innerHTML = '<span class="dash-range-chip">📅 ' + escHtml(dRangoLabel(fDesde, fHasta)) + ' · Todas las empresas</span>';
+
+  var d = dMovPorEmpresa(fDesde, fHasta);
+  if (!d.filas.length) {
+    gridEl.innerHTML = '<div class="empty" style="grid-column:1/-1;text-align:center;padding:44px;color:#a0aec0">No tienes empresas asignadas para ver movimientos.</div>';
+    notaEl.innerHTML = '';
+    return;
+  }
+
+  function num(v) { return Number(v).toLocaleString('es-CO'); }
+  function fila(icon, lbl, val, sub, tip) {
+    return '<div class="mov-row"' + (tip ? ' title="' + escHtml(tip) + '"' : '') + '>' +
+      '<span class="mov-ico">' + icon + '</span>' +
+      '<span class="mov-lbl">' + lbl + (sub ? '<small>' + sub + '</small>' : '') + '</span>' +
+      '<span class="mov-val' + (val ? '' : ' zero') + '">' + num(val) + '</span>' +
+    '</div>';
+  }
+  function card(f, color, head) {
+    var consSub = f.pedConsig ? '+ ' + num(f.pedConsig) + ' en consignación' : '';
+    var rem = d.remDisponible
+      ? fila('⬇️', 'Entrada (RE)', f.remRE, '', 'Remisiones distintas de entrada que movieron inventario') +
+        fila('⬆️', 'Salida (RS)', f.remRS, '', 'Remisiones distintas de salida que movieron inventario')
+      : '<div class="mov-row" style="color:#a0aec0;font-size:0.8rem">Sin datos de remisiones (el Kardex no cargó).</div>';
+    return '<div class="mov-card" style="border-top-color:' + color + '">' +
+      '<div class="mov-head">' + head + '</div>' +
+      fila('📋', 'Pedidos', f.ped, consSub, 'Órdenes (empresa + consecutivo + cliente) por fecha del pedido. No incluye consignación.') +
+      fila('📥', 'Ingresos', f.ing, '', 'Ingresos como empresa origen o destino, por fecha del ingreso') +
+      fila('🛒', 'Órdenes de compra', f.oc, '', 'Órdenes de compra como empresa origen o destino, por fecha') +
+      fila('🏭', 'Salidas a producción', f.ree, '', 'Salidas despachadas por la empresa, por fecha de la salida') +
+      fila('🔁', 'Cambios', f.cam, '', 'Cambios de mercancía por fecha de solicitud') +
+      fila('🔄', 'Devoluciones', f.dev, '', 'Devoluciones por fecha') +
+      fila('🧪', 'Muestras', f.mue, '', 'Solicitudes de muestras (sin órdenes de producción) por fecha de solicitud') +
+      '<div class="mov-sec">📄 Remisiones</div>' + rem +
+    '</div>';
+  }
+
+  var html = d.filas.map(function(f) {
+    var head = '<span class="sigla-badge ' + getSiglaClass(f.nombre) + '">' + escHtml(f.sigla) + '</span>' +
+      '<span class="mov-name">' + escHtml(f.nombre) + '</span>';
+    return card(f, EMP_COLORS[f.sigla] || '#1a5276', head);
+  }).join('');
+
+  if (d.filas.length > 1) {
+    var headTot = '<span class="sigla-badge" style="background:#d6eaf8;color:#1a5276">HOLDING</span>' +
+      '<span class="mov-name">Total (los documentos entre empresas se cuentan una sola vez)</span>';
+    html += card(d.total, '#1a5276', headTot);
+  }
+  gridEl.innerHTML = html;
+
+  notaEl.innerHTML =
+    '<p>• Cada indicador cuenta <b>documentos</b>, no líneas: un pedido, ingreso u orden de compra con varios productos cuenta 1. Incluye anulados, igual que el resto del dashboard.</p>' +
+    '<p>• Ingresos y órdenes de compra aparecen en las <b>dos</b> empresas que participan (origen y destino), por eso la suma de las tarjetas supera al total del holding.</p>' +
+    '<p>• Remisiones: números <b>distintos</b> de entrada (RE) y salida (RS) de pedidos, ingresos, órdenes de compra, salidas, cambios, devoluciones y muestras que movieron inventario en el Kardex (sin anuladas, Bodega NC ni ajustes). Un traslado entre empresas aporta una RS al origen y una RE al destino.</p>';
 }
 
 // ── Init ──
