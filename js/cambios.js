@@ -247,7 +247,7 @@ function filteredCam() {
     if (fc && r.Cliente !== fc) return false;
     if (fst && r.Estado !== fst) return false;
     if (ft) {
-      var hay = [r.Cliente, r.NIT, r.Producto, r.Num_Factura, r.Razon_Cambio, r.Observaciones, r.Consecutivo, r.Correo].join(' ').toLowerCase();
+      var hay = [r.Cliente, r.NIT, r.Producto, r.Num_Factura, r.Razon_Cambio, r.Observaciones, r.Observacion_Cierre, r.Consecutivo, r.Correo].join(' ').toLowerCase();
       if (hay.indexOf(ft) < 0) return false;
     }
     return true;
@@ -331,7 +331,9 @@ function renderCamTable() {
     var esPend = r._estado === 'Pendiente';
     var esCerrado = r._estado === 'Cerrado';
     var esParcial = r._estado === 'Parcial';
-    var estadoBadge = esCerrado
+    var estadoBadge = (esCerrado && r.Cierre_Sin_Recepcion)
+      ? '<span style="background:#ffe8d1;color:#a04000;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700" title="'+escHtml('Cerrado sin recibir el producto: '+(r.Observacion_Cierre||''))+'">Cerrado sin recepción</span>'
+      : esCerrado
       ? '<span style="background:#d1ecf1;color:#0c5460;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Cerrado</span>'
       : esParcial
         ? '<span style="background:#ffe8cc;color:#b45309;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700" title="Falta registrar un lado de la remisión">Parcial</span>'
@@ -386,7 +388,9 @@ function viewCamDetail(key) {
   function cfHtml(label, htmlVal) {
     return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">'+label+'</span><br>'+htmlVal+'</div>';
   }
-  var estadoLabel = r.Estado === 'Cerrado'
+  var estadoLabel = (r.Estado === 'Cerrado' && r.Cierre_Sin_Recepcion)
+    ? '<span style="background:#ffe8d1;color:#a04000;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Cerrado sin recepción</span>'
+    : r.Estado === 'Cerrado'
     ? '<span style="background:#d1ecf1;color:#0c5460;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Cerrado</span>'
     : r.Estado === 'Parcial'
       ? '<span style="background:#ffe8cc;color:#b45309;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Parcial</span>'
@@ -407,6 +411,12 @@ function viewCamDetail(key) {
     cf('Fecha Compra', r.Fecha_Compra ? fmtDate(r.Fecha_Compra) : '—') +
     cfHtml('Estado', estadoLabel) +
     '</div>' +
+    (r.Cierre_Sin_Recepcion
+      ? '<div style="background:#fff3e6;border:1px solid #f5b87a;border-radius:8px;padding:12px 14px;margin-bottom:18px">' +
+          '<div style="font-weight:700;font-size:0.82rem;color:#a04000;margin-bottom:6px">🚫 Cerrado sin recibir el producto</div>' +
+          '<div style="font-size:0.85rem;color:#2d3748;white-space:pre-wrap">'+escHtml(r.Observacion_Cierre||'—')+'</div>' +
+        '</div>'
+      : '') +
     (function() {
       var hasIngreso = r.Remision_Ingreso;
       var hasSalida = r.Remision_Salida;
@@ -905,6 +915,10 @@ async function openGestionarCam(key) {
   var _chkGCRS = document.getElementById('gestionar-cam-remision-salida-auto'); if (_chkGCRS) _chkGCRS.checked = true;
   document.getElementById('btn-gestionar-cam').disabled = false;
   document.getElementById('btn-gestionar-cam').textContent = '✓ Cerrar cambio y enviar';
+  document.getElementById('gestionar-cam-obs-cierre').value = '';
+  // "Cerrar sin recibir producto" solo aplica si el ingreso aún no se registró
+  var _btnSinRecep = document.getElementById('gestionar-cam-btn-sinrecep');
+  if (_btnSinRecep) _btnSinRecep.style.display = gestionarCamYaIngreso ? 'none' : '';
 
   var entregaLines = lines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
   var section = document.getElementById('gestionar-cam-lineas-section');
@@ -968,6 +982,7 @@ function setGestionarCamLados(lados) {
 
 function _applyGestionarCamLados() {
   var lados = gestionarCamLados;
+  var sinRecep = lados === 'sinrecepcion';
   var doIng = lados === 'ambos' || lados === 'ingreso';
   var doSal = lados === 'ambos' || lados === 'salida';
 
@@ -982,6 +997,8 @@ function _applyGestionarCamLados() {
   var bs = document.getElementById('gestionar-cam-bloque-salida');
   if (bi) bi.style.display = doIng ? '' : 'none';
   if (bs) bs.style.display = doSal ? '' : 'none';
+  var bsr = document.getElementById('gestionar-cam-bloque-sinrecep');
+  if (bsr) bsr.style.display = sinRecep ? '' : 'none';
 
   // La asignación de inventario solo aplica si la salida está en alcance y aún no se registró
   var section = document.getElementById('gestionar-cam-lineas-section');
@@ -990,21 +1007,29 @@ function _applyGestionarCamLados() {
   // Estado resultante tras guardar
   var finalIng = gestionarCamYaIngreso || doIng;
   var finalSal = gestionarCamYaSalida || doSal;
-  var cerrado = finalIng && finalSal;
+  var cerrado = sinRecep || (finalIng && finalSal);
   var hint = document.getElementById('gestionar-cam-estado-hint');
   if (hint) {
-    hint.textContent = cerrado ? 'Cerrado' : 'Parcial';
-    hint.style.color = cerrado ? '#27ae60' : '#e67e22';
+    hint.textContent = sinRecep ? 'Cerrado (sin recepción)' : cerrado ? 'Cerrado' : 'Parcial';
+    hint.style.color = sinRecep ? '#d35400' : cerrado ? '#27ae60' : '#e67e22';
   }
   var btn = document.getElementById('btn-gestionar-cam');
-  if (btn && !btn.disabled) btn.textContent = cerrado ? '✓ Cerrar cambio y enviar' : '✓ Registrar y enviar';
+  if (btn) {
+    btn.style.background = sinRecep ? '#d35400' : '#27ae60';
+    if (!btn.disabled) btn.textContent = sinRecep ? '🚫 Cerrar sin recibir producto' : cerrado ? '✓ Cerrar cambio y enviar' : '✓ Registrar y enviar';
+  }
 
   var aviso = document.getElementById('gestionar-cam-parcial-aviso');
   if (aviso) {
     var msgs = [];
     if (gestionarCamYaIngreso) msgs.push('El ingreso ya está registrado.');
     if (gestionarCamYaSalida) msgs.push('La salida ya está registrada.');
-    if (msgs.length) {
+    if (sinRecep) {
+      aviso.textContent = gestionarCamYaSalida
+        ? 'La salida ya registrada se respeta tal cual; solo se cierra el cambio sin ingreso.'
+        : 'No se registrará ningún movimiento de inventario (ni ingreso ni salida).';
+      aviso.style.display = '';
+    } else if (msgs.length) {
       aviso.textContent = msgs.join(' ') + ' Solo se guardará el lado seleccionado arriba.';
       aviso.style.display = '';
     } else {
@@ -1022,6 +1047,8 @@ function closeGestionarCam() {
   gestionarCamLados = 'ambos';
   gestionarCamYaIngreso = false;
   gestionarCamYaSalida = false;
+  var obsCierre = document.getElementById('gestionar-cam-obs-cierre');
+  if (obsCierre) obsCierre.value = '';
   var section = document.getElementById('gestionar-cam-lineas-section');
   if (section) { section.innerHTML = ''; section.style.display = 'none'; }
 }
@@ -1029,6 +1056,15 @@ document.getElementById('gestionar-cam-overlay').addEventListener('click', funct
 
 var _pendingContabCam = null;
 async function gestionarYEnviarCam() {
+  if (gestionarCamLados === 'sinrecepcion') {
+    // Sin remisiones no hay PDF que enviar a contabilidad: se valida y se guarda directo
+    var obs = (document.getElementById('gestionar-cam-obs-cierre').value || '').trim();
+    if (obs.length < 10) { showToast('Escribe la observación que justifica cerrar sin recibir el producto (mínimo 10 caracteres)', '#e74c3c'); return; }
+    if (!window.confirm('¿Cerrar este cambio SIN haber recibido el producto?\n\nQuedará en Tramitadas y no se podrá reabrir.')) return;
+    _pendingContabCam = null;
+    await saveGestionarCam();
+    return;
+  }
   if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
     var r = await NOTIF.confirmarEnvioContabilidad(gestionarCamEmpresa, 'cambios');
     if (!r.confirmed) return;
@@ -1081,6 +1117,7 @@ async function saveGestionarCam() {
       action: 'gestionarCambio',
       Empresa: gestionarCamEmpresa,
       lados: lados,
+      Observacion_Cierre: lados === 'sinrecepcion' ? document.getElementById('gestionar-cam-obs-cierre').value.trim() : '',
       Remision_Ingreso: remIngreso,
       Bodega_Ingreso: bodegaIngreso,
       Fecha_Ingreso: fechaIngreso,
@@ -1143,7 +1180,7 @@ async function saveGestionarCam() {
     _pendingContabCam = null;
     var _estadoFinal = result.estado || 'Cerrado';
     closeGestionarCam();
-    var toastParts = [_estadoFinal === 'Cerrado' ? '✅ Cambio cerrado' : '✅ Cambio registrado (Parcial)'];
+    var toastParts = [result.sin_recepcion ? '✅ Cambio cerrado sin recepción' : _estadoFinal === 'Cerrado' ? '✅ Cambio cerrado' : '✅ Cambio registrado (Parcial)'];
     if (result.remision_ingreso) toastParts.push('RE: ' + result.remision_ingreso);
     if (result.remision_salida) toastParts.push('RS: ' + result.remision_salida);
     if (entregas.length) toastParts.push(entregas.length + ' entrega(s) directa(s)');

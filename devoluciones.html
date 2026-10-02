@@ -53,6 +53,8 @@
 .gc-lado-btn{background:#f0f4f8;color:#4a5568;border:1px solid #cbd5e0;border-radius:7px;padding:7px 14px;cursor:pointer;font-size:0.8rem;font-weight:700;transition:all 0.15s}
 .gc-lado-btn:hover{border-color:#27ae60;color:#276749}
 .gc-lado-btn.active{background:#27ae60;color:#fff;border-color:#27ae60}
+.gc-lado-btn.gc-sinrecep:hover{border-color:#d35400;color:#a04000}
+.gc-lado-btn.gc-sinrecep.active{background:#d35400;color:#fff;border-color:#d35400}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
@@ -1025,6 +1027,7 @@
           <button type="button" class="gc-lado-btn active" data-lado="ambos" onclick="setGestionarCamLados('ambos')">📥📤 Ingreso y salida</button>
           <button type="button" class="gc-lado-btn" data-lado="ingreso" onclick="setGestionarCamLados('ingreso')">📥 Solo ingreso</button>
           <button type="button" class="gc-lado-btn" data-lado="salida" onclick="setGestionarCamLados('salida')">📤 Solo salida</button>
+          <button type="button" class="gc-lado-btn gc-sinrecep" id="gestionar-cam-btn-sinrecep" data-lado="sinrecepcion" onclick="setGestionarCamLados('sinrecepcion')" title="Cierra el cambio sin que haya llegado el producto devuelto">🚫 Cerrar sin recibir producto</button>
         </div>
         <div id="gestionar-cam-parcial-aviso" style="display:none;margin-top:8px;font-size:0.8rem;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 10px;color:#8a6d3b"></div>
       </div>
@@ -1072,6 +1075,13 @@
           </div>
         </div>
       </div>
+      <!-- Cierre sin recibir el producto: justificación obligatoria -->
+      <div id="gestionar-cam-bloque-sinrecep" style="display:none;background:#fff3e6;border:1px solid #f5b87a;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+        <div style="font-weight:700;font-size:0.86rem;color:#a04000;margin-bottom:6px">🚫 Cerrar sin recibir el producto</div>
+        <div style="font-size:0.78rem;color:#7a4a1d;margin-bottom:10px">El cambio se cierra sin remisión de ingreso y sin mover inventario. Queda en Tramitadas como <strong>Cerrado sin recepción</strong> y ya no se puede reabrir.</div>
+        <label class="ef-label" for="gestionar-cam-obs-cierre">Observación (obligatoria) <span style="font-weight:400;color:#718096">— justifica por qué se cierra sin haber recibido el producto</span></label>
+        <textarea class="ef" id="gestionar-cam-obs-cierre" rows="3" maxlength="500" placeholder="Ej.: El cliente no devolvió el producto en el plazo acordado; se confirmó por WhatsApp el 02/10." style="width:100%;resize:vertical"></textarea>
+      </div>
       <!-- Productos a entregar con asignación de inventario -->
       <div id="gestionar-cam-lineas-section" style="display:none"></div>
     </div>
@@ -1097,13 +1107,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20260928b"></script>
+<script src="js/shared.js?v=20261002a"></script>
 <script src="js/auth.js?v=20261001a"></script>
 <script src="js/notificaciones.js?v=20261001a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/existencias.js?v=20260929a"></script>
+<script src="js/existencias.js?v=20261002a"></script>
 <script src="js/asignacion-inventario.js?v=20260909g"></script>
 <script src="js/devoluciones.js?v=20260924a"></script>
-<script src="js/cambios.js?v=20261001a"></script>
+<script src="js/cambios.js?v=20261002a"></script>
 </body>
 </html>

@@ -416,7 +416,7 @@
         .catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getKardexNC',    { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion,Historico' })
         .catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico' })
+      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico,Cierre_Sin_Recepcion' })
         .catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' })
         .catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
@@ -692,7 +692,8 @@
       var hayRemIng = String(hdr.Remision_Ingreso || '').trim() !== '';
       var hayRemSal = String(hdr.Remision_Salida || '').trim() !== '';
       // Compat.: cambios cerrados antiguos sin remisiones guardadas → contar ambos lados.
-      if (estCam === 'cerrado' && !hayRemIng && !hayRemSal) { hayRemIng = true; hayRemSal = true; }
+      // Excepción: "cerrado sin recepción" (sin ingreso ni salida) no mueve inventario.
+      if (estCam === 'cerrado' && !hayRemIng && !hayRemSal && hdr.Cierre_Sin_Recepcion !== true) { hayRemIng = true; hayRemSal = true; }
       lines.forEach(function(l) {
         var cant = Number(l.Cantidad) || 0;
         if (cant <= 0) return;

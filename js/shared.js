@@ -1223,7 +1223,14 @@ async function _apiPostCore(body) {
     if (action === 'gestionarCambio') {
       var ids = body.ids || [];
       // 'ambos' (default) | 'ingreso' | 'salida' — permite cerrar el cambio en dos pasos
+      // 'sinrecepcion' = cerrar sin haber recibido el producto: no crea remisiones,
+      // no mueve inventario y exige una observación que justifique el cierre.
       var ladosCam = body.lados || 'ambos';
+      var sinRecepCam = ladosCam === 'sinrecepcion';
+      var obsCierreCam = String(body.Observacion_Cierre || '').trim();
+      if (sinRecepCam && obsCierreCam.length < 10) {
+        return { ok: false, error: 'Escribe la observación que justifica cerrar sin recibir el producto (mínimo 10 caracteres)' };
+      }
       var doIngCam = ladosCam === 'ambos' || ladosCam === 'ingreso';
       var doSalCam = ladosCam === 'ambos' || ladosCam === 'salida';
       var remIngCam = (body.Remision_Ingreso || '').trim();
@@ -1266,6 +1273,14 @@ async function _apiPostCore(body) {
           rowRemSal = remSalCam;
         }
         var estadoRow = (rowRemIng && rowRemSal) ? 'Cerrado' : 'Parcial';
+        if (sinRecepCam) {
+          // Si ya se recibió el producto no aplica "sin recepción". Una salida ya
+          // registrada se respeta tal cual (queda en la fila); solo se cierra.
+          if (rowRemIng) return { ok: false, error: 'Este cambio ya tiene el ingreso registrado: no se puede cerrar como "sin recibir producto"' };
+          estadoRow = 'Cerrado';
+          updObj.Cierre_Sin_Recepcion = true;
+          updObj.Observacion_Cierre = obsCierreCam;
+        }
         updObj.Estado = estadoRow;
         if (estadoRow !== 'Cerrado') estadoFinalCam = 'Parcial';
         if (doSalCam && entregasUpd[ids[i]]) {
@@ -1279,7 +1294,8 @@ async function _apiPostCore(body) {
         ok: true, updated: ids.length,
         remision_ingreso: doIngCam ? remIngCam : '',
         remision_salida: doSalCam ? remSalCam : '',
-        estado: estadoFinalCam
+        estado: estadoFinalCam,
+        sin_recepcion: sinRecepCam
       };
     }
 

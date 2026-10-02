@@ -93,7 +93,7 @@ async function loadInventario() {
       apiGet('getIngresos', { columns: 'Cantidad,Empresa_Origen,Empresa_Destino,Producto,Historico' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getMuestras', { columns: 'Cant_Entregada,Empresa,Producto,Tipo_Solicitud,Historico' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getDevoluciones', { columns: 'Estado,Cantidad,Remision_Ingreso,Bodega_Ingreso,Remision_Salida,Bodega_Salida,Empresa,Producto,Historico' }).catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Cantidad,Tipo_Linea,Producto,Bodega_Ingreso,Bodega_Salida,Remision_Ingreso,Remision_Salida,Historico' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Cantidad,Tipo_Linea,Producto,Bodega_Ingreso,Bodega_Salida,Remision_Ingreso,Remision_Salida,Historico,Cierre_Sin_Recepcion' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getOrdenesCompra', { columns: 'Estado,Remision,Bodega,Cantidad,Empresa_Origen,Empresa_Destino,Producto,Tipo' }).catch(function() { return { ok: true, ordenes: [] }; }),
       apiGet('getEntregasPedido', { columns: 'id,pedido_id,empresa_pedido,empresa_stock,producto,presentacion,cantidad,remision,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
       apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; }),
