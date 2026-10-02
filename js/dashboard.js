@@ -2452,6 +2452,57 @@ function dMovPorEmpresa(desde, hasta) {
   return { filas: filas, total: tot, remDisponible: remDisponible };
 }
 
+var dMovUltimo = null;   // último resultado mostrado en la pestaña (lo que exporta el botón)
+
+// Exporta a Excel lo que muestra la pestaña: una fila por empresa + HOLDING, y
+// una hoja "Criterios" con el rango y las reglas de conteo.
+function exportMovimientosExcel() {
+  if (typeof XLSX === 'undefined') { showToast('La librería de Excel aún no carga; intenta de nuevo en unos segundos', '#e74c3c'); return; }
+  if (!dMovUltimo || !dMovUltimo.d.filas.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var d = dMovUltimo.d;
+
+  function fila(f, sigla, nombre) {
+    return {
+      'Empresa': sigla,
+      'Razón social': nombre,
+      'Pedidos': f.ped,
+      'Pedidos en consignación': f.pedConsig,
+      'Ingresos': f.ing,
+      'Órdenes de compra': f.oc,
+      'Salidas a producción': f.ree,
+      'Cambios': f.cam,
+      'Devoluciones': f.dev,
+      'Muestras': f.mue,
+      'Remisiones de entrada (RE)': d.remDisponible ? f.remRE : '',
+      'Remisiones de salida (RS)': d.remDisponible ? f.remRS : ''
+    };
+  }
+  var data = d.filas.map(function(f) { return fila(f, f.sigla, f.nombre); });
+  if (d.filas.length > 1) data.push(fila(d.total, 'HOLDING', 'Total (ingresos y órdenes de compra entre empresas, una sola vez)'));
+
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{ wch: 11 }, { wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 13 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+
+  var criterios = [
+    ['Movimientos por empresa'],
+    ['Rango', dMovUltimo.rango],
+    ['Generado', new Date().toLocaleString('es-CO')],
+    [],
+    ['Cada indicador cuenta documentos, no líneas: un pedido, ingreso u orden de compra con varios productos cuenta 1. Incluye anulados.'],
+    ['Pedidos: sin los de consignación (columna aparte). Muestras: sin órdenes de producción de muestras.'],
+    ['Salidas a producción: módulo Salidas a producción; cuenta solo para la empresa que despacha.'],
+    ['Ingresos y órdenes de compra cuentan en las dos empresas (origen y destino); el total HOLDING no los duplica.'],
+    ['Remisiones: números distintos de entrada (RE) y salida (RS) que movieron inventario en el Kardex (sin anuladas, Bodega NC ni ajustes).']
+  ];
+  var wsC = XLSX.utils.aoa_to_sheet(criterios);
+  wsC['!cols'] = [{ wch: 120 }, { wch: 30 }];
+
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
+  XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
+  XLSX.writeFile(wb, 'movimientos_por_empresa_' + today() + '.xlsx');
+}
+
 function buildMovimientosEmpresa() {
   var gridEl = document.getElementById('mov-grid');
   var chipEl = document.getElementById('mov-chip');
@@ -2463,6 +2514,7 @@ function buildMovimientosEmpresa() {
   chipEl.innerHTML = '<span class="dash-range-chip">📅 ' + escHtml(dRangoLabel(fDesde, fHasta)) + ' · Todas las empresas</span>';
 
   var d = dMovPorEmpresa(fDesde, fHasta);
+  dMovUltimo = { d: d, rango: dRangoLabel(fDesde, fHasta), desde: fDesde, hasta: fHasta };
   if (!d.filas.length) {
     gridEl.innerHTML = '<div class="empty" style="grid-column:1/-1;text-align:center;padding:44px;color:#a0aec0">No tienes empresas asignadas para ver movimientos.</div>';
     notaEl.innerHTML = '';
