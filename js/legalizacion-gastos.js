@@ -1126,6 +1126,9 @@ function totalGastosConceptoOf(legId, concepto) {
 // y también uno cuyo reparto no incluye el Combustible (reparto = total de
 // gastos − combustible, ver calcularRepartoForm): por ahora el combustible no
 // se prorratea entre empresas.
+// También entran a esa tabla las líneas de Combustible de los formularios de
+// Mantenimiento (Tipo='Mantenimiento'), repartidas por el Monto de su reparto
+// entre empresas; el resto del mantenimiento va a "Mantenimiento por empresa".
 function calcularProrrateoGastos() {
   var fEmp = document.getElementById('pf-emp').value;
   var fEmpSigla = fEmp ? getSigla(fEmp) : '';
@@ -1144,11 +1147,10 @@ function calcularProrrateoGastos() {
   var sinIdentificarLegs = {};       // legId -> Consecutivo
   var totalGeneral = 0;
 
-  var combustiblePorEmpresa = {};    // empresaSigla -> monto de Combustible
-  var combustibleLegs = {};          // empresaSigla -> { legId -> Consecutivo }
-  var combustibleSinAsignar = 0;     // monto de Combustible en viajes sin reparto manual entre empresas
-  var combustibleSinAsignarLegs = {};// legId -> Consecutivo
-  var combustibleTotalGeneral = 0;
+  // Combustible: porEmpresa = empresaSigla -> monto; legs = empresaSigla ->
+  // { legId -> Consecutivo }; sinAsignar = monto de viajes/mantenimientos sin
+  // reparto manual entre empresas (sinAsignarLegs = legId -> Consecutivo).
+  var combustible = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
 
   // Mantenimiento: igual que el Combustible (tabla propia, sin litros/kilos).
   var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
@@ -1187,36 +1189,27 @@ function calcularProrrateoGastos() {
     var repartoSinCombustible = totalReparto === totalGastosOf(leg.id) - monto;
     if (totalReparto <= 0 || repartoSinCombustible) {
       if (!fEmp) {
-        combustibleSinAsignar += monto;
-        combustibleTotalGeneral += monto;
-        combustibleSinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+        combustible.sinAsignar += monto;
+        combustible.total += monto;
+        combustible.sinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
       }
       return;
     }
-    empresasOf(leg.id).forEach(function(e) {
-      var eMonto = Number(e.Monto) || 0;
-      if (eMonto <= 0) return;
-      var emp = getSigla(e.Empresa);
-      if (fEmpSigla && emp !== fEmpSigla) return;
-      var m = monto * (eMonto / totalReparto);
-      combustiblePorEmpresa[emp] = (combustiblePorEmpresa[emp] || 0) + m;
-      combustibleTotalGeneral += m;
-      (combustibleLegs[emp] = combustibleLegs[emp] || {})[leg.id] = leg.Consecutivo || ('#' + leg.id);
-    });
+    _repartirPorMonto(leg, monto, combustible);
   }
 
-  // Reparte el total de un Mantenimiento entre las empresas de su reparto
-  // manual, a prorrata del Monto de cada una (igual que el Combustible). El
-  // reparto es opcional: un mantenimiento sin reparto queda en "Sin reparto
-  // asignado".
-  function _acumularMantenimiento(leg, monto) {
+  // Reparte `monto` de una legalización entre las empresas de su reparto
+  // manual, a prorrata del Monto de cada una, y lo acumula en `dest`
+  // (combustible o mantenimiento). Sin reparto con montos (>0) queda en "Sin
+  // reparto asignado".
+  function _repartirPorMonto(leg, monto, dest) {
     var totalReparto = totalRepartoOf(leg.id);
     var rotulo = leg.Consecutivo || ('#' + leg.id);
     if (totalReparto <= 0) {
       if (!fEmp) {
-        mantenimiento.sinAsignar += monto;
-        mantenimiento.total += monto;
-        mantenimiento.sinAsignarLegs[leg.id] = rotulo;
+        dest.sinAsignar += monto;
+        dest.total += monto;
+        dest.sinAsignarLegs[leg.id] = rotulo;
       }
       return;
     }
@@ -1226,9 +1219,9 @@ function calcularProrrateoGastos() {
       var emp = getSigla(e.Empresa);
       if (fEmpSigla && emp !== fEmpSigla) return;
       var m = monto * (eMonto / totalReparto);
-      mantenimiento.porEmpresa[emp] = (mantenimiento.porEmpresa[emp] || 0) + m;
-      mantenimiento.total += m;
-      (mantenimiento.legs[emp] = mantenimiento.legs[emp] || {})[leg.id] = rotulo;
+      dest.porEmpresa[emp] = (dest.porEmpresa[emp] || 0) + m;
+      dest.total += m;
+      (dest.legs[emp] = dest.legs[emp] || {})[leg.id] = rotulo;
     });
   }
 
@@ -1240,9 +1233,14 @@ function calcularProrrateoGastos() {
     // ruta: no tiene remisiones relacionadas ni relación con litros/kilos de
     // producto, así que no entra al prorrateo por producto (caería completo en
     // "Sin identificar"); va en su propia tabla "Mantenimiento por empresa".
+    // Las líneas con detalle 'Combustible' del formulario de mantenimiento se
+    // sacan de ahí y se suman a la tabla "Combustible por empresa" (mismo
+    // reparto por Monto de la legalización), sin contarse en las dos.
     if (leg.Tipo === 'Mantenimiento') {
-      var totalMant = totalGastosOf(leg.id);
-      if (totalMant > 0) _acumularMantenimiento(leg, totalMant);
+      var combMant = totalGastosConceptoOf(leg.id, 'Combustible');
+      if (combMant > 0) _repartirPorMonto(leg, combMant, combustible);
+      var totalMant = totalGastosOf(leg.id) - combMant;
+      if (totalMant > 0) _repartirPorMonto(leg, totalMant, mantenimiento);
       return;
     }
     legsPeriodo[leg.id] = true;
@@ -1313,11 +1311,11 @@ function calcularProrrateoGastos() {
     sinIdentificarRemisiones: sinIdentificarRemisiones,
     sinIdentificarLegs: sinIdentificarLegs,
     totalGeneral: totalGeneral,
-    combustiblePorEmpresa: combustiblePorEmpresa,
-    combustibleLegs: combustibleLegs,
-    combustibleSinAsignar: combustibleSinAsignar,
-    combustibleSinAsignarLegs: combustibleSinAsignarLegs,
-    combustibleTotalGeneral: combustibleTotalGeneral,
+    combustiblePorEmpresa: combustible.porEmpresa,
+    combustibleLegs: combustible.legs,
+    combustibleSinAsignar: combustible.sinAsignar,
+    combustibleSinAsignarLegs: combustible.sinAsignarLegs,
+    combustibleTotalGeneral: combustible.total,
     mantenimiento: mantenimiento
   };
 }
