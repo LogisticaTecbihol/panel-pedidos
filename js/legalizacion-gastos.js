@@ -106,8 +106,9 @@ var REMISION_TIPOS = {
 function esEmpresaExterna(emp) { return emp === EMPRESA_ABAGO || emp === EMPRESA_MP; }
 
 // Unidad de cada línea de una remisión de materia prima: kilos y litros directos,
-// o Unidades (UND), que como en Chia Abago solo entran al reparto si el nombre del
-// producto trae la presentación (ej. "SULFATO X 25 KILOS", ver _litKiloDeLinea).
+// o Unidades (UND). Una línea en UND se convierte a litros/kilos si el nombre del
+// producto trae la presentación (ej. "SULFATO X 25 KILOS" × 4 = 100 Kg); si no
+// (ej. "BOLSAS"), se prorratea por unidades (ver _litKiloDeLinea).
 var UNIDADES_MP = [{ v: 'KG', t: 'Kg' }, { v: 'L', t: 'L' }, { v: 'UND', t: 'Unidades' }];
 function _unidadMP(v) { return v === 'L' || v === 'UND' ? v : 'KG'; }
 
@@ -141,18 +142,21 @@ function _lineaExternaAMapa(ex, l) {
   return { producto: l.Producto, presentacion: l.Presentacion, cantidad: l.Cantidad, empresa: empresaDeRemisionExterna(ex), unidad: l.Unidad || null, externa: true };
 }
 
-// Litros y kilos de una línea de remisión resuelta (para el reparto y el
-// Prorrateo). Las de materia prima externa traen kilos/litros directos
+// Litros, kilos y unidades de una línea de remisión resuelta (para el reparto y
+// el Prorrateo). Las de materia prima externa traen kilos/litros directos
 // (unidad KG|L); el resto se deduce del nombre/presentación del producto.
+// `unidades` solo se llena en las líneas de materia prima externa en Unidades
+// (UND) que no se pueden convertir a litros/kilos: son la tercera bolsa del
+// prorrateo, repartida por cantidad de unidades. Lo demás que no se convierte
+// (ej. un producto de Chia Abago sin presentación) sigue sin entrar.
 function _litKiloDeLinea(m) {
   var cant = Number(m.cantidad) || 0;
-  if (m.unidad === 'KG') return { litros: 0, kilos: cant };
-  if (m.unidad === 'L') return { litros: cant, kilos: 0 };
+  if (m.unidad === 'KG') return { litros: 0, kilos: cant, unidades: 0 };
+  if (m.unidad === 'L') return { litros: cant, kilos: 0, unidades: 0 };
   var lit = _litParse(m.producto, m.presentacion);
-  return {
-    litros: lit.convertible ? lit.litrosUnidad * cant : 0,
-    kilos: lit.convertibleKilo ? lit.kilosUnidad * cant : 0
-  };
+  var litros = lit.convertible ? lit.litrosUnidad * cant : 0;
+  var kilos = lit.convertibleKilo ? lit.kilosUnidad * cant : 0;
+  return { litros: litros, kilos: kilos, unidades: (m.unidad === 'UND' && litros <= 0 && kilos <= 0) ? cant : 0 };
 }
 
 // Sugerencias de materia prima de la ventana de remisión externa (además de las
@@ -695,7 +699,7 @@ var LG_SORT_COLS = {
     { id: 'planta', label: 'Planta', fn: function(r) { return _plantaExternaTxt(r.ex) === '—' ? '' : _plantaExternaTxt(r.ex); } },
     { id: 'empresa', label: 'Se carga a', fn: function(r) { return _empresaExternaTxt(r.ex); } },
     { id: 'productos', label: 'Productos', fn: function(r) { return r.ex.lineas.map(function(l) { return l.Producto || ''; }).join(', '); } },
-    { id: 'cantidad', label: 'Kg / L', fn: function(r) { return r.kl.kilos + r.kl.litros || null; } },
+    { id: 'cantidad', label: 'Kg / L / und', fn: function(r) { return r.kl.kilos + r.kl.litros + r.kl.unidades || null; } },
     { id: 'uso', label: 'Usada en', fn: function(r) { return r.uso.map(function(l) { return l.Consecutivo || ''; }).join(', '); } },
     { id: 'registro', label: 'Registrada', fn: function(r) { return r.ex.creado_en || ''; } },
     { id: 'acciones', label: 'Acciones' }
@@ -1134,13 +1138,15 @@ function totalGastosConceptoOf(legId, concepto) {
 // (no se le puede atribuir a una empresa algo que no se pudo resolver) y el
 // total/porcentajes quedan sobre la porción de esa empresa únicamente.
 //
-// Líquidos vs. sólidos: dentro de un mismo viaje, el gasto primero se separa
-// en dos bolsas — "líquidos" (prorrateados por litro) y "sólidos"
-// (prorrateados por kilo) — proporcional a cuántas remisiones relacionadas
-// aportan a cada bolsa (una remisión con productos de ambos tipos cuenta
-// para las dos). Ya dentro de cada bolsa, el reparto entre productos sigue
-// siendo por litros o por kilos movidos, como antes. Un viaje 100% líquido
-// (el caso más común) se comporta exactamente igual que antes.
+// Líquidos vs. sólidos (vs. unidades): dentro de un mismo viaje, el gasto primero
+// se separa en bolsas — "líquidos" (prorrateados por litro), "sólidos"
+// (prorrateados por kilo) y "unidades" (por cantidad de unidades) — proporcional
+// a cuántas remisiones relacionadas aportan a cada bolsa (una remisión con
+// productos de varios tipos cuenta para cada una). Ya dentro de cada bolsa, el
+// reparto entre productos sigue siendo por litros, kilos o unidades movidos.
+// La bolsa de unidades solo la llenan las líneas de materia prima externa en
+// Unidades que no se convierten a litros/kilos (ver _litKiloDeLinea). Un viaje
+// 100% líquido (el caso más común) se comporta exactamente igual que antes.
 //
 // Combustible aparte: el concepto 'Combustible' no tiene relación con
 // ningún producto/litro/kilo, así que se excluye por completo del reparto
@@ -1164,6 +1170,7 @@ function calcularProrrateoGastos() {
   var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo } } }
   var porEmpresaLitros = {};     // empresaSigla -> litros totales movidos (sin ponderar por monto)
   var porEmpresaKilos = {};      // empresaSigla -> kilos totales movidos (sin ponderar por monto)
+  var porEmpresaUnidades = {};   // empresaSigla -> unidades totales movidas (materia prima en Unidades sin conversión)
   var porEmpresaRemisiones = {}; // empresaSigla -> { codigoRemision: true }
   var porEmpresaLegs = {};       // empresaSigla -> { legId -> Consecutivo } (legalizaciones que tocan esa empresa)
   var legsPeriodo = {};          // legId -> true (todas las legalizaciones del período, resuelvan o no litros/kilos)
@@ -1180,8 +1187,8 @@ function calcularProrrateoGastos() {
   // Mantenimiento: igual que el Combustible (tabla propia, sin litros/kilos).
   var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
 
-  // Reparte subMonto (la porción de líquidos o de sólidos del viaje) entre
-  // las líneas de ese tipo, proporcional a su litros/kilos movidos.
+  // Reparte subMonto (la porción de líquidos, sólidos o unidades del viaje) entre
+  // las líneas de ese tipo, proporcional a sus litros/kilos/unidades movidos.
   function _acumularLineas(leg, items, totalUnidad, subMonto, campoUnidad, campoAcumEmp) {
     items.forEach(function(item) {
       var l = item.m;
@@ -1289,23 +1296,27 @@ function calcularProrrateoGastos() {
       if (matches) matches.forEach(function(m) { lineas.push({ m: m, codigo: c }); });
     });
 
-    var totalLitros = 0, totalKilos = 0;
-    var codigosLiquido = {}, codigosSolido = {};
+    var totalLitros = 0, totalKilos = 0, totalUnidades = 0;
+    var codigosLiquido = {}, codigosSolido = {}, codigosUnidad = {};
     lineas.forEach(function(item) {
       var l = item.m;
       var lk = _litKiloDeLinea(l);
       l._litros = lk.litros;
       l._kilos = lk.kilos;
+      l._unidades = lk.unidades;
       totalLitros += l._litros;
       totalKilos += l._kilos;
+      totalUnidades += l._unidades;
       if (l._litros > 0) codigosLiquido[item.codigo] = true;
       if (l._kilos > 0) codigosSolido[item.codigo] = true;
+      if (l._unidades > 0) codigosUnidad[item.codigo] = true;
     });
 
     var nLiq = Object.keys(codigosLiquido).length;
     var nSol = Object.keys(codigosSolido).length;
+    var nUni = Object.keys(codigosUnidad).length;
 
-    if (nLiq + nSol <= 0) {
+    if (nLiq + nSol + nUni <= 0) {
       if (!fEmp) {
         sinIdentificar += totalViaje;
         totalGeneral += totalViaje;
@@ -1315,13 +1326,16 @@ function calcularProrrateoGastos() {
       return;
     }
 
-    // Reparto del gasto del viaje entre la bolsa de líquidos y la de
-    // sólidos, proporcional a cuántas remisiones aportan a cada una.
-    var montoLiquidos = totalViaje * nLiq / (nLiq + nSol);
-    var montoSolidos = totalViaje * nSol / (nLiq + nSol);
+    // Reparto del gasto del viaje entre la bolsa de líquidos, la de sólidos y
+    // la de unidades, proporcional a cuántas remisiones aportan a cada una.
+    var nBolsas = nLiq + nSol + nUni;
+    var montoLiquidos = totalViaje * nLiq / nBolsas;
+    var montoSolidos = totalViaje * nSol / nBolsas;
+    var montoUnidades = totalViaje * nUni / nBolsas;
 
     if (totalLitros > 0) _acumularLineas(leg, lineas, totalLitros, montoLiquidos, '_litros', porEmpresaLitros);
     if (totalKilos > 0) _acumularLineas(leg, lineas, totalKilos, montoSolidos, '_kilos', porEmpresaKilos);
+    if (totalUnidades > 0) _acumularLineas(leg, lineas, totalUnidades, montoUnidades, '_unidades', porEmpresaUnidades);
   });
 
   return {
@@ -1329,6 +1343,7 @@ function calcularProrrateoGastos() {
     porEmpresaSku: porEmpresaSku,
     porEmpresaLitros: porEmpresaLitros,
     porEmpresaKilos: porEmpresaKilos,
+    porEmpresaUnidades: porEmpresaUnidades,
     porEmpresaRemisiones: porEmpresaRemisiones,
     porEmpresaLegs: porEmpresaLegs,
     legsPeriodoCount: Object.keys(legsPeriodo).length,
@@ -1356,6 +1371,15 @@ function _kiloFmtLg(n) {
   var v = Number(n) || 0;
   var r = Math.round((v + Number.EPSILON) * 100) / 100;
   return r.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' Kg';
+}
+function _undFmtLg(n) {
+  var v = Number(n) || 0;
+  var r = Math.round((v + Number.EPSILON) * 100) / 100;
+  return r.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' und';
+}
+// "2.000 Kg · 7 und": lo que aporta, en litros, kilos y/o unidades (— si nada).
+function _cantidadesTxt(litros, kilos, unidades) {
+  return [litros > 0 ? _litFmtLg(litros) : null, kilos > 0 ? _kiloFmtLg(kilos) : null, unidades > 0 ? _undFmtLg(unidades) : null].filter(Boolean).join(' · ');
 }
 
 // Monto con 2 decimales (el prorrateo por litros da valores fraccionarios;
@@ -1454,7 +1478,7 @@ function renderMantenimientoPorEmpresa(calc) {
   _renderGastoAparte('gpm-body', calc.mantenimiento, 'Sin gastos de Mantenimiento para este período.');
 }
 
-// Resumen del período: litros y kilos totales movidos y remisiones
+// Resumen del período: litros, kilos y unidades totales movidos y remisiones
 // relacionadas por empresa, más la cantidad de legalizaciones consideradas
 // (respeta los filtros Empresa/Desde/Hasta de esta pestaña, igual que las
 // otras dos tablas). Con el filtro de Empresa activo, el conteo de
@@ -1473,6 +1497,7 @@ function renderResumenProrrateo(calc) {
   var empSet = {};
   Object.keys(calc.porEmpresaLitros).forEach(function(e) { empSet[e] = true; });
   Object.keys(calc.porEmpresaKilos).forEach(function(e) { empSet[e] = true; });
+  Object.keys(calc.porEmpresaUnidades).forEach(function(e) { empSet[e] = true; });
   var empresas = Object.keys(empSet).sort(function(a, b) {
     return (calc.porEmpresaLegs[b] ? Object.keys(calc.porEmpresaLegs[b]).length : 0) -
            (calc.porEmpresaLegs[a] ? Object.keys(calc.porEmpresaLegs[a]).length : 0);
@@ -1494,7 +1519,8 @@ function renderResumenProrrateo(calc) {
   var html = empresas.map(function(emp) {
     var litros = calc.porEmpresaLitros[emp] || 0;
     var kilos = calc.porEmpresaKilos[emp] || 0;
-    var totalesTxt = [litros > 0 ? _litFmtLg(litros) : null, kilos > 0 ? _kiloFmtLg(kilos) : null].filter(Boolean).join(' · ');
+    var unidades = calc.porEmpresaUnidades[emp] || 0;
+    var totalesTxt = _cantidadesTxt(litros, kilos, unidades);
     var nLegs = Object.keys(calc.porEmpresaLegs[emp] || {}).length;
     var remisiones = Object.keys(calc.porEmpresaRemisiones[emp] || {}).sort(function(a, b) { return a.localeCompare(b, 'es'); });
 
@@ -2264,15 +2290,16 @@ function _repartirEnteros(pesos, total) {
   return out;
 }
 
-// ── Reparto entre empresas sugerido por litros/kilos ──
+// ── Reparto entre empresas sugerido por litros/kilos/unidades ──
 // Reparte `monto` (los gastos del viaje SIN Combustible) entre las empresas de
 // las remisiones relacionadas, con la misma lógica de la pestaña Prorrateo:
-// el monto se separa en bolsa de líquidos (por litro) y de sólidos (por kilo),
+// el monto se separa en bolsa de líquidos (por litro), de sólidos (por kilo) y
+// de unidades (materia prima externa en Unidades sin conversión, por unidad),
 // proporcional a cuántas remisiones aportan a cada una, y dentro de cada bolsa
-// cada empresa recibe según los litros/kilos de sus remisiones. Las remisiones
-// se resuelven con remisionProductoMapReparto (Pedidos + Ingresos + Cambios +
-// Muestras + Devoluciones); las que no se resuelven a litros/kilos se ignoran. Si NINGUNA
-// se resuelve, se reparte por número de remisiones según la sigla del
+// cada empresa recibe según los litros/kilos/unidades de sus remisiones. Las
+// remisiones se resuelven con remisionProductoMapReparto (Pedidos + Ingresos +
+// Cambios + Muestras + Devoluciones); las que no se resuelven se ignoran. Si
+// NINGUNA se resuelve, se reparte por número de remisiones según la sigla del
 // consecutivo. Devuelve { porEmpresa: {empresa: pesos enteros}, metodo,
 // sinResolver: [códigos] }.
 function calcularRepartoSugerido(codigos, monto) {
@@ -2288,7 +2315,7 @@ function calcularRepartoSugerido(codigos, monto) {
   });
 
   var sinResolver = [];
-  var codLiq = {}, codSol = {}, litEmp = {}, kiloEmp = {};
+  var codLiq = {}, codSol = {}, codUni = {}, litEmp = {}, kiloEmp = {}, uniEmp = {};
   codigosUnicos.forEach(function(c) {
     var aporta = false;
     (remisionProductoMapReparto[c.toUpperCase()] || []).forEach(function(m) {
@@ -2296,22 +2323,28 @@ function calcularRepartoSugerido(codigos, monto) {
       var lk = _litKiloDeLinea(m);
       var litros = lk.litros;
       var kilos = lk.kilos;
+      var unidades = lk.unidades;
       if (litros > 0) { codLiq[c] = true; litEmp[m.empresa] = (litEmp[m.empresa] || 0) + litros; aporta = true; }
       if (kilos > 0) { codSol[c] = true; kiloEmp[m.empresa] = (kiloEmp[m.empresa] || 0) + kilos; aporta = true; }
+      if (unidades > 0) { codUni[c] = true; uniEmp[m.empresa] = (uniEmp[m.empresa] || 0) + unidades; aporta = true; }
     });
     if (!aporta) sinResolver.push(c);
   });
 
   var nLiq = Object.keys(codLiq).length;
   var nSol = Object.keys(codSol).length;
-  if (nLiq + nSol > 0) {
-    var montoLiq = monto * nLiq / (nLiq + nSol);
-    var montoSol = monto - montoLiq;
+  var nUni = Object.keys(codUni).length;
+  if (nLiq + nSol + nUni > 0) {
+    var montoLiq = monto * nLiq / (nLiq + nSol + nUni);
+    var montoUni = monto * nUni / (nLiq + nSol + nUni);
+    var montoSol = monto - montoLiq - montoUni; // sin unidades queda igual que siempre (monto − líquidos)
     var totLit = Object.keys(litEmp).reduce(function(s, e) { return s + litEmp[e]; }, 0);
     var totKilo = Object.keys(kiloEmp).reduce(function(s, e) { return s + kiloEmp[e]; }, 0);
+    var totUni = Object.keys(uniEmp).reduce(function(s, e) { return s + uniEmp[e]; }, 0);
     var pesos = {};
     Object.keys(litEmp).forEach(function(e) { pesos[e] = (pesos[e] || 0) + montoLiq * litEmp[e] / totLit; });
     Object.keys(kiloEmp).forEach(function(e) { pesos[e] = (pesos[e] || 0) + montoSol * kiloEmp[e] / totKilo; });
+    Object.keys(uniEmp).forEach(function(e) { pesos[e] = (pesos[e] || 0) + montoUni * uniEmp[e] / totUni; });
     return { porEmpresa: _repartirEnteros(pesos, monto), metodo: 'litros/kilos', sinResolver: sinResolver };
   }
 
@@ -2343,7 +2376,7 @@ function calcularRepartoForm() {
   var emps = Object.keys(calc.porEmpresa);
   if (!emps.length) { showToast('No se pudo determinar la empresa de las remisiones', '#e67e22'); return; }
   if (formEmpresas.some(function(e) { return e.Empresa && Number(e.Monto) > 0; }) &&
-      !confirm('Ya hay montos en el reparto. ¿Reemplazarlos por el cálculo por litros/kilos?')) return;
+      !confirm('Ya hay montos en el reparto. ¿Reemplazarlos por el cálculo por litros/kilos/unidades?')) return;
 
   var nuevo = [];
   formEmpresas.forEach(function(e) {
@@ -2356,8 +2389,8 @@ function calcularRepartoForm() {
   renderLgEmpresas();
   recalcTotals();
 
-  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos' : 'número de remisiones') + ' (sin Combustible)';
-  if (calc.sinResolver.length) msg += ' · sin litros/kilos: ' + calc.sinResolver.join(', ');
+  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos/unidades' : 'número de remisiones') + ' (sin Combustible)';
+  if (calc.sinResolver.length) msg += ' · sin litros/kilos/unidades: ' + calc.sinResolver.join(', ');
   showToast(msg, calc.sinResolver.length ? '#e67e22' : '#27ae60');
 }
 
@@ -2760,10 +2793,11 @@ function onAbagoLineaInput() {
   actualizarAbagoResumen();
 }
 
-// Litros/kilos de cada línea (con el mismo cálculo del reparto) y el total;
-// avisa las líneas que no se pueden convertir (no entrarían al reparto).
+// Litros/kilos/unidades de cada línea (con el mismo cálculo del reparto) y el
+// total; avisa las líneas que no se pueden convertir (no entrarían al reparto).
+// Una línea de materia prima en Unidades sin conversión cuenta como unidades.
 function actualizarAbagoResumen() {
-  var totL = 0, totK = 0, sinConv = 0;
+  var totL = 0, totK = 0, totU = 0, sinConv = 0;
   var esMP = abagoModal.tipo === 'MATERIA_PRIMA';
   abagoModal.lineas.forEach(function(l, i) {
     var cant = Number(l.Cantidad) || 0;
@@ -2773,15 +2807,14 @@ function actualizarAbagoResumen() {
       var lk = _litKiloDeLinea({ producto: l.Producto, presentacion: l.Presentacion, cantidad: cant, unidad: esMP ? l.Unidad : null });
       if (lk.litros > 0) { totL += lk.litros; txt = _litFmtLg(lk.litros); }
       else if (lk.kilos > 0) { totK += lk.kilos; txt = _kiloFmtLg(lk.kilos); }
+      else if (lk.unidades > 0) { totU += lk.unidades; txt = _undFmtLg(lk.unidades); }
       else { sinConv++; txt = '⚠ sin conversión'; }
     }
     if (cell) cell.textContent = txt;
   });
-  var partes = [];
-  if (totL > 0) partes.push(_litFmtLg(totL));
-  if (totK > 0) partes.push(_kiloFmtLg(totK));
+  var partesTxt = _cantidadesTxt(totL, totK, totU);
   var box = document.getElementById('abago-total');
-  box.textContent = (partes.length ? 'Total: ' + partes.join(' · ') : 'Sin productos.') +
+  box.textContent = (partesTxt ? 'Total: ' + partesTxt : 'Sin productos.') +
     (sinConv ? '  ⚠ ' + sinConv + ' producto(s) sin litros/kilos reconocibles: no entrarán al reparto' : '');
 }
 
@@ -2850,14 +2883,9 @@ async function guardarRemisionExternaForm() {
     if (repetida) { showToast(repetida, '#e67e22'); return; }
   }
 
-  // Materia prima en Kg o L ya trae kilos/litros; en Abago y en las líneas de
-  // materia prima en Unidades se avisa lo que no se pueda convertir (el nombre del
-  // producto debe traer la presentación, ej. "SULFATO X 25 KILOS").
-  var sinConv = lineas.filter(function(l) {
-    if (esMP && l.Unidad !== 'UND') return false;
-    var p = _litParse(l.Producto, l.Presentacion);
-    return !p.convertible && !p.convertibleKilo;
-  });
+  // Materia prima siempre entra al reparto (en Kg, L o, si es en Unidades sin
+  // conversión, por unidades); en Abago se avisa lo que no se pueda convertir.
+  var sinConv = esMP ? [] : lineas.filter(function(l) { var p = _litParse(l.Producto, l.Presentacion); return !p.convertible && !p.convertibleKilo; });
   if (sinConv.length && !confirm('Estos productos no tienen litros/kilos reconocibles y no entrarán al reparto:\n\n• ' +
       sinConv.map(function(l) { return l.Producto; }).join('\n• ') + '\n\n¿Guardar de todos modos?')) return;
 
@@ -3004,25 +3032,26 @@ function _lineaExternaTxt(l) {
   return cant + u + ' · ' + (l.Producto || '') + (l.Presentacion ? ' (' + l.Presentacion + ')' : '');
 }
 
-// Litros y kilos que aporta la remisión (lo mismo que usa el reparto y el Prorrateo).
+// Litros, kilos y unidades que aporta la remisión (lo mismo que usa el reparto y el Prorrateo).
 function _litKiloExterna(ex) {
-  var tot = { litros: 0, kilos: 0 };
+  var tot = { litros: 0, kilos: 0, unidades: 0 };
   ex.lineas.forEach(function(l) {
     if (!(l.Cantidad > 0)) return;
     var lk = _litKiloDeLinea(_lineaExternaAMapa(ex, l));
     tot.litros += lk.litros;
     tot.kilos += lk.kilos;
+    tot.unidades += lk.unidades;
   });
   return tot;
 }
 
 function _litKiloExternaTxt(kl) {
-  return [kl.litros > 0 ? _litFmtLg(kl.litros) : null, kl.kilos > 0 ? _kiloFmtLg(kl.kilos) : null].filter(Boolean).join(' · ') || '—';
+  return _cantidadesTxt(kl.litros, kl.kilos, kl.unidades) || '—';
 }
 
 // Filas de la pestaña según los filtros rf-* y el orden elegido (la tabla y el
 // Excel comparten esta lista). Sin orden: la más recién registrada primero.
-// {ex, uso: [leg], kl: {litros, kilos}}
+// {ex, uso: [leg], kl: {litros, kilos, unidades}}
 function _remisionesExternasFilas() {
   var fTipo = document.getElementById('rf-tipo').value;
   var fPlanta = document.getElementById('rf-planta').value;
@@ -3772,15 +3801,15 @@ function _aplicarRepartoEnv() {
 }
 
 function _msgRepartoCalculado(calc) {
-  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos' : 'número de remisiones');
-  if (calc.sinResolver.length) msg += ' · sin litros/kilos: ' + calc.sinResolver.join(', ');
+  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos/unidades' : 'número de remisiones');
+  if (calc.sinResolver.length) msg += ' · sin litros/kilos/unidades: ' + calc.sinResolver.join(', ');
   return msg;
 }
 
 function calcularRepartoEnv() {
   readEnvEmpresas();
   if (formEmpresasEnv.some(function(e) { return e.Empresa && Number(e.Monto) > 0; }) &&
-      !confirm('Ya hay montos en el reparto. ¿Reemplazarlos por el cálculo por litros/kilos?')) return;
+      !confirm('Ya hay montos en el reparto. ¿Reemplazarlos por el cálculo por litros/kilos/unidades?')) return;
   var r = _aplicarRepartoEnv();
   if (!r.ok) { showToast(r.motivo, '#e67e22'); return; }
   showToast(_msgRepartoCalculado(r.calc), r.calc.sinResolver.length ? '#e67e22' : '#27ae60');

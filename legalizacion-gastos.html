@@ -201,7 +201,7 @@
         <span id="gpr-legs-total" style="font-weight:600;color:#1a5276;font-size:0.86rem"></span>
       </div>
       <div style="padding:12px 20px 0">
-        <div class="gpp-note">Litros (líquidos) y kilos (sólidos) totales movidos, y remisiones relacionadas, de cada empresa, según los filtros de arriba.</div>
+        <div class="gpp-note">Litros (líquidos), kilos (sólidos) y unidades (materia prima en Unidades sin conversión) totales movidos, y remisiones relacionadas, de cada empresa, según los filtros de arriba.</div>
       </div>
       <div id="gpr-body"></div>
     </div>
@@ -229,7 +229,7 @@
           <h3>Proporción de gastos por producto</h3>
         </div>
         <div style="padding:12px 20px 0">
-          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje (sin Combustible, ver aparte arriba) entre los productos de sus remisiones relacionadas: primero entre líquidos y sólidos según cuántas remisiones son de cada tipo, y luego, dentro de cada grupo, por litros o por kilos movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
+          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje (sin Combustible, ver aparte arriba) entre los productos de sus remisiones relacionadas: primero entre líquidos, sólidos y unidades (materia prima en Unidades que no se convierte a litros/kilos) según cuántas remisiones son de cada tipo, y luego, dentro de cada grupo, por litros, kilos o unidades movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
         </div>
         <div id="gpp-body"></div>
       </div>
@@ -393,7 +393,7 @@
         <h3>Remisiones externas <span id="ext-ct" style="font-weight:400;color:#718096"></span></h3>
       </div>
       <div style="padding:12px 20px 0">
-        <div class="gpp-note">Remisiones de Chia Abago y de materia prima de la planta que no están en el sistema; se registran desde una legalización o un envío. Aquí ves sus productos y dónde se usan, y puedes corregirlas con "✎ Ver / editar". "Kg / L" es lo que cuenta para el reparto y el Prorrateo. "Usada en" solo lista las legalizaciones y envíos que tu usuario puede ver (no cuenta las rechazadas); una remisión usada no se puede eliminar ni renumerar, y eliminar es solo del administrador. El filtro Planta aplica solo a materia prima.</div>
+        <div class="gpp-note">Remisiones de Chia Abago y de materia prima de la planta que no están en el sistema; se registran desde una legalización o un envío. Aquí ves sus productos y dónde se usan, y puedes corregirlas con "✎ Ver / editar". "Kg / L / und" es lo que cuenta para el reparto y el Prorrateo. "Usada en" solo lista las legalizaciones y envíos que tu usuario puede ver (no cuenta las rechazadas); una remisión usada no se puede eliminar ni renumerar, y eliminar es solo del administrador. El filtro Planta aplica solo a materia prima.</div>
       </div>
       <div style="overflow-x:auto">
         <table>
@@ -679,7 +679,7 @@
 
       <h3 style="margin:16px 0 8px;font-size:0.9rem;color:#1a5276">Productos</h3>
       <table>
-        <thead><tr><th id="abago-th-producto">Producto</th><th style="text-align:right;width:110px">Cantidad</th><th id="abago-th-unidad" style="width:100px;display:none">Unidad</th><th style="width:90px;text-align:right">≈ L / Kg</th><th style="width:40px"></th></tr></thead>
+        <thead><tr><th id="abago-th-producto">Producto</th><th style="text-align:right;width:110px">Cantidad</th><th id="abago-th-unidad" style="width:100px;display:none">Unidad</th><th style="width:110px;text-align:right">≈ L / Kg / und</th><th style="width:40px"></th></tr></thead>
         <tbody id="abago-lineas"></tbody>
       </table>
       <datalist id="abago-productos"></datalist>
@@ -754,6 +754,6 @@
 <script src="js/auth.js?v=20261001a"></script>
 <script src="js/notificaciones.js?v=20261001a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/legalizacion-gastos.js?v=20261002d"></script>
+<script src="js/legalizacion-gastos.js?v=20261002e"></script>
 </body>
 </html>
