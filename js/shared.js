@@ -2608,8 +2608,11 @@ async function _apiPostCore(body) {
 
     if (action === 'eliminarRemisionExterna') {
       if (!body.id) return { ok: false, error: 'Falta el id de la remisión' };
-      var resDelExtRE = await _sb.from('RemisionesExternas').delete().eq('id', body.id);
+      // Solo el administrador puede borrar (RLS). Sin permiso el DELETE no da error:
+      // simplemente no borra nada, así que se verifica con .select().
+      var resDelExtRE = await _sb.from('RemisionesExternas').delete().eq('id', body.id).select('id');
       if (resDelExtRE.error) return { ok: false, error: resDelExtRE.error.message };
+      if (!resDelExtRE.data || !resDelExtRE.data.length) return { ok: false, error: 'No se eliminó: solo el administrador puede eliminar remisiones externas (o ya no existe)' };
       return { ok: true, deleted: 1 };
     }
 

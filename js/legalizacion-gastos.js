@@ -2706,7 +2706,7 @@ function abrirRemisionExterna(codigo, ctx, tipo) {
   document.getElementById('abago-proveedor').value = ex ? (ex.Proveedor || '') : '';
   document.getElementById('abago-planta').value = ex ? (ex.Planta || '') : '';
   document.getElementById('abago-fecha').value = ex ? (ex.Fecha || '').slice(0, 10) : today();
-  document.getElementById('abago-btn-eliminar').style.display = ex ? '' : 'none';
+  document.getElementById('abago-btn-eliminar').style.display = (ex && AUTH.isAdmin()) ? '' : 'none'; // eliminar: solo admin
   document.getElementById('abago-btn-guardar').disabled = false;
   _aplicarTipoRemisionExterna();
   cargarMaestroProductosAbago(); // sugerencias del listado maestro (una sola vez, sin bloquear)
@@ -2900,13 +2900,25 @@ async function guardarRemisionExternaForm() {
   showToast(msgGuardada, colorMsg);
 }
 
+// Eliminar una remisión externa es solo del administrador (botón de la ventana ✎
+// y de la pestaña); además el RLS de la BD lo exige, y el trigger de la BD no deja
+// borrar una que esté en una legalización/envío.
 async function eliminarRemisionExternaForm() {
-  if (!abagoModal.id) return;
+  if (!abagoModal.id || !AUTH.isAdmin()) return;
   var cod = document.getElementById('abago-remision').value.trim();
-  var key = cod.toUpperCase();
   if (!confirm('¿Eliminar la remisión ' + cod + ' (' + REMISION_TIPOS[abagoModal.tipo].nombre + ') y sus productos?')) return;
-  var res = await apiPost({ action: 'eliminarRemisionExterna', id: abagoModal.id });
-  if (!res || !res.ok) { showToast('No se pudo eliminar: ' + ((res && res.error) || 'error'), '#e74c3c'); return; }
+  if (await _borrarRemisionExterna(abagoModal.id, cod)) {
+    cerrarRemisionExterna();
+    showToast('Remisión ' + cod + ' eliminada', '#27ae60');
+  }
+}
+
+// Borra en la BD y limpia lo derivado en pantalla (mapas, formularios en curso,
+// Prorrateo y pestaña). Devuelve true si se eliminó.
+async function _borrarRemisionExterna(id, cod) {
+  var key = cod.toUpperCase();
+  var res = await apiPost({ action: 'eliminarRemisionExterna', id: id });
+  if (!res || !res.ok) { showToast('No se pudo eliminar: ' + ((res && res.error) || 'error'), '#e74c3c'); return false; }
   delete remisionesExternas[key];
   _setLineasExternasEnMapas(key, null);
   poblarSugerenciasMP();
@@ -2919,8 +2931,23 @@ async function eliminarRemisionExternaForm() {
   renderEnvRemisiones();
   renderProrrateoGastos();
   renderRemisionesExternasTab();
-  cerrarRemisionExterna();
-  showToast('Remisión ' + cod + ' eliminada', '#27ae60');
+  return true;
+}
+
+// 🗑 de una fila de la pestaña (solo admin). Las que están en una legalización o
+// envío no se ofrecen (el botón sale deshabilitado) y la BD tampoco las deja borrar.
+async function eliminarRemisionExternaTab(id) {
+  if (!AUTH.isAdmin()) return;
+  var ex = Object.keys(remisionesExternas).map(function(k) { return remisionesExternas[k]; }).filter(function(e) { return e.id === id; })[0];
+  if (!ex) return;
+  var usos = _usoRemisionesExternas()[ex.Remision.toUpperCase()] || [];
+  if (usos.length) {
+    showToast('La remisión ' + ex.Remision + ' está en ' + usos.map(function(l) { return l.Consecutivo || ('#' + l.id); }).join(', ') + ' y no se puede eliminar', '#e67e22');
+    return;
+  }
+  var n = ex.lineas.length;
+  if (!confirm('¿Eliminar la remisión ' + ex.Remision + ' (' + REMISION_TIPOS[ex.Tipo || 'ABAGO'].nombre + ') y ' + (n === 1 ? 'su producto' : 'sus ' + n + ' productos') + '?\n\nEsta acción no se puede deshacer.')) return;
+  if (await _borrarRemisionExterna(ex.id, ex.Remision)) showToast('Remisión ' + ex.Remision + ' eliminada', '#27ae60');
 }
 
 // ── Remisiones externas: listado (pestaña "Remisiones externas") ──
@@ -3022,6 +3049,7 @@ function renderRemisionesExternasTab() {
   if (!box) return;
   var ctEl = document.getElementById('ext-ct');
   var puedeEditar = AUTH.hasModule('legalizacion_gastos');
+  var puedeBorrar = AUTH.isAdmin();
   var total = Object.keys(remisionesExternas).length;
   var rows = _remisionesExternasFilas();
   renderSortHead('ext', 'ext-head');
@@ -3053,7 +3081,12 @@ function renderRemisionesExternasTab() {
       '<td style="white-space:nowrap">' + escHtml(_litKiloExternaTxt(r.kl)) + '</td>' +
       '<td style="white-space:normal;min-width:110px">' + usoHtml + '</td>' +
       '<td>' + escHtml(ex.creado_por_nombre || '—') + '<div class="ac-sub">' + escHtml(_fmtAudTs(ex.creado_en)) + '</div>' + modif + '</td>' +
-      '<td>' + (puedeEditar ? '<button class="btn-ver" onclick="editarRemisionExternaTab(' + ex.id + ')">✎ Ver / editar</button>' : '') + '</td>' +
+      '<td style="white-space:nowrap">' +
+        (puedeEditar ? '<button class="btn-ver" onclick="editarRemisionExternaTab(' + ex.id + ')">✎ Ver / editar</button> ' : '') +
+        (puedeBorrar ? (r.uso.length
+          ? '<button class="btn-del" disabled style="opacity:.45;cursor:not-allowed" title="Está en ' + escHtml(r.uso.map(function(l) { return l.Consecutivo || ('#' + l.id); }).join(', ')) + ': no se puede eliminar">🗑 Eliminar</button>'
+          : '<button class="btn-del" onclick="eliminarRemisionExternaTab(' + ex.id + ')" title="Eliminar la remisión y sus productos">🗑 Eliminar</button>') : '') +
+      '</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="11"><div class="empty">' + (total ? 'Sin remisiones externas para este filtro.' : 'Aún no hay remisiones externas registradas.') + '</div></td></tr>';
 }
