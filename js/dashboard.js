@@ -1421,53 +1421,68 @@ function buildTopComerciales(orders, fEmp) {
   }).join('');
 }
 
-// ── 8. Inventario (snapshot Kardex + comprometido de pedidos) ──
 // ── Inventario valorizado ──
-// Precio de valorización: Mayorista de la Lista de precios; si el producto no lo
-// tiene (o está en 0) se usa Dealer; sin ninguno de los dos queda en $0 y se
-// avisa. Empareja (empresa, producto) normalizados como reportes.js. Si un
-// producto trae varios precios (IASO: mismo producto con otro proveedor) se toma
-// el menor. Solo saldos positivos del snapshot Kardex (los negativos ya se
-// avisan aparte y no restan valor).
+// Precio de valorización, en este orden:
+//   1) Mayorista de la Lista de precios de la propia empresa;
+//   2) si no tiene (o está en 0), Dealer de la propia empresa;
+//   3) si no tiene ninguno, el precio del MISMO producto en otra empresa
+//      (Mayorista y, si no, Dealer; con varias empresas, el menor);
+//   4) si tampoco existe en ninguna empresa, queda en $0 y se avisa.
+// Empareja (empresa, producto) normalizados como reportes.js. Si un producto trae
+// varios precios (IASO: mismo producto con otro proveedor) se toma el menor.
+// Solo saldos positivos del snapshot Kardex (los negativos ya se avisan aparte
+// y no restan valor).
 function dNormLp(s) {
   return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
 }
 
+// { emp: 'empresa||producto' → { mayorista, dealer },
+//   prod: 'producto' → { mayorista: {precio, emp}, dealer: {precio, emp} } }  (menor precio entre empresas)
 function dPrecioIndex() {
   if (dPrecioIdx) return dPrecioIdx;
-  var idx = {};
+  var emp = {}, prod = {};
   (dListaPrecios || []).forEach(function(lp) {
     var tipo = dNormLp(lp.Tipo_Precio);
     if (tipo !== 'mayorista' && tipo !== 'dealer') return;
     var precio = Number(lp.Precio) || 0;
     if (precio <= 0) return;
-    var k = dNormLp(lp.Empresa) + '||' + dNormLp(lp.Producto);
-    var e = idx[k] || (idx[k] = {});
+    var kp = dNormLp(lp.Producto);
+    var e = emp[dNormLp(lp.Empresa) + '||' + kp] || (emp[dNormLp(lp.Empresa) + '||' + kp] = {});
     if (!e[tipo] || precio < e[tipo]) e[tipo] = precio;
+    var x = prod[kp] || (prod[kp] = {});
+    if (!x[tipo] || precio < x[tipo].precio) x[tipo] = { precio: precio, emp: dGetSigla(lp.Empresa) };
   });
-  dPrecioIdx = idx;
-  return idx;
+  dPrecioIdx = { emp: emp, prod: prod };
+  return dPrecioIdx;
 }
 
 // Devuelve { porEmp: { sigla: fila }, total: fila } con la misma forma de fila:
-// { may, dea, total, nMay, nDea, nSin, udsSin, prodsDea[], prodsSin[] }.
+// { may, dea, ext, total, nMay, nDea, nExt, nSin, udsSin, prodsDea[], prodsExt[], prodsSin[] }.
 function dInventarioValorizado(empresas) {
   var saldos = (dExist && dExist.saldos) || {};
   var idx = dPrecioIndex();
-  function fila() { return { may: 0, dea: 0, total: 0, nMay: 0, nDea: 0, nSin: 0, udsSin: 0, prodsDea: [], prodsSin: [] }; }
+  function fila() { return { may: 0, dea: 0, ext: 0, total: 0, nMay: 0, nDea: 0, nExt: 0, nSin: 0, udsSin: 0, prodsDea: [], prodsExt: [], prodsSin: [] }; }
   var porEmp = {}, total = fila();
   empresas.forEach(function(e) { porEmp[e.sigla] = fila(); });
 
   Object.keys(saldos).forEach(function(prodKey) {
     var perEmp = saldos[prodKey] || {};
+    var kp = dNormLp(prodKey);
     empresas.forEach(function(e) {
       var uds = Number(perEmp[e.value]) || 0;
       if (uds <= 0) return;
-      var p = idx[dNormLp(e.value) + '||' + dNormLp(prodKey)];
+      var p = idx.emp[dNormLp(e.value) + '||' + kp];
+      var x = idx.prod[kp];
+      var otra = x && (x.mayorista || x.dealer);   // precio de otra empresa (Mayorista antes que Dealer)
+      var etiqueta = dGetSigla(e.value) + ' · ' + prodKey;
       [porEmp[e.sigla], total].forEach(function(r) {
         if (p && p.mayorista) { r.may += uds * p.mayorista; r.total += uds * p.mayorista; r.nMay++; }
-        else if (p && p.dealer) { r.dea += uds * p.dealer; r.total += uds * p.dealer; r.nDea++; r.prodsDea.push(dGetSigla(e.value) + ' · ' + prodKey); }
-        else { r.nSin++; r.udsSin += uds; r.prodsSin.push(dGetSigla(e.value) + ' · ' + prodKey); }
+        else if (p && p.dealer) { r.dea += uds * p.dealer; r.total += uds * p.dealer; r.nDea++; r.prodsDea.push(etiqueta); }
+        else if (otra) {
+          r.ext += uds * otra.precio; r.total += uds * otra.precio; r.nExt++;
+          r.prodsExt.push(etiqueta + ' → $' + otra.precio.toLocaleString('es-CO') + ' (' + (x.mayorista ? 'Mayorista' : 'Dealer') + ' de ' + otra.emp + ')');
+        }
+        else { r.nSin++; r.udsSin += uds; r.prodsSin.push(etiqueta); }
       });
     });
   });
@@ -1490,9 +1505,14 @@ function dInventarioValorizadoHtml(empresas, v) {
     return '<span title="' + escHtml('Valorizados a Dealer (sin precio Mayorista):\n') + lista(r.prodsDea) + '" style="cursor:help">' +
       dMoneyM(r.dea) + ' <span style="color:#a0aec0;font-size:0.72rem">(' + r.nDea + ' prod.)</span></span>';
   }
+  function celdaExt(r) {
+    if (!r.nExt) return '<span style="color:#cbd5e0">—</span>';
+    return '<span title="' + escHtml('Sin precio en su empresa: se usó el del mismo producto en otra empresa:\n') + lista(r.prodsExt) + '" style="cursor:help">' +
+      dMoneyM(r.ext) + ' <span style="color:#a0aec0;font-size:0.72rem">(' + r.nExt + ' prod.)</span></span>';
+  }
   function celdaSin(r) {
     if (!r.nSin) return '<span style="color:#cbd5e0">—</span>';
-    return '<span title="' + escHtml('Con stock y sin precio Mayorista ni Dealer (quedan en $0):\n') + lista(r.prodsSin) + '" style="cursor:help;color:#c0392b;font-weight:600">' +
+    return '<span title="' + escHtml('Con stock y sin precio Mayorista ni Dealer en ninguna empresa (quedan en $0):\n') + lista(r.prodsSin) + '" style="cursor:help;color:#c0392b;font-weight:600">' +
       r.nSin + ' prod. <span style="font-weight:400;font-size:0.72rem">(' + Math.round(r.udsSin).toLocaleString('es-CO') + ' uds)</span></span>';
   }
   function filaHtml(label, r, esTotal) {
@@ -1501,6 +1521,7 @@ function dInventarioValorizadoHtml(empresas, v) {
       '<td class="money" style="font-weight:700;color:#1a5276">' + dMoneyM(r.total) + '</td>' +
       '<td class="money">' + (r.may ? dMoneyM(r.may) : '<span style="color:#cbd5e0">—</span>') + '</td>' +
       '<td class="money">' + celdaDealer(r) + '</td>' +
+      '<td class="money">' + celdaExt(r) + '</td>' +
       '<td class="money">' + celdaSin(r) + '</td>' +
     '</tr>';
   }
@@ -1524,14 +1545,16 @@ function dInventarioValorizadoHtml(empresas, v) {
   html += '<div style="overflow-x:auto"><table class="mini-table">' +
     '<thead><tr><th>Empresa</th><th style="text-align:right">Valor total</th><th style="text-align:right">A Mayorista</th>' +
     '<th style="text-align:right" title="Productos sin precio Mayorista valorizados con su precio Dealer">A Dealer</th>' +
-    '<th style="text-align:right" title="Productos con stock sin precio Mayorista ni Dealer: no suman al valor">Sin precio</th></tr></thead>' +
+    '<th style="text-align:right" title="Productos sin Mayorista ni Dealer en su empresa, valorizados con el precio del mismo producto en otra empresa">De otra empresa</th>' +
+    '<th style="text-align:right" title="Productos con stock sin precio Mayorista ni Dealer en ninguna empresa: no suman al valor">Sin precio</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table></div>' +
     '<div style="font-size:0.72rem;color:#a0aec0;margin-top:6px">Stock (saldos positivos del snapshot Kardex, a hoy) × precio Mayorista de la Lista de precios. ' +
-    'Los productos sin precio Mayorista se valoran a <b>Dealer</b> (columna "A Dealer"); los que no tienen ninguno de los dos quedan en $0 (columna "Sin precio"). ' +
-    'Pasa el cursor sobre esas columnas para ver los productos.</div>';
+    'Los productos sin precio Mayorista se valoran a <b>Dealer</b> (columna "A Dealer"); si no tienen ninguno de los dos en su empresa, se usa el precio del mismo producto en otra empresa (Mayorista y, si no, Dealer; el menor) en la columna "De otra empresa"; ' +
+    'si tampoco existe en ninguna, quedan en $0 (columna "Sin precio"). Pasa el cursor sobre esas columnas para ver los productos.</div>';
   return html + '</div>';
 }
 
+// ── 8. Inventario (snapshot Kardex + comprometido de pedidos) ──
 function buildInventario(ped, fEmp) {
   var el = document.getElementById('chart-inventario');
 
@@ -1574,7 +1597,7 @@ function buildInventario(ped, fEmp) {
   html += '<div style="flex:1;min-width:110px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600">Disponible</div><div style="font-size:1.4rem;font-weight:800;color:' + ((totalStock - totalPend) >= 0 ? '#27ae60' : '#e74c3c') + '">' + (totalStock - totalPend).toLocaleString('es-CO') + '</div></div>';
   var vInv = dListaPrecios !== null ? dInventarioValorizado(empresas) : null;
   if (vInv) {
-    html += '<div style="flex:1;min-width:110px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600" title="Stock a precio Mayorista (Dealer si el producto no tiene Mayorista). Detalle por empresa abajo.">Valor inventario 💰</div><div style="font-size:1.4rem;font-weight:800;color:#1a5276">' + dMoneyM(vInv.total.total) + '</div></div>';
+    html += '<div style="flex:1;min-width:110px"><div style="font-size:0.76rem;color:#718096;text-transform:uppercase;font-weight:600" title="Stock a precio Mayorista (Dealer si el producto no tiene Mayorista; si no tiene ninguno, el precio del mismo producto en otra empresa). Detalle por empresa abajo.">Valor inventario 💰</div><div style="font-size:1.4rem;font-weight:800;color:#1a5276">' + dMoneyM(vInv.total.total) + '</div></div>';
   }
   html += '</div>';
 
