@@ -29,7 +29,6 @@ var AUTH = (function() {
     { key: 'pedidos_editar_cantidad', label: '✏️ Editar cantidad pedida' },
     { key: 'clientes',                  label: '👥 Clientes' },
     { key: 'notificaciones',          label: '🔔 Notificaciones' },
-    { key: 'crm',                     label: '🧲 CRM de Mercadeo' },
     { key: 'legalizacion_gastos',          label: '🧾 Legalización de Gastos' },
     { key: 'legalizacion_gastos_aprobar',  label: '✅ Conciliar legalización de gastos' }
   ];

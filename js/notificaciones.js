@@ -461,7 +461,7 @@ var NOTIF = (function() {
   // Destino de un aviso de solo texto (sin PDF)
   // Se deduce de modulo + referencia + titulo (la tabla no guarda una URL),
   // así que también sirve para los avisos ya existentes. Los títulos los arman
-  // pedidos.js / cartera.js / muestras.js / ordenes.js / crm.js: "<sigla> #<n>".
+  // pedidos.js / cartera.js / muestras.js / ordenes.js: "<sigla> #<n>".
   // Si el formato cambia, el destino degrada al módulo con ?buscar=<referencia>.
   // ────────────────────────────────────────────────────────────
   var MOD_PAGE = {
@@ -474,7 +474,6 @@ var NOTIF = (function() {
     reenvases:    'reenvases.html',
     kardex:       'kardex.html',
     reportes:     'reportes.html',
-    crm:          'crm.html',
     cartera:      'cartera.html',
     reabastecimiento:    'reabastecimiento.html',
     legalizacion_gastos: 'legalizacion-gastos.html'
@@ -498,9 +497,6 @@ var NOTIF = (function() {
       if (mod === 'pedidos' && /por aprobar/i.test(tit)) page = 'cartera.html';
     } else if (mod === 'ordenes') {
       if (ref) q.buscar = ref;                 // OC-<destino>-<origen>-<n> es único
-    } else if (mod === 'crm') {
-      var c = tit.match(/:\s*(.+)$/);          // "🧲 Nuevo lead asignado: <contacto>"
-      if (c) q.buscar = c[1].trim();
     }
 
     var qs = new URLSearchParams(q).toString();
