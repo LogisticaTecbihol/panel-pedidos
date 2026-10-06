@@ -719,3 +719,11 @@ thead th:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' \2195'; c
 .car-mini th { background: #f7fafc; padding: 6px 8px; text-align: left; font-size: 0.72rem; color: #4a5568; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; border-right: none; }
 .car-mini td { padding: 6px 8px; border-bottom: 1px solid #edf2f7; }
 .car-mini tr.actual td { background: #eff6ff; font-weight: 700; }
+
+/* Estado de documentación de cartera del cliente (clientes.html / cartera.html) */
+.doc-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.73rem; font-weight: 700; white-space: nowrap; }
+.doc-ok { background: #c6f6d5; color: #276749; }
+.doc-inc { background: #fff3e0; color: #c05621; }
+.doc-des { background: #fefcbf; color: #975a16; }
+.doc-incdes { background: #fde8e8; color: #9b2c2c; }
+.doc-sin { background: #edf2f7; color: #718096; }

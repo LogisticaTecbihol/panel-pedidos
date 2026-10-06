@@ -176,6 +176,10 @@ function _gateEstadoClienteSelect(actual) {
   var hint = document.getElementById('ed-estado-hint');
   var obsEl = document.getElementById('ed-obs-cartera');
   if (obsEl) obsEl.disabled = !puede;
+  ['ed-doc-estado', 'ed-doc-obs'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = !puede;
+  });
   if (puede) {
     _EST_RESTRINGIDOS.forEach(function(v) {
       var opt = sel.querySelector('option[value="' + v + '"]');
@@ -229,6 +233,31 @@ function _estadoBadge(estado, mixto) {
   var label = estado === 'Bloqueado por cartera' ? 'Bloq. cartera' : estado;
   var title = mixto ? ' title="Registros con estados distintos — se muestra el más restrictivo"' : '';
   return '<span class="est-badge ' + cls + (mixto ? ' est-mix' : '') + '"' + title + '>' + label + '</span>';
+}
+
+// ── Documentación de cartera ──
+// UNA por cliente unificado (mismo NIT): el trigger sync_documentacion_cliente
+// la replica a todos los registros del NIT y los registros nuevos la heredan.
+// Solo admin/editor/cartera la cambian (mismo candado que Observaciones_Cartera).
+var _DOC_ESTADOS = ['Sin revisar', 'Completa y vigente', 'Incompleta', 'Desactualizada', 'Incompleta y desactualizada'];
+var _DOC_CLS = { 'Sin revisar': 'doc-sin', 'Completa y vigente': 'doc-ok', 'Incompleta': 'doc-inc', 'Desactualizada': 'doc-des', 'Incompleta y desactualizada': 'doc-incdes' };
+
+function _docNorm(d) {
+  d = (d || '').trim();
+  return _DOC_ESTADOS.indexOf(d) >= 0 ? d : 'Sin revisar';
+}
+
+// Documentación del grupo: todos los registros deberían coincidir; si no
+// (p. ej. registros sin NIT), se toma el primero ya revisado.
+function _grupoDoc(g) {
+  var r = g.records.find(function(x) { return _docNorm(x.Estado_Documentacion) !== 'Sin revisar'; }) || g.records[0];
+  return { estado: _docNorm(r.Estado_Documentacion), obs: r.Observaciones_Documentacion || '' };
+}
+
+function _docBadge(estado, obs) {
+  estado = _docNorm(estado);
+  var title = obs ? ' title="' + escHtml(obs) + '"' : '';
+  return '<span class="doc-badge ' + _DOC_CLS[estado] + '"' + title + '>' + escHtml(estado) + (obs ? ' 📝' : '') + '</span>';
 }
 
 // Registros que comparten NIT con el cliente dado (el "cliente unificado").
@@ -446,8 +475,10 @@ function getFiltered() {
   var est = document.getElementById('f-estado').value;
   var plazo = document.getElementById('f-plazo').value;
   var fped = document.getElementById('f-ped').value;
+  var fdoc = document.getElementById('f-doc').value;
   var txt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
   return clientesData.filter(function(c) {
+    if (fdoc && _docNorm(c.Estado_Documentacion) !== fdoc) return false;
     if (emp && c.Nombre_Empresa !== emp) return false;
     if (depto && c.Departamento !== depto) return false;
     if (muni && c.Municipio !== muni) return false;
@@ -472,6 +503,7 @@ function clearFilters() {
   document.getElementById('f-plazo').value = '';
   document.getElementById('f-ped').value = '';
   document.getElementById('f-nuevo').value = '';
+  document.getElementById('f-doc').value = '';
   document.getElementById('f-txt').value = '';
   _updateMuniFilter();
   currentPage = 1;
@@ -509,6 +541,10 @@ function renderTable() {
   }
   if (document.getElementById('f-nuevo').value === '1') {
     filtered = filtered.filter(_grupoEsNuevo);
+  }
+  var fDoc = document.getElementById('f-doc').value;
+  if (fDoc) {
+    filtered = filtered.filter(function(g) { return _grupoDoc(g).estado === fDoc; });
   }
   var fPed = document.getElementById('f-ped').value;
   if (fPed === 'con') {
@@ -582,6 +618,7 @@ function renderTable() {
       : '';
 
     var ge = _grupoEstado(g);
+    var gd = _grupoDoc(g);
     var plazosHtml = _plazosChips(_plazosDeGrupo(g));
     var pedidosHtml = _pedidosBadge(_grupoTienePedidos(g));
 
@@ -610,6 +647,7 @@ function renderTable() {
       '<td>' + muniHtml + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(correo) + '</td>' +
       '<td>' + _estadoBadge(ge.estado, ge.mixto) + '</td>' +
+      '<td>' + _docBadge(gd.estado, gd.obs) + '</td>' +
       '<td style="text-align:center">' + pedidosHtml + '</td>' +
       '<td>' + plazosHtml + '</td>' +
       actionHtml +
@@ -635,6 +673,7 @@ document.getElementById('f-estado').addEventListener('change', function() { curr
 document.getElementById('f-plazo').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-ped').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-nuevo').addEventListener('change', function() { currentPage = 1; renderTable(); });
+document.getElementById('f-doc').addEventListener('change', function() { currentPage = 1; renderTable(); });
 document.getElementById('f-txt').addEventListener('input', debounce(function() { currentPage = 1; renderTable(); }, 300));
 
 // ── Detail modal ──
@@ -674,6 +713,13 @@ function openGroupDetail(groupIdx) {
     '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">Estado</span>' +
     _estadoBadge(_geDet.estado, _geDet.mixto) +
     (_grupoEsNuevo(g) ? ' <span class="nuevo-badge">🆕 Nuevo</span> <span style="color:#a0aec0;font-size:0.78rem">— alta desde un pedido, pendiente de completar</span>' : '') +
+    '</div>';
+
+  var _gdDet = _grupoDoc(g);
+  html += '<div style="margin-bottom:' + (isMulti ? '16' : '10') + 'px">' +
+    '<span style="font-size:0.72rem;text-transform:uppercase;color:#a0aec0;font-weight:700;margin-right:8px">Documentación</span>' +
+    _docBadge(_gdDet.estado, '') +
+    (_gdDet.obs ? ' <span style="color:#4a5568;font-size:0.8rem">— ' + escHtml(_gdDet.obs) + '</span>' : '') +
     '</div>';
 
   html += '<div style="margin-bottom:' + (isMulti ? '16' : '10') + 'px">' +
@@ -834,6 +880,9 @@ function _clearForm() {
   document.getElementById('ed-estado').value = 'Activo';
   document.getElementById('ed-estado-hint').textContent = '';
   document.getElementById('ed-obs-cartera').value = '';
+  document.getElementById('ed-doc-estado').value = 'Sin revisar';
+  document.getElementById('ed-doc-obs').value = '';
+  document.getElementById('ed-doc-hint').textContent = 'Si el NIT ya existe en otra empresa, el cliente hereda su documentación.';
   _gateEstadoClienteSelect('Activo');
 }
 
@@ -900,6 +949,9 @@ function _fillSedeForm(ref, records, limpiarUbicacion) {
   document.getElementById('ed-lista-precio').value = ref.Lista_Precio || '';
   document.getElementById('ed-estado').value = _estadoNorm(ref.Estado);
   document.getElementById('ed-obs-cartera').value = ref.Observaciones_Cartera || '';
+  document.getElementById('ed-doc-estado').value = _docNorm(ref.Estado_Documentacion);
+  document.getElementById('ed-doc-obs').value = ref.Observaciones_Documentacion || '';
+  document.getElementById('ed-doc-hint').textContent = 'Es una sola por cliente (mismo NIT): aplica a todas sus empresas y sedes.';
   _gateEstadoClienteSelect(_estadoNorm(ref.Estado));
   var sig = (ref.Nombre_Empresa || '').trim() ? getSigla(ref.Nombre_Empresa) : '';
   document.getElementById('ed-estado-hint').textContent = sig
@@ -1026,7 +1078,12 @@ function openEditCliente(id) {
   document.getElementById('ed-lista-precio').value = c.Lista_Precio || '';
   document.getElementById('ed-estado').value = _estadoNorm(c.Estado);
   document.getElementById('ed-obs-cartera').value = c.Observaciones_Cartera || '';
+  document.getElementById('ed-doc-estado').value = _docNorm(c.Estado_Documentacion);
+  document.getElementById('ed-doc-obs').value = c.Observaciones_Documentacion || '';
   var _sibs = _nitSiblings(_normalizeId(c.Identificacion));
+  document.getElementById('ed-doc-hint').textContent = _sibs.length > 1
+    ? 'Es una sola por cliente: se actualiza en sus ' + _sibs.length + ' registros (mismo NIT).'
+    : 'Es una sola por cliente (mismo NIT).';
   document.getElementById('ed-estado-hint').textContent = _sibs.length > 1
     ? 'El estado aplica solo al registro de ' + getSigla(c.Nombre_Empresa) + '; este cliente tiene ' + _sibs.length + ' registros (otras empresas) con su propio estado.'
     : '';
@@ -1070,6 +1127,12 @@ async function saveEdit() {
     Estado: _estadoNorm(document.getElementById('ed-estado').value),
     Observaciones_Cartera: document.getElementById('ed-obs-cartera').value.trim()
   };
+  // Solo se envía si el usuario puede cambiarla (admin/editor/cartera); si no,
+  // el backend conserva la actual (y al crear, el trigger la hereda del NIT).
+  if (!document.getElementById('ed-doc-estado').disabled) {
+    payload.Estado_Documentacion = _docNorm(document.getElementById('ed-doc-estado').value);
+    payload.Observaciones_Documentacion = document.getElementById('ed-doc-obs').value.trim();
+  }
 
   var _geoCl = normalizarMunicipio(payload.Municipio, payload.Departamento);
   payload.Municipio = _geoCl.municipio;
@@ -1299,7 +1362,7 @@ function exportExcel() {
   var filtered = getFiltered();
   if (!filtered.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
 
-  var rows = [['Empresa', 'Cliente', 'Nuevo', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Plazos Pago (pedidos)', 'Tiene pedidos', 'Lista Precio', 'Estado']];
+  var rows = [['Empresa', 'Cliente', 'Nuevo', 'Tipo ID', 'Identificación', 'Teléfono', 'Correo', 'Dirección', 'Dirección Envío', 'Departamento', 'Municipio', 'Cupo Crédito', 'Plazo Pago', 'Plazos Pago (pedidos)', 'Tiene pedidos', 'Lista Precio', 'Estado', 'Documentación', 'Obs. documentación']];
   filtered.forEach(function(c) {
     rows.push([
       getSigla(c.Nombre_Empresa),
@@ -1318,7 +1381,9 @@ function exportExcel() {
       _plazosParaRecord(c).join(', '),
       _tienePedidosRecord(c) ? 'Sí' : 'No',
       c.Lista_Precio || '',
-      _estadoNorm(c.Estado)
+      _estadoNorm(c.Estado),
+      _docNorm(c.Estado_Documentacion),
+      c.Observaciones_Documentacion || ''
     ]);
   });
 

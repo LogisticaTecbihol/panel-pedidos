@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#1a5276">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
 <title>Cartera – Sistema de Gestión Logística</title>
-<link rel="stylesheet" href="css/panel.css?v=20260921e">
+<link rel="stylesheet" href="css/panel.css?v=20261006a">
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-modulo="cartera">
@@ -85,13 +85,23 @@
     <button class="car-tab" id="tab-clibloq" onclick="carSwitchTab('clibloq')">🚫 Clientes bloqueados <span class="car-tab-ct" id="ct-clibloq">0</span></button>
     <button class="car-tab" id="tab-clisus" onclick="carSwitchTab('clisus')">⛔ Suspendidos <span class="car-tab-ct" id="ct-clisus">0</span></button>
     <button class="car-tab" id="tab-clibit" onclick="carSwitchTab('clibit')">📞 Con bitácora <span class="car-tab-ct" id="ct-clibit">0</span></button>
+    <button class="car-tab" id="tab-clidoc" onclick="carSwitchTab('clidoc')">📄 Documentación <span class="car-tab-ct" id="ct-clidoc">0</span></button>
     <button class="car-tab" id="tab-resumen" onclick="carSwitchTab('resumen')">📈 Resumen</button>
-    <button class="btn-dl" style="margin-left:auto" onclick="carExportTodo()" title="Un solo Excel con una hoja por pestaña (Por aprobar, Bloqueados, Clientes bloqueados, Suspendidos, Con bitácora y Resumen), sin aplicar los filtros de pantalla">📊 Excel completo</button>
+    <button class="btn-dl" style="margin-left:auto" onclick="carExportTodo()" title="Un solo Excel con una hoja por pestaña (Por aprobar, Bloqueados, Clientes bloqueados, Suspendidos, Con bitácora, Documentación y Resumen), sin aplicar los filtros de pantalla">📊 Excel completo</button>
   </div>
 
   <!-- Filtros de las dos colas -->
   <div class="filters" id="car-filters">
     <div class="fg"><label>Empresa</label><select id="f-emp" onchange="carRender()"><option value="">Todas</option></select></div>
+    <div class="fg" id="fg-doc" style="display:none"><label>Documentación</label><select id="f-doc" onchange="carRender()">
+      <option value="pendientes">Pendientes (incompleta / desactualizada)</option>
+      <option value="Incompleta y desactualizada">Incompleta y desactualizada</option>
+      <option value="Incompleta">Incompleta</option>
+      <option value="Desactualizada">Desactualizada</option>
+      <option value="Sin revisar">Sin revisar</option>
+      <option value="Completa y vigente">Completa y vigente</option>
+      <option value="">Todas</option>
+    </select></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="cliente, NIT, N° pedido, comercial…" style="width:260px" oninput="carRender()"></div>
     <button onclick="carClearFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
   </div>
@@ -137,7 +147,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>Cliente</th><th>NIT</th><th>Empresa</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Última modificación</th><th></th>
+            <th>Cliente</th><th>NIT</th><th>Empresa</th><th>Documentación</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Última modificación</th><th></th>
           </tr></thead>
           <tbody id="clibloq-body"></tbody>
         </table>
@@ -163,7 +173,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>Cliente</th><th>NIT</th><th>Empresa</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Observación</th><th>Última modificación</th><th></th>
+            <th>Cliente</th><th>NIT</th><th>Empresa</th><th>Documentación</th><th>Cupo</th><th>Plazo</th><th>Pedidos vigentes</th><th>Observación</th><th>Última modificación</th><th></th>
           </tr></thead>
           <tbody id="clisus-body"></tbody>
         </table>
@@ -189,7 +199,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>Cliente</th><th>NIT</th><th>Empresa(s)</th><th>Estado actual</th><th>N° contactos</th><th>Último contacto</th><th>Tipo</th><th>Última gestión</th><th></th>
+            <th>Cliente</th><th>NIT</th><th>Empresa(s)</th><th>Estado actual</th><th>Documentación</th><th>N° contactos</th><th>Último contacto</th><th>Tipo</th><th>Última gestión</th><th></th>
           </tr></thead>
           <tbody id="clibit-body"></tbody>
         </table>
@@ -202,9 +212,37 @@
     </p>
   </div>
 
+  <!-- PANEL: Documentación de clientes -->
+  <div id="panel-clidoc" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>📄 Documentación de clientes <span id="clidoc-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="carExportClidoc()">⬇️ Excel</button>
+          <button class="btn-dl" onclick="loadCartera()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>NIT</th><th>Empresa(s)</th><th>Documentación</th><th>Faltantes / por actualizar</th><th>Estado actual</th><th>Pedidos vigentes</th><th>Última modificación</th><th></th>
+          </tr></thead>
+          <tbody id="clidoc-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.74rem;color:#a0aec0;margin-top:8px">
+      Estado de revisión de los documentos de cartera, que se califica en el módulo de Clientes (✏️ Editar cliente).
+      Es uno solo por cliente unificado (mismo NIT): aplica a todas sus empresas y sedes. El contador de la pestaña
+      cuenta los clientes con documentación incompleta y/o desactualizada.
+    </p>
+  </div>
+
   <!-- PANEL: Resumen -->
   <div id="panel-resumen" style="display:none">
     <div class="stats" id="res-stats"></div>
+    <div style="font-size:0.84rem;font-weight:700;color:#2d3748;margin:4px 0 8px">📄 Documentación de clientes <span style="font-weight:400;color:#718096;font-size:0.76rem">(clientes únicos por NIT · clic para ver la lista)</span></div>
+    <div class="stats" id="res-doc-stats"></div>
     <div class="card" style="margin-bottom:16px">
       <div class="card-head">
         <h3>🔒 Bloqueados por cliente</h3>
@@ -310,9 +348,9 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261002a"></script>
+<script src="js/shared.js?v=20261006a"></script>
 <script src="js/auth.js?v=20261001a"></script>
 <script src="js/notificaciones.js?v=20261001a"></script>
-<script src="js/cartera.js?v=20261006a"></script>
+<script src="js/cartera.js?v=20261006b"></script>
 </body>
 </html>

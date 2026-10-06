@@ -19,7 +19,7 @@ var CAR_PED_COLS = 'id,Nombre_Empresa,Consecutivo,Cliente,NIT,Comercial,Fecha_Pe
   'creado_por,creado_por_nombre,creado_en,' +
   'Bloqueo_Observacion,Bloqueo_Por_Nombre,Bloqueo_En,Desbloqueo_Por_Nombre,Desbloqueo_En,' +
   'Aprobacion_Por_Nombre,Aprobacion_En,Aprobacion_Nota';
-var CAR_CLI_COLS = 'id,Cliente,Identificacion,Tipo_Identificacion,Nombre_Empresa,Estado,Observaciones_Cartera,Cupo_Credito,Plazo_Pago,Cliente_Nuevo,modificado_por_nombre,modificado_en';
+var CAR_CLI_COLS = 'id,Cliente,Identificacion,Tipo_Identificacion,Nombre_Empresa,Estado,Observaciones_Cartera,Cupo_Credito,Plazo_Pago,Cliente_Nuevo,Estado_Documentacion,Observaciones_Documentacion,modificado_por_nombre,modificado_en';
 
 var carOrders = [];        // pedidos agrupados (uno por empresa+consecutivo+cliente)
 var carByKey = {};
@@ -193,6 +193,33 @@ function carEstadoCliente(regs) {
   return 'Activo';
 }
 
+// ── Documentación de cartera (una por cliente unificado / NIT) ──
+// Se califica en clientes.html; el trigger sync_documentacion_cliente la
+// replica a todos los registros del mismo NIT.
+var CAR_DOC_ESTADOS = ['Incompleta y desactualizada', 'Incompleta', 'Desactualizada', 'Sin revisar', 'Completa y vigente'];  // de más a menos grave
+var CAR_DOC_PEND = ['Incompleta y desactualizada', 'Incompleta', 'Desactualizada'];
+var CAR_DOC_CLS = { 'Sin revisar': 'doc-sin', 'Completa y vigente': 'doc-ok', 'Incompleta': 'doc-inc', 'Desactualizada': 'doc-des', 'Incompleta y desactualizada': 'doc-incdes' };
+
+function carDocNorm(d) {
+  d = (d || '').trim();
+  return CAR_DOC_CLS[d] ? d : 'Sin revisar';
+}
+// Documentación de un cliente (registros de ClientesUnicos). Si no estuvieran
+// sincronizados (registros sin NIT), se toma la más grave ya revisada.
+function carDocDe(regs) {
+  var best = null;
+  (regs || []).forEach(function(r) {
+    var e = carDocNorm(r.Estado_Documentacion);
+    if (!best || CAR_DOC_ESTADOS.indexOf(e) < CAR_DOC_ESTADOS.indexOf(best.estado)) best = { estado: e, obs: r.Observaciones_Documentacion || '' };
+  });
+  return best || { estado: '', obs: '' };
+}
+function carDocBadge(doc) {
+  if (!doc || !doc.estado) return '<span class="tag-sin">—</span>';
+  var title = doc.obs ? ' title="' + escHtml(doc.obs) + '"' : '';
+  return '<span class="doc-badge ' + CAR_DOC_CLS[doc.estado] + '"' + title + '>' + escHtml(doc.estado) + (doc.obs ? ' 📝' : '') + '</span>';
+}
+
 // ── Carga ────────────────────────────────────────────────────
 async function loadCartera() {
   await _authReady;
@@ -268,7 +295,8 @@ function carFillEmpresas() {
   carClientes.forEach(function(c) {
     if (!c.Nombre_Empresa) return;
     var nb = _nitBase(c.Identificacion);
-    if (c.Estado === CAR_BLOQ || c.Estado === CAR_SUSP || (nb && carBitPorNit[nb])) nombres[c.Nombre_Empresa] = true;
+    if (c.Estado === CAR_BLOQ || c.Estado === CAR_SUSP || (nb && carBitPorNit[nb]) ||
+        CAR_DOC_PEND.indexOf(carDocNorm(c.Estado_Documentacion)) >= 0) nombres[c.Nombre_Empresa] = true;
   });
   var arr = Object.keys(nombres).sort();
   sel.innerHTML = '<option value="">Todas</option>' + arr.map(function(n) {
@@ -285,6 +313,7 @@ function carSwitchTab(t) {
 function carClearFilters() {
   document.getElementById('f-emp').value = '';
   document.getElementById('f-txt').value = '';
+  document.getElementById('f-doc').value = 'pendientes';
   carRender();
 }
 
@@ -308,13 +337,15 @@ function carRender() {
   var cliBloq = carClientesBloqueados();
   var cliSus = carClientesSuspendidos();
   var cliBit = carClientesConBitacora();
+  var cliDoc = carClientesDocumentacion();
 
   document.getElementById('ct-aprobar').textContent = pend.length;
   document.getElementById('ct-bloqueados').textContent = bloq.length;
   document.getElementById('ct-clibloq').textContent = cliBloq.length;
   document.getElementById('ct-clisus').textContent = cliSus.length;
   document.getElementById('ct-clibit').textContent = cliBit.length;
-  ['aprobar', 'bloqueados', 'clibloq', 'clisus', 'clibit', 'resumen'].forEach(function(t) {
+  document.getElementById('ct-clidoc').textContent = cliDoc.filter(function(x) { return CAR_DOC_PEND.indexOf(x.doc.estado) >= 0; }).length;
+  ['aprobar', 'bloqueados', 'clibloq', 'clisus', 'clibit', 'clidoc', 'resumen'].forEach(function(t) {
     document.getElementById('tab-' + t).classList.toggle('active', carTab === t);
   });
   carRenderStats(pend, bloq);
@@ -323,16 +354,20 @@ function carRender() {
   var esClibloq = carTab === 'clibloq';
   var esClisus = carTab === 'clisus';
   var esClibit = carTab === 'clibit';
-  document.getElementById('panel-cola').style.display = (esResumen || esClibloq || esClisus || esClibit) ? 'none' : 'block';
+  var esClidoc = carTab === 'clidoc';
+  document.getElementById('panel-cola').style.display = (esResumen || esClibloq || esClisus || esClibit || esClidoc) ? 'none' : 'block';
   document.getElementById('panel-resumen').style.display = esResumen ? 'block' : 'none';
   document.getElementById('panel-clibloq').style.display = esClibloq ? 'block' : 'none';
   document.getElementById('panel-clisus').style.display = esClisus ? 'block' : 'none';
   document.getElementById('panel-clibit').style.display = esClibit ? 'block' : 'none';
+  document.getElementById('panel-clidoc').style.display = esClidoc ? 'block' : 'none';
+  document.getElementById('fg-doc').style.display = esClidoc ? '' : 'none';
   document.getElementById('car-filters').style.display = esResumen ? 'none' : 'flex';
-  if (esResumen) carRenderResumen(bloq);
+  if (esResumen) carRenderResumen(bloq, cliDoc);
   else if (esClibloq) carRenderClibloq(cliBloq);
   else if (esClisus) carRenderClisus(cliSus);
   else if (esClibit) carRenderClibit(cliBit);
+  else if (esClidoc) carRenderClidoc(cliDoc);
   else carRenderCola(carTab === 'aprobar' ? pend : bloq);
 }
 
@@ -487,7 +522,7 @@ function carRenderClibloq(all) {
 
   var puedeLib = carPuedeBloquear();
   if (!lista.length) {
-    document.getElementById('clibloq-body').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#a0aec0;padding:26px">' +
+    document.getElementById('clibloq-body').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">' +
       (all.length ? 'Ningún cliente bloqueado coincide con los filtros.' : 'No hay clientes bloqueados por cartera. 🎉') + '</td></tr>';
     return;
   }
@@ -501,6 +536,7 @@ function carRenderClibloq(all) {
     var modTxt = x.modEn ? escHtml(carFmtTs(x.modEn)) + (x.modPor ? ' · ' + escHtml(x.modPor) : '') : '—';
     return '<tr class="row-bloqueada-cartera"><td>' + escHtml(x.cliente) + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
       '<td>' + carSiglaHtml(x.empresa) + '</td>' +
+      '<td>' + carDocBadge(carDocDe(carCliByNit[x.idCli] || x.regs)) + '</td>' +
       '<td>' + cupoTxt + '</td><td>' + escHtml(x.plazo || '—') + '</td>' +
       '<td>' + vigTxt + '</td>' +
       '<td style="font-size:0.78rem;color:#718096">' + modTxt + '</td>' +
@@ -590,7 +626,7 @@ function carRenderClisus(all) {
 
   var puedeLib = carPuedeBloquear();
   if (!lista.length) {
-    document.getElementById('clisus-body').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">' +
+    document.getElementById('clisus-body').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:26px">' +
       (all.length ? 'Ningún cliente suspendido coincide con los filtros.' : 'No hay clientes suspendidos. 🎉') + '</td></tr>';
     return;
   }
@@ -604,6 +640,7 @@ function carRenderClisus(all) {
     var modTxt = x.modEn ? escHtml(carFmtTs(x.modEn)) + (x.modPor ? ' · ' + escHtml(x.modPor) : '') : '—';
     return '<tr class="row-bloqueada-cartera"><td>' + escHtml(x.cliente) + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
       '<td>' + carSiglaHtml(x.empresa) + '</td>' +
+      '<td>' + carDocBadge(carDocDe(carCliByNit[x.idCli] || x.regs)) + '</td>' +
       '<td>' + cupoTxt + '</td><td>' + escHtml(x.plazo || '—') + '</td>' +
       '<td>' + vigTxt + '</td>' +
       '<td style="max-width:220px;white-space:normal;font-size:0.78rem;color:#4a5568">' + (x.obs ? escHtml(x.obs) : '<span class="tag-sin">sin observación</span>') + '</td>' +
@@ -712,7 +749,7 @@ function carRenderClibit(all) {
   document.getElementById('clibit-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
 
   if (!lista.length) {
-    document.getElementById('clibit-body').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">' +
+    document.getElementById('clibit-body').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:26px">' +
       (all.length ? 'Ningún cliente con bitácora coincide con los filtros.' : 'Todavía no hay entradas de bitácora registradas.') + '</td></tr>';
     return;
   }
@@ -726,6 +763,7 @@ function carRenderClibit(all) {
     return '<tr><td>' + escHtml(x.cliente || '—') + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
       '<td>' + empHtml + '</td>' +
       '<td>' + carEstadoClienteBadge(x.regs) + '</td>' +
+      '<td>' + carDocBadge(carDocDe(x.regs)) + '</td>' +
       '<td style="text-align:center">' + x.total + '</td>' +
       '<td>' + (x.ultFecha ? escHtml(fmtDate(x.ultFecha)) : '—') + '</td>' +
       '<td>' + icon + ' ' + escHtml(x.ultTipo || '') + '</td>' +
@@ -1149,6 +1187,92 @@ function carDecisiones30d() {
   out.sort(function(a, b) { return String(b.fecha).localeCompare(String(a.fecha)); });
   return out;
 }
+// ── Documentación de clientes ────────────────────────────────────────────
+// Un renglón por cliente unificado (NIT; sin NIT, por nombre), igual que la
+// bitácora: la documentación no es por empresa.
+function carClientesDocumentacion() {
+  var g = {};
+  carClientes.forEach(function(c) {
+    var nb = _nitBase(c.Identificacion);
+    var idCli = nb || ('n:' + norm(c.Cliente));
+    var x = g[idCli] || (g[idCli] = { idCli: idCli, cliente: (c.Cliente || '—').trim(), nit: '', regs: [] });
+    if (!x.nit && c.Identificacion) x.nit = c.Identificacion;
+    x.regs.push(c);
+  });
+  var out = Object.keys(g).map(function(k) { return g[k]; });
+  out.forEach(function(x) {
+    x.doc = carDocDe(x.regs);
+    var emps = {};
+    x.regs.forEach(function(r) { if (r.Nombre_Empresa) emps[r.Nombre_Empresa] = true; });
+    x.empresas = Object.keys(emps).sort(function(a, b) { return getSigla(a).localeCompare(getSigla(b)); });
+    var modEn = '', modPor = '';
+    x.regs.forEach(function(r) { if (r.modificado_en && r.modificado_en > modEn) { modEn = r.modificado_en; modPor = r.modificado_por_nombre || ''; } });
+    x.modEn = modEn; x.modPor = modPor;
+    var abiertos = carOrders.filter(function(o) { return o.idCli === x.idCli && o.valorAbierto > 0; });
+    x.pedidosVigentes = abiertos.length;
+    x.valorVigente = abiertos.reduce(function(s, o) { return s + o.valorAbierto; }, 0);
+  });
+  out.sort(function(a, b) {
+    return (CAR_DOC_ESTADOS.indexOf(a.doc.estado) - CAR_DOC_ESTADOS.indexOf(b.doc.estado)) ||
+      (b.pedidosVigentes - a.pedidosVigentes) || a.cliente.localeCompare(b.cliente);
+  });
+  return out;
+}
+
+function carFiltrarClidoc(list) {
+  var emp = document.getElementById('f-emp').value;
+  var fdoc = document.getElementById('f-doc').value;
+  var q = norm(document.getElementById('f-txt').value);
+  return list.filter(function(x) {
+    if (fdoc === 'pendientes') { if (CAR_DOC_PEND.indexOf(x.doc.estado) < 0) return false; }
+    else if (fdoc && x.doc.estado !== fdoc) return false;
+    if (emp && x.empresas.indexOf(emp) < 0) return false;
+    if (q) {
+      var hay = norm([x.cliente, x.nit, x.doc.obs].join(' '));
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function carRenderClidoc(all) {
+  var lista = carFiltrarClidoc(all);
+  document.getElementById('clidoc-ct').textContent = '(' + lista.length + ')';
+  if (!lista.length) {
+    document.getElementById('clidoc-body').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">' +
+      'Ningún cliente coincide con los filtros.' + '</td></tr>';
+    return;
+  }
+  document.getElementById('clidoc-body').innerHTML = lista.map(function(x) {
+    var verLink = x.nit
+      ? '<a class="btn-dl" href="clientes.html?buscar=' + encodeURIComponent(x.nit) + '" style="text-decoration:none">👁️ Ver en Clientes</a>'
+      : '';
+    var empHtml = x.empresas.length ? x.empresas.map(carSiglaHtml).join(' ') : '—';
+    var vigTxt = x.pedidosVigentes
+      ? x.pedidosVigentes + (x.pedidosVigentes === 1 ? ' pedido · ' : ' pedidos · ') + fmtMoney(x.valorVigente)
+      : '<span class="tag-sin">sin pedidos vigentes</span>';
+    var modTxt = x.modEn ? escHtml(carFmtTs(x.modEn)) + (x.modPor ? ' · ' + escHtml(x.modPor) : '') : '—';
+    return '<tr><td>' + escHtml(x.cliente) + '</td><td>' + escHtml(x.nit || '—') + '</td>' +
+      '<td>' + empHtml + '</td>' +
+      '<td>' + carDocBadge({ estado: x.doc.estado, obs: '' }) + '</td>' +
+      '<td style="max-width:260px;white-space:normal;font-size:0.78rem;color:#4a5568">' + (x.doc.obs ? escHtml(x.doc.obs) : '<span class="tag-sin">—</span>') + '</td>' +
+      '<td>' + carEstadoClienteBadge(x.regs) + '</td>' +
+      '<td>' + vigTxt + '</td>' +
+      '<td style="font-size:0.78rem;color:#718096">' + modTxt + '</td>' +
+      '<td>' + verLink + '</td></tr>';
+  }).join('');
+}
+
+function carExportClidoc() {
+  carXlsx('cartera_documentacion_clientes', 'Documentación', carFilasClidoc(carFiltrarClidoc(carClientesDocumentacion())));
+}
+
+// Desde las tarjetas del Resumen: abre la pestaña con ese estado filtrado.
+function carVerDoc(estado) {
+  document.getElementById('f-doc').value = estado;
+  carSwitchTab('clidoc');
+}
+
 function carBloqueadosPorCliente(bloq) {
   var g = {};
   bloq.forEach(function(o) {
@@ -1160,8 +1284,14 @@ function carBloqueadosPorCliente(bloq) {
   return Object.keys(g).map(function(k) { return g[k]; }).sort(function(a, b) { return b.valor - a.valor; });
 }
 
-function carRenderResumen(bloq) {
+function carRenderResumen(bloq, cliDoc) {
   var dec = carDecisiones30d();
+  var docCls = { 'Incompleta y desactualizada': 'sol-pend', 'Incompleta': 'recibido', 'Desactualizada': 'parcial', 'Sin revisar': 'total', 'Completa y vigente': 'entregado' };
+  document.getElementById('res-doc-stats').innerHTML = CAR_DOC_ESTADOS.map(function(e) {
+    var n = (cliDoc || []).filter(function(x) { return x.doc.estado === e; }).length;
+    return '<div class="sc ' + docCls[e] + '" style="cursor:pointer" data-doc="' + escHtml(e) + '" onclick="carVerDoc(this.getAttribute(\'data-doc\'))">' +
+      '<div class="num">' + n + '</div><div class="lbl">' + escHtml(e) + '</div></div>';
+  }).join('');
   function cuenta(t) { return dec.filter(function(d) { return d.tipo === t; }).length; }
   function promedio(t) {
     var v = dec.filter(function(d) { return d.tipo === t && d.ms != null && d.ms >= 0; });
@@ -1224,26 +1354,34 @@ function carFilasCola(lista, esAprobar) {
   return filas;
 }
 function carFilasClibloq(lista) {
-  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
+  var filas = [['Cliente', 'NIT', 'Empresa', 'Documentación', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
   lista.forEach(function(x) {
-    filas.push([x.cliente, x.nit, x.empresa, carCupoTxt(x), x.plazo, x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
+    filas.push([x.cliente, x.nit, x.empresa, carDocDe(carCliByNit[x.idCli] || x.regs).estado, carCupoTxt(x), x.plazo, x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
   });
   return filas;
 }
 function carFilasClisus(lista) {
-  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Observación', 'Última modificación', 'Modificó']];
+  var filas = [['Cliente', 'NIT', 'Empresa', 'Documentación', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Observación', 'Última modificación', 'Modificó']];
   lista.forEach(function(x) {
-    filas.push([x.cliente, x.nit, x.empresa, carCupoTxt(x), x.plazo, x.pedidosVigentes, x.valorVigente, x.obs || '', x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
+    filas.push([x.cliente, x.nit, x.empresa, carDocDe(carCliByNit[x.idCli] || x.regs).estado, carCupoTxt(x), x.plazo, x.pedidosVigentes, x.valorVigente, x.obs || '', x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
   });
   return filas;
 }
 function carFilasClibit(lista) {
-  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Estado actual', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
+  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Estado actual', 'Documentación', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
   lista.forEach(function(x) {
     var estTxt = carEstadoCliente(x.regs) || 'No está en Clientes';
     if (estTxt === CAR_BLOQ) estTxt += ' (' + carEmpresasConEstado(x.regs, CAR_BLOQ).map(getSigla).join(', ') + ')';
-    filas.push([x.cliente, x.nit, x.empresas.join(' / '), estTxt, x.total,
+    filas.push([x.cliente, x.nit, x.empresas.join(' / '), estTxt, carDocDe(x.regs).estado || '', x.total,
       x.ultFecha ? fmtDate(x.ultFecha) : '', x.ultTipo || '', x.ultGestion || '']);
+  });
+  return filas;
+}
+function carFilasClidoc(lista) {
+  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Documentación', 'Faltantes / por actualizar', 'Estado actual', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
+  lista.forEach(function(x) {
+    filas.push([x.cliente, x.nit, x.empresas.join(' / '), x.doc.estado, x.doc.obs || '', carEstadoCliente(x.regs) || '',
+      x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
   });
   return filas;
 }
@@ -1252,6 +1390,13 @@ function carFilasResumen() {
   var filas = [['Cliente', 'NIT', 'Pedidos bloqueados', 'Valor', 'Bloqueado desde', 'Estado del cliente']];
   carBloqueadosPorCliente(bloq).forEach(function(x) {
     filas.push([x.cliente, x.nit, x.n, x.valor, x.desde ? carFmtTs(x.desde) : '', carEstadoCliente(x.regs) || 'No está en Clientes']);
+  });
+  filas.push([]);
+  filas.push(['Documentación de clientes (clientes únicos por NIT)']);
+  filas.push(['Estado', 'Clientes']);
+  var _cliDoc = carClientesDocumentacion();
+  CAR_DOC_ESTADOS.forEach(function(e) {
+    filas.push([e, _cliDoc.filter(function(x) { return x.doc.estado === e; }).length]);
   });
   filas.push([]);
   filas.push(['Decisiones últimos 30 días (último ciclo por pedido)']);
@@ -1280,6 +1425,7 @@ function carExportTodo() {
     { hoja: 'Clientes bloqueados', filas: carFilasClibloq(carClientesBloqueados()) },
     { hoja: 'Suspendidos',         filas: carFilasClisus(carClientesSuspendidos()) },
     { hoja: 'Con bitácora',        filas: carFilasClibit(carClientesConBitacora()) },
+    { hoja: 'Documentación',       filas: carFilasClidoc(carClientesDocumentacion()) },
     { hoja: 'Resumen',             filas: carFilasResumen() }
   ]);
 }

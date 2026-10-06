@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#1a5276">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👥</text></svg>">
 <title>Clientes – Sistema de Gestión Logística</title>
-<link rel="stylesheet" href="css/panel.css?v=20260921d">
+<link rel="stylesheet" href="css/panel.css?v=20261006a">
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
@@ -102,6 +102,7 @@
     <div class="fg"><label>Departamento</label><select id="f-depto"><option value="">Todos</option></select></div>
     <div class="fg"><label>Municipio</label><select id="f-muni"><option value="">Todos</option></select></div>
     <div class="fg"><label>Estado</label><select id="f-estado"><option value="">Todos</option><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Bloqueado por cartera">Bloqueado por cartera</option><option value="Suspendido">Suspendido</option></select></div>
+    <div class="fg"><label>Documentación</label><select id="f-doc"><option value="">Todas</option><option value="Sin revisar">Sin revisar</option><option value="Completa y vigente">Completa y vigente</option><option value="Incompleta">Incompleta</option><option value="Desactualizada">Desactualizada</option><option value="Incompleta y desactualizada">Incompleta y desactualizada</option></select></div>
     <div class="fg"><label>Plazo de pago (pedidos)</label><select id="f-plazo"><option value="">Todos</option></select></div>
     <div class="fg"><label>Pedidos</label><select id="f-ped"><option value="">Todos</option><option value="con">Con pedidos</option><option value="sin">Sin pedidos</option></select></div>
     <div class="fg"><label>Nuevos</label><select id="f-nuevo"><option value="">Todos</option><option value="1">Solo nuevos</option></select></div>
@@ -134,6 +135,7 @@
             <th>Municipio</th>
             <th>Correo</th>
             <th>Estado</th>
+            <th>Documentación</th>
             <th style="text-align:center">¿Tiene<br>pedidos?</th>
             <th>Plazos de pago<br><span style="font-weight:400;font-size:0.72rem;color:#718096">(según pedidos)</span></th>
             <th style="width:140px" class="auth-edit-only">Acción</th>
@@ -247,6 +249,23 @@
         <div>
           <label class="ef-label">Observaciones de Cartera</label>
           <textarea class="ef" id="ed-obs-cartera" rows="2" placeholder="Motivo del bloqueo por cartera o la suspensión (lo verá el comercial al intentar un pedido)"></textarea>
+        </div>
+      </div>
+      <div class="detail-grid" style="grid-template-columns:1fr 2fr">
+        <div>
+          <label class="ef-label">Documentación de cartera</label>
+          <select class="ef" id="ed-doc-estado">
+            <option value="Sin revisar">Sin revisar</option>
+            <option value="Completa y vigente">Completa y vigente</option>
+            <option value="Incompleta">Incompleta</option>
+            <option value="Desactualizada">Desactualizada</option>
+            <option value="Incompleta y desactualizada">Incompleta y desactualizada</option>
+          </select>
+          <div id="ed-doc-hint" style="font-size:0.72rem;color:#718096;margin-top:3px"></div>
+        </div>
+        <div>
+          <label class="ef-label">Documentos faltantes / por actualizar</label>
+          <textarea class="ef" id="ed-doc-obs" rows="2" placeholder="Ej.: falta Cámara de Comercio; RUT vencido"></textarea>
         </div>
       </div>
     </div>
@@ -399,10 +418,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261002a"></script>
+<script src="js/shared.js?v=20261006a"></script>
 <script src="js/auth.js?v=20261001a"></script>
 <script src="js/notificaciones.js?v=20261001a"></script>
 <script src="js/colombia-geo.js"></script>
-<script src="js/clientes.js?v=20260930a"></script>
+<script src="js/clientes.js?v=20261006a"></script>
 </body>
 </html>

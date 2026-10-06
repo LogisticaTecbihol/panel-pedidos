@@ -2056,7 +2056,9 @@ async function _apiPostCore(body) {
         Plazo_Pago: body.Plazo_Pago || '',
         Lista_Precio: body.Lista_Precio || '',
         Estado: body.Estado || 'Activo',
-        Observaciones_Cartera: body.Observaciones_Cartera || ''
+        Observaciones_Cartera: body.Observaciones_Cartera || '',
+        Estado_Documentacion: body.Estado_Documentacion || 'Sin revisar',
+        Observaciones_Documentacion: body.Observaciones_Documentacion || ''
       };
       var res = await _sb.from('ClientesUnicos').insert([row]).select('id');
       if (res.error) return { ok: false, error: res.error.message };
@@ -2081,6 +2083,10 @@ async function _apiPostCore(body) {
       };
       if (typeof body.Estado === 'string' && body.Estado) upd.Estado = body.Estado;
       if (typeof body.Observaciones_Cartera === 'string') upd.Observaciones_Cartera = body.Observaciones_Cartera;
+      // Documentación de cartera: una por NIT; el trigger sync_documentacion_cliente
+      // la replica a los demás registros del cliente.
+      if (typeof body.Estado_Documentacion === 'string' && body.Estado_Documentacion) upd.Estado_Documentacion = body.Estado_Documentacion;
+      if (typeof body.Observaciones_Documentacion === 'string') upd.Observaciones_Documentacion = body.Observaciones_Documentacion;
       var res = await _sb.from('ClientesUnicos').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1 };
