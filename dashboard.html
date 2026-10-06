@@ -115,6 +115,8 @@
   .dash-filters input[type=date]:focus { border-color: #1a5276; }
 
   .dash-ts { font-size: 0.76rem; color: #718096; text-align: right; margin-top: -14px; margin-bottom: 14px; }
+  #sync-status .sync-refresh { margin-left: auto; background: none; border: 1px solid currentColor; color: inherit; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-weight: 600; font-family: inherit; }
+  #sync-status .sync-refresh:hover { background: rgba(0,0,0,0.06); }
 
   /* ── RANGE PRESETS ── */
   .dash-presets { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -239,6 +241,7 @@
   <div id="sync-status">
     <span id="sync-icon">☁️</span>
     <span id="sync-msg">Conectado a la nube.</span>
+    <button type="button" class="sync-refresh" onclick="loadDashboard()" title="Volver a cargar los datos desde la nube">↻ Actualizar</button>
   </div>
 
   <!-- Pestañas -->
@@ -512,6 +515,6 @@
 <script src="js/auth.js?v=20261001a"></script>
 <script src="js/notificaciones.js?v=20261001a"></script>
 <script src="js/existencias.js?v=20261002a"></script>
-<script src="js/dashboard.js?v=20261002c"></script>
+<script src="js/dashboard.js?v=20261006a"></script>
 </body>
 </html>

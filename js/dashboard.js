@@ -13,6 +13,8 @@ var dConteos = [];        // InventarioFisico
 var dClientes = [];       // ClientesUnicos (para "clientes nuevos del período")
 var dExist = null;   // snapshot de Existencias (mismo cálculo que Kardex / Inventario / Reportes)
 var dOrders = [];    // órdenes derivadas: 1 por (empresa, consecutivo, cliente) — igual que Pedidos
+var dLoadedAt = null;  // Date en que se descargaron los datos (NO cambia al mover filtros)
+var dLoading = false;  // evita cargas simultáneas (botón Actualizar + recarga automática)
 
 var SIGLAS = {
   'PARCELAR DE COLOMBIA SAS': 'PARCELAR',
@@ -329,6 +331,8 @@ function dBuildOrders(ped) {
 // ── Load ──
 async function loadDashboard() {
   await _authReady;
+  if (dLoading) return;
+  dLoading = true;
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
   var errEl = document.getElementById('load-error');
@@ -398,6 +402,7 @@ async function loadDashboard() {
     dClientes = results[9].clientes || [];
     _cliNitMap = null;              // se reconstruye con el nuevo maestro
     _allOrdersCache.emp = undefined; // idem con los nuevos pedidos
+    dLoadedAt = new Date();
 
     // Snapshot de existencias — mismo cálculo que Kardex / Inventario / Reportes.
     try {
@@ -418,19 +423,36 @@ async function loadDashboard() {
     populateMpProductoSelect();
     buildDashboard();
 
-    setSyncStatus('ok', 'Conectado a la nube. Ultima actualizacion: ' + new Date().toLocaleTimeString('es-CO'));
+    setSyncStatus('ok', 'Conectado a la nube. Ultima actualizacion: ' + dLoadedAt.toLocaleTimeString('es-CO'));
     document.getElementById('hdr-status').textContent = '☁️ Supabase';
   } catch (err) {
     if (mainEl.style.display === 'block') {
-      setSyncStatus('error', 'Error al actualizar: ' + err.message);
+      // Los datos en pantalla siguen siendo los de dLoadedAt: se dice cuáles.
+      setSyncStatus('error', 'Error al actualizar: ' + err.message + (dLoadedAt ? ' (se muestran los datos de las ' + dLoadedAt.toLocaleTimeString('es-CO') + ')' : ''));
     } else {
       spinnerEl.style.display = 'none';
       errEl.textContent = '⚠️ ' + err.message;
       errEl.style.display = 'block';
       retryBtn.style.display = 'inline-block';
     }
+  } finally {
+    dLoading = false;
   }
 }
+
+// El dashboard descarga los datos una sola vez al abrirse: una pestaña que queda
+// abierta horas o días muestra cifras viejas sin avisar (ej.: "Pendiente" de
+// pedidos que ya se entregaron). Al volver a la pestaña, si los datos tienen más
+// de D_REFRESH_MIN_MS, se recargan solos; los filtros se conservan.
+var D_REFRESH_MIN_MS = 5 * 60 * 1000;
+function dMaybeAutoRefresh() {
+  if (document.visibilityState !== 'visible') return;
+  if (dLoading || !dLoadedAt) return;
+  if (Date.now() - dLoadedAt.getTime() < D_REFRESH_MIN_MS) return;
+  loadDashboard();
+}
+document.addEventListener('visibilitychange', dMaybeAutoRefresh);
+window.addEventListener('focus', dMaybeAutoRefresh);
 
 // ── Filters ──
 var dashFiltersAttached = false;
@@ -441,9 +463,11 @@ function populateDashFilters() {
   });
   emps.sort();
   var sel = document.getElementById('df-emp');
+  var prevEmp = sel.value;   // en una recarga, conservar la empresa elegida
   sel.innerHTML = '<option value="">Todas</option>' + emps.map(function(e) {
     return '<option value="' + escHtml(e) + '">' + escHtml(dGetSigla(e)) + ' — ' + escHtml(e) + '</option>';
   }).join('');
+  if (prevEmp && emps.indexOf(prevEmp) >= 0) sel.value = prevEmp;
 
   if (!dashFiltersAttached) {
     var dDesde = document.getElementById('df-desde');
@@ -554,7 +578,8 @@ function buildDashboard() {
   var rangoTxt = (fDesde || fHasta)
     ? '  ·  Rango: ' + (fDesde ? fmtDate(fDesde) : 'inicio') + ' → ' + (fHasta ? fmtDate(fHasta) : 'hoy')
     : '';
-  document.getElementById('dash-ts').textContent = 'Actualizado: ' + new Date().toLocaleString('es-CO') + rangoTxt;
+  // Hora en que se cargaron los datos (no la de este repintado por cambio de filtro).
+  document.getElementById('dash-ts').textContent = 'Datos actualizados: ' + (dLoadedAt || new Date()).toLocaleString('es-CO') + rangoTxt;
   renderRangeChip(fEmp, fDesde, fHasta);
 
   buildKPIs(cur.orders, cur.ped, cur.dev, cur.oc, fEmp, kpiPrev, fDesde, fHasta, cur.consOrders, cur.cons);
