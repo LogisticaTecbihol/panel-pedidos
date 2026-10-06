@@ -526,14 +526,7 @@ async function carLiberarCliente(key) {
 }
 
 function carExportClibloq() {
-  var lista = carFiltrarClibloq(carClientesBloqueados());
-  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
-  lista.forEach(function(x) {
-    filas.push([x.cliente, x.nit, x.empresa,
-      x.cupo.tipo === 'numero' ? x.cupo.valor : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? x.cupo.texto : '',
-      x.plazo, x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
-  });
-  carXlsx('cartera_clientes_bloqueados', 'Clientes bloqueados', filas);
+  carXlsx('cartera_clientes_bloqueados', 'Clientes bloqueados', carFilasClibloq(carFiltrarClibloq(carClientesBloqueados())));
 }
 
 // ── Clientes suspendidos (mismo patrón que "Clientes bloqueados" arriba) ──
@@ -637,14 +630,7 @@ async function carReactivarCliente(key) {
 }
 
 function carExportClisus() {
-  var lista = carFiltrarClisus(carClientesSuspendidos());
-  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Observación', 'Última modificación', 'Modificó']];
-  lista.forEach(function(x) {
-    filas.push([x.cliente, x.nit, x.empresa,
-      x.cupo.tipo === 'numero' ? x.cupo.valor : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? x.cupo.texto : '',
-      x.plazo, x.pedidosVigentes, x.valorVigente, x.obs || '', x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
-  });
-  carXlsx('cartera_clientes_suspendidos', 'Clientes suspendidos', filas);
+  carXlsx('cartera_clientes_suspendidos', 'Clientes suspendidos', carFilasClisus(carFiltrarClisus(carClientesSuspendidos())));
 }
 
 // ── Clientes con bitácora de contacto ────────────────────────────────────
@@ -749,15 +735,7 @@ function carRenderClibit(all) {
 }
 
 function carExportClibit() {
-  var lista = carFiltrarClibit(carClientesConBitacora());
-  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Estado actual', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
-  lista.forEach(function(x) {
-    var estTxt = carEstadoCliente(x.regs) || 'No está en Clientes';
-    if (estTxt === CAR_BLOQ) estTxt += ' (' + carEmpresasConEstado(x.regs, CAR_BLOQ).map(getSigla).join(', ') + ')';
-    filas.push([x.cliente, x.nit, x.empresas.join(' / '), estTxt, x.total,
-      x.ultFecha ? fmtDate(x.ultFecha) : '', x.ultTipo || '', x.ultGestion || '']);
-  });
-  carXlsx('cartera_clientes_con_bitacora', 'Con bitácora', filas);
+  carXlsx('cartera_clientes_con_bitacora', 'Con bitácora', carFilasClibit(carFiltrarClibit(carClientesConBitacora())));
 }
 
 // ── Selección y acciones masivas ─────────────────────────────
@@ -1215,25 +1193,61 @@ function carRenderResumen(bloq) {
 }
 
 // ── Exportar a Excel ─────────────────────────────────────────
-function carXlsx(nombre, hoja, filas) {
+// Las funciones carFilas* arman las filas de cada pestaña a partir de una lista
+// ya filtrada (botón "Excel" de cada pestaña) o completa (carExportTodo), así
+// el archivo individual y el informe completo nunca se desfasan.
+function carXlsxHojas(nombre, hojas) {
   if (typeof XLSX === 'undefined') { showToast('La librería de Excel aún no carga; intenta de nuevo', '#e67e22'); return; }
-  var ws = XLSX.utils.aoa_to_sheet(filas);
   var wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, hoja);
+  hojas.forEach(function(h) { XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(h.filas), h.hoja); });
   XLSX.writeFile(wb, nombre + '_' + today() + '.xlsx');
 }
-function carExportCola() {
-  var esAprobar = carTab === 'aprobar';
+function carXlsx(nombre, hoja, filas) { carXlsxHojas(nombre, [{ hoja: hoja, filas: filas }]); }
+
+function carCupoTxt(x) {
+  return x.cupo.tipo === 'numero' ? x.cupo.valor : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? x.cupo.texto : '';
+}
+
+// Cola (Por aprobar / Bloqueados): ordenada por días, de mayor a menor.
+function carFilasCola(lista, esAprobar) {
+  function dias(o) { return esAprobar ? carDias(o.creadoEn || o.fechaPedido) : carDias(o.bq && o.bq.en); }
   var filas = [['Empresa', 'N° pedido', 'Cliente', 'NIT', 'Comercial', 'Plazo', 'Total', 'Fecha pedido']
     .concat(esAprobar ? ['Creado por', 'Días esperando'] : ['Observación', 'Bloqueó', 'Bloqueado en', 'Días bloqueado'])];
-  carColaRows.forEach(function(o) {
-    filas.push([o.empresa, o.consecutivo, o.cliente, o.nit, o.comercial, o.plazo, o.valor, o.fechaPedido]
-      .concat(esAprobar ? [o.creadoPorNombre, o._dias == null ? '' : o._dias]
-        : [o.bq ? o.bq.obs : '', o.bq ? o.bq.por : '', o.bq ? carFmtTs(o.bq.en) : '', o._dias == null ? '' : o._dias]));
-  });
-  carXlsx(esAprobar ? 'cartera_por_aprobar' : 'cartera_bloqueados', esAprobar ? 'Por aprobar' : 'Bloqueados', filas);
+  lista.map(function(o) { return { o: o, d: dias(o) }; })
+    .sort(function(a, b) { return (b.d == null ? -1 : b.d) - (a.d == null ? -1 : a.d); })
+    .forEach(function(r) {
+      var o = r.o;
+      filas.push([o.empresa, o.consecutivo, o.cliente, o.nit, o.comercial, o.plazo, o.valor, o.fechaPedido]
+        .concat(esAprobar ? [o.creadoPorNombre, r.d == null ? '' : r.d]
+          : [o.bq ? o.bq.obs : '', o.bq ? o.bq.por : '', o.bq ? carFmtTs(o.bq.en) : '', r.d == null ? '' : r.d]));
+    });
+  return filas;
 }
-function carExportResumen() {
+function carFilasClibloq(lista) {
+  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Última modificación', 'Modificó']];
+  lista.forEach(function(x) {
+    filas.push([x.cliente, x.nit, x.empresa, carCupoTxt(x), x.plazo, x.pedidosVigentes, x.valorVigente, x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
+  });
+  return filas;
+}
+function carFilasClisus(lista) {
+  var filas = [['Cliente', 'NIT', 'Empresa', 'Cupo', 'Plazo', 'Pedidos vigentes', 'Valor vigente', 'Observación', 'Última modificación', 'Modificó']];
+  lista.forEach(function(x) {
+    filas.push([x.cliente, x.nit, x.empresa, carCupoTxt(x), x.plazo, x.pedidosVigentes, x.valorVigente, x.obs || '', x.modEn ? carFmtTs(x.modEn) : '', x.modPor || '']);
+  });
+  return filas;
+}
+function carFilasClibit(lista) {
+  var filas = [['Cliente', 'NIT', 'Empresa(s)', 'Estado actual', 'N° contactos', 'Último contacto', 'Tipo', 'Última gestión']];
+  lista.forEach(function(x) {
+    var estTxt = carEstadoCliente(x.regs) || 'No está en Clientes';
+    if (estTxt === CAR_BLOQ) estTxt += ' (' + carEmpresasConEstado(x.regs, CAR_BLOQ).map(getSigla).join(', ') + ')';
+    filas.push([x.cliente, x.nit, x.empresas.join(' / '), estTxt, x.total,
+      x.ultFecha ? fmtDate(x.ultFecha) : '', x.ultTipo || '', x.ultGestion || '']);
+  });
+  return filas;
+}
+function carFilasResumen() {
   var bloq = carOrders.filter(function(o) { return o.estado2 === CAR_BLOQ; });
   var filas = [['Cliente', 'NIT', 'Pedidos bloqueados', 'Valor', 'Bloqueado desde', 'Estado del cliente']];
   carBloqueadosPorCliente(bloq).forEach(function(x) {
@@ -1245,7 +1259,29 @@ function carExportResumen() {
   carDecisiones30d().forEach(function(d) {
     filas.push([carFmtTs(d.fecha), d.tipo, d.o.empresa, d.o.consecutivo, d.o.cliente, d.o.valorTotal, d.quien || '', d.tardo, d.nota || '']);
   });
-  carXlsx('cartera_resumen', 'Resumen', filas);
+  return filas;
+}
+
+function carExportCola() {
+  var esAprobar = carTab === 'aprobar';
+  carXlsx(esAprobar ? 'cartera_por_aprobar' : 'cartera_bloqueados', esAprobar ? 'Por aprobar' : 'Bloqueados', carFilasCola(carColaRows, esAprobar));
+}
+function carExportResumen() {
+  carXlsx('cartera_resumen', 'Resumen', carFilasResumen());
+}
+
+// Informe completo: una hoja por pestaña, SIN los filtros de pantalla.
+function carExportTodo() {
+  var pend = carOrders.filter(function(o) { return o.estado2 === CAR_PEND; });
+  var bloq = carOrders.filter(function(o) { return o.estado2 === CAR_BLOQ; });
+  carXlsxHojas('cartera_completo', [
+    { hoja: 'Por aprobar',         filas: carFilasCola(pend, true) },
+    { hoja: 'Bloqueados',          filas: carFilasCola(bloq, false) },
+    { hoja: 'Clientes bloqueados', filas: carFilasClibloq(carClientesBloqueados()) },
+    { hoja: 'Suspendidos',         filas: carFilasClisus(carClientesSuspendidos()) },
+    { hoja: 'Con bitácora',        filas: carFilasClibit(carClientesConBitacora()) },
+    { hoja: 'Resumen',             filas: carFilasResumen() }
+  ]);
 }
 
 // Escape cierra el modal de más arriba.
