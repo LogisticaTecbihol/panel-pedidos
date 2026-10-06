@@ -18,7 +18,7 @@ var CAR_PED_COLS = 'id,Nombre_Empresa,Consecutivo,Cliente,NIT,Comercial,Fecha_Pe
   'Producto,Presentacion,Cantidad,Cant_Entregada,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,' +
   'creado_por,creado_por_nombre,creado_en,' +
   'Bloqueo_Observacion,Bloqueo_Por_Nombre,Bloqueo_En,Desbloqueo_Por_Nombre,Desbloqueo_En,' +
-  'Aprobacion_Por_Nombre,Aprobacion_En,Aprobacion_Nota';
+  'Aprobacion_Por_Nombre,Aprobacion_En,Aprobacion_Nota,Revision_Por_Nombre,Revision_En,Revision_Nota';
 var CAR_CLI_COLS = 'id,Cliente,Identificacion,Tipo_Identificacion,Nombre_Empresa,Estado,Observaciones_Cartera,Cupo_Credito,Plazo_Pago,Cliente_Nuevo,Estado_Documentacion,Observaciones_Documentacion,modificado_por_nombre,modificado_en';
 
 var carOrders = [];        // pedidos agrupados (uno por empresa+consecutivo+cliente)
@@ -166,6 +166,10 @@ function carBuildOrders(ped) {
     var aps = L.filter(function(l) { return l.Aprobacion_Por_Nombre || l.Aprobacion_En; })
       .sort(function(a, b) { return String(b.Aprobacion_En || '').localeCompare(String(a.Aprobacion_En || '')); });
     o.ap = aps.length ? { por: aps[0].Aprobacion_Por_Nombre || '', en: aps[0].Aprobacion_En || '', nota: aps[0].Aprobacion_Nota || '' } : null;
+    // "Revisado – en espera": solo aplica mientras el pedido siga pendiente de aprobación.
+    var revs = o.estado2 !== CAR_PEND ? [] : L.filter(function(l) { return l.Revision_En; })
+      .sort(function(a, b) { return String(b.Revision_En || '').localeCompare(String(a.Revision_En || '')); });
+    o.rev = revs.length ? { por: revs[0].Revision_Por_Nombre || '', en: revs[0].Revision_En || '', nota: revs[0].Revision_Nota || '' } : null;
     return o;
   });
 }
@@ -400,6 +404,15 @@ function carRenderStats(pend, bloq) {
   document.getElementById('s-cli-sin-cupo').textContent = Object.keys(gruposSinCupo).length + ' de ' + Object.keys(gruposTotal).length + ' sin cupo definido';
 }
 
+// Celda "Revisión" de la cola Por aprobar: etiqueta + observación si Cartera ya
+// lo dejó "Revisado – en espera"; si no, "sin revisar".
+function carRevisionTd(o) {
+  if (!o.rev) return '<td><span class="tag-sin">sin revisar</span></td>';
+  var quien = (o.rev.por ? escHtml(o.rev.por) + ' · ' : '') + escHtml(carFmtTs(o.rev.en));
+  return '<td><span class="badge b-revision-espera" title="Revisado por ' + quien + '">⏸ Revisado – en espera</span>' +
+    '<div class="car-obs" style="color:#3730a3" title="' + escHtml(o.rev.nota) + '">💬 ' + escHtml(o.rev.nota) + '</div></td>';
+}
+
 // ── Cola (Por aprobar / Bloqueados) ──────────────────────────
 function carRenderCola(base) {
   var esAprobar = carTab === 'aprobar';
@@ -419,11 +432,11 @@ function carRenderCola(base) {
   var puede = esAprobar ? carPuedeAprobar() : carPuedeBloquear();
   var head = (puede ? '<th style="width:32px"><input type="checkbox" id="car-chk-all" onclick="carToggleAll(this.checked)" title="Seleccionar todo"></th>' : '') +
     '<th>Empresa</th><th>N°</th><th>Cliente</th><th>NIT</th><th>Comercial</th><th>Plazo</th><th style="text-align:right">Total</th>' +
-    (esAprobar ? '<th>Creado por</th><th>Esperando</th>' : '<th>Observación</th><th>Bloqueó</th><th>Bloqueado</th>') +
+    (esAprobar ? '<th>Creado por</th><th>Esperando</th><th>Revisión</th>' : '<th>Observación</th><th>Bloqueó</th><th>Bloqueado</th>') +
     '<th></th>';
   document.getElementById('cola-head').innerHTML = head;
 
-  var cols = (puede ? 1 : 0) + 8 + (esAprobar ? 2 : 3);
+  var cols = (puede ? 1 : 0) + 8 + 3;
   if (!lista.length) {
     document.getElementById('cola-body').innerHTML = '<tr><td colspan="' + cols + '" style="text-align:center;color:#a0aec0;padding:26px">' +
       (base.length ? 'Ningún pedido coincide con los filtros.' : (esAprobar ? 'No hay pedidos pendientes de aprobación. 🎉' : 'No hay pedidos bloqueados por cartera.')) + '</td></tr>';
@@ -437,7 +450,7 @@ function carRenderCola(base) {
     var chk = puede ? '<td onclick="event.stopPropagation()"><input type="checkbox" data-key="' + k + '" ' + (carSel[o.key] ? 'checked' : '') +
       ' onclick="carToggleSel(this.getAttribute(\'data-key\'), this.checked)"></td>' : '';
     var extra = esAprobar
-      ? '<td>' + escHtml(o.creadoPorNombre || '—') + '</td><td>' + carDiasHtml(o._dias) + '</td>'
+      ? '<td>' + escHtml(o.creadoPorNombre || '—') + '</td><td>' + carDiasHtml(o._dias) + '</td>' + carRevisionTd(o)
       : '<td><div class="car-obs" title="' + escHtml(o.bq && o.bq.obs || '') + '">' + (o.bq && o.bq.obs ? '💬 ' + escHtml(o.bq.obs) : '<span class="tag-sin">sin observación</span>') + '</div></td>' +
         '<td>' + escHtml(o.bq && o.bq.por || '—') + '</td><td>' + carDiasHtml(o._dias) + '</td>';
     return '<tr class="' + cls + '" style="cursor:pointer" data-key="' + k + '" onclick="carOpenCtx(this.getAttribute(\'data-key\'))">' + chk +
@@ -806,6 +819,7 @@ function carUpdateBulk() {
   var esAprobar = carTab === 'aprobar';
   document.getElementById('bulk-aprobar').style.display = esAprobar ? '' : 'none';
   document.getElementById('bulk-rechazar').style.display = esAprobar ? '' : 'none';
+  document.getElementById('bulk-revision').style.display = esAprobar ? '' : 'none';
   document.getElementById('bulk-liberar').style.display = esAprobar ? 'none' : '';
 }
 function carBulk(kind) {
@@ -856,7 +870,10 @@ function carRenderCtx() {
     '<span>' + carBadge(o.estado2) + '</span>' +
     '<span>🧾 ' + fmtMoney(o.valor) + '</span>' +
     '<span>👤 ' + escHtml(o.comercial || 'sin comercial') + '</span>' +
-    '<span>📅 ' + escHtml(fmtDate(o.fechaPedido)) + '</span>';
+    '<span>📅 ' + escHtml(fmtDate(o.fechaPedido)) + '</span>' +
+    (o.rev ? '<span class="badge b-revision-espera">⏸ Revisado – en espera</span>' +
+      '<span style="flex-basis:100%;font-weight:600">💬 ' + escHtml(o.rev.nota) + ' — ' +
+      escHtml(o.rev.por || '') + (o.rev.en ? ' · ' + escHtml(carFmtTs(o.rev.en)) : '') + '</span>' : '');
 
   // ── Exposición por empresa ──
   var abiertos = carAbiertosDelCliente(o);
@@ -977,6 +994,8 @@ function carRenderCtx() {
   var acc = '';
   if (o.estado2 === CAR_PEND && carPuedeAprobar()) {
     acc += '<button class="btn-aprobar-pedido" onclick="carOpenAct(\'aprobar\',[carCtxKey])">✅ Aprobar</button>' +
+           '<button class="btn-revision-pedido" onclick="carOpenAct(\'revision\',[carCtxKey])" title="Ya lo revisaste pero todavía no lo apruebas: deja la razón para el comercial">' +
+             (o.rev ? '✏️ Actualizar observación' : '⏸ Revisado, en espera') + '</button>' +
            '<button class="btn-rechazar-pedido" onclick="carOpenAct(\'rechazar\',[carCtxKey])">❌ Rechazar</button>';
   } else if (o.estado2 === CAR_BLOQ && carPuedeBloquear()) {
     acc += '<button class="btn-aprobar-pedido" onclick="carOpenAct(\'liberar\',[carCtxKey])">🔓 Liberar</button>';
@@ -988,6 +1007,7 @@ function carRenderCtx() {
 // ── Modal de acción ──────────────────────────────────────────
 var CAR_ACT_CFG = {
   aprobar:  { titulo: '✅ Aprobar pedido', color: 'linear-gradient(135deg,#15803d,#22c55e)', ok: '✅ Aprobar', notaLabel: 'Nota (opcional)', notaReq: false, exito: '✅ Pedido aprobado: ya se le puede dar trámite' },
+  revision: { titulo: '⏸ Revisado – en espera', color: 'linear-gradient(135deg,#b45309,#f59e0b)', ok: '⏸ Dejar en espera', notaLabel: 'Observación (obligatoria): ¿por qué todavía no se aprueba?', notaReq: true, exito: '⏸ Pedido «Revisado – en espera»: el comercial verá la observación' },
   rechazar: { titulo: '❌ Rechazar pedido', color: 'linear-gradient(135deg,#b91c1c,#ef4444)', ok: '❌ Rechazar', notaLabel: 'Motivo del rechazo (obligatorio)', notaReq: true, exito: '❌ Pedido rechazado (Anulado)' },
   bloquear: { titulo: '🔒 Bloquear por cartera', color: 'linear-gradient(135deg,#b91c1c,#ef4444)', ok: '🔒 Bloquear', notaLabel: 'Observación del bloqueo (obligatoria)', notaReq: true, exito: '🔒 Pedido bloqueado por cartera' },
   liberar:  { titulo: '🔓 Liberar del bloqueo', color: 'linear-gradient(135deg,#15803d,#22c55e)', ok: '🔓 Liberar', notaLabel: '', notaReq: false, exito: '🔓 Pedido liberado de cartera' }
@@ -997,7 +1017,7 @@ function carOpenAct(kind, keys) {
   var cfg = CAR_ACT_CFG[kind];
   var ords = keys.map(function(k) { return carByKey[k]; }).filter(Boolean);
   if (!cfg || !ords.length) return;
-  if ((kind === 'aprobar' || kind === 'rechazar') && !carPuedeAprobar()) { showToast('Solo Cartera o administración pueden resolver aprobaciones', '#e74c3c'); return; }
+  if ((kind === 'aprobar' || kind === 'rechazar' || kind === 'revision') && !carPuedeAprobar()) { showToast('Solo Cartera o administración pueden resolver aprobaciones', '#e74c3c'); return; }
   if ((kind === 'bloquear' || kind === 'liberar') && !carPuedeBloquear()) { showToast('Solo Cartera, editor o administración pueden bloquear/liberar', '#e74c3c'); return; }
 
   carAct = { kind: kind, keys: ords.map(function(o) { return o.key; }), busy: false };
@@ -1015,9 +1035,11 @@ function carOpenAct(kind, keys) {
   var notaWrap = document.getElementById('act-nota-wrap');
   notaWrap.style.display = cfg.notaLabel ? 'block' : 'none';
   document.getElementById('act-nota-label').textContent = cfg.notaLabel;
-  document.getElementById('act-nota').value = '';
+  // Al actualizar la observación de UN pedido ya en espera, se parte de la anterior.
+  document.getElementById('act-nota').value = (kind === 'revision' && !multi && ords[0].rev) ? ords[0].rev.nota : '';
   document.getElementById('act-nota').placeholder = kind === 'bloquear' ? 'Por qué se bloquea (mora, cupo excedido, documentos pendientes…)' :
-    kind === 'rechazar' ? 'Por qué se rechaza el pedido' : '';
+    kind === 'rechazar' ? 'Por qué se rechaza el pedido' :
+    kind === 'revision' ? 'Qué falta o qué debe resolver el comercial (RUT, cámara de comercio, referencias, cupo…)' : '';
 
   // Cupo y plazo: solo al aprobar UN pedido cuyo cliente sea nuevo.
   var regs = !multi ? carClientesDe(ords[0]) : [];
@@ -1042,6 +1064,7 @@ function carOpenAct(kind, keys) {
   else if (kind === 'bloquear') w = 'Mientras esté bloqueado no se podrá registrar entrega de producto.';
   else if (kind === 'liberar') w = 'Quedará en estado "Abierto". La observación del bloqueo se conserva como historial.';
   else if (kind === 'aprobar') w = 'Al aprobar queda en "Abierto" y ya se le puede dar trámite.';
+  else if (kind === 'revision') w = 'El pedido sigue pendiente de aprobación (no se le puede dar trámite). El comercial y los remisionadores verán esta observación y recibirán un aviso.';
   warn.textContent = w;
   warn.style.display = w ? 'block' : 'none';
 
@@ -1060,6 +1083,12 @@ function carCloseAct() {
 // Ejecuta la acción sobre UN pedido. Lanza Error si falla.
 async function carDoOne(kind, o, nota, opts) {
   if (!o.ids.length) throw new Error('No se pudieron identificar las líneas del pedido');
+  if (kind === 'revision') {
+    var rr = await apiPost({ action: 'marcarRevisionPedido', pedido_ids: o.ids, nota: nota });
+    if (!rr || rr.ok === false) throw new Error((rr && rr.error) || 'Error al actualizar');
+    carNotificarRevision(o, nota);
+    return '';
+  }
   if (kind === 'aprobar' || kind === 'rechazar') {
     var r = await apiPost({ action: 'resolverAprobacionPedido', pedido_ids: o.ids, aprobar: kind === 'aprobar', nota: nota });
     if (!r || r.ok === false) throw new Error((r && r.error) || 'Error al actualizar');
@@ -1101,12 +1130,34 @@ async function carNotificarCreador(o, aprobar, nota) {
   } catch (e) { /* silencioso */ }
 }
 
+// Aviso por la campana cuando un pedido queda "Revisado – en espera": a quien lo
+// creó (el comercial) y a todos los remisionadores activos, con la razón. No
+// bloquea el flujo si falla.
+async function carNotificarRevision(o, nota) {
+  if (typeof NOTIF === 'undefined' || !NOTIF.notifyUsers) return;
+  try {
+    var ids = [];
+    if (o.creadoPor) ids.push(o.creadoPor);
+    if (NOTIF.getDirectorio) {
+      var dir = await NOTIF.getDirectorio();
+      (dir || []).forEach(function(u) { if (u.activo && u.rol === 'remisionador') ids.push(u.id); });
+    }
+    ids = ids.filter(function(id, i) { return id && ids.indexOf(id) === i; });
+    if (!ids.length) return;
+    await NOTIF.notifyUsers({
+      para_ids: ids, modulo: 'pedidos', referencia: String(o.consecutivo || ''),
+      titulo: '⏸ Pedido revisado – en espera: ' + getSigla(o.empresa) + ' #' + o.consecutivo + ' — ' + o.cliente,
+      mensaje: 'Cartera lo revisó pero aún no lo aprueba. Motivo: ' + (nota || 'sin motivo')
+    });
+  } catch (e) { /* silencioso */ }
+}
+
 async function carConfirmAct() {
   var st = carAct;
   if (!st || st.busy) return;
   var cfg = CAR_ACT_CFG[st.kind];
   var nota = document.getElementById('act-nota').value.trim();
-  if (cfg.notaReq && !nota) { showToast('Escribe ' + (st.kind === 'bloquear' ? 'la observación del bloqueo' : 'el motivo del rechazo'), '#e74c3c'); return; }
+  if (cfg.notaReq && !nota) { showToast('Escribe ' + (st.kind === 'bloquear' ? 'la observación del bloqueo' : st.kind === 'revision' ? 'la observación: la razón por la que todavía no se aprueba' : 'el motivo del rechazo'), '#e74c3c'); return; }
 
   var opts = {};
   if (st.kind === 'aprobar' && st.keys.length === 1 && document.getElementById('act-credito').style.display !== 'none') {
@@ -1142,7 +1193,7 @@ async function carConfirmAct() {
   var okN = resultados.filter(function(r) { return r.ok; }).length;
   var fallos = resultados.filter(function(r) { return !r.ok; });
   var avisos = resultados.filter(function(r) { return r.ok && r.aviso; });
-  var verbo = { aprobar: 'aprobado(s)', rechazar: 'rechazado(s)', bloquear: 'bloqueado(s)', liberar: 'liberado(s)' }[st.kind];
+  var verbo = { aprobar: 'aprobado(s)', rechazar: 'rechazado(s)', revision: 'dejado(s) en espera', bloquear: 'bloqueado(s)', liberar: 'liberado(s)' }[st.kind];
 
   if (resultados.length === 1) {
     if (okN) showToast(avisos.length ? '⚠️ ' + avisos[0].aviso : cfg.exito, avisos.length ? '#e67e22' : undefined);
@@ -1342,13 +1393,14 @@ function carCupoTxt(x) {
 function carFilasCola(lista, esAprobar) {
   function dias(o) { return esAprobar ? carDias(o.creadoEn || o.fechaPedido) : carDias(o.bq && o.bq.en); }
   var filas = [['Empresa', 'N° pedido', 'Cliente', 'NIT', 'Comercial', 'Plazo', 'Total', 'Fecha pedido']
-    .concat(esAprobar ? ['Creado por', 'Días esperando'] : ['Observación', 'Bloqueó', 'Bloqueado en', 'Días bloqueado'])];
+    .concat(esAprobar ? ['Creado por', 'Días esperando', 'Revisión', 'Observación de la revisión', 'Revisó', 'Revisado en'] : ['Observación', 'Bloqueó', 'Bloqueado en', 'Días bloqueado'])];
   lista.map(function(o) { return { o: o, d: dias(o) }; })
     .sort(function(a, b) { return (b.d == null ? -1 : b.d) - (a.d == null ? -1 : a.d); })
     .forEach(function(r) {
       var o = r.o;
       filas.push([o.empresa, o.consecutivo, o.cliente, o.nit, o.comercial, o.plazo, o.valor, o.fechaPedido]
-        .concat(esAprobar ? [o.creadoPorNombre, r.d == null ? '' : r.d]
+        .concat(esAprobar ? [o.creadoPorNombre, r.d == null ? '' : r.d, o.rev ? 'Revisado – en espera' : 'Sin revisar',
+            o.rev ? o.rev.nota : '', o.rev ? o.rev.por : '', o.rev ? carFmtTs(o.rev.en) : '']
           : [o.bq ? o.bq.obs : '', o.bq ? o.bq.por : '', o.bq ? carFmtTs(o.bq.en) : '', r.d == null ? '' : r.d]));
     });
   return filas;

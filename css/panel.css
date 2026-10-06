@@ -214,6 +214,9 @@ tbody tr.row-pendiente-aprobacion.row-atrasada > td:first-child { box-shadow: in
 }
 .btn-aprobar-pedido  { border: 1px solid #16a34a; background: #f0fdf4; color: #15803d; }
 .btn-rechazar-pedido { border: 1px solid #dc2626; background: #fef2f2; color: #b91c1c; }
+/* Estado intermedio "Revisado – en espera": Cartera ya lo miró pero aún no lo aprueba */
+.btn-revision-pedido { border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 0.8rem; font-weight: 700; white-space: nowrap; border: 1px solid #b45309; background: #fffbeb; color: #b45309; }
+.rev-nota { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; font-size: 0.68rem; color: #92400e; }
 
 /* ── Pedidos atrasados (abiertos que pasaron su fecha de compromiso) ── */
 tbody tr.row-atrasada > td { background: #fff4ed; }
@@ -332,6 +335,7 @@ tbody tr:last-child td { border-bottom: none; }
 .b-anulado   { background: #fce4ec; color: #c62828; }
 .b-bloqueado { background: #fff3e0; color: #e65100; }
 .b-pendiente-aprob { background: #fef3c7; color: #92400e; }
+.b-revision-espera { background: #e0e7ff; color: #3730a3; }
 .b-entregado-prov { background: #e0f2f1; color: #00695c; }
 
 /* ── ACTION BUTTONS ── */

@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#1a5276">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
 <title>Cartera – Sistema de Gestión Logística</title>
-<link rel="stylesheet" href="css/panel.css?v=20261006a">
+<link rel="stylesheet" href="css/panel.css?v=20261006b">
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-modulo="cartera">
@@ -111,6 +111,7 @@
       <span id="car-bulk-ct"></span>
       <span style="flex:1"></span>
       <button class="btn-aprobar-pedido" id="bulk-aprobar" onclick="carBulk('aprobar')">✅ Aprobar</button>
+      <button class="btn-revision-pedido" id="bulk-revision" onclick="carBulk('revision')">⏸ Revisado, en espera</button>
       <button class="btn-rechazar-pedido" id="bulk-rechazar" onclick="carBulk('rechazar')">❌ Rechazar</button>
       <button class="btn-aprobar-pedido" id="bulk-liberar" onclick="carBulk('liberar')">🔓 Liberar</button>
       <button class="btn-cancel" onclick="carClearSel()">Quitar selección</button>
@@ -347,9 +348,9 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261006b"></script>
+<script src="js/shared.js?v=20261006c"></script>
 <script src="js/auth.js?v=20261006a"></script>
 <script src="js/notificaciones.js?v=20261006a"></script>
-<script src="js/cartera.js?v=20261006b"></script>
+<script src="js/cartera.js?v=20261006c"></script>
 </body>
 </html>

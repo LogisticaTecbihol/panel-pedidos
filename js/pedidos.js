@@ -1322,6 +1322,22 @@ function resolverAprobacionActivo(aprobar) {
   resolverAprobacionPedido(activeIdx, aprobar, true);
 }
 
+// Línea de un pedido pendiente de aprobación que Cartera dejó "Revisado – en
+// espera" (la observación es la razón por la que todavía no se aprueba). Solo
+// aplica mientras el pedido siga pendiente.
+function _revisionLinea(lines) {
+  return (lines || []).filter(function(x) { return x.Revision_En && (x.Estado_2 || '').trim() === 'Pendiente de aprobación'; })
+    .sort(function(a, b) { return String(b.Revision_En).localeCompare(String(a.Revision_En)); })[0] || null;
+}
+function _revisionHtml(lines) {
+  var l = _revisionLinea(lines);
+  if (!l) return '';
+  return '<strong>⏸ Revisado por Cartera – en espera</strong>' +
+    '<div style="margin-top:4px">Cartera ya revisó este pedido pero todavía no lo aprueba. <u>Razón:</u> ' + escHtml(l.Revision_Nota || '(sin observación registrada)') + '</div>' +
+    '<div style="margin-top:4px;font-size:0.76rem;color:#6b7280">' + escHtml(l.Revision_Por_Nombre || 'Cartera') +
+      (l.Revision_En ? ' · ' + escHtml(_fmtAudTs(l.Revision_En)) : '') + '</div>';
+}
+
 // Rastro de la decisión de Cartera/admin (quién, cuándo, nota) en el detalle.
 function _aprobacionHtml(lines) {
   var l = (lines || []).filter(function(x) { return x.Aprobacion_Por_Nombre; })[0];
@@ -1928,6 +1944,12 @@ function renderTable() {
     var bqObsHtml = (_bqLn && _bqLn.Bloqueo_Observacion)
       ? '<div title="' + escHtml(_bqLn.Bloqueo_Observacion) + '" style="font-size:0.68rem;color:#b91c1c;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">💬 ' + escHtml(_bqLn.Bloqueo_Observacion) + '</div>'
       : '';
+    // "Revisado – en espera": Cartera ya lo miró pero aún no lo aprueba (sigue pendiente).
+    var _revLn = pendAprob ? _revisionLinea(getLinesFor(c)) : null;
+    if (_revLn) {
+      badge2 = 'b-revision-espera';
+      bqObsHtml = '<div class="rev-nota" title="' + escHtml(_revLn.Revision_Nota || '') + '">💬 ' + escHtml(_revLn.Revision_Nota || '') + '</div>';
+    }
     var otd = c._cOtd || { clase: 'sin_compromiso', dias: null };
     var _apaListRow = apartadosPorPedido[_keyPed(c.Nombre_Empresa, c.Consecutivo, c.Cliente)] || [];
     var _trCls = [];
@@ -1993,7 +2015,8 @@ function renderTable() {
       '</td>' +
       '<td><div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:' + pct + '%"></div></div><div class="prog-pct">' + pct + '%</div></div></td>' +
       '<td><span class="badge ' + badge + '">' + escHtml(est) + '</span></td>' +
-      '<td><span class="badge ' + badge2 + '">' + escHtml(est2) + '</span>' + bqObsHtml + '</td>' +
+      '<td><span class="badge ' + badge2 + '"' + (_revLn ? ' title="Revisado por ' + escHtml((_revLn.Revision_Por_Nombre || 'Cartera') + (_revLn.Revision_En ? ' · ' + _fmtAudTs(_revLn.Revision_En) : '')) + '"' : '') + '>' +
+        escHtml(_revLn ? '⏸ Revisado – en espera' : est2) + '</span>' + bqObsHtml + '</td>' +
       '<td><div style="display:flex;gap:6px;align-items:center">' +
         '<button class="btn-ver ' + (done?'done':'') + '" onclick="openDetail(' + idx + ')">' +
           (lineCount === 0 ? '👁 Ver' : done ? '✓ Entregado' : '📦 Ver pedido') +
@@ -2151,6 +2174,12 @@ async function openDetail(idx) {
   }
   var _paBanner = document.getElementById('md-pendiente-aprobacion');
   if (_paBanner) _paBanner.style.display = _detailPendienteAprobacion ? 'block' : 'none';
+  var _paRev = document.getElementById('md-pend-revision');
+  if (_paRev) {
+    var _paRevHtml = _detailPendienteAprobacion ? _revisionHtml(lines) : '';
+    _paRev.innerHTML = _paRevHtml;
+    _paRev.style.display = _paRevHtml ? 'block' : 'none';
+  }
   var _paAcc = document.getElementById('md-pend-acciones');
   if (_paAcc) _paAcc.style.display = (_detailPendienteAprobacion && AUTH.canApproveNuevoCliente()) ? 'flex' : 'none';
   var _bqDelBar = document.getElementById('md-delivery-bar');

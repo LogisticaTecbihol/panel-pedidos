@@ -767,6 +767,18 @@ async function _apiPostCore(body) {
       return res.data || { ok: true };
     }
 
+    // Estado intermedio "Revisado – en espera" del pedido pendiente de aprobación:
+    // Cartera/admin lo miraron pero aún no lo aprueban; la nota es obligatoria y la
+    // ve el comercial en Pedidos. El pedido sigue 'Pendiente de aprobación'.
+    if (action === 'marcarRevisionPedido') {
+      var res = await _sb.rpc('marcar_revision_pedido', {
+        p_pedido_ids: body.pedido_ids || [],
+        p_nota: body.nota || ''
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return res.data || { ok: true };
+    }
+
     // Bloquear al cliente (ClientesUnicos.Estado) por NIT — opcional, lo
     // ofrece el panel de Pedidos tras bloquear un pedido por cartera.
     // El bloqueo es específico de la empresa del pedido (no afecta la
