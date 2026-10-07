@@ -582,6 +582,7 @@ function applyMuFilters() {
   sortMuData();
   renderMuTable();
   renderDetalleMu();
+  renderDespachosMu();
   updateMuStats();
 }
 
@@ -2890,15 +2891,15 @@ async function confirmRejectMu() {
   }
 }
 
-// ── Tabs: Solicitudes / Vista detallada ──
+// ── Tabs: Solicitudes / Vista detallada / Despachos ──
 
 // 'mu-pendientes' y 'mu-tramitadas' comparten panel-mu-solicitudes (cambian el ámbito);
-// 'mu-tramitadas' es solo lectura. 'mu-detalle' es su propio panel.
+// 'mu-tramitadas' es solo lectura. 'mu-detalle' y 'mu-despachos' son su propio panel.
 function switchMuTab(tab) {
   var esLista = (tab === 'mu-pendientes' || tab === 'mu-tramitadas');
   if (esLista) muScope = tab === 'mu-tramitadas' ? 'tramitadas' : 'pendientes';
 
-  ['mu-pendientes', 'mu-tramitadas', 'mu-detalle'].forEach(function(t) {
+  ['mu-pendientes', 'mu-tramitadas', 'mu-detalle', 'mu-despachos'].forEach(function(t) {
     var btn = document.getElementById('tab-' + t);
     if (btn) btn.style.background = t === tab ? '#8e44ad' : '#718096';
   });
@@ -2910,9 +2911,12 @@ function switchMuTab(tab) {
   }
   var panelDet = document.getElementById('panel-mu-detalle');
   if (panelDet) panelDet.style.display = tab === 'mu-detalle' ? 'block' : 'none';
+  var panelDesp = document.getElementById('panel-mu-despachos');
+  if (panelDesp) panelDesp.style.display = tab === 'mu-despachos' ? 'block' : 'none';
 
   if (esLista) applyMuFilters();
   if (tab === 'mu-detalle') renderDetalleMu();
+  if (tab === 'mu-despachos') abrirDespachosMu();
 }
 
 // ── Vista detallada (flat product lines) ──
@@ -3070,6 +3074,245 @@ function exportDetalleMuExcel() {
   XLSX.utils.book_append_sheet(wb, ws, 'Detalle Muestras');
   XLSX.writeFile(wb, 'Muestras_Detalle_' + today() + '.xlsx');
   showToast('Excel detalle exportado: ' + rows.length + ' líneas', '#27ae60');
+}
+
+// ── Despachos: tipo de entrega (Ruta / Envío / Comercial) ──
+//
+// Una fila por despacho = (empresa, consecutivo, remisión) de las solicitudes ya
+// despachadas (las órdenes de producción no se despachan a un cliente). El tipo se
+// guarda en TipoDespachoMuestra solo cuando alguien lo cambia; sin fila es 'Ruta'.
+// Tipos y colores: DESP_TIPOS / despTipoCss (shared.js). La lista sale de
+// filteredMu, así que respeta los filtros de arriba (empresa, responsable, …).
+
+var despachosMu = [];          // filas visibles (filtradas y ordenadas)
+var _despMuTipoMap = {};       // clave del despacho → tipo guardado
+var sortLevelsDespMu = [];
+
+function _despMuKey(d) { return [d.empresa || '', d.consecutivo || '', d.remision || ''].join('||'); }
+function _despMuTipo(d) { return _despMuTipoMap[_despMuKey(d)] || DESP_TIPO_DEFAULT; }
+
+var SORT_COLS_DESP_MU = [
+  { id:'empresa',     label:'Empresa',         fn: function(d) { return (EMPRESAS_SIGLA[d.empresa] || d.empresa || '').toLowerCase(); } },
+  { id:'consecutivo', label:'Solicitud',       fn: function(d) { return d.consecutivo || ''; } },
+  { id:'remision',    label:'Remisión',        fn: function(d) { return (d.remision || '').toLowerCase(); } },
+  { id:'responsable', label:'Responsable',     fn: function(d) { return (d.responsable || '').toLowerCase(); } },
+  { id:'municipio',   label:'Municipio',       fn: function(d) { return (d.municipio || '').toLowerCase(); } },
+  { id:'fecha',       label:'Fecha despacho',  fn: function(d) { return d.fecha || ''; } },
+  { id:'tipo',        label:'Tipo de entrega', fn: function(d) { return _despMuTipo(d).toLowerCase(); } }
+];
+
+function toggleSortDespMu(id, e) {
+  var shift = e && e.shiftKey;
+  var idx = sortLevelsDespMu.findIndex(function(l) { return l.id === id; });
+  if (shift) { if (idx >= 0) sortLevelsDespMu.splice(idx, 1); }
+  else if (idx >= 0) { if (sortLevelsDespMu[idx].dir === 'asc') sortLevelsDespMu[idx].dir = 'desc'; else sortLevelsDespMu.splice(idx, 1); }
+  else { sortLevelsDespMu.push({ id: id, dir: 'asc' }); }
+  renderDespachosMu();
+}
+
+function clearSortDespMu() { sortLevelsDespMu = []; renderDespachosMu(); }
+
+function _cmpDespMu(a, b) {
+  return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
+}
+
+function applySortDespMu(rows) {
+  var out = rows.slice();
+  if (!sortLevelsDespMu.length) {
+    // Sin orden elegido: los despachos más recientes primero.
+    return out.sort(function(a, b) { return _cmpDespMu(b.fecha || '', a.fecha || '') || _cmpDespMu(b.consecutivo, a.consecutivo); });
+  }
+  return out.sort(function(a, b) {
+    for (var si = 0; si < sortLevelsDespMu.length; si++) {
+      var lvl = sortLevelsDespMu[si];
+      var col = SORT_COLS_DESP_MU.filter(function(c) { return c.id === lvl.id; })[0];
+      if (!col) continue;
+      var cmp = _cmpDespMu(col.fn(a), col.fn(b));
+      if (cmp !== 0) return lvl.dir === 'asc' ? cmp : -cmp;
+    }
+    return 0;
+  });
+}
+
+function renderDespMuHeader() {
+  var cols = [{ label:'#', id:null, style:'width:30px' }];
+  SORT_COLS_DESP_MU.forEach(function(c) { cols.push({ label: c.label, id: c.id }); });
+  cols.push({ label:'Acción', id:null, style:'width:90px' });
+
+  document.getElementById('dmu-head').innerHTML = cols.map(function(col) {
+    var style = col.style ? ' style="' + col.style + '"' : '';
+    if (!col.id) return '<th' + style + '>' + col.label + '</th>';
+    var lvlIdx = sortLevelsDespMu.findIndex(function(l) { return l.id === col.id; });
+    var active = lvlIdx >= 0;
+    var cls = 'sortable' + (active ? (sortLevelsDespMu[lvlIdx].dir === 'asc' ? ' sort-asc' : ' sort-desc') : '');
+    var badge = sortLevelsDespMu.length > 1 && active ? '<span class="sort-badge">' + (lvlIdx + 1) + '</span>' : '';
+    return '<th class="' + cls + '"' + style + ' title="Clic: ordenar · Shift + clic: quitar del orden" onclick="toggleSortDespMu(\'' + col.id + '\',event)">' +
+      col.label + '<span class="sort-icon"></span>' + badge + '</th>';
+  }).join('');
+
+  var btn = document.getElementById('btn-clear-sort-dmu');
+  if (btn) btn.style.display = sortLevelsDespMu.length ? 'inline-block' : 'none';
+}
+
+// Despachos de la lista de arriba: solicitudes de despacho con remisión y al menos
+// una línea Despachada. Una solicitud con varias remisiones da una fila por remisión.
+function _despMuConstruir() {
+  var map = {};
+  var order = [];
+  filteredMu.forEach(function(r) {
+    if (esOrdenProduccion(r) || r.Estado !== 'Despachada') return;
+    var rem = String(r.Remision || '').trim();
+    if (!rem) return;
+    var key = [r.Empresa || '', String(r.Consecutivo || ''), rem].join('||');
+    if (!map[key]) {
+      map[key] = {
+        id: r.id, empresa: r.Empresa || '', consecutivo: String(r.Consecutivo || ''), remision: rem,
+        responsable: r.Responsable || '', municipio: r.Municipio || '', fecha: '', nProds: 0
+      };
+      order.push(key);
+    }
+    map[key].nProds++;
+    if (!map[key].fecha && r.Fecha_Despacho) map[key].fecha = String(r.Fecha_Despacho).slice(0, 10);
+  });
+  return order.map(function(k) { return map[k]; });
+}
+
+async function cargarTiposDespachoMu() {
+  try {
+    var res = await _fetchAllRows('TipoDespachoMuestra', 'empresa,consecutivo,remision,tipo');
+    if (res.error) throw res.error;
+    _despMuTipoMap = {};
+    (res.data || []).forEach(function(r) { _despMuTipoMap[_despMuKey(r)] = r.tipo; });
+  } catch (e) { console.warn('No se pudo cargar el tipo de entrega de las muestras:', e); }
+}
+
+async function abrirDespachosMu() {
+  var body = document.getElementById('dmu-body');
+  if (body && !body.innerHTML) body.innerHTML = '<tr><td colspan="9" class="empty">Cargando despachos…</td></tr>';
+  await cargarTiposDespachoMu();
+  renderDespachosMu();
+}
+
+function renderDespachosMu() {
+  var panel = document.getElementById('panel-mu-despachos');
+  if (!panel || panel.style.display === 'none') return;
+  try {
+    renderDespMuHeader();
+    var tipoEl = document.getElementById('dmu-f-tipo');
+    var remEl = document.getElementById('dmu-f-remision');
+    var desdeEl = document.getElementById('dmu-f-desde');
+    var hastaEl = document.getElementById('dmu-f-hasta');
+    var tipoF = tipoEl.value;
+    var remF = remEl.value.toLowerCase().trim();
+    var desde = desdeEl.value;
+    var hasta = hastaEl.value;
+
+    var todos = _despMuConstruir();
+    var filtrados = todos.filter(function(d) {
+      if (tipoF && _despMuTipo(d) !== tipoF) return false;
+      if (remF && d.remision.toLowerCase().indexOf(remF) < 0) return false;
+      if (desde || hasta) {
+        if (!d.fecha) return false;
+        if (desde && d.fecha < desde) return false;
+        if (hasta && d.fecha > hasta) return false;
+      }
+      return true;
+    });
+    despachosMu = applySortDespMu(filtrados);
+
+    var filtrando = !!(tipoF || remF || desde || hasta);
+    document.getElementById('dmu-count').textContent = filtrando
+      ? '(' + despachosMu.length + ' de ' + todos.length + ' remisiones)'
+      : '(' + despachosMu.length + ' remisiones)';
+    [[tipoEl, tipoF], [remEl, remF]].forEach(function(p) {
+      p[0].style.borderColor = p[1] ? '#8e44ad' : '#cbd5e0';
+      p[0].style.fontWeight = p[1] ? '700' : '400';
+    });
+
+    var tbody = document.getElementById('dmu-body');
+    if (!despachosMu.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay despachos con los filtros seleccionados.</td></tr>';
+      return;
+    }
+
+    var canSetTipo = AUTH.canSetTipoDespacho();
+    tbody.innerHTML = despachosMu.map(function(d, i) {
+      var sigla = EMPRESAS_SIGLA[d.empresa] || d.empresa || '—';
+      var siglaCls = 'sigla-' + (EMPRESAS_SIGLA[d.empresa] || 'DEFAULT');
+      var tipo = _despMuTipo(d);
+      var tipoCell = canSetTipo
+        ? '<select class="dmu-tipo" data-idx="' + i + '" onchange="onDespMuTipoChange(this)" style="font-size:0.78rem;padding:3px 6px;border-radius:5px;font-weight:600;' + despTipoCss(tipo) + '">' +
+            DESP_TIPOS.map(function(t) { return '<option value="' + t + '"' + (t === tipo ? ' selected' : '') + '>' + t + '</option>'; }).join('') +
+          '</select>'
+        : '<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:0.76rem;font-weight:600;' + despTipoCss(tipo) + '">' + escHtml(tipo) + '</span>';
+      return '<tr>' +
+        '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+        '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
+        '<td style="font-size:0.82rem">' + escHtml(d.consecutivo || '—') + '</td>' +
+        '<td style="font-size:0.82rem">' + escHtml(d.remision) + '</td>' +
+        '<td style="font-size:0.82rem">' + escHtml(d.responsable || '—') + '</td>' +
+        '<td style="font-size:0.82rem">' + escHtml(d.municipio || '—') + '</td>' +
+        '<td style="font-size:0.82rem">' + fmtDate(d.fecha) + '</td>' +
+        '<td style="white-space:nowrap">' + tipoCell + '</td>' +
+        '<td><button class="btn-export" style="background:#8e44ad;font-size:0.76rem;padding:4px 10px" onclick="viewMuestra(' + d.id + ')">👁 Ver</button></td>' +
+      '</tr>';
+    }).join('');
+  } catch (err) {
+    console.error('Error en renderDespachosMu:', err);
+    showToast('Error al renderizar despachos: ' + err.message, '#e74c3c');
+  }
+}
+
+async function onDespMuTipoChange(el) {
+  var d = despachosMu[Number(el.dataset.idx)];
+  if (!d) return;
+  var nuevo = el.value;
+  var key = _despMuKey(d);
+  var previo = _despMuTipoMap[key] || DESP_TIPO_DEFAULT;
+  if (nuevo === previo) return;
+
+  el.disabled = true;
+  try {
+    var res = await _sb.from('TipoDespachoMuestra').upsert({
+      empresa: d.empresa,
+      consecutivo: d.consecutivo,
+      remision: d.remision,
+      tipo: nuevo
+    }, { onConflict: 'empresa,consecutivo,remision' });
+    if (res.error) throw res.error;
+    _despMuTipoMap[key] = nuevo;
+    el.style.cssText += despTipoCss(nuevo);
+    showToast('Despacho ' + d.remision + ': ' + nuevo, '#27ae60');
+  } catch (e) {
+    el.value = previo;
+    showToast('Error al guardar el tipo de entrega: ' + (e.message || e), '#e74c3c');
+  } finally {
+    el.disabled = false;
+  }
+}
+
+// Excel de la pestaña tal como se ve: mismas filas (filtros de arriba y de la
+// pestaña), mismo orden y mismas columnas.
+function exportDespachosMuExcel() {
+  var rows = despachosMu || [];
+  if (!rows.length) { showToast('No hay despachos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(d) {
+    return {
+      'Empresa': EMPRESAS_SIGLA[d.empresa] || d.empresa || '',
+      'Solicitud': d.consecutivo || '',
+      'Remisión': d.remision || '',
+      'Responsable': d.responsable || '',
+      'Municipio': d.municipio || '',
+      'Fecha despacho': d.fecha ? fmtDate(d.fecha) : '',
+      'Tipo de entrega': _despMuTipo(d)
+    };
+  });
+  var ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{wch:12},{wch:10},{wch:16},{wch:22},{wch:18},{wch:14},{wch:16}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Despachos');
+  XLSX.writeFile(wb, 'Muestras_Despachos_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + rows.length + ' remisiones', '#27ae60');
 }
 
 // ── Adjuntos Muestras (Supabase Storage) ──

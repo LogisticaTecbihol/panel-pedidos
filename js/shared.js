@@ -2816,6 +2816,22 @@ function debounce(fn, ms) {
   return function() { clearTimeout(t); t = setTimeout(fn, ms); };
 }
 
+// ── Tipo de despacho / de entrega: Ruta | Envío | Comercial ──
+// Lo usan la pestaña Despachos de Pedidos (tabla TipoDespacho) y la de Muestras
+// (tabla TipoDespachoMuestra). Un despacho sin fila guardada es 'Ruta'.
+var DESP_TIPOS = ['Ruta', 'Envío', 'Comercial'];
+var DESP_TIPO_DEFAULT = 'Ruta';
+var DESP_TIPO_ESTILO = {
+  'Ruta':      { bg:'#f7fafc', fg:'#2d3748', bd:'#cbd5e0' },
+  'Envío':     { bg:'#ebf5fb', fg:'#1a5276', bd:'#aed6f1' },
+  'Comercial': { bg:'#fef5e7', fg:'#9c640c', bd:'#f8c471' }
+};
+
+function despTipoCss(tipo) {
+  var s = DESP_TIPO_ESTILO[tipo] || DESP_TIPO_ESTILO[DESP_TIPO_DEFAULT];
+  return 'background:' + s.bg + ';color:' + s.fg + ';border:1px solid ' + s.bd + ';';
+}
+
 // ── Auditoría: "Creado / Última modificación" (columnas creado_por_nombre,
 // creado_en, modificado_por_nombre, modificado_en en ClientesUnicos,
 // maestro_productos, ListaPrecios, InventarioFisico) ──

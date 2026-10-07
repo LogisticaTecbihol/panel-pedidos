@@ -7288,13 +7288,7 @@ var _despFacturaMap = {};
 // Tipo de despacho: tabla TipoDespacho, una fila por (empresa, consecutivo,
 // cliente, remisión) — la misma clave de la lista. Solo se guarda lo que alguien
 // cambia; un despacho sin fila es 'Ruta' (también los históricos).
-var DESP_TIPOS = ['Ruta', 'Envío', 'Comercial'];
-var DESP_TIPO_DEFAULT = 'Ruta';
-var DESP_TIPO_ESTILO = {
-  'Ruta':      { bg:'#f7fafc', fg:'#2d3748', bd:'#cbd5e0' },
-  'Envío':     { bg:'#ebf5fb', fg:'#1a5276', bd:'#aed6f1' },
-  'Comercial': { bg:'#fef5e7', fg:'#9c640c', bd:'#f8c471' }
-};
+// Tipos, valor por defecto y colores: DESP_TIPOS / DESP_TIPO_* / despTipoCss en shared.js.
 var _despTipoMap = {};
 
 function _despTipoKey(d) {
@@ -7303,11 +7297,6 @@ function _despTipoKey(d) {
 
 function _despTipo(d) {
   return _despTipoMap[_despTipoKey(d)] || DESP_TIPO_DEFAULT;
-}
-
-function _despTipoCss(tipo) {
-  var s = DESP_TIPO_ESTILO[tipo] || DESP_TIPO_ESTILO[DESP_TIPO_DEFAULT];
-  return 'background:' + s.bg + ';color:' + s.fg + ';border:1px solid ' + s.bd + ';';
 }
 
 async function onDespTipoChange(el) {
@@ -7329,7 +7318,7 @@ async function onDespTipoChange(el) {
     }, { onConflict: 'empresa,consecutivo,cliente,remision' });
     if (res.error) throw res.error;
     _despTipoMap[key] = nuevo;
-    el.style.cssText += _despTipoCss(nuevo);
+    el.style.cssText += despTipoCss(nuevo);
     showToast('Despacho ' + d.remision + ': ' + nuevo, '#27ae60');
   } catch (e) {
     el.value = previo;
@@ -7591,10 +7580,10 @@ function renderDespachos() {
       var rowCls = (d.pedidoAnulado || d.remisionAnulada) ? ' class="row-bloqueada-cartera"' : '';
       var tipo = _despTipo(d);
       var tipoCell = canSetTipo
-        ? '<select class="desp-tipo" data-idx="' + i + '" onchange="onDespTipoChange(this)" style="font-size:0.78rem;padding:3px 6px;border-radius:5px;font-weight:600;' + _despTipoCss(tipo) + '">' +
+        ? '<select class="desp-tipo" data-idx="' + i + '" onchange="onDespTipoChange(this)" style="font-size:0.78rem;padding:3px 6px;border-radius:5px;font-weight:600;' + despTipoCss(tipo) + '">' +
             DESP_TIPOS.map(function(t) { return '<option value="' + t + '"' + (t === tipo ? ' selected' : '') + '>' + t + '</option>'; }).join('') +
           '</select>'
-        : '<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:0.76rem;font-weight:600;' + _despTipoCss(tipo) + '">' + escHtml(tipo) + '</span>';
+        : '<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:0.76rem;font-weight:600;' + despTipoCss(tipo) + '">' + escHtml(tipo) + '</span>';
       return '<tr' + rowCls + '>' +
         '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
         '<td style="font-size:0.82rem;font-weight:600">' + escHtml(sig) + '</td>' +
