@@ -77,7 +77,7 @@ function _destroyChart(id) {
 
 // Gráfico mixto líneas/barras.
 // datasets: [{ label, data, color, tipo?('bar'|'line'), yAxis?('y'|'y2'), fill? }]
-// opts: { yMoney, y2, y2Money }
+// opts: { yMoney, y2, y2Money, stacked }   (stacked: apila las barras de los datasets)
 function dMixedChart(canvasId, labels, datasets, opts) {
   opts = opts || {};
   _destroyChart(canvasId);
@@ -110,6 +110,7 @@ function dMixedChart(canvasId, labels, datasets, opts) {
       grid: { color: '#edf2f7' }
     }
   };
+  if (opts.stacked) { scales.x.stacked = true; scales.y.stacked = true; }
   if (opts.y2) {
     scales.y2 = {
       beginAtZero: true, position: 'right',
@@ -407,6 +408,7 @@ async function loadDashboard() {
     dPrecioIdx = null;
     _cliNitMap = null;             // se reconstruye con el nuevo maestro
     _allOrdersCache.emp = undefined; // idem con los nuevos pedidos
+    dLegInvalidar();                 // el informe de Legalización se vuelve a pedir al abrirlo / repintarlo
     dLoadedAt = new Date();
 
     // Snapshot de existencias — mismo cálculo que Kardex / Inventario / Reportes.
@@ -426,6 +428,7 @@ async function loadDashboard() {
 
     populateDashFilters();
     populateMpProductoSelect();
+    dLegAplicarPermiso();
     buildDashboard();
 
     setSyncStatus('ok', 'Conectado a la nube. Ultima actualizacion: ' + dLoadedAt.toLocaleTimeString('es-CO'));
@@ -614,6 +617,7 @@ function buildDashboard() {
   buildClientesNuevos(fEmp, fDesde, fHasta);
   buildMovimientosPorProducto(fEmp, fDesde, fHasta);
   if (dActiveTab === 'movimientos') buildMovimientosEmpresa();
+  if (dActiveTab === 'legalizacion') buildLegalizacionDash();
 }
 
 // ── Existencias (snapshot Kardex) ──
@@ -2509,22 +2513,31 @@ function buildClientesNuevos(fEmp, fDesde, fHasta) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Pestañas (Resumen general · Movimientos por empresa)
+// Pestañas (Resumen general · Movimientos por empresa · Legalización de gastos)
 // ══════════════════════════════════════════════════════════════
 var dActiveTab = 'resumen';
+var D_TABS = ['resumen', 'movimientos', 'legalizacion'];
 
 function switchDashTab(tab) {
-  dActiveTab = (tab === 'movimientos') ? 'movimientos' : 'resumen';
-  var esMov = dActiveTab === 'movimientos';
-  document.getElementById('panel-resumen').style.display = esMov ? 'none' : 'block';
-  document.getElementById('panel-movimientos').style.display = esMov ? 'block' : 'none';
-  document.getElementById('tab-resumen').classList.toggle('active', !esMov);
-  document.getElementById('tab-movimientos').classList.toggle('active', esMov);
-  // La pestaña de movimientos muestra TODAS las empresas lado a lado: el filtro
+  if (D_TABS.indexOf(tab) < 0) tab = 'resumen';
+  // Legalización solo para admin / módulo Legalización (el botón ya viene oculto;
+  // esto cubre llamarla a mano). RLS devolvería 0 filas sin error a los demás.
+  if (tab === 'legalizacion' && !dLegPermiso()) {
+    showToast('No tienes acceso al informe de Legalización de gastos', '#e74c3c');
+    return;
+  }
+  dActiveTab = tab;
+  D_TABS.forEach(function(t) {
+    document.getElementById('panel-' + t).style.display = (t === tab) ? 'block' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+  });
+  // Movimientos y Legalización muestran TODAS las empresas lado a lado: el filtro
   // de empresa no aplica (Desde/Hasta y los rangos rápidos sí).
-  document.getElementById('df-emp-fg').style.display = esMov ? 'none' : '';
-  if (esMov) {
+  document.getElementById('df-emp-fg').style.display = (tab === 'resumen') ? '' : 'none';
+  if (tab === 'movimientos') {
     buildMovimientosEmpresa();
+  } else if (tab === 'legalizacion') {
+    buildLegalizacionDash();
   } else {
     // Los gráficos reconstruidos mientras el panel estaba oculto midieron 0 px.
     Object.keys(_dashCharts).forEach(function(id) { try { _dashCharts[id].resize(); } catch (e) {} });
@@ -2734,6 +2747,383 @@ function buildMovimientosEmpresa() {
     '<p>• Cada indicador cuenta <b>documentos</b>, no líneas: un pedido, ingreso u orden de compra con varios productos cuenta 1. Incluye anulados, igual que el resto del dashboard.</p>' +
     '<p>• Ingresos y órdenes de compra aparecen en las <b>dos</b> empresas que participan (origen y destino), por eso la suma de las tarjetas supera al total del holding.</p>' +
     '<p>• Remisiones: números <b>distintos</b> de entrada (RE) y salida (RS) de pedidos, ingresos, órdenes de compra, salidas, cambios, devoluciones y muestras que movieron inventario en el Kardex (sin anuladas, Bodega NC ni ajustes). Un traslado entre empresas aporta una RS al origen y una RE al destino.</p>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// Legalización de gastos
+// ──────────────────────────────────────────────────────────────
+// Informe consolidado de legalizaciones (Ruta, Mantenimiento, Envío) por rango
+// de fechas (Fecha de la legalización). Solo admin / módulo Legalización: RLS
+// devuelve 0 filas SIN error a quien no lo tiene, y a un usuario restringido por
+// empresa le recorta las legalizaciones (totales parciales).
+//  · Excluye las Rechazadas (mismo criterio que la pestaña Prorrateo).
+//  · Concepto: Combustible / Peaje / Alimentación / Alojamiento / Envío; lo demás
+//    es "Otros". Las líneas de una legalización de Mantenimiento van a
+//    "Mantenimiento", salvo su Combustible.
+//  · Reparto por empresa = LegalizacionGastosEmpresas.Monto (reparto manual). Ese
+//    reparto suele NO incluir el Combustible, así que lo que falta para llegar al
+//    total de gastos se muestra como "Sin reparto asignado". No es el prorrateo
+//    por litros/kilos (eso exige resolver remisiones; vive en legalizacion-gastos.js).
+//  · Vehículos: viajes de Ruta con Km_Salida y Km_Llegada (piloto de kilometraje).
+//    Rendimiento = km de los viajes con galones ÷ galones de Combustible; alerta si
+//    queda más de 25 % bajo Vehiculos.Rendimiento_Esperado (igual que el modal "Ver").
+// Los datos se piden la primera vez que se abre la pestaña (no en loadDashboard,
+// para no frenar el Resumen) y se vuelven a pedir tras "↻ Actualizar".
+// ══════════════════════════════════════════════════════════════
+var D_LEG_CATS = [
+  { k: 'Combustible',   color: '#e67e22' },
+  { k: 'Peaje',         color: '#2980b9' },
+  { k: 'Alimentación',  color: '#27ae60' },
+  { k: 'Alojamiento',   color: '#8e44ad' },
+  { k: 'Envío',         color: '#148f77' },
+  { k: 'Mantenimiento', color: '#c0392b' },
+  { k: 'Otros',         color: '#a0aec0' }
+];
+var D_LEG_DESVIO_ALERTA = 0.25;
+
+var dLeg = null;          // { legs, items, empresas, vehiculos } | null (sin cargar)
+var dLegPromesa = null;   // carga en curso
+var dLegGen = 0;          // sube al invalidar: una carga vieja no pisa la caché
+var dLegBuildTok = 0;     // el último repintado gana
+var dLegUltimo = null;    // lo último mostrado (lo que exporta el botón)
+
+function dLegPermiso() {
+  return !!(AUTH.hasModule('legalizacion_gastos') || AUTH.hasModule('legalizacion_gastos_aprobar'));
+}
+
+function dLegAplicarPermiso() {
+  var btn = document.getElementById('tab-legalizacion');
+  if (btn) btn.style.display = dLegPermiso() ? '' : 'none';
+}
+
+function dLegInvalidar() { dLeg = null; dLegPromesa = null; dLegGen++; }
+
+function dLegCargar() {
+  if (dLeg) return Promise.resolve(dLeg);
+  if (dLegPromesa) return dLegPromesa;
+  var gen = dLegGen;
+  var p = Promise.all([
+    apiGet('getLegalizacionGastos', { columns: 'id,Consecutivo,Fecha,Responsable,Tipo,Placa,Estado_Conciliacion,Km_Salida,Km_Llegada' }),
+    apiGet('getLegalizacionGastosItems', { columns: 'id,Legalizacion_Id,Concepto,Proveedor,Valor,Galones' }),
+    apiGet('getLegalizacionGastosEmpresas', { columns: 'id,Legalizacion_Id,Empresa,Monto' }),
+    apiGet('getVehiculos', { columns: 'id,Placa,Descripcion,Rendimiento_Esperado' }).catch(function() { return { ok: true, vehiculos: [] }; })
+  ]).then(function(r) {
+    for (var i = 0; i < 3; i++) if (!r[i].ok) throw new Error(r[i].error || 'Error al cargar legalizaciones');
+    var datos = {
+      legs: r[0].legalizaciones || [],
+      items: r[1].items || [],
+      empresas: r[2].empresas || [],
+      vehiculos: (r[3] && r[3].vehiculos) || []
+    };
+    if (gen === dLegGen) dLeg = datos;
+    return datos;
+  });
+  dLegPromesa = p;
+  var limpiar = function() { if (dLegPromesa === p) dLegPromesa = null; };
+  p.then(limpiar, limpiar);
+  return p;
+}
+
+function _dLegNorm(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+// Categoría de una línea de gasto (ver criterios arriba).
+function dLegCategoria(leg, it) {
+  var c = _dLegNorm(it.Concepto);
+  if (c === 'combustible') return 'Combustible';
+  if (leg.Tipo === 'Mantenimiento') return 'Mantenimiento';
+  for (var i = 0; i < D_LEG_CATS.length; i++) {
+    if (D_LEG_CATS[i].k !== 'Otros' && D_LEG_CATS[i].k !== 'Mantenimiento' && _dLegNorm(D_LEG_CATS[i].k) === c) return D_LEG_CATS[i].k;
+  }
+  return 'Otros';
+}
+
+// Cálculo puro: todo lo que muestra y exporta la pestaña.
+function dLegCalcular(datos, desde, hasta) {
+  var itemsPorLeg = {}, repPorLeg = {}, vehEsp = {};
+  datos.items.forEach(function(it) { (itemsPorLeg[it.Legalizacion_Id] = itemsPorLeg[it.Legalizacion_Id] || []).push(it); });
+  datos.empresas.forEach(function(e) { (repPorLeg[e.Legalizacion_Id] = repPorLeg[e.Legalizacion_Id] || []).push(e); });
+  datos.vehiculos.forEach(function(v) { vehEsp[String(v.Placa || '').trim().toUpperCase()] = v; });
+
+  var d = {
+    filas: [], total: 0, nLeg: 0, nEnv: 0, pendTotal: 0, pendN: 0, rechazadas: 0,
+    porMes: {}, porCat: {}, reparto: {}, sinReparto: 0, excedente: 0, nExcedente: 0, vehiculos: []
+  };
+  var veh = {};
+
+  datos.legs.forEach(function(leg) {
+    if (!_fechaEnRango(leg.Fecha, desde, hasta)) return;
+    if (leg.Estado_Conciliacion === 'Rechazada') { d.rechazadas++; return; }
+
+    var esEnv = leg.Tipo === 'Envio', esMant = leg.Tipo === 'Mantenimiento';
+    var mes = String(leg.Fecha || '').slice(0, 7);
+    var totalLeg = 0, comb = 0, gal = 0, cats = {}, provs = [], visto = {};
+    (itemsPorLeg[leg.id] || []).forEach(function(it) {
+      var v = Number(it.Valor) || 0;
+      var cat = dLegCategoria(leg, it);
+      totalLeg += v;
+      cats[cat] = (cats[cat] || 0) + v;
+      d.porCat[cat] = (d.porCat[cat] || 0) + v;
+      if (dEsMes(mes)) {
+        var m = d.porMes[mes] || (d.porMes[mes] = {});
+        m[cat] = (m[cat] || 0) + v;
+      }
+      if (cat === 'Combustible') { comb += v; gal += Number(it.Galones) || 0; }
+      var pv = String(it.Proveedor || '').trim();
+      if (pv && !visto[pv]) { visto[pv] = 1; provs.push(pv); }
+    });
+
+    d.total += totalLeg;
+    if (esEnv) d.nEnv++; else d.nLeg++;
+    if (!esEnv && leg.Estado_Conciliacion === 'Por conciliar') { d.pendTotal += totalLeg; d.pendN++; }
+
+    // Reparto manual entre empresas; lo no repartido queda aparte para que cuadre con el total.
+    var sumRep = 0;
+    (repPorLeg[leg.id] || []).forEach(function(e) {
+      var monto = Number(e.Monto) || 0;
+      if (monto <= 0) return;
+      var s = dGetSigla(e.Empresa);
+      d.reparto[s] = (d.reparto[s] || 0) + monto;
+      sumRep += monto;
+    });
+    var dif = totalLeg - sumRep;
+    if (dif > 0) d.sinReparto += dif;
+    else if (dif < -0.5) { d.excedente += -dif; d.nExcedente++; }
+
+    // Kilometraje (solo viajes de Ruta).
+    if (!esEnv && !esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
+      var km = Number(leg.Km_Llegada) - Number(leg.Km_Salida);
+      if (km > 0) {
+        var pl = String(leg.Placa || '').trim().toUpperCase() || '—';
+        var vv = veh[pl] || (veh[pl] = { placa: pl, viajes: 0, km: 0, kmConGal: 0, galones: 0, costoComb: 0 });
+        vv.viajes++; vv.km += km; vv.galones += gal; vv.costoComb += comb;
+        if (gal > 0) vv.kmConGal += km;
+      }
+    }
+
+    d.filas.push({
+      id: leg.id,
+      consecutivo: leg.Consecutivo || ('#' + leg.id),
+      fecha: String(leg.Fecha || '').slice(0, 10),
+      tipo: esEnv ? 'Envío' : (esMant ? 'Mantenimiento' : 'Ruta'),
+      responsable: leg.Responsable || '',
+      proveedores: provs.join(', '),
+      placa: leg.Placa || '',
+      estado: esEnv ? 'Registrado' : (leg.Estado_Conciliacion || ''),
+      valor: totalLeg,
+      cats: cats
+    });
+  });
+
+  d.filas.sort(function(a, b) { return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.id - a.id; });
+
+  d.vehiculos = Object.keys(veh).map(function(pl) {
+    var v = veh[pl];
+    var ref = vehEsp[pl];
+    v.descripcion = ref ? (ref.Descripcion || '') : '';
+    v.rend = v.galones > 0 ? v.kmConGal / v.galones : null;
+    v.esperado = (ref && ref.Rendimiento_Esperado != null) ? Number(ref.Rendimiento_Esperado) : null;
+    v.alerta = !!(v.rend != null && v.esperado && (v.rend - v.esperado) / v.esperado < -D_LEG_DESVIO_ALERTA);
+    v.costoKm = v.km > 0 ? v.costoComb / v.km : null;
+    return v;
+  }).sort(function(a, b) { return b.km - a.km; });
+
+  return d;
+}
+
+function dLegNum(v, dec) {
+  return Number(v).toLocaleString('es-CO', { minimumFractionDigits: dec || 0, maximumFractionDigits: dec || 0 });
+}
+
+async function buildLegalizacionDash() {
+  var tok = ++dLegBuildTok;
+  var chipEl = document.getElementById('leg-chip');
+  var msgEl = document.getElementById('leg-msg');
+  var contEl = document.getElementById('leg-contenido');
+  if (!chipEl) return;
+
+  var fDesde = document.getElementById('df-desde').value;
+  var fHasta = document.getElementById('df-hasta').value;
+  var rango = dRangoLabel(fDesde, fHasta);
+  chipEl.innerHTML = '<span class="dash-range-chip">📅 ' + escHtml(rango) + ' · Todas las empresas</span>';
+
+  if (!dLeg) {
+    msgEl.textContent = 'Cargando legalizaciones…';
+    msgEl.style.display = '';
+    contEl.style.display = 'none';
+  }
+  var datos;
+  try {
+    datos = await dLegCargar();
+  } catch (e) {
+    if (tok !== dLegBuildTok) return;
+    dLegUltimo = null;
+    msgEl.textContent = '⚠️ No se pudo cargar el informe: ' + e.message;
+    msgEl.style.display = '';
+    contEl.style.display = 'none';
+    return;
+  }
+  if (tok !== dLegBuildTok || dActiveTab !== 'legalizacion') return;
+  msgEl.style.display = 'none';
+  contEl.style.display = '';
+
+  var d = dLegCalcular(datos, fDesde, fHasta);
+  dLegUltimo = { d: d, rango: rango, desde: fDesde, hasta: fHasta };
+  var nDocs = d.nLeg + d.nEnv;
+
+  // KPIs
+  document.getElementById('leg-kpis').innerHTML =
+    kpiCard('', dMoneyM(d.total), 'Total legalizado', dMoneyFull(d.total)) +
+    kpiCard('teal', dLegNum(d.nLeg), 'Legalizaciones (LEG)', 'rutas y mantenimiento') +
+    kpiCard('purple', dLegNum(d.nEnv), 'Envíos (ENV)', 'fletes registrados') +
+    kpiCard('green', dMoneyM(nDocs ? d.total / nDocs : 0), 'Promedio por documento', 'LEG + ENV') +
+    kpiCard('orange', dMoneyM(d.pendTotal), 'Por conciliar', dLegNum(d.pendN) + ' legalización(es)');
+
+  // Gasto por mes y concepto (barras apiladas)
+  var meses = Object.keys(d.porMes).sort();
+  var cats = D_LEG_CATS.filter(function(c) { return (d.porCat[c.k] || 0) > 0; });
+  var wrapEl = document.getElementById('leg-mes-wrap');
+  var vacioEl = document.getElementById('leg-mes-vacio');
+  document.getElementById('leg-mes-sub').textContent = meses.length ? 'Total ' + dMoneyFull(d.total) : '';
+  if (meses.length && cats.length) {
+    wrapEl.style.display = '';
+    vacioEl.style.display = 'none';
+    dMixedChart('cv-leg-mes', meses.map(dMesLbl), cats.map(function(c) {
+      return { label: c.k, tipo: 'bar', yAxis: 'y', color: c.color, data: meses.map(function(m) { return Math.round(d.porMes[m][c.k] || 0); }) };
+    }), { yMoney: true, stacked: true });
+  } else {
+    _destroyChart('cv-leg-mes');
+    wrapEl.style.display = 'none';
+    vacioEl.style.display = '';
+  }
+
+  // Reparto por empresa
+  var repRows = Object.keys(d.reparto).map(function(s) { return { sigla: s, valor: d.reparto[s] }; })
+    .sort(function(a, b) { return b.valor - a.valor; })
+    .map(function(r) { return { label: r.sigla, value: r.valor, color: EMP_COLORS[r.sigla] || '#718096' }; });
+  if (d.sinReparto > 0) repRows.push({ label: 'Sin reparto asignado', value: d.sinReparto, color: '#cbd5e0' });
+  repRows.forEach(function(r) {
+    r.valueTxt = dMoneyM(r.value) + (d.total > 0 ? ' · ' + dLegNum(r.value / d.total * 100) + '%' : '');
+  });
+  document.getElementById('leg-reparto').innerHTML = dHbarList(repRows, null, { stack: true }) +
+    (d.nExcedente ? '<div class="leg-aviso" style="font-size:0.76rem;margin-top:10px">⚠ ' + d.nExcedente + ' legalización(es) con reparto mayor al gasto (' + dMoneyFull(d.excedente) + ' de más).</div>' : '');
+
+  // Vehículos
+  var vehEl = document.getElementById('leg-veh');
+  if (!d.vehiculos.length) {
+    vehEl.innerHTML = '<div style="color:#a0aec0;text-align:center;padding:30px 20px">Sin viajes con kilometraje en el período</div>';
+  } else {
+    vehEl.innerHTML = '<table class="mini-table"><thead><tr>' +
+      '<th>Placa</th><th class="num">Viajes</th><th class="num">Km</th><th class="num">Galones</th>' +
+      '<th class="num">Km/gal</th><th class="num">Esperado</th><th class="num">$ Comb.</th><th class="num">$/km</th></tr></thead><tbody>' +
+      d.vehiculos.map(function(v) {
+        return '<tr>' +
+          '<td style="font-weight:700"' + (v.descripcion ? ' title="' + escHtml(v.descripcion) + '"' : '') + '>' + escHtml(v.placa) + '</td>' +
+          '<td class="num">' + dLegNum(v.viajes) + '</td>' +
+          '<td class="num">' + dLegNum(v.km) + '</td>' +
+          '<td class="num">' + (v.galones ? dLegNum(v.galones, 1) : '—') + '</td>' +
+          '<td class="num">' + (v.rend != null ? dLegNum(v.rend, 1) : '—') +
+            (v.alerta ? ' <span class="leg-aviso" title="Más de 25 % por debajo del rendimiento esperado">⚠</span>' : '') + '</td>' +
+          '<td class="num">' + (v.esperado != null ? dLegNum(v.esperado, 1) : '—') + '</td>' +
+          '<td class="num">' + dMoneyFull(v.costoComb) + '</td>' +
+          '<td class="num">' + (v.costoKm != null ? dMoneyFull(Math.round(v.costoKm)) : '—') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  // Tabla de legalizaciones
+  var estadoCls = { 'Conciliada': 'b-ent', 'Por conciliar': 'b-rec', 'Registrado': 'b-cerrado' };
+  var tipoIco = { 'Ruta': '🚚', 'Mantenimiento': '🔧', 'Envío': '📦' };
+  document.getElementById('leg-tabla-sub').textContent = d.filas.length
+    ? dLegNum(d.filas.length) + ' documento(s) · ' + dMoneyFull(d.total) : '';
+  document.getElementById('leg-tabla').innerHTML = d.filas.length
+    ? '<table class="mini-table"><thead><tr><th>N.º</th><th>Fecha</th><th>Tipo</th><th>Responsable / Proveedor</th><th>Placa</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>' +
+      d.filas.map(function(f) {
+        return '<tr>' +
+          '<td style="font-weight:700">' + escHtml(f.consecutivo) + '</td>' +
+          '<td>' + escHtml(fmtDate(f.fecha)) + '</td>' +
+          '<td>' + (tipoIco[f.tipo] || '') + ' ' + escHtml(f.tipo) + '</td>' +
+          '<td>' + escHtml(f.tipo === 'Envío' ? (f.proveedores || f.responsable) : f.responsable) + '</td>' +
+          '<td>' + escHtml(f.placa) + '</td>' +
+          '<td class="num">' + dMoneyFull(f.valor) + '</td>' +
+          '<td><span class="badge ' + (estadoCls[f.estado] || 'b-rec') + '">' + escHtml(f.estado) + '</span></td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>'
+    : '<div style="color:#a0aec0;text-align:center;padding:30px 20px">Sin legalizaciones en el período</div>';
+
+  // Notas de criterio
+  var rolP = (AUTH.getProfile() || {}).rol;
+  document.getElementById('leg-nota').innerHTML =
+    '<p>• Incluye legalizaciones de ruta, mantenimiento y envíos por <b>fecha de la legalización</b>; excluye las rechazadas' +
+      (d.rechazadas ? ' (' + dLegNum(d.rechazadas) + ' en el período)' : '') + '.</p>' +
+    '<p>• <b>Reparto por empresa:</b> es el reparto manual guardado en cada legalización. Suele no incluir el combustible, por eso lo que falta para llegar al total aparece como «Sin reparto asignado». No es el prorrateo por litros/kilos de la pestaña Prorrateo de Legalización.</p>' +
+    '<p>• <b>Rendimiento:</b> km de los viajes con galones registrados ÷ galones de combustible; ⚠ si queda más de 25 % por debajo del esperado. Solo hay datos de las placas del piloto de kilometraje; los envíos y el mantenimiento no suman km.</p>' +
+    ((rolP === 'admin' || rolP === 'cartera') ? '' : '<p>• Si tu usuario está limitado a ciertas empresas, solo ves las legalizaciones que las involucran: los totales pueden ser parciales.</p>');
+}
+
+// Exporta a Excel lo que muestra la pestaña (5 hojas, la última con los criterios).
+function exportLegalizacionExcel() {
+  if (typeof XLSX === 'undefined') { showToast('La librería de Excel aún no carga; intenta de nuevo en unos segundos', '#e74c3c'); return; }
+  if (!dLegUltimo || !dLegUltimo.d.filas.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var d = dLegUltimo.d;
+
+  var hojaLeg = d.filas.map(function(f) {
+    var o = {
+      'N.º': f.consecutivo, 'Fecha': f.fecha, 'Tipo': f.tipo, 'Responsable': f.responsable,
+      'Proveedor(es)': f.proveedores, 'Placa': f.placa, 'Estado': f.estado, 'Valor total': Math.round(f.valor)
+    };
+    D_LEG_CATS.forEach(function(c) { o[c.k] = Math.round(f.cats[c.k] || 0); });
+    return o;
+  });
+
+  var hojaMes = Object.keys(d.porMes).sort().map(function(m) {
+    var o = { 'Mes': m }, t = 0;
+    D_LEG_CATS.forEach(function(c) { var v = Math.round(d.porMes[m][c.k] || 0); o[c.k] = v; t += v; });
+    o['Total'] = t;
+    return o;
+  });
+
+  function pct(v) { return d.total > 0 ? Math.round(v / d.total * 1000) / 10 : 0; }
+  var hojaRep = Object.keys(d.reparto).map(function(s) { return { s: s, v: d.reparto[s] }; })
+    .sort(function(a, b) { return b.v - a.v; })
+    .map(function(r) { return { 'Empresa': r.s, 'Monto': Math.round(r.v), '% del total': pct(r.v) }; });
+  if (d.sinReparto > 0) hojaRep.push({ 'Empresa': 'Sin reparto asignado', 'Monto': Math.round(d.sinReparto), '% del total': pct(d.sinReparto) });
+  hojaRep.push({ 'Empresa': 'TOTAL GASTOS', 'Monto': Math.round(d.total), '% del total': d.total > 0 ? 100 : 0 });
+
+  var hojaVeh = d.vehiculos.map(function(v) {
+    return {
+      'Placa': v.placa, 'Descripción': v.descripcion, 'Viajes': v.viajes, 'Km recorridos': Math.round(v.km),
+      'Galones': Math.round(v.galones * 10) / 10,
+      'Km/galón real': v.rend != null ? Math.round(v.rend * 10) / 10 : '',
+      'Km/galón esperado': v.esperado != null ? v.esperado : '',
+      'Alerta (>25 % bajo lo esperado)': v.alerta ? 'Sí' : '',
+      '$ Combustible': Math.round(v.costoComb),
+      '$ por km': v.costoKm != null ? Math.round(v.costoKm) : ''
+    };
+  });
+
+  var criterios = [
+    ['Legalización de gastos'],
+    ['Rango', dLegUltimo.rango],
+    ['Generado', new Date().toLocaleString('es-CO')],
+    [],
+    ['Incluye legalizaciones de ruta, mantenimiento y envíos por fecha de la legalización; excluye las rechazadas (' + d.rechazadas + ' en el período).'],
+    ['Concepto: Combustible, Peaje, Alimentación, Alojamiento y Envío; el resto es "Otros". Las líneas de mantenimiento van a "Mantenimiento" salvo su combustible.'],
+    ['Reparto por empresa: reparto manual guardado en cada legalización. Lo que falta para llegar al total de gastos (normalmente el combustible) es "Sin reparto asignado". No es el prorrateo por litros/kilos.'],
+    ['Vehículos: viajes de ruta con km de salida y llegada. Km/galón = km de los viajes con galones ÷ galones de combustible.'],
+    ['Si el usuario está limitado a ciertas empresas, RLS solo le entrega las legalizaciones que las involucran: los totales pueden ser parciales.']
+  ];
+  var wsC = XLSX.utils.aoa_to_sheet(criterios);
+  wsC['!cols'] = [{ wch: 130 }, { wch: 30 }];
+
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaLeg), 'Legalizaciones');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMes), 'Gasto por mes');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaRep), 'Reparto por empresa');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaVeh.length ? hojaVeh : [{ 'Placa': '(sin viajes con kilometraje en el período)' }]), 'Vehículos');
+  XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
+  XLSX.writeFile(wb, 'legalizacion_gastos_' + today() + '.xlsx');
 }
 
 // ── Init ──

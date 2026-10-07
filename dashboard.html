@@ -181,6 +181,12 @@
   .mov-sec { margin: 12px 0 2px; padding-top: 10px; border-top: 2px solid #e2e8f0; font-size: 0.72rem; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.4px; }
   .mov-nota { font-size: 0.74rem; color: #718096; line-height: 1.55; padding: 0 4px; }
   .mov-nota p { margin-bottom: 4px; }
+
+  /* ── LEGALIZACIÓN DE GASTOS ── */
+  .leg-scroll { overflow: auto; max-height: 460px; }
+  .leg-scroll .mini-table th { position: sticky; top: 0; z-index: 1; }
+  .mini-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .leg-aviso { color: #c0392b; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -247,6 +253,8 @@
   <div class="dash-tabs">
     <button class="dash-tab active" id="tab-resumen" onclick="switchDashTab('resumen')">📊 Resumen general</button>
     <button class="dash-tab" id="tab-movimientos" onclick="switchDashTab('movimientos')">🏢 Movimientos por empresa</button>
+    <!-- Solo admin / módulo Legalización: dashboard.js lo muestra tras cargar los permisos -->
+    <button class="dash-tab" id="tab-legalizacion" onclick="switchDashTab('legalizacion')" style="display:none">🧾 Legalización de gastos</button>
   </div>
 
   <!-- Filters -->
@@ -503,6 +511,44 @@
     <div class="mov-nota" id="mov-nota"></div>
   </div>
 
+  <!-- ═══ Pestaña: Legalización de gastos ═══ -->
+  <div id="panel-legalizacion" style="display:none">
+    <div class="mov-toolbar">
+      <div id="leg-chip"></div>
+      <button class="btn-export" onclick="exportLegalizacionExcel()">📊 Exportar Excel</button>
+    </div>
+    <div class="empty" id="leg-msg" style="display:none"></div>
+    <div id="leg-contenido">
+      <div class="kpi-grid" id="leg-kpis"></div>
+
+      <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>📅 Gasto por mes y concepto</h4><div class="sub" id="leg-mes-sub"></div></div>
+        <div class="dash-card-body">
+          <div class="chart-wrap tall" id="leg-mes-wrap"><canvas id="cv-leg-mes"></canvas></div>
+          <div id="leg-mes-vacio" style="display:none;color:#a0aec0;text-align:center;padding:20px">Sin datos en el período</div>
+        </div>
+      </div>
+
+      <div class="dash-row">
+        <div class="dash-card">
+          <div class="dash-card-head"><h4>🏢 Reparto por empresa</h4><div class="sub">reparto guardado en cada legalización</div></div>
+          <div class="dash-card-body" id="leg-reparto"></div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head"><h4>🚚 Vehículos: km, galones y rendimiento</h4><div class="sub">viajes con kilometraje registrado</div></div>
+          <div class="dash-card-body" style="padding:0;overflow-x:auto" id="leg-veh"></div>
+        </div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>🧾 Legalizaciones del período</h4><div class="sub" id="leg-tabla-sub"></div></div>
+        <div class="dash-card-body leg-scroll" style="padding:0" id="leg-tabla"></div>
+      </div>
+
+      <div class="mov-nota" id="leg-nota"></div>
+    </div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
@@ -514,6 +560,6 @@
 <script src="js/auth.js?v=20261006a"></script>
 <script src="js/notificaciones.js?v=20261006a"></script>
 <script src="js/existencias.js?v=20261002a"></script>
-<script src="js/dashboard.js?v=20261006c"></script>
+<script src="js/dashboard.js?v=20261007a"></script>
 </body>
 </html>
