@@ -326,6 +326,12 @@ var LegProrrateo = (function() {
     var porEmpresaLitros = {};     // empresaSigla -> litros totales movidos (sin ponderar por monto)
     var porEmpresaKilos = {};      // empresaSigla -> kilos totales movidos (sin ponderar por monto)
     var porEmpresaUnidades = {};   // empresaSigla -> unidades totales movidas (materia prima en Unidades sin conversión)
+    // Parte del monto de porEmpresa que salió de cada bolsa (líquidos / sólidos /
+    // unidades): permite el costo por litro, por kilo y por unidad de cada empresa.
+    // Solo informativo: no cambia porEmpresa ni los totales.
+    var porEmpresaMontoLitros = {};
+    var porEmpresaMontoKilos = {};
+    var porEmpresaMontoUnidades = {};
     var porEmpresaRemisiones = {}; // empresaSigla -> { codigoRemision: true }
     var porEmpresaLegs = {};       // empresaSigla -> { legId -> Consecutivo } (legalizaciones que tocan esa empresa)
     var legsPeriodo = {};          // legId -> true (todas las legalizaciones del período, resuelvan o no litros/kilos)
@@ -344,13 +350,14 @@ var LegProrrateo = (function() {
 
     // Reparte subMonto (la porción de líquidos, sólidos o unidades del viaje) entre
     // las líneas de ese tipo, proporcional a sus litros/kilos/unidades movidos.
-    function _acumularLineas(leg, items, totalUnidad, subMonto, campoUnidad, campoAcumEmp) {
+    function _acumularLineas(leg, items, totalUnidad, subMonto, campoUnidad, campoAcumEmp, campoAcumMonto) {
       items.forEach(function(item) {
         var l = item.m;
         if (l[campoUnidad] <= 0) return;
         var emp = getSigla(l.empresa);
         if (fEmpSigla && emp !== fEmpSigla) return;
         var monto = (l[campoUnidad] / totalUnidad) * subMonto;
+        campoAcumMonto[emp] = (campoAcumMonto[emp] || 0) + monto;
         var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
         porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
         var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
@@ -488,9 +495,9 @@ var LegProrrateo = (function() {
       var montoSolidos = totalViaje * nSol / nBolsas;
       var montoUnidades = totalViaje * nUni / nBolsas;
 
-      if (totalLitros > 0) _acumularLineas(leg, lineas, totalLitros, montoLiquidos, '_litros', porEmpresaLitros);
-      if (totalKilos > 0) _acumularLineas(leg, lineas, totalKilos, montoSolidos, '_kilos', porEmpresaKilos);
-      if (totalUnidades > 0) _acumularLineas(leg, lineas, totalUnidades, montoUnidades, '_unidades', porEmpresaUnidades);
+      if (totalLitros > 0) _acumularLineas(leg, lineas, totalLitros, montoLiquidos, '_litros', porEmpresaLitros, porEmpresaMontoLitros);
+      if (totalKilos > 0) _acumularLineas(leg, lineas, totalKilos, montoSolidos, '_kilos', porEmpresaKilos, porEmpresaMontoKilos);
+      if (totalUnidades > 0) _acumularLineas(leg, lineas, totalUnidades, montoUnidades, '_unidades', porEmpresaUnidades, porEmpresaMontoUnidades);
     });
 
     return {
@@ -499,6 +506,9 @@ var LegProrrateo = (function() {
       porEmpresaLitros: porEmpresaLitros,
       porEmpresaKilos: porEmpresaKilos,
       porEmpresaUnidades: porEmpresaUnidades,
+      porEmpresaMontoLitros: porEmpresaMontoLitros,
+      porEmpresaMontoKilos: porEmpresaMontoKilos,
+      porEmpresaMontoUnidades: porEmpresaMontoUnidades,
       porEmpresaRemisiones: porEmpresaRemisiones,
       porEmpresaLegs: porEmpresaLegs,
       legsPeriodoCount: Object.keys(legsPeriodo).length,
