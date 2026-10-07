@@ -2881,10 +2881,10 @@ async function guardarRemisionExternaForm() {
   var cod = abagoModal.id ? document.getElementById('abago-remision').value.trim() : codigoRemisionNueva(document.getElementById('abago-remision').value, tipo);
   var fecha = document.getElementById('abago-fecha').value || today();
   var proveedor = esMP ? document.getElementById('abago-proveedor').value.trim() : '';
-  var planta = esMP ? document.getElementById('abago-planta').value : null;
+  // La planta es opcional: sin planta los gastos quedan en el grupo "MATERIAS PRIMAS".
+  var planta = esMP ? (document.getElementById('abago-planta').value || null) : null;
   var key = cod.toUpperCase();
   if (!cod) { showToast('Escribe el número de la remisión', '#e67e22'); return; }
-  if (esMP && !PLANTAS_MP[planta]) { showToast('Elige la planta (Cachipay o Mosquera)', '#e67e22'); return; }
   // Remisiones_Relacionadas es un CSV (y Pedidos.Remisiones usa "|"): el número no puede llevarlos.
   if (/[,|]/.test(cod)) { showToast('El número de remisión no puede llevar comas ni el signo |', '#e67e22'); return; }
   var lineas = abagoModal.lineas.map(function(l) {

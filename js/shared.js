@@ -2288,9 +2288,14 @@ async function _apiPostCore(body) {
       // directos en Unidad KG|L, o UND = unidades por presentación como en Abago, y
       // proveedor libre). El tipo se fija al crear.
       var esMPRE = body.Tipo === 'MATERIA_PRIMA';
-      // La materia prima llega a una planta: CACHIPAY (empresa PARCELAR) o MOSQUERA
-      // (empresa GREEN); define a qué empresa se cargan sus gastos.
-      if (esMPRE && body.Planta !== 'CACHIPAY' && body.Planta !== 'MOSQUERA') return { ok: false, error: 'Elige la planta (Cachipay o Mosquera)' };
+      // La materia prima puede llegar a una planta: CACHIPAY (empresa PARCELAR) o MOSQUERA
+      // (empresa GREEN); define a qué empresa se cargan sus gastos. Es opcional: sin planta
+      // (NULL) los gastos quedan en el grupo "MATERIAS PRIMAS".
+      if (esMPRE && body.Planta) {
+        if (body.Planta !== 'CACHIPAY' && body.Planta !== 'MOSQUERA') return { ok: false, error: 'Planta no válida (Cachipay o Mosquera)' };
+      } else {
+        body.Planta = null;
+      }
       if (idRE) {
         var updRE = { Remision: codRE, Fecha: body.Fecha || today(), modificado_por: _uid() };
         if (esMPRE) { updRE.Proveedor = (body.Proveedor || '').trim(); updRE.Planta = body.Planta; }
