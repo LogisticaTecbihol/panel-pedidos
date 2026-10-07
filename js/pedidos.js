@@ -7514,11 +7514,14 @@ function renderDespachos() {
     var hasta = hastaEl ? hastaEl.value : '';
     var tipoFEl = document.getElementById('desp-f-tipo');
     var tipoF = tipoFEl ? tipoFEl.value : '';
+    var remFEl = document.getElementById('desp-f-remision');
+    var remF = (remFEl ? remFEl.value : '').toLowerCase().trim();
 
     var total = despachosData.length;
     var filtered = despachosData.filter(function(d) {
       if (empresa && d.empresa !== empresa) return false;
       if (tipoF && _despTipo(d) !== tipoF) return false;
+      if (remF && String(d.remision || '').toLowerCase().indexOf(remF) < 0) return false;
       if (desde || hasta) {
         var f10 = String(d.fecha || '').slice(0, 10);
         if (!f10) return false;
@@ -7535,7 +7538,7 @@ function renderDespachos() {
     despachosFiltered = applySortDesp(filtered);
 
     var countEl = document.getElementById('desp-count');
-    if (empresa || tipoF || buscar || desde || hasta) {
+    if (empresa || tipoF || remF || buscar || desde || hasta) {
       countEl.textContent = '(' + despachosFiltered.length + ' de ' + total + ' remisiones)';
     } else {
       countEl.textContent = '(' + despachosFiltered.length + ' remisiones)';
@@ -7548,6 +7551,10 @@ function renderDespachos() {
     if (tipoFEl) {
       tipoFEl.style.borderColor = tipoF ? '#1a5276' : '#cbd5e0';
       tipoFEl.style.fontWeight = tipoF ? '700' : '400';
+    }
+    if (remFEl) {
+      remFEl.style.borderColor = remF ? '#1a5276' : '#cbd5e0';
+      remFEl.style.fontWeight = remF ? '700' : '400';
     }
 
     var tbody = document.getElementById('desp-body');
