@@ -1992,11 +1992,22 @@ async function saveTramitarDev() {
 }
 
 // ── Tab switching ──
+// Cambios se carga una sola vez, la primera vez que alguna pestaña lo necesita
+// (Cambios, Detalle por Producto o Despachos). Devuelve la promesa de esa carga.
+function ensureCambiosLoaded() {
+  if (!window._cambiosLoaded && typeof loadCambios === 'function') {
+    window._cambiosLoaded = true;
+    window._cambiosPromise = loadCambios();
+  }
+  return window._cambiosPromise || Promise.resolve();
+}
+
 function switchTab(tab) {
   var tabs = [
     { id: 'tab-devoluciones', btn: 'tab-btn-dev', color: '#e67e22', key: 'devoluciones' },
     { id: 'tab-cambios', btn: 'tab-btn-cam', color: '#8e44ad', key: 'cambios' },
-    { id: 'tab-porproducto', btn: 'tab-btn-prod', color: '#1a5276', key: 'porproducto' }
+    { id: 'tab-porproducto', btn: 'tab-btn-prod', color: '#1a5276', key: 'porproducto' },
+    { id: 'tab-despachos', btn: 'tab-btn-desp', color: '#16a085', key: 'despachos' }
   ];
   tabs.forEach(function(t) {
     var panel = document.getElementById(t.id);
@@ -2011,18 +2022,12 @@ function switchTab(tab) {
       btn.style.color = '#718096';
     }
   });
-  if (tab === 'cambios' && typeof loadCambios === 'function' && !window._cambiosLoaded) {
-    window._cambiosLoaded = true;
-    loadCambios();
-  }
+  if (tab === 'cambios') ensureCambiosLoaded();
   if (tab === 'porproducto') {
-    if (typeof loadCambios === 'function' && !window._cambiosLoaded) {
-      window._cambiosLoaded = true;
-      loadCambios().then(function() { calcularPorProducto(); });
-    } else {
-      calcularPorProducto();
-    }
+    if (!window._cambiosLoaded) ensureCambiosLoaded().then(function() { calcularPorProducto(); });
+    else calcularPorProducto();
   }
+  if (tab === 'despachos') abrirDespachosDC();
 }
 
 // ══════════════════════════════════════════

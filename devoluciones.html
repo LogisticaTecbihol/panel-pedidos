@@ -124,6 +124,7 @@
     <button id="tab-btn-dev" onclick="switchTab('devoluciones')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;background:none;cursor:pointer;border-bottom:3px solid #e67e22;color:#e67e22;margin-bottom:-2px;transition:all 0.2s">🔄 Devoluciones</button>
     <button id="tab-btn-cam" onclick="switchTab('cambios')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#718096;margin-bottom:-2px;transition:all 0.2s">🔁 Cambios de Mercancía</button>
     <button id="tab-btn-prod" onclick="switchTab('porproducto')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#718096;margin-bottom:-2px;transition:all 0.2s">📦 Detalle por Producto</button>
+    <button id="tab-btn-desp" onclick="switchTab('despachos')" style="padding:10px 24px;font-size:0.88rem;font-weight:700;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#718096;margin-bottom:-2px;transition:all 0.2s" title="Remisiones de salida de devoluciones y cambios: cómo se hizo la entrega (ruta, envío o comercial)">🚚 Despachos</button>
   </div>
 
   <!-- ═══ TAB DEVOLUCIONES ═══ -->
@@ -360,6 +361,63 @@
   </div>
 
   </div><!-- /tab-porproducto -->
+
+  <!-- ═══ TAB DESPACHOS (tipo de entrega: Ruta / Envío / Comercial) ═══ -->
+  <div id="tab-despachos" style="display:none">
+  <div class="filters">
+    <div class="fg">
+      <label>Empresa</label>
+      <select id="dd-empresa" onchange="renderDespachosDC()"><option value="">Todas</option></select>
+    </div>
+    <div class="fg">
+      <label>Origen</label>
+      <select id="dd-origen" onchange="renderDespachosDC()">
+        <option value="">Todos</option>
+        <option value="Devolucion">Devoluciones</option>
+        <option value="Cambio">Cambios</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Tipo de entrega</label>
+      <select id="dd-tipo" onchange="renderDespachosDC()">
+        <option value="">Todos</option>
+        <option value="Ruta">Ruta</option>
+        <option value="Envío">Envío</option>
+        <option value="Comercial">Comercial</option>
+      </select>
+    </div>
+    <div class="fg"><label>Remisión</label><input type="text" id="dd-remision" placeholder="Remisión…" title="Filtrar solo por número de remisión" oninput="renderDespachosDC()" style="width:130px"></div>
+    <div class="fg"><label>Buscar</label><input type="text" id="dd-txt" placeholder="cliente, consecutivo…" oninput="renderDespachosDC()" style="width:170px"></div>
+    <div class="fg"><label>Desde</label><input type="date" id="dd-desde" title="Fecha de salida — desde" onchange="renderDespachosDC()"></div>
+    <div class="fg"><label>Hasta</label><input type="date" id="dd-hasta" title="Fecha de salida — hasta" onchange="renderDespachosDC()"></div>
+    <div class="fg" style="justify-content:flex-end">
+      <label style="font-size:0.72rem;color:#7c2d12;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;white-space:nowrap">
+        <input type="checkbox" id="dd-historicos" onchange="renderDespachosDC()">
+        📜 Mostrar cargas históricas
+      </label>
+    </div>
+    <button onclick="clearDespachosDCFilters()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='none'">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>🚚 Despachos de Devoluciones y Cambios <span id="dd-count" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="btn-clear-sort-dd" onclick="clearSortDD()" title="Quitar ordenamientos" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:600">✕ Limpiar orden</button>
+        <button class="btn-dl" onclick="exportDespachosDCExcel()" style="background:#217346">📊 Exportar Excel</button>
+      </div>
+    </div>
+    <div style="margin:0 0 8px;padding:0 16px;font-size:0.78rem;color:#718096">Una fila por remisión de <strong>salida</strong> (lo que se entrega al cliente). Sin cambios, el tipo de entrega es «Ruta».</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr id="dd-head"></tr>
+        </thead>
+        <tbody id="dd-body"></tbody>
+      </table>
+    </div>
+  </div>
+  </div><!-- /tab-despachos -->
 
 </div>
 
@@ -1106,13 +1164,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20261006b"></script>
-<script src="js/auth.js?v=20261006a"></script>
+<script src="js/shared.js?v=20261007a"></script>
+<script src="js/auth.js?v=20261007a"></script>
 <script src="js/notificaciones.js?v=20261006a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
 <script src="js/existencias.js?v=20261002a"></script>
 <script src="js/asignacion-inventario.js?v=20260909g"></script>
-<script src="js/devoluciones.js?v=20260924a"></script>
+<script src="js/devoluciones.js?v=20261007a"></script>
 <script src="js/cambios.js?v=20261002a"></script>
+<script src="js/despachos-devcam.js?v=20261007a"></script>
 </body>
 </html>
