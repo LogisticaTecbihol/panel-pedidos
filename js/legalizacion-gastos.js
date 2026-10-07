@@ -2092,9 +2092,9 @@ function renderLegTable() {
 }
 
 // ── Pestaña Envíos (Tipo='Envio'): vista aparte de las legalizaciones ──
-function renderEnviosTable() {
-  var body = document.getElementById('envl-body');
-  if (!body) return;
+// Filas de la lista de Envíos según los filtros ef-* y el orden de columnas
+// elegido (la tabla y el Excel comparten esta misma lista).
+function _enviosListaFiltrada() {
   var fEmp = document.getElementById('ef-emp').value;
   var fDesde = document.getElementById('ef-desde').value;
   var fHasta = document.getElementById('ef-hasta').value;
@@ -2112,7 +2112,35 @@ function renderEnviosTable() {
     }
     return true;
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
-  rows = applySortLg('env', rows);
+  return applySortLg('env', rows);
+}
+
+// Exporta la lista de la pestaña Envíos tal como se ve: mismas filas
+// (filtros Empresa/Desde/Hasta/Buscar), mismo orden y mismas columnas.
+function exportarEnviosExcel() {
+  var rows = _enviosListaFiltrada();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(leg) {
+    return {
+      'N°': leg.Consecutivo || '',
+      'Fecha': fmtDate(leg.Fecha),
+      'Proveedor': proveedoresTexto(leg.id) || '',
+      'NIT': nitEnvioDe(leg) || '',
+      'Remisiones': leg.Remisiones_Relacionadas || '',
+      'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+      'Valor': totalGastosOf(leg.id)
+    };
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Envíos');
+  XLSX.writeFile(wb, 'envios_' + today() + '.xlsx');
+  showToast('Excel exportado');
+}
+
+function renderEnviosTable() {
+  var body = document.getElementById('envl-body');
+  if (!body) return;
+  var rows = _enviosListaFiltrada();
   renderSortHead('env', 'envl-head');
 
   var canEditMod = AUTH.hasModule('legalizacion_gastos');
