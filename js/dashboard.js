@@ -2530,9 +2530,10 @@ function switchDashTab(tab) {
     document.getElementById('panel-' + t).style.display = (t === tab) ? 'block' : 'none';
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
-  // Movimientos y Legalización muestran TODAS las empresas lado a lado: el filtro
-  // de empresa no aplica (Desde/Hasta y los rangos rápidos sí).
-  document.getElementById('df-emp-fg').style.display = (tab === 'resumen') ? '' : 'none';
+  // Movimientos muestra TODAS las empresas lado a lado: el filtro de empresa no
+  // aplica (Desde/Hasta y los rangos rápidos sí). En Legalización el filtro de
+  // empresa acota solo lo atribuible a una empresa (ver buildLegalizacionDash).
+  document.getElementById('df-emp-fg').style.display = (tab === 'movimientos') ? 'none' : '';
   if (tab === 'movimientos') {
     buildMovimientosEmpresa();
   } else if (tab === 'legalizacion') {
@@ -2863,8 +2864,11 @@ function dLegCategoria(leg, it) {
   return 'Otros';
 }
 
-// Cálculo puro: todo lo que muestra y exporta la pestaña.
-function dLegCalcular(datos, desde, hasta) {
+// Cálculo puro: todo lo que muestra y exporta la pestaña. `fEmp` (nombre completo
+// de la empresa, '' = todas) solo acota el prorrateo (Gasto / Combustible /
+// Mantenimiento por empresa y la carga transportada); el resto es del documento
+// completo y no se puede dividir por empresa.
+function dLegCalcular(datos, desde, hasta, fEmp) {
   var itemsPorLeg = {}, vehEsp = {};
   datos.items.forEach(function(it) { (itemsPorLeg[it.Legalizacion_Id] = itemsPorLeg[it.Legalizacion_Id] || []).push(it); });
   datos.vehiculos.forEach(function(v) { vehEsp[String(v.Placa || '').trim().toUpperCase()] = v; });
@@ -2947,10 +2951,11 @@ function dLegCalcular(datos, desde, hasta) {
     empresas: datos.empresas,
     mapa: datos.mapas.prodMap,
     mapaReparto: datos.mapas.repMap
-  }, { fEmp: '', fDesde: desde, fHasta: hasta });
+  }, { fEmp: fEmp || '', fDesde: desde, fHasta: hasta });
   // Autoverificación: gasto prorrateado + combustible + mantenimiento debe sumar el
-  // total de gastos del período (si no, se avisa en la nota).
-  d.cuadre = d.total - (d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total);
+  // total de gastos del período (si no, se avisa en la nota). Con una empresa elegida
+  // el prorrateo es solo su parte, así que no hay nada que cuadrar contra el total.
+  d.cuadre = fEmp ? 0 : d.total - (d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total);
 
   // Carga transportada del período (litros / kilos / unidades de las remisiones
   // relacionadas, rutas y envíos) y costo por unidad movida: la parte del gasto
@@ -3052,8 +3057,12 @@ async function buildLegalizacionDash() {
 
   var fDesde = document.getElementById('df-desde').value;
   var fHasta = document.getElementById('df-hasta').value;
+  var fEmp = document.getElementById('df-emp').value;   // '' = todas
+  var sigEmp = fEmp ? dGetSigla(fEmp) : '';
   var rango = dRangoLabel(fDesde, fHasta);
-  chipEl.innerHTML = '<span class="dash-range-chip">📅 ' + escHtml(rango) + ' · Todas las empresas</span>';
+  chipEl.innerHTML = '<span class="dash-range-chip">📅 ' + escHtml(rango) + ' · ' +
+    (fEmp ? 'Empresa: ' + escHtml(sigEmp) : 'Todas las empresas') + '</span>' +
+    (fEmp ? ' <span style="font-size:0.76rem;color:#718096;margin-left:6px">solo las tablas por empresa y la carga transportada; el resto es de todas las empresas</span>' : '');
 
   if (!dLeg) {
     msgEl.textContent = 'Cargando legalizaciones y remisiones…';
@@ -3075,20 +3084,21 @@ async function buildLegalizacionDash() {
   msgEl.style.display = 'none';
   contEl.style.display = '';
 
-  var d = dLegCalcular(datos, fDesde, fHasta);
-  dLegUltimo = { d: d, rango: rango, desde: fDesde, hasta: fHasta };
+  var d = dLegCalcular(datos, fDesde, fHasta, fEmp);
+  dLegUltimo = { d: d, rango: rango, desde: fDesde, hasta: fHasta, fEmp: fEmp };
   var nDocs = d.nLeg + d.nEnv;
+  var todas = fEmp ? ' · todas las empresas' : '';   // lo que no se divide por empresa se rotula
 
   // KPIs
   document.getElementById('leg-kpis').innerHTML =
-    kpiCard('', dMoneyM(d.total), 'Total legalizado', dMoneyFull(d.total)) +
+    kpiCard('', dMoneyM(d.total), 'Total legalizado', dMoneyFull(d.total) + todas) +
     kpiCard('teal', dLegNum(d.nLeg), 'Legalizaciones (LEG)', 'rutas y mantenimiento') +
     kpiCard('purple', dLegNum(d.nEnv), 'Envíos (ENV)', 'fletes registrados') +
     kpiCard('green', dMoneyM(nDocs ? d.total / nDocs : 0), 'Promedio por documento', 'LEG + ENV') +
     kpiCard('orange', dMoneyM(d.pendTotal), 'Por conciliar', dLegNum(d.pendN) + ' legalización(es)') +
-    kpiCard('teal', dLegCant(d.carga.litros) + ' L', 'Litros transportados',
+    kpiCard('teal', dLegCant(d.carga.litros) + ' L', 'Litros transportados' + (fEmp ? ' · ' + escHtml(sigEmp) : ''),
       d.carga.costoLitro != null ? dLegMoney2(d.carga.costoLitro) + ' por litro' : 'sin litros identificados') +
-    kpiCard('purple', dLegCant(d.carga.kilos) + ' Kg', 'Kilos transportados',
+    kpiCard('purple', dLegCant(d.carga.kilos) + ' Kg', 'Kilos transportados' + (fEmp ? ' · ' + escHtml(sigEmp) : ''),
       d.carga.costoKilo != null ? dLegMoney2(d.carga.costoKilo) + ' por kilo' : 'sin kilos identificados');
 
   // Gasto por concepto (barras horizontales, de mayor a menor; % sobre el total)
@@ -3098,7 +3108,8 @@ async function buildLegalizacionDash() {
   conceptoRows.forEach(function(r) {
     r.valueTxt = dMoneyFull(Math.round(r.value)) + ' · ' + (d.total > 0 ? dLegNum(r.value / d.total * 100, 1) : '0') + '%';
   });
-  document.getElementById('leg-concepto-sub').textContent = conceptoRows.length ? 'Total ' + dMoneyFull(d.total) : '';
+  document.getElementById('leg-concepto-sub').textContent = conceptoRows.length ? 'Total ' + dMoneyFull(d.total) + todas : '';
+  document.getElementById('leg-veh-sub').textContent = 'viajes con kilometraje registrado' + todas;
   document.getElementById('leg-concepto').innerHTML = dHbarList(conceptoRows, null, { stack: true });
 
   // Gasto / Combustible / Mantenimiento por empresa (prorrateo — mismas cifras que
@@ -3141,7 +3152,7 @@ async function buildLegalizacionDash() {
   var estadoCls = { 'Conciliada': 'b-ent', 'Por conciliar': 'b-rec', 'Registrado': 'b-cerrado' };
   var tipoIco = { 'Ruta': '🚚', 'Mantenimiento': '🔧', 'Envío': '📦' };
   document.getElementById('leg-tabla-sub').textContent = d.filas.length
-    ? dLegNum(d.filas.length) + ' documento(s) · ' + dMoneyFull(d.total) : '';
+    ? dLegNum(d.filas.length) + ' documento(s) · ' + dMoneyFull(d.total) + todas : '';
   document.getElementById('leg-tabla').innerHTML = d.filas.length
     ? '<table class="mini-table"><thead><tr><th>N.º</th><th>Fecha</th><th>Tipo</th><th>Responsable / Proveedor</th><th>Placa</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>' +
       d.filas.map(function(f) {
@@ -3162,7 +3173,8 @@ async function buildLegalizacionDash() {
   document.getElementById('leg-nota').innerHTML =
     '<p>• Incluye legalizaciones de ruta, mantenimiento y envíos por <b>fecha de la legalización</b>; excluye las rechazadas' +
       (d.rechazadas ? ' (' + dLegNum(d.rechazadas) + ' en el período)' : '') + '.</p>' +
-    '<p>• <b>Gasto por empresa:</b> el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas, por litros, kilos o unidades, y se asigna a la empresa dueña de cada remisión; lo que no se puede ligar a un producto queda en «Sin identificar». <b>Combustible</b> y <b>Mantenimiento</b> se reparten según el reparto manual de cada legalización; sin reparto, quedan en «Sin reparto asignado». Son las mismas cifras de la pestaña Prorrateo de gastos del módulo Legalización (mismo rango, sin filtro de empresa). Pasa el cursor sobre «Sin …» para ver qué legalizaciones lo componen.</p>' +
+    '<p>• <b>Gasto por empresa:</b> el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas, por litros, kilos o unidades, y se asigna a la empresa dueña de cada remisión; lo que no se puede ligar a un producto queda en «Sin identificar». <b>Combustible</b> y <b>Mantenimiento</b> se reparten según el reparto manual de cada legalización; sin reparto, quedan en «Sin reparto asignado». Son las mismas cifras de la pestaña Prorrateo de gastos del módulo Legalización (mismo rango' + (fEmp ? ' y misma empresa' : ', sin filtro de empresa') + '). Pasa el cursor sobre «Sin …» para ver qué legalizaciones lo componen.</p>' +
+    (fEmp ? '<p>• <b>Empresa elegida (' + escHtml(sigEmp) + '):</b> Gasto, Combustible y Mantenimiento por empresa y las tarjetas de litros y kilos muestran solo su parte; el 100 % es su parte, y «Sin identificar» / «Sin reparto asignado» no se muestran porque no se pueden atribuir a una empresa. Total legalizado, gasto por concepto, vehículos y el listado siguen siendo de todas las empresas.</p>' : '') +
     '<p>• <b>Litros, kilos y unidades transportados:</b> los de los productos de las remisiones relacionadas a rutas y envíos (mismas cantidades del «Resumen del período» de Prorrateo); una remisión relacionada en dos legalizaciones cuenta en cada una. <b>$/litro</b> y <b>$/kilo</b> = parte del gasto prorrateada a líquidos (o a sólidos) ÷ litros (o kilos) movidos. Lo que quedó en «Sin identificar» no tiene cantidades.</p>' +
     (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
     (datos.fallidas.length ? '<p class="leg-aviso">⚠ No se pudieron cargar: ' + escHtml(datos.fallidas.join(', ')) + '. Las remisiones que dependen de esas fuentes pueden aparecer como «Sin identificar».</p>' : '') +
@@ -3258,8 +3270,12 @@ function exportLegalizacionExcel() {
   var criterios = [
     ['Legalización de gastos'],
     ['Rango', dLegUltimo.rango],
+    ['Empresa', dLegUltimo.fEmp ? dGetSigla(dLegUltimo.fEmp) + ' — ' + dLegUltimo.fEmp : 'Todas'],
     ['Generado', new Date().toLocaleString('es-CO')],
     [],
+    dLegUltimo.fEmp
+      ? ['Con empresa elegida: las hojas Gasto / Combustible / Mantenimiento por empresa y las cifras de litros, kilos y costos son solo de esa empresa (el 100 % es su parte; sin "Sin identificar" ni "Sin reparto asignado", que no se pueden atribuir). Las hojas Legalizaciones, Gasto por mes y Vehículos son de todas las empresas.']
+      : ['Sin empresa elegida: todas las empresas.'],
     ['Incluye legalizaciones de ruta, mantenimiento y envíos por fecha de la legalización; excluye las rechazadas (' + d.rechazadas + ' en el período).'],
     ['Concepto: Combustible, Peaje, Alimentación, Alojamiento y Envío; el resto es "Otros". Las líneas de mantenimiento van a "Mantenimiento" salvo su combustible.'],
     ['Gasto por empresa: el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas por litros, kilos o unidades, a la empresa dueña de cada remisión; lo que no se liga a un producto es "Sin identificar".'],
@@ -3280,7 +3296,7 @@ function exportLegalizacionExcel() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMant), 'Mantenimiento por empresa');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaVeh.length ? hojaVeh : [{ 'Placa': '(sin viajes con kilometraje en el período)' }]), 'Vehículos');
   XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
-  XLSX.writeFile(wb, 'legalizacion_gastos_' + today() + '.xlsx');
+  XLSX.writeFile(wb, 'legalizacion_gastos_' + (dLegUltimo.fEmp ? dGetSigla(dLegUltimo.fEmp) + '_' : '') + today() + '.xlsx');
 }
 
 // ── Init ──
