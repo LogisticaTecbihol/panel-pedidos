@@ -7285,12 +7285,67 @@ var despachosFiltered = [];
 var _despActivo = null;
 var _despFacturaMap = {};
 
+// Tipo de despacho: tabla TipoDespacho, una fila por (empresa, consecutivo,
+// cliente, remisión) — la misma clave de la lista. Solo se guarda lo que alguien
+// cambia; un despacho sin fila es 'Ruta' (también los históricos).
+var DESP_TIPOS = ['Ruta', 'Envío', 'Comercial'];
+var DESP_TIPO_DEFAULT = 'Ruta';
+var DESP_TIPO_ESTILO = {
+  'Ruta':      { bg:'#f7fafc', fg:'#2d3748', bd:'#cbd5e0' },
+  'Envío':     { bg:'#ebf5fb', fg:'#1a5276', bd:'#aed6f1' },
+  'Comercial': { bg:'#fef5e7', fg:'#9c640c', bd:'#f8c471' }
+};
+var _despTipoMap = {};
+
+function _despTipoKey(d) {
+  return [d.empresa || '', d.consecutivo || '', d.cliente || '', d.remision || ''].join('||');
+}
+
+function _despTipo(d) {
+  return _despTipoMap[_despTipoKey(d)] || DESP_TIPO_DEFAULT;
+}
+
+function _despTipoCss(tipo) {
+  var s = DESP_TIPO_ESTILO[tipo] || DESP_TIPO_ESTILO[DESP_TIPO_DEFAULT];
+  return 'background:' + s.bg + ';color:' + s.fg + ';border:1px solid ' + s.bd + ';';
+}
+
+async function onDespTipoChange(el) {
+  var d = despachosFiltered[Number(el.dataset.idx)];
+  if (!d) return;
+  var nuevo = el.value;
+  var key = _despTipoKey(d);
+  var previo = _despTipoMap[key] || DESP_TIPO_DEFAULT;
+  if (nuevo === previo) return;
+
+  el.disabled = true;
+  try {
+    var res = await _sb.from('TipoDespacho').upsert({
+      empresa: d.empresa || '',
+      consecutivo: d.consecutivo || '',
+      cliente: d.cliente || '',
+      remision: d.remision || '',
+      tipo: nuevo
+    }, { onConflict: 'empresa,consecutivo,cliente,remision' });
+    if (res.error) throw res.error;
+    _despTipoMap[key] = nuevo;
+    el.style.cssText += _despTipoCss(nuevo);
+    showToast('Despacho ' + d.remision + ': ' + nuevo, '#27ae60');
+  } catch (e) {
+    el.value = previo;
+    showToast('Error al guardar el tipo de despacho: ' + (e.message || e), '#e74c3c');
+  } finally {
+    el.disabled = false;
+  }
+}
+
 var sortLevelsDesp = [];
 var SORT_COLS_DESP = [
   { id:'empresa',   label:'Empresa',       fn: function(d) { return (getSigla(d.empresa)||'').toLowerCase(); } },
   { id:'remision',  label:'Remisión',      fn: function(d) { return (d.remision||'').toLowerCase(); } },
   { id:'cliente',   label:'Cliente',       fn: function(d) { return (d.cliente||'').toLowerCase(); } },
   { id:'fecha',     label:'Fecha',         fn: function(d) { return d.fecha || ''; } },
+  { id:'tipo',      label:'Tipo de despacho', fn: function(d) { return _despTipo(d).toLowerCase(); } },
   { id:'valor',     label:'Valor Remisión', fn: function(d) { return d.valor || 0; }, style:'text-align:right' },
   { id:'adjuntos',  label:'📎',          fn: function(d) { return adjuntosIndex[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] ? 1 : 0; }, style:'width:60px;text-align:center' },
   { id:'uploaders', label:'Adjuntado por', fn: function(d) { return (adjuntosUploaders[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] || []).join(', ').toLowerCase(); } },
@@ -7404,6 +7459,13 @@ async function buildDespachos() {
     return remMap[b].fecha.localeCompare(remMap[a].fecha) || a.localeCompare(b);
   }).map(function(k) { remMap[k].valor = Math.round(remMap[k].valor * 100) / 100; return remMap[k]; });
 
+  try {
+    var tipoRes = await _fetchAllRows('TipoDespacho', 'empresa,consecutivo,cliente,remision,tipo');
+    if (tipoRes.error) throw tipoRes.error;
+    _despTipoMap = {};
+    (tipoRes.data || []).forEach(function(r) { _despTipoMap[_despTipoKey(r)] = r.tipo; });
+  } catch (e) { console.warn('No se pudo cargar el tipo de despacho:', e); }
+
   var selEmp = document.getElementById('desp-f-empresa');
   var prev = selEmp.value;
   var emps = {};
@@ -7450,10 +7512,13 @@ function renderDespachos() {
     var empresa = empresaEl ? empresaEl.value : '';
     var desde = desdeEl ? desdeEl.value : '';
     var hasta = hastaEl ? hastaEl.value : '';
+    var tipoFEl = document.getElementById('desp-f-tipo');
+    var tipoF = tipoFEl ? tipoFEl.value : '';
 
     var total = despachosData.length;
     var filtered = despachosData.filter(function(d) {
       if (empresa && d.empresa !== empresa) return false;
+      if (tipoF && _despTipo(d) !== tipoF) return false;
       if (desde || hasta) {
         var f10 = String(d.fecha || '').slice(0, 10);
         if (!f10) return false;
@@ -7470,7 +7535,7 @@ function renderDespachos() {
     despachosFiltered = applySortDesp(filtered);
 
     var countEl = document.getElementById('desp-count');
-    if (empresa || buscar || desde || hasta) {
+    if (empresa || tipoF || buscar || desde || hasta) {
       countEl.textContent = '(' + despachosFiltered.length + ' de ' + total + ' remisiones)';
     } else {
       countEl.textContent = '(' + despachosFiltered.length + ' remisiones)';
@@ -7480,14 +7545,19 @@ function renderDespachos() {
       empresaEl.style.borderColor = empresa ? '#1a5276' : '#cbd5e0';
       empresaEl.style.fontWeight = empresa ? '700' : '400';
     }
+    if (tipoFEl) {
+      tipoFEl.style.borderColor = tipoF ? '#1a5276' : '#cbd5e0';
+      tipoFEl.style.fontWeight = tipoF ? '700' : '400';
+    }
 
     var tbody = document.getElementById('desp-body');
     if (!despachosFiltered.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:#718096">No hay despachos con los filtros seleccionados.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:32px;color:#718096">No hay despachos con los filtros seleccionados.</td></tr>';
       return;
     }
 
     var canEdit = AUTH.canEdit();
+    var canSetTipo = AUTH.canSetTipoDespacho();
     tbody.innerHTML = despachosFiltered.map(function(d, i) {
       var sig = getSigla(d.empresa) || d.empresa;
       var key = adjuntoKey(d.empresa, d.consecutivo, d.cliente);
@@ -7512,12 +7582,19 @@ function renderDespachos() {
       if (d.pedidoAnulado) anulTags += ' <span style="display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:0px 6px;border-radius:9px;font-size:0.68rem;font-weight:700" title="El pedido de esta remisión está marcado como Anulado">🚫 Pedido anulado</span>';
       if (d.remisionAnulada) anulTags += ' <span style="display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:0px 6px;border-radius:9px;font-size:0.68rem;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — excluida del Kardex">⛔ Remisión anulada</span>';
       var rowCls = (d.pedidoAnulado || d.remisionAnulada) ? ' class="row-bloqueada-cartera"' : '';
+      var tipo = _despTipo(d);
+      var tipoCell = canSetTipo
+        ? '<select class="desp-tipo" data-idx="' + i + '" onchange="onDespTipoChange(this)" style="font-size:0.78rem;padding:3px 6px;border-radius:5px;font-weight:600;' + _despTipoCss(tipo) + '">' +
+            DESP_TIPOS.map(function(t) { return '<option value="' + t + '"' + (t === tipo ? ' selected' : '') + '>' + t + '</option>'; }).join('') +
+          '</select>'
+        : '<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:0.76rem;font-weight:600;' + _despTipoCss(tipo) + '">' + escHtml(tipo) + '</span>';
       return '<tr' + rowCls + '>' +
         '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
         '<td style="font-size:0.82rem;font-weight:600">' + escHtml(sig) + '</td>' +
         '<td style="font-size:0.82rem">' + escHtml(d.remision) + anulTags + '</td>' +
         '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(d.cliente) + '">' + escHtml(d.cliente) + '</td>' +
         '<td style="font-size:0.82rem">' + fechaFmt + '</td>' +
+        '<td style="white-space:nowrap">' + tipoCell + '</td>' +
         '<td class="money" style="font-size:0.82rem;white-space:nowrap">' + fmtMoney(d.valor || 0) + '</td>' +
         '<td style="text-align:center;font-size:0.9rem">' + badge + '</td>' +
         '<td style="font-size:0.78rem">' + uploadersHtml + '</td>' +
@@ -7556,6 +7633,7 @@ function exportDespachosExcel() {
       'Cliente': d.cliente || '',
       'Consecutivo': d.consecutivo || '',
       'Fecha': fechaCell(d.fecha),
+      'Tipo de despacho': _despTipo(d),
       'Valor Remisión': d.valor || 0,
       'Adjuntos': adjuntosIndex[key] ? 'Sí' : 'No',
       'Adjuntado por': (adjuntosUploaders[key] || []).join(', '),
@@ -7567,11 +7645,11 @@ function exportDespachosExcel() {
 
   var ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
-    {wch:12},{wch:14},{wch:30},{wch:14},{wch:12},{wch:16},{wch:10},{wch:24},{wch:14},{wch:14},{wch:26}
+    {wch:12},{wch:14},{wch:30},{wch:14},{wch:12},{wch:16},{wch:16},{wch:10},{wch:24},{wch:14},{wch:14},{wch:26}
   ];
-  // Valor Remisión = columna F (índice 5): formato moneda, sin decimales
+  // Valor Remisión = columna G (índice 6): formato moneda, sin decimales
   for (var ri = 0; ri < data.length; ri++) {
-    var cell = ws[XLSX.utils.encode_cell({ c: 5, r: ri + 1 })];
+    var cell = ws[XLSX.utils.encode_cell({ c: 6, r: ri + 1 })];
     if (cell) cell.z = '"$"#,##0';
   }
   var wb = XLSX.utils.book_new();

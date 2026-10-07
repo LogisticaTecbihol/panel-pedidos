@@ -311,6 +311,13 @@ var AUTH = (function() {
     return _profile.rol === 'admin' || _profile.rol === 'editor';
   }
 
+  // Quién puede clasificar un despacho (Ruta / Envío / Comercial) en la pestaña
+  // Despachos de Pedidos. Coincide con las políticas de la tabla TipoDespacho.
+  function canSetTipoDespacho() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'remisionador' || _profile.rol === 'despachador';
+  }
+
   function canUploadAdjuntos() {
     if (!_profile) return false;
     return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'contabilidad' || _profile.rol === 'gerente_iaso' || _profile.rol === 'comercial' || _profile.rol === 'despachador' || _profile.rol === 'remisionador';
@@ -445,6 +452,7 @@ var AUTH = (function() {
     canApproveNuevoCliente: canApproveNuevoCliente,
     canDescomprometer: canDescomprometer,
     canUploadAdjuntos: canUploadAdjuntos,
+    canSetTipoDespacho: canSetTipoDespacho,
     hasCompany: hasCompany,
     getCompanies: getCompanies,
     getFilteredEmpresas: getFilteredEmpresas,
