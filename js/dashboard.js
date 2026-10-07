@@ -77,7 +77,7 @@ function _destroyChart(id) {
 
 // Gráfico mixto líneas/barras.
 // datasets: [{ label, data, color, tipo?('bar'|'line'), yAxis?('y'|'y2'), fill? }]
-// opts: { yMoney, y2, y2Money, stacked }   (stacked: apila las barras de los datasets)
+// opts: { yMoney, y2, y2Money }
 function dMixedChart(canvasId, labels, datasets, opts) {
   opts = opts || {};
   _destroyChart(canvasId);
@@ -110,7 +110,6 @@ function dMixedChart(canvasId, labels, datasets, opts) {
       grid: { color: '#edf2f7' }
     }
   };
-  if (opts.stacked) { scales.x.stacked = true; scales.y.stacked = true; }
   if (opts.y2) {
     scales.y2 = {
       beginAtZero: true, position: 'right',
@@ -3038,23 +3037,15 @@ async function buildLegalizacionDash() {
     kpiCard('green', dMoneyM(nDocs ? d.total / nDocs : 0), 'Promedio por documento', 'LEG + ENV') +
     kpiCard('orange', dMoneyM(d.pendTotal), 'Por conciliar', dLegNum(d.pendN) + ' legalización(es)');
 
-  // Gasto por mes y concepto (barras apiladas)
-  var meses = Object.keys(d.porMes).sort();
-  var cats = D_LEG_CATS.filter(function(c) { return (d.porCat[c.k] || 0) > 0; });
-  var wrapEl = document.getElementById('leg-mes-wrap');
-  var vacioEl = document.getElementById('leg-mes-vacio');
-  document.getElementById('leg-mes-sub').textContent = meses.length ? 'Total ' + dMoneyFull(d.total) : '';
-  if (meses.length && cats.length) {
-    wrapEl.style.display = '';
-    vacioEl.style.display = 'none';
-    dMixedChart('cv-leg-mes', meses.map(dMesLbl), cats.map(function(c) {
-      return { label: c.k, tipo: 'bar', yAxis: 'y', color: c.color, data: meses.map(function(m) { return Math.round(d.porMes[m][c.k] || 0); }) };
-    }), { yMoney: true, stacked: true });
-  } else {
-    _destroyChart('cv-leg-mes');
-    wrapEl.style.display = 'none';
-    vacioEl.style.display = '';
-  }
+  // Gasto por concepto (barras horizontales, de mayor a menor; % sobre el total)
+  var conceptoRows = D_LEG_CATS.filter(function(c) { return (d.porCat[c.k] || 0) > 0; })
+    .map(function(c) { return { label: c.k, value: d.porCat[c.k], color: c.color }; })
+    .sort(function(a, b) { return b.value - a.value; });
+  conceptoRows.forEach(function(r) {
+    r.valueTxt = dMoneyFull(Math.round(r.value)) + ' · ' + (d.total > 0 ? dLegNum(r.value / d.total * 100, 1) : '0') + '%';
+  });
+  document.getElementById('leg-concepto-sub').textContent = conceptoRows.length ? 'Total ' + dMoneyFull(d.total) : '';
+  document.getElementById('leg-concepto').innerHTML = dHbarList(conceptoRows, null, { stack: true });
 
   // Gasto / Combustible / Mantenimiento por empresa (prorrateo — mismas cifras que
   // la pestaña "Prorrateo de gastos" del módulo Legalización)
