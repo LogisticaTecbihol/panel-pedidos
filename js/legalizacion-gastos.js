@@ -91,8 +91,10 @@ var remisionProductoMapReparto = {};
 // EMPRESA_MP). Ninguna es empresa del holding: en el reparto son filas propias
 // y en Prorrateo grupos aparte. "REM-001" (mayúsculas) ->
 // {id, Remision, Fecha, Tipo, Proveedor, Planta, lineas:[{Producto,Presentacion,Cantidad,Unidad}]}
-var EMPRESA_ABAGO = 'CHIA ABAGO';
-var EMPRESA_MP = 'MATERIAS PRIMAS';
+// (Las constantes y helpers de remisiones externas viven en
+// js/legalizacion-prorrateo.js, compartido con el Dashboard.)
+var EMPRESA_ABAGO = LegProrrateo.EMPRESA_ABAGO;
+var EMPRESA_MP = LegProrrateo.EMPRESA_MP;
 var remisionesExternas = {};
 
 // Tipos de remisión externa. Abago: unidades por presentación (el nombre del
@@ -114,22 +116,12 @@ function _unidadMP(v) { return v === 'L' || v === 'UND' ? v : 'KG'; }
 
 // Planta de destino de una remisión de materia prima; define la empresa a la
 // que se cargan sus gastos (misma relación de ORIGEN_EMPRESA en ingresos.js).
-var PLANTAS_MP = {
-  CACHIPAY: { nombre: 'Planta Cachipay', sigla: 'PARCELAR' },
-  MOSQUERA: { nombre: 'Planta Mosquera', sigla: 'GREEN' }
-};
-function empresaDePlanta(planta) {
-  var p = PLANTAS_MP[planta];
-  var e = p && EMPRESAS_HOLDING.find(function(x) { return x.sigla === p.sigla; });
-  return e ? e.value : null;
-}
+var PLANTAS_MP = LegProrrateo.PLANTAS_MP;
+function empresaDePlanta(planta) { return LegProrrateo.empresaDePlanta(planta); }
 // Empresa a la que se cargan los gastos de una remisión externa: Abago → grupo
 // "CHIA ABAGO"; materia prima → la empresa de su planta (las antiguas sin
 // planta quedan en el grupo "MATERIAS PRIMAS" hasta que se les asigne una).
-function empresaDeRemisionExterna(ex) {
-  if (ex && ex.Tipo === 'MATERIA_PRIMA') return empresaDePlanta(ex.Planta) || EMPRESA_MP;
-  return EMPRESA_ABAGO;
-}
+function empresaDeRemisionExterna(ex) { return LegProrrateo.empresaDeRemisionExterna(ex); }
 function empresaExternaDeCodigo(codigo) {
   var ex = remisionesExternas[String(codigo || '').trim().toUpperCase()];
   return ex ? empresaDeRemisionExterna(ex) : null;
@@ -138,9 +130,7 @@ function empresaExternaDeCodigo(codigo) {
 // externa. `externa` la distingue de las líneas del sistema con el mismo código
 // (la empresa ya no basta: una materia prima cargada a PARCELAR o GREEN tiene
 // empresa del holding).
-function _lineaExternaAMapa(ex, l) {
-  return { producto: l.Producto, presentacion: l.Presentacion, cantidad: l.Cantidad, empresa: empresaDeRemisionExterna(ex), unidad: l.Unidad || null, externa: true };
-}
+function _lineaExternaAMapa(ex, l) { return LegProrrateo.lineaExternaAMapa(ex, l); }
 
 // Litros, kilos y unidades de una línea de remisión resuelta (para el reparto y
 // el Prorrateo). Las de materia prima externa traen kilos/litros directos
@@ -149,15 +139,7 @@ function _lineaExternaAMapa(ex, l) {
 // (UND) que no se pueden convertir a litros/kilos: son la tercera bolsa del
 // prorrateo, repartida por cantidad de unidades. Lo demás que no se convierte
 // (ej. un producto de Chia Abago sin presentación) sigue sin entrar.
-function _litKiloDeLinea(m) {
-  var cant = Number(m.cantidad) || 0;
-  if (m.unidad === 'KG') return { litros: 0, kilos: cant, unidades: 0 };
-  if (m.unidad === 'L') return { litros: cant, kilos: 0, unidades: 0 };
-  var lit = _litParse(m.producto, m.presentacion);
-  var litros = lit.convertible ? lit.litrosUnidad * cant : 0;
-  var kilos = lit.convertibleKilo ? lit.kilosUnidad * cant : 0;
-  return { litros: litros, kilos: kilos, unidades: (m.unidad === 'UND' && litros <= 0 && kilos <= 0) ? cant : 0 };
-}
+function _litKiloDeLinea(m) { return LegProrrateo.litKiloDeLinea(m); }
 
 // Sugerencias de materia prima de la ventana de remisión externa (además de las
 // que ya se hayan registrado). Se puede escribir otra. Pendiente: listado de
@@ -182,14 +164,7 @@ var ABAGO_CATALOGO = (function() {
 
 // Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
 // en registros viejos, un solo código sin "|"). Mismo parseo que kardex.js.
-function _parseRemisionesField(remStr) {
-  var s = (remStr || '').trim();
-  if (!s) return [];
-  if (s.indexOf('|') < 0) return [s];
-  return s.split(',').map(function(seg) {
-    return (seg.split('|')[0] || '').trim();
-  }).filter(function(r) { return r; });
-}
+function _parseRemisionesField(remStr) { return LegProrrateo.parseRemisionesField(remStr); }
 
 async function loadClientesConRemision() {
   try {
@@ -202,143 +177,18 @@ async function loadClientesConRemision() {
       apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
       apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
     ]);
-    var res = results[0];
-    var resIng = results[1];
-    var resMue = results[2];
-    var resDev = results[3];
-    var resExt = results[4];
-    var resExtIt = results[5];
-    var resCam = results[6];
-    var set = {};
-    var remMap = {};
-    var prodMap = {};
-    if (res.ok) {
-      (res.pedidos || []).forEach(function(p) {
-        var cli = (p.Cliente || '').trim();
-        if (p.Estado_2 === 'Anulado') return;
-        var rems = _parseRemisionesField(p.Remisiones);
-        if (!rems.length) return;
-        if (cli) set[cli] = true;
-        rems.forEach(function(r) { if (cli) remMap[r.toUpperCase()] = cli; });
-        // Cantidad por remisión puntual: "REM|cant|fecha, REM2|cant2|fecha2"
-        // (o un solo código sin "|", con toda Cant_Entregada de la fila —
-        // aquí no se usa ese caso porque no pedimos Cant_Entregada; una
-        // remisión "simple" sin cantidad estructurada no aporta al prorrateo).
-        var remStr = (p.Remisiones || '').trim();
-        if (remStr.indexOf('|') < 0) return;
-        remStr.split(',').forEach(function(seg) {
-          var parts = seg.trim().split('|');
-          var rem = (parts[0] || '').trim();
-          var cant = Number(parts[1]) || 0;
-          if (!rem || cant <= 0) return;
-          var key = rem.toUpperCase();
-          (prodMap[key] = prodMap[key] || []).push({ producto: p.Producto, presentacion: p.Presentacion, cantidad: cant, empresa: p.Nombre_Empresa });
-        });
-      });
-    }
-    // Ingresos — traslados planta↔empresa u otro origen. Remision_Destino
-    // pertenece a Empresa_Destino (quien recibe) y Remision_Origen a
-    // Empresa_Origen (quien despacha); una fila puede aportar a ambas claves.
-    if (resIng.ok) {
-      (resIng.ingresos || []).forEach(function(ing) {
-        var cant = Number(ing.Cantidad) || 0;
-        if (cant <= 0) return;
-        var remDest = (ing.Remision_Destino || '').trim();
-        if (remDest) {
-          var keyD = remDest.toUpperCase();
-          (prodMap[keyD] = prodMap[keyD] || []).push({ producto: ing.Producto, presentacion: ing.Presentacion, cantidad: cant, empresa: ing.Empresa_Destino });
-        }
-        var remOrig = (ing.Remision_Origen || '').trim();
-        if (remOrig) {
-          var keyO = remOrig.toUpperCase();
-          (prodMap[keyO] = prodMap[keyO] || []).push({ producto: ing.Producto, presentacion: ing.Presentacion, cantidad: cant, empresa: ing.Empresa_Origen });
-        }
-      });
-    }
-    // Cambios de mercancía: mismo criterio que el Kardex (buildMovimientos). La
-    // remisión de ingreso es de las líneas CAMBIAR (lo que devuelve el cliente);
-    // la de salida es de las líneas ENTREGAR (lo que se le despacha), o de las
-    // CAMBIAR si el cambio no tiene líneas ENTREGAR. Cuentan los cambios Cerrado
-    // y Parcial (cada lado solo si ya tiene su remisión); la cantidad es Cantidad.
-    if (resCam && resCam.ok) {
-      var camGrupo = function(c) { return (c.Empresa || '') + '||' + (c.Consecutivo || c.id); };
-      var camEntregar = {};
-      (resCam.cambios || []).forEach(function(c) { if (c.Tipo_Linea === 'ENTREGAR') camEntregar[camGrupo(c)] = true; });
-      (resCam.cambios || []).forEach(function(c) {
-        var cant = Number(c.Cantidad) || 0;
-        var est = (c.Estado || '').toLowerCase();
-        if (cant <= 0 || (est !== 'cerrado' && est !== 'cerrada' && est !== 'parcial')) return;
-        var tieneEntregar = !!camEntregar[camGrupo(c)];
-        var remIng = c.Tipo_Linea === 'CAMBIAR' ? String(c.Remision_Ingreso || '').trim().toUpperCase() : '';
-        var remSal = ((tieneEntregar && c.Tipo_Linea === 'ENTREGAR') || (!tieneEntregar && c.Tipo_Linea === 'CAMBIAR'))
-          ? String(c.Remision_Salida || '').trim().toUpperCase() : '';
-        [remIng, remSal].forEach(function(key) {
-          if (!key) return;
-          (prodMap[key] = prodMap[key] || []).push({ producto: c.Producto, presentacion: '', cantidad: cant, empresa: c.Empresa });
-        });
-      });
-    }
-    // Remisiones externas (Chia Abago / materia prima): sus líneas entran a
-    // prodMap (y por copia a repMap, más abajo) con la empresa de su tipo.
-    remisionesExternas = {};
-    if (resExt && resExt.ok && resExtIt && resExtIt.ok) {
-      var extPorId = {};
-      (resExt.remisiones || []).forEach(function(r) {
-        var o = { id: r.id, Remision: r.Remision, Fecha: r.Fecha, Tipo: r.Tipo || 'ABAGO', Proveedor: r.Proveedor || '', Planta: r.Planta || null,
-                  creado_por_nombre: r.creado_por_nombre || '', creado_en: r.creado_en || null, modificado_en: r.modificado_en || null, lineas: [] };
-        extPorId[r.id] = o;
-        remisionesExternas[String(r.Remision || '').trim().toUpperCase()] = o;
-      });
-      (resExtIt.items || []).forEach(function(it) {
-        var o = extPorId[it.Remision_Id];
-        if (o) o.lineas.push({ Producto: it.Producto, Presentacion: it.Presentacion || '', Cantidad: Number(it.Cantidad) || 0, Unidad: it.Unidad || null });
-      });
-      Object.keys(remisionesExternas).forEach(function(key) {
-        var ex = remisionesExternas[key];
-        ex.lineas.forEach(function(l) {
-          if (!(l.Cantidad > 0)) return;
-          (prodMap[key] = prodMap[key] || []).push(_lineaExternaAMapa(ex, l));
-        });
-      });
-      poblarSugerenciasMP();
-    }
-    clientesConRemisionCache = Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'es'); });
-    remisionClienteMap = remMap;
-    remisionProductoMap = prodMap;
-
-    // Mapa ampliado para el reparto: copia de prodMap + Muestras + Devoluciones
-    // (misma convención de cantidad que kardex.js: Cant_Entregada, o Cantidad
-    // si no hay). Las órdenes de producción de muestras no despachan; las
-    // devoluciones anuladas/pendientes no movieron producto.
-    var repMap = {};
-    Object.keys(prodMap).forEach(function(k) { repMap[k] = prodMap[k].slice(); });
-    function _addRep(rem, emp, prod, pres, cant) {
-      var key = String(rem || '').trim().toUpperCase();
-      if (!key || cant <= 0) return;
-      (repMap[key] = repMap[key] || []).push({ producto: prod, presentacion: pres, cantidad: cant, empresa: emp });
-    }
-    function _cantDe(r) { return Number(r.Cant_Entregada != null && r.Cant_Entregada !== '' ? r.Cant_Entregada : r.Cantidad) || 0; }
-    if (resMue && resMue.ok) {
-      (resMue.muestras || []).forEach(function(m) {
-        if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
-        _addRep(m.Remision, m.Empresa, m.Producto, m.Presentacion, _cantDe(m));
-      });
-    }
-    if (resDev && resDev.ok) {
-      (resDev.devoluciones || []).forEach(function(d) {
-        var est = (d.Estado || '').toLowerCase();
-        if (est === 'anulado' || est === 'pendiente') return;
-        var cant = _cantDe(d);
-        var vistas = {};
-        [d.Remision, d.Remision_Ingreso, d.Remision_Salida].forEach(function(r) {
-          var key = String(r || '').trim().toUpperCase();
-          if (!key || vistas[key]) return;
-          vistas[key] = true;
-          _addRep(key, d.Empresa, d.Producto, d.Presentacion, cant);
-        });
-      });
-    }
-    remisionProductoMapReparto = repMap;
+    // El armado de los mapas remisión → productos vive en
+    // js/legalizacion-prorrateo.js (compartido con el Dashboard).
+    var m = LegProrrateo.construirMapas({
+      pedidos: results[0], ingresos: results[1], muestras: results[2], devoluciones: results[3],
+      ext: results[4], extItems: results[5], cambios: results[6]
+    });
+    remisionesExternas = m.remisionesExternas;
+    if (m.externasCargadas) poblarSugerenciasMP();
+    clientesConRemisionCache = m.clientes;
+    remisionClienteMap = m.remMap;
+    remisionProductoMap = m.prodMap;
+    remisionProductoMapReparto = m.repMap;
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
     renderRemisionesExternasTab();
   } catch (e) {
@@ -1120,244 +970,23 @@ function totalGastosConceptoOf(legId, concepto) {
 }
 
 // ── Proporción de gastos por producto y por empresa (estimada) ──
-// Prorratea el gasto de cada viaje entre los productos de sus remisiones
-// relacionadas, según los litros movidos de cada uno, y agrega ese mismo
-// prorrateo por SKU y por empresa (la Nombre_Empresa del pedido dueño de
-// cada línea). Es una aproximación: Remisiones_Relacionadas es texto libre y
-// remisionProductoMap solo resuelve entregas de Pedidos, Ingresos, Cambios y
-// remisiones externas (ver loadClientesConRemision). Lo que no se puede vincular a un producto, o
-// cuyo producto no es convertible a litros, cae en el bucket "Sin identificar"
-// — el mismo bucket y monto para ambos desgloses.
-//
-// Filtros propios de la pestaña Prorrateo (#pf-emp/#pf-desde/#pf-hasta):
-// el rango de fechas excluye viajes completos por Fecha; Empresa filtra a
-// nivel de LÍNEA de producto, por la empresa dueña de esa remisión resuelta
-// (Nombre_Empresa del Pedido), NO por el reparto manual del viaje — así,
-// filtrar por una empresa muestra solo sus productos, aunque el viaje haya
-// tocado varias empresas. Con el filtro activo, "Sin identificar" se omite
-// (no se le puede atribuir a una empresa algo que no se pudo resolver) y el
-// total/porcentajes quedan sobre la porción de esa empresa únicamente.
-//
-// Líquidos vs. sólidos (vs. unidades): dentro de un mismo viaje, el gasto primero
-// se separa en bolsas — "líquidos" (prorrateados por litro), "sólidos"
-// (prorrateados por kilo) y "unidades" (por cantidad de unidades) — proporcional
-// a cuántas remisiones relacionadas aportan a cada bolsa (una remisión con
-// productos de varios tipos cuenta para cada una). Ya dentro de cada bolsa, el
-// reparto entre productos sigue siendo por litros, kilos o unidades movidos.
-// La bolsa de unidades solo la llenan las líneas de materia prima externa en
-// Unidades que no se convierten a litros/kilos (ver _litKiloDeLinea). Un viaje
-// 100% líquido (el caso más común) se comporta exactamente igual que antes.
-//
-// Combustible aparte: el concepto 'Combustible' no tiene relación con
-// ningún producto/litro/kilo, así que se excluye por completo del reparto
-// por producto de arriba y se muestra en su propia tabla "Combustible por
-// empresa", repartido según el reparto manual entre empresas que ya trae
-// cada legalización (tabla "Reparto entre empresas" del formulario) — no
-// según litros/kilos. Un viaje sin ese reparto manual cae en "Sin asignar",
-// y también uno cuyo reparto no incluye el Combustible (reparto = total de
-// gastos − combustible, ver calcularRepartoForm): por ahora el combustible no
-// se prorratea entre empresas.
-// También entran a esa tabla las líneas de Combustible de los formularios de
-// Mantenimiento (Tipo='Mantenimiento'), repartidas por el Monto de su reparto
-// entre empresas; el resto del mantenimiento va a "Mantenimiento por empresa".
+// El cálculo (prorrateo por litros/kilos/unidades de las remisiones de cada
+// viaje, Combustible y Mantenimiento aparte) vive en js/legalizacion-prorrateo.js,
+// compartido con la pestaña "Legalización de gastos" del Dashboard para que las
+// dos pantallas muestren exactamente las mismas cifras. Aquí solo se le pasan los
+// datos cargados y los filtros propios de la pestaña (#pf-emp/#pf-desde/#pf-hasta).
 function calcularProrrateoGastos() {
-  var fEmp = document.getElementById('pf-emp').value;
-  var fEmpSigla = fEmp ? getSigla(fEmp) : '';
-  var fDesde = document.getElementById('pf-desde').value;
-  var fHasta = document.getElementById('pf-hasta').value;
-
-  var porEmpresa = {};       // empresaSigla -> monto total
-  var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo } } }
-  var porEmpresaLitros = {};     // empresaSigla -> litros totales movidos (sin ponderar por monto)
-  var porEmpresaKilos = {};      // empresaSigla -> kilos totales movidos (sin ponderar por monto)
-  var porEmpresaUnidades = {};   // empresaSigla -> unidades totales movidas (materia prima en Unidades sin conversión)
-  var porEmpresaRemisiones = {}; // empresaSigla -> { codigoRemision: true }
-  var porEmpresaLegs = {};       // empresaSigla -> { legId -> Consecutivo } (legalizaciones que tocan esa empresa)
-  var legsPeriodo = {};          // legId -> true (todas las legalizaciones del período, resuelvan o no litros/kilos)
-  var sinIdentificar = 0;
-  var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto litro/kilo resoluble)
-  var sinIdentificarLegs = {};       // legId -> Consecutivo
-  var totalGeneral = 0;
-
-  // Combustible: porEmpresa = empresaSigla -> monto; legs = empresaSigla ->
-  // { legId -> Consecutivo }; sinAsignar = monto de viajes/mantenimientos sin
-  // reparto manual entre empresas (sinAsignarLegs = legId -> Consecutivo).
-  var combustible = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
-
-  // Mantenimiento: igual que el Combustible (tabla propia, sin litros/kilos).
-  var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
-
-  // Reparte subMonto (la porción de líquidos, sólidos o unidades del viaje) entre
-  // las líneas de ese tipo, proporcional a sus litros/kilos/unidades movidos.
-  function _acumularLineas(leg, items, totalUnidad, subMonto, campoUnidad, campoAcumEmp) {
-    items.forEach(function(item) {
-      var l = item.m;
-      if (l[campoUnidad] <= 0) return;
-      var emp = getSigla(l.empresa);
-      if (fEmpSigla && emp !== fEmpSigla) return;
-      var monto = (l[campoUnidad] / totalUnidad) * subMonto;
-      var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
-      porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
-      var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
-      var entry = skuMap[sku] || (skuMap[sku] = { monto: 0, legs: {} });
-      entry.monto += monto;
-      entry.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
-      totalGeneral += monto;
-
-      campoAcumEmp[emp] = (campoAcumEmp[emp] || 0) + l[campoUnidad];
-      (porEmpresaRemisiones[emp] = porEmpresaRemisiones[emp] || {})[item.codigo] = true;
-      (porEmpresaLegs[emp] = porEmpresaLegs[emp] || {})[leg.id] = leg.Consecutivo || ('#' + leg.id);
-    });
-  }
-
-  // Reparte el monto de Combustible de un viaje entre las empresas de su
-  // reparto manual (Reparto entre empresas), a prorrata del Monto de cada
-  // una — NO por litros/kilos, que no aplican a este concepto. Si el reparto
-  // del viaje cubre solo los gastos SIN Combustible (el que calcula el botón
-  // "Calcular reparto"), el combustible no tiene reparto asignado: se queda
-  // en "Sin reparto asignado" en vez de prorratearse con esas proporciones.
-  function _acumularCombustible(leg, monto) {
-    var totalReparto = totalRepartoOf(leg.id);
-    var repartoSinCombustible = totalReparto === totalGastosOf(leg.id) - monto;
-    if (totalReparto <= 0 || repartoSinCombustible) {
-      if (!fEmp) {
-        combustible.sinAsignar += monto;
-        combustible.total += monto;
-        combustible.sinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
-      }
-      return;
-    }
-    _repartirPorMonto(leg, monto, combustible);
-  }
-
-  // Reparte `monto` de una legalización entre las empresas de su reparto
-  // manual, a prorrata del Monto de cada una, y lo acumula en `dest`
-  // (combustible o mantenimiento). Sin reparto con montos (>0) queda en "Sin
-  // reparto asignado".
-  function _repartirPorMonto(leg, monto, dest) {
-    var totalReparto = totalRepartoOf(leg.id);
-    var rotulo = leg.Consecutivo || ('#' + leg.id);
-    if (totalReparto <= 0) {
-      if (!fEmp) {
-        dest.sinAsignar += monto;
-        dest.total += monto;
-        dest.sinAsignarLegs[leg.id] = rotulo;
-      }
-      return;
-    }
-    empresasOf(leg.id).forEach(function(e) {
-      var eMonto = Number(e.Monto) || 0;
-      if (eMonto <= 0) return;
-      var emp = getSigla(e.Empresa);
-      if (fEmpSigla && emp !== fEmpSigla) return;
-      var m = monto * (eMonto / totalReparto);
-      dest.porEmpresa[emp] = (dest.porEmpresa[emp] || 0) + m;
-      dest.total += m;
-      (dest.legs[emp] = dest.legs[emp] || {})[leg.id] = rotulo;
-    });
-  }
-
-  legs.forEach(function(leg) {
-    if (leg.Estado_Conciliacion === 'Rechazada') return;
-    if (fDesde && (leg.Fecha || '') < fDesde) return;
-    if (fHasta && (leg.Fecha || '') > fHasta) return;
-    // Mantenimiento (Tipo='Mantenimiento') es un gasto de vehículo, no de
-    // ruta: no tiene remisiones relacionadas ni relación con litros/kilos de
-    // producto, así que no entra al prorrateo por producto (caería completo en
-    // "Sin identificar"); va en su propia tabla "Mantenimiento por empresa".
-    // Las líneas con detalle 'Combustible' del formulario de mantenimiento se
-    // sacan de ahí y se suman a la tabla "Combustible por empresa" (mismo
-    // reparto por Monto de la legalización), sin contarse en las dos.
-    if (leg.Tipo === 'Mantenimiento') {
-      var combMant = totalGastosConceptoOf(leg.id, 'Combustible');
-      if (combMant > 0) _repartirPorMonto(leg, combMant, combustible);
-      var totalMant = totalGastosOf(leg.id) - combMant;
-      if (totalMant > 0) _repartirPorMonto(leg, totalMant, mantenimiento);
-      return;
-    }
-    legsPeriodo[leg.id] = true;
-
-    var totalCombustible = totalGastosConceptoOf(leg.id, 'Combustible');
-    if (totalCombustible > 0) _acumularCombustible(leg, totalCombustible);
-
-    var totalViaje = totalGastosOf(leg.id) - totalCombustible;
-    if (totalViaje <= 0) return;
-
-    // Remisiones_Relacionadas es un CSV simple de códigos (sin "|cant|fecha"),
-    // igual formato que lee openForm() al editar (línea ~591) — no usar
-    // _parseRemisionesField aquí, que solo separa por coma cuando detecta "|".
-    var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
-    var lineas = [];
-    // Un envío suele despachar muestras: sus remisiones se resuelven también
-    // contra Muestras y Devoluciones; para Ruta se mantiene el mapa de siempre.
-    var mapaRem = esEnvio(leg) ? remisionProductoMapReparto : remisionProductoMap;
-    codigos.forEach(function(c) {
-      var matches = mapaRem[c.trim().toUpperCase()];
-      if (matches) matches.forEach(function(m) { lineas.push({ m: m, codigo: c }); });
-    });
-
-    var totalLitros = 0, totalKilos = 0, totalUnidades = 0;
-    var codigosLiquido = {}, codigosSolido = {}, codigosUnidad = {};
-    lineas.forEach(function(item) {
-      var l = item.m;
-      var lk = _litKiloDeLinea(l);
-      l._litros = lk.litros;
-      l._kilos = lk.kilos;
-      l._unidades = lk.unidades;
-      totalLitros += l._litros;
-      totalKilos += l._kilos;
-      totalUnidades += l._unidades;
-      if (l._litros > 0) codigosLiquido[item.codigo] = true;
-      if (l._kilos > 0) codigosSolido[item.codigo] = true;
-      if (l._unidades > 0) codigosUnidad[item.codigo] = true;
-    });
-
-    var nLiq = Object.keys(codigosLiquido).length;
-    var nSol = Object.keys(codigosSolido).length;
-    var nUni = Object.keys(codigosUnidad).length;
-
-    if (nLiq + nSol + nUni <= 0) {
-      if (!fEmp) {
-        sinIdentificar += totalViaje;
-        totalGeneral += totalViaje;
-        sinIdentificarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
-        codigos.forEach(function(c) { sinIdentificarRemisiones[c] = true; });
-      }
-      return;
-    }
-
-    // Reparto del gasto del viaje entre la bolsa de líquidos, la de sólidos y
-    // la de unidades, proporcional a cuántas remisiones aportan a cada una.
-    var nBolsas = nLiq + nSol + nUni;
-    var montoLiquidos = totalViaje * nLiq / nBolsas;
-    var montoSolidos = totalViaje * nSol / nBolsas;
-    var montoUnidades = totalViaje * nUni / nBolsas;
-
-    if (totalLitros > 0) _acumularLineas(leg, lineas, totalLitros, montoLiquidos, '_litros', porEmpresaLitros);
-    if (totalKilos > 0) _acumularLineas(leg, lineas, totalKilos, montoSolidos, '_kilos', porEmpresaKilos);
-    if (totalUnidades > 0) _acumularLineas(leg, lineas, totalUnidades, montoUnidades, '_unidades', porEmpresaUnidades);
+  return LegProrrateo.calcular({
+    legs: legs,
+    items: legItems,
+    empresas: legEmpresas,
+    mapa: remisionProductoMap,
+    mapaReparto: remisionProductoMapReparto
+  }, {
+    fEmp: document.getElementById('pf-emp').value,
+    fDesde: document.getElementById('pf-desde').value,
+    fHasta: document.getElementById('pf-hasta').value
   });
-
-  return {
-    porEmpresa: porEmpresa,
-    porEmpresaSku: porEmpresaSku,
-    porEmpresaLitros: porEmpresaLitros,
-    porEmpresaKilos: porEmpresaKilos,
-    porEmpresaUnidades: porEmpresaUnidades,
-    porEmpresaRemisiones: porEmpresaRemisiones,
-    porEmpresaLegs: porEmpresaLegs,
-    legsPeriodoCount: Object.keys(legsPeriodo).length,
-    sinIdentificar: sinIdentificar,
-    sinIdentificarRemisiones: sinIdentificarRemisiones,
-    sinIdentificarLegs: sinIdentificarLegs,
-    totalGeneral: totalGeneral,
-    combustiblePorEmpresa: combustible.porEmpresa,
-    combustibleLegs: combustible.legs,
-    combustibleSinAsignar: combustible.sinAsignar,
-    combustibleSinAsignarLegs: combustible.sinAsignarLegs,
-    combustibleTotalGeneral: combustible.total,
-    mantenimiento: mantenimiento
-  };
 }
 
 // Litros/kilos con 2 decimales máx. (igual convención que _litFmt de

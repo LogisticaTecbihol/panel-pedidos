@@ -2760,10 +2760,12 @@ function buildMovimientosEmpresa() {
 //  · Concepto: Combustible / Peaje / Alimentación / Alojamiento / Envío; lo demás
 //    es "Otros". Las líneas de una legalización de Mantenimiento van a
 //    "Mantenimiento", salvo su Combustible.
-//  · Reparto por empresa = LegalizacionGastosEmpresas.Monto (reparto manual). Ese
-//    reparto suele NO incluir el Combustible, así que lo que falta para llegar al
-//    total de gastos se muestra como "Sin reparto asignado". No es el prorrateo
-//    por litros/kilos (eso exige resolver remisiones; vive en legalizacion-gastos.js).
+//  · Gasto / Combustible / Mantenimiento por empresa: es EXACTAMENTE el cálculo de la
+//    pestaña "Prorrateo de gastos" del módulo Legalización — sale del mismo código
+//    (js/legalizacion-prorrateo.js, LegProrrateo.calcular) con los mismos datos y el
+//    rango Desde/Hasta del Dashboard (sin filtro de empresa). Por eso trae las 7
+//    fuentes de remisiones (Pedidos, Ingresos, Muestras, Devoluciones, Cambios y
+//    remisiones externas) al abrir la pestaña.
 //  · Vehículos: viajes de Ruta con Km_Salida y Km_Llegada (piloto de kilometraje).
 //    Rendimiento = km de los viajes con galones ÷ galones de Combustible; alerta si
 //    queda más de 25 % bajo Vehiculos.Rendimiento_Esperado (igual que el modal "Ver").
@@ -2781,7 +2783,7 @@ var D_LEG_CATS = [
 ];
 var D_LEG_DESVIO_ALERTA = 0.25;
 
-var dLeg = null;          // { legs, items, empresas, vehiculos } | null (sin cargar)
+var dLeg = null;          // { legs, items, empresas, vehiculos, mapas, fallidas } | null (sin cargar)
 var dLegPromesa = null;   // carga en curso
 var dLegGen = 0;          // sube al invalidar: una carga vieja no pisa la caché
 var dLegBuildTok = 0;     // el último repintado gana
@@ -2803,17 +2805,40 @@ function dLegCargar() {
   if (dLegPromesa) return dLegPromesa;
   var gen = dLegGen;
   var p = Promise.all([
-    apiGet('getLegalizacionGastos', { columns: 'id,Consecutivo,Fecha,Responsable,Tipo,Placa,Estado_Conciliacion,Km_Salida,Km_Llegada' }),
+    apiGet('getLegalizacionGastos', { columns: 'id,Consecutivo,Fecha,Responsable,Tipo,Placa,Estado_Conciliacion,Km_Salida,Km_Llegada,Remisiones_Relacionadas' }),
     apiGet('getLegalizacionGastosItems', { columns: 'id,Legalizacion_Id,Concepto,Proveedor,Valor,Galones' }),
     apiGet('getLegalizacionGastosEmpresas', { columns: 'id,Legalizacion_Id,Empresa,Monto' }),
-    apiGet('getVehiculos', { columns: 'id,Placa,Descripcion,Rendimiento_Esperado' }).catch(function() { return { ok: true, vehiculos: [] }; })
+    apiGet('getVehiculos', { columns: 'id,Placa,Descripcion,Rendimiento_Esperado' }).catch(function() { return { ok: true, vehiculos: [] }; }),
+    // Fuentes de remisiones del prorrateo: mismas consultas y columnas que
+    // loadClientesConRemision() de legalizacion-gastos.js.
+    apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' }),
+    apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; }),
+    apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
+    apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+    apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
+    apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
+    apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
   ]).then(function(r) {
     for (var i = 0; i < 3; i++) if (!r[i].ok) throw new Error(r[i].error || 'Error al cargar legalizaciones');
+    // Sin pedidos no hay forma de resolver remisiones: todo caería en "Sin
+    // identificar" y parecería un resultado válido. Mejor avisar.
+    if (!r[4].ok) throw new Error(r[4].error || 'Error al cargar los pedidos (remisiones)');
+    // Las demás fuentes, si fallan, solo restan remisiones resolubles: se avisa en la nota.
+    var fallidas = [];
+    [[5, 'ingresos'], [6, 'muestras'], [7, 'devoluciones'], [8, 'remisiones externas'], [9, 'remisiones externas'], [10, 'cambios']].forEach(function(f) {
+      if (!r[f[0]] || !r[f[0]].ok) { if (fallidas.indexOf(f[1]) < 0) fallidas.push(f[1]); }
+    });
+    var mapas = LegProrrateo.construirMapas({
+      pedidos: r[4], ingresos: r[5], muestras: r[6], devoluciones: r[7],
+      ext: r[8], extItems: r[9], cambios: r[10]
+    });
     var datos = {
       legs: r[0].legalizaciones || [],
       items: r[1].items || [],
       empresas: r[2].empresas || [],
-      vehiculos: (r[3] && r[3].vehiculos) || []
+      vehiculos: (r[3] && r[3].vehiculos) || [],
+      mapas: mapas,
+      fallidas: fallidas
     };
     if (gen === dLegGen) dLeg = datos;
     return datos;
@@ -2841,14 +2866,13 @@ function dLegCategoria(leg, it) {
 
 // Cálculo puro: todo lo que muestra y exporta la pestaña.
 function dLegCalcular(datos, desde, hasta) {
-  var itemsPorLeg = {}, repPorLeg = {}, vehEsp = {};
+  var itemsPorLeg = {}, vehEsp = {};
   datos.items.forEach(function(it) { (itemsPorLeg[it.Legalizacion_Id] = itemsPorLeg[it.Legalizacion_Id] || []).push(it); });
-  datos.empresas.forEach(function(e) { (repPorLeg[e.Legalizacion_Id] = repPorLeg[e.Legalizacion_Id] || []).push(e); });
   datos.vehiculos.forEach(function(v) { vehEsp[String(v.Placa || '').trim().toUpperCase()] = v; });
 
   var d = {
     filas: [], total: 0, nLeg: 0, nEnv: 0, pendTotal: 0, pendN: 0, rechazadas: 0,
-    porMes: {}, porCat: {}, reparto: {}, sinReparto: 0, excedente: 0, nExcedente: 0, vehiculos: []
+    porMes: {}, porCat: {}, vehiculos: [], pro: null, cuadre: 0
   };
   var veh = {};
 
@@ -2877,19 +2901,6 @@ function dLegCalcular(datos, desde, hasta) {
     d.total += totalLeg;
     if (esEnv) d.nEnv++; else d.nLeg++;
     if (!esEnv && leg.Estado_Conciliacion === 'Por conciliar') { d.pendTotal += totalLeg; d.pendN++; }
-
-    // Reparto manual entre empresas; lo no repartido queda aparte para que cuadre con el total.
-    var sumRep = 0;
-    (repPorLeg[leg.id] || []).forEach(function(e) {
-      var monto = Number(e.Monto) || 0;
-      if (monto <= 0) return;
-      var s = dGetSigla(e.Empresa);
-      d.reparto[s] = (d.reparto[s] || 0) + monto;
-      sumRep += monto;
-    });
-    var dif = totalLeg - sumRep;
-    if (dif > 0) d.sinReparto += dif;
-    else if (dif < -0.5) { d.excedente += -dif; d.nExcedente++; }
 
     // Kilometraje (solo viajes de Ruta).
     if (!esEnv && !esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
@@ -2929,11 +2940,58 @@ function dLegCalcular(datos, desde, hasta) {
     return v;
   }).sort(function(a, b) { return b.km - a.km; });
 
+  // Prorrateo por empresa: el mismo cálculo (y los mismos datos) que la pestaña
+  // "Prorrateo de gastos" del módulo Legalización, con el rango del Dashboard.
+  d.pro = LegProrrateo.calcular({
+    legs: datos.legs,
+    items: datos.items,
+    empresas: datos.empresas,
+    mapa: datos.mapas.prodMap,
+    mapaReparto: datos.mapas.repMap
+  }, { fEmp: '', fDesde: desde, fHasta: hasta });
+  // Autoverificación: gasto prorrateado + combustible + mantenimiento debe sumar el
+  // total de gastos del período (si no, se avisa en la nota).
+  d.cuadre = d.total - (d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total);
+
   return d;
 }
 
 function dLegNum(v, dec) {
   return Number(v).toLocaleString('es-CO', { minimumFractionDigits: dec || 0, maximumFractionDigits: dec || 0 });
+}
+
+// Mismo formato de cifras que la pestaña Prorrateo: montos con 2 decimales y % con 2.
+function dLegMoney2(v) {
+  var n = Number(v); if (!n && n !== 0) return '—';
+  return '$' + n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// { legId: consecutivo } → "LEG-00002, LEG-00010" (para el tooltip de «Sin …»).
+function dLegLegsTxt(obj) {
+  return Object.keys(obj || {}).map(function(id) { return obj[id]; }).sort(function(a, b) { return String(a).localeCompare(String(b)); }).join(', ');
+}
+
+// Filas por empresa de un bloque (ordenadas de mayor a menor) + la fila «Sin …»
+// si tiene monto; pct = % del total del bloque.
+function dLegFilasEmpresa(porEmpresa, total, sin) {
+  var rows = Object.keys(porEmpresa).map(function(emp) { return { label: emp, value: porEmpresa[emp] }; })
+    .sort(function(a, b) { return b.value - a.value; });
+  if (sin && sin.value > 0) rows.push({ label: sin.label, value: sin.value, legs: sin.legs, sin: true });
+  rows.forEach(function(r) { r.pct = total > 0 ? (r.value / total * 100) : 0; });
+  return rows;
+}
+
+function dLegTablaEmpresa(rows, total) {
+  if (!rows.length) return '<div style="color:#a0aec0;text-align:center;padding:30px 20px">Sin datos en el período</div>';
+  return '<table class="mini-table"><thead><tr><th>Empresa</th><th class="num">Monto</th><th class="num">%</th></tr></thead><tbody>' +
+    rows.map(function(r) {
+      var etiqueta = r.sin
+        ? '<span style="color:#718096;font-weight:700"' + (r.legs ? ' title="' + escHtml(r.legs) + '"' : '') + '>' + escHtml(r.label) + '</span>'
+        : '<span class="sigla-badge ' + getSiglaClass(r.label) + '">' + escHtml(r.label) + '</span>';
+      return '<tr><td>' + etiqueta + '</td><td class="num">' + escHtml(dLegMoney2(r.value)) + '</td><td class="num">' + r.pct.toFixed(2) + '%</td></tr>';
+    }).join('') +
+    '<tr style="font-weight:700;background:#f7fafc"><td>Total</td><td class="num">' + escHtml(dLegMoney2(total)) + '</td><td class="num">' + (total > 0 ? '100.00%' : '0.00%') + '</td></tr>' +
+    '</tbody></table>';
 }
 
 async function buildLegalizacionDash() {
@@ -2949,7 +3007,7 @@ async function buildLegalizacionDash() {
   chipEl.innerHTML = '<span class="dash-range-chip">📅 ' + escHtml(rango) + ' · Todas las empresas</span>';
 
   if (!dLeg) {
-    msgEl.textContent = 'Cargando legalizaciones…';
+    msgEl.textContent = 'Cargando legalizaciones y remisiones…';
     msgEl.style.display = '';
     contEl.style.display = 'none';
   }
@@ -2998,16 +3056,18 @@ async function buildLegalizacionDash() {
     vacioEl.style.display = '';
   }
 
-  // Reparto por empresa
-  var repRows = Object.keys(d.reparto).map(function(s) { return { sigla: s, valor: d.reparto[s] }; })
-    .sort(function(a, b) { return b.valor - a.valor; })
-    .map(function(r) { return { label: r.sigla, value: r.valor, color: EMP_COLORS[r.sigla] || '#718096' }; });
-  if (d.sinReparto > 0) repRows.push({ label: 'Sin reparto asignado', value: d.sinReparto, color: '#cbd5e0' });
-  repRows.forEach(function(r) {
-    r.valueTxt = dMoneyM(r.value) + (d.total > 0 ? ' · ' + dLegNum(r.value / d.total * 100) + '%' : '');
-  });
-  document.getElementById('leg-reparto').innerHTML = dHbarList(repRows, null, { stack: true }) +
-    (d.nExcedente ? '<div class="leg-aviso" style="font-size:0.76rem;margin-top:10px">⚠ ' + d.nExcedente + ' legalización(es) con reparto mayor al gasto (' + dMoneyFull(d.excedente) + ' de más).</div>' : '');
+  // Gasto / Combustible / Mantenimiento por empresa (prorrateo — mismas cifras que
+  // la pestaña "Prorrateo de gastos" del módulo Legalización)
+  var pro = d.pro;
+  var proRows = dLegFilasEmpresa(pro.porEmpresa, pro.totalGeneral,
+    { label: 'Sin identificar', value: pro.sinIdentificar, legs: dLegLegsTxt(pro.sinIdentificarLegs) });
+  var combRows = dLegFilasEmpresa(pro.combustiblePorEmpresa, pro.combustibleTotalGeneral,
+    { label: 'Sin reparto asignado', value: pro.combustibleSinAsignar, legs: dLegLegsTxt(pro.combustibleSinAsignarLegs) });
+  var mantRows = dLegFilasEmpresa(pro.mantenimiento.porEmpresa, pro.mantenimiento.total,
+    { label: 'Sin reparto asignado', value: pro.mantenimiento.sinAsignar, legs: dLegLegsTxt(pro.mantenimiento.sinAsignarLegs) });
+  document.getElementById('leg-pro-emp').innerHTML = dLegTablaEmpresa(proRows, pro.totalGeneral);
+  document.getElementById('leg-comb').innerHTML = dLegTablaEmpresa(combRows, pro.combustibleTotalGeneral);
+  document.getElementById('leg-mant').innerHTML = dLegTablaEmpresa(mantRows, pro.mantenimiento.total);
 
   // Vehículos
   var vehEl = document.getElementById('leg-veh');
@@ -3057,12 +3117,14 @@ async function buildLegalizacionDash() {
   document.getElementById('leg-nota').innerHTML =
     '<p>• Incluye legalizaciones de ruta, mantenimiento y envíos por <b>fecha de la legalización</b>; excluye las rechazadas' +
       (d.rechazadas ? ' (' + dLegNum(d.rechazadas) + ' en el período)' : '') + '.</p>' +
-    '<p>• <b>Reparto por empresa:</b> es el reparto manual guardado en cada legalización. Suele no incluir el combustible, por eso lo que falta para llegar al total aparece como «Sin reparto asignado». No es el prorrateo por litros/kilos de la pestaña Prorrateo de Legalización.</p>' +
+    '<p>• <b>Gasto por empresa:</b> el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas, por litros, kilos o unidades, y se asigna a la empresa dueña de cada remisión; lo que no se puede ligar a un producto queda en «Sin identificar». <b>Combustible</b> y <b>Mantenimiento</b> se reparten según el reparto manual de cada legalización; sin reparto, quedan en «Sin reparto asignado». Son las mismas cifras de la pestaña Prorrateo de gastos del módulo Legalización (mismo rango, sin filtro de empresa). Pasa el cursor sobre «Sin …» para ver qué legalizaciones lo componen.</p>' +
+    (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
+    (datos.fallidas.length ? '<p class="leg-aviso">⚠ No se pudieron cargar: ' + escHtml(datos.fallidas.join(', ')) + '. Las remisiones que dependen de esas fuentes pueden aparecer como «Sin identificar».</p>' : '') +
     '<p>• <b>Rendimiento:</b> km de los viajes con galones registrados ÷ galones de combustible; ⚠ si queda más de 25 % por debajo del esperado. Solo hay datos de las placas del piloto de kilometraje; los envíos y el mantenimiento no suman km.</p>' +
     ((rolP === 'admin' || rolP === 'cartera') ? '' : '<p>• Si tu usuario está limitado a ciertas empresas, solo ves las legalizaciones que las involucran: los totales pueden ser parciales.</p>');
 }
 
-// Exporta a Excel lo que muestra la pestaña (5 hojas, la última con los criterios).
+// Exporta a Excel lo que muestra la pestaña (7 hojas, la última con los criterios).
 function exportLegalizacionExcel() {
   if (typeof XLSX === 'undefined') { showToast('La librería de Excel aún no carga; intenta de nuevo en unos segundos', '#e74c3c'); return; }
   if (!dLegUltimo || !dLegUltimo.d.filas.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
@@ -3084,12 +3146,37 @@ function exportLegalizacionExcel() {
     return o;
   });
 
-  function pct(v) { return d.total > 0 ? Math.round(v / d.total * 1000) / 10 : 0; }
-  var hojaRep = Object.keys(d.reparto).map(function(s) { return { s: s, v: d.reparto[s] }; })
-    .sort(function(a, b) { return b.v - a.v; })
-    .map(function(r) { return { 'Empresa': r.s, 'Monto': Math.round(r.v), '% del total': pct(r.v) }; });
-  if (d.sinReparto > 0) hojaRep.push({ 'Empresa': 'Sin reparto asignado', 'Monto': Math.round(d.sinReparto), '% del total': pct(d.sinReparto) });
-  hojaRep.push({ 'Empresa': 'TOTAL GASTOS', 'Monto': Math.round(d.total), '% del total': d.total > 0 ? 100 : 0 });
+  // Prorrateo por empresa: mismas filas y porcentajes que las tablas de la pestaña.
+  function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
+  var pro = d.pro;
+  function hojaBloque(porEmpresa, total, sinLabel, sinValor, extraCols) {
+    var filas = Object.keys(porEmpresa).map(function(e) { return { e: e, v: porEmpresa[e] }; })
+      .sort(function(a, b) { return b.v - a.v; })
+      .map(function(r) {
+        var o = { 'Empresa': r.e, 'Monto': r2(r.v), '%': total > 0 ? r2(r.v / total * 100) : 0 };
+        if (extraCols) Object.keys(extraCols(r.e)).forEach(function(k) { o[k] = extraCols(r.e)[k]; });
+        return o;
+      });
+    if (sinValor > 0) {
+      var s = { 'Empresa': sinLabel, 'Monto': r2(sinValor), '%': total > 0 ? r2(sinValor / total * 100) : 0 };
+      if (extraCols) Object.keys(extraCols(null)).forEach(function(k) { s[k] = ''; });
+      filas.push(s);
+    }
+    var t = { 'Empresa': 'TOTAL', 'Monto': r2(total), '%': total > 0 ? 100 : 0 };
+    if (extraCols) Object.keys(extraCols(null)).forEach(function(k) { t[k] = ''; });
+    filas.push(t);
+    return filas;
+  }
+  var hojaPro = hojaBloque(pro.porEmpresa, pro.totalGeneral, 'Sin identificar', pro.sinIdentificar, function(e) {
+    return {
+      'Litros movidos': e ? r2(pro.porEmpresaLitros[e]) : '',
+      'Kilos movidos': e ? r2(pro.porEmpresaKilos[e]) : '',
+      'Unidades movidas': e ? r2(pro.porEmpresaUnidades[e]) : '',
+      'Legalizaciones': e ? Object.keys(pro.porEmpresaLegs[e] || {}).length : ''
+    };
+  });
+  var hojaComb = hojaBloque(pro.combustiblePorEmpresa, pro.combustibleTotalGeneral, 'Sin reparto asignado', pro.combustibleSinAsignar);
+  var hojaMant = hojaBloque(pro.mantenimiento.porEmpresa, pro.mantenimiento.total, 'Sin reparto asignado', pro.mantenimiento.sinAsignar);
 
   var hojaVeh = d.vehiculos.map(function(v) {
     return {
@@ -3110,7 +3197,9 @@ function exportLegalizacionExcel() {
     [],
     ['Incluye legalizaciones de ruta, mantenimiento y envíos por fecha de la legalización; excluye las rechazadas (' + d.rechazadas + ' en el período).'],
     ['Concepto: Combustible, Peaje, Alimentación, Alojamiento y Envío; el resto es "Otros". Las líneas de mantenimiento van a "Mantenimiento" salvo su combustible.'],
-    ['Reparto por empresa: reparto manual guardado en cada legalización. Lo que falta para llegar al total de gastos (normalmente el combustible) es "Sin reparto asignado". No es el prorrateo por litros/kilos.'],
+    ['Gasto por empresa: el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas por litros, kilos o unidades, a la empresa dueña de cada remisión; lo que no se liga a un producto es "Sin identificar".'],
+    ['Combustible y Mantenimiento por empresa: según el reparto manual de cada legalización; sin reparto, "Sin reparto asignado". Las líneas de combustible de mantenimiento van a la hoja de Combustible.'],
+    ['Las hojas de empresa son las mismas cifras de la pestaña "Prorrateo de gastos" del módulo Legalización (mismo rango, sin filtro de empresa).'],
     ['Vehículos: viajes de ruta con km de salida y llegada. Km/galón = km de los viajes con galones ÷ galones de combustible.'],
     ['Si el usuario está limitado a ciertas empresas, RLS solo le entrega las legalizaciones que las involucran: los totales pueden ser parciales.']
   ];
@@ -3120,7 +3209,9 @@ function exportLegalizacionExcel() {
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaLeg), 'Legalizaciones');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMes), 'Gasto por mes');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaRep), 'Reparto por empresa');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaPro), 'Gasto por empresa');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaComb), 'Combustible por empresa');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMant), 'Mantenimiento por empresa');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaVeh.length ? hojaVeh : [{ 'Placa': '(sin viajes con kilometraje en el período)' }]), 'Vehículos');
   XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
   XLSX.writeFile(wb, 'legalizacion_gastos_' + today() + '.xlsx');
