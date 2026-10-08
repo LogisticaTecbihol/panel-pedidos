@@ -2532,12 +2532,17 @@ function renderFacturaRemisiones() {
     var anuladaTag = '';
     if (pedAnulado) anuladaTag += ' <span style="color:#dc2626;font-weight:700" title="El pedido está marcado como Anulado">🚫 Pedido anulado</span>';
     if (remAnulada) anuladaTag += ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Remisión anulada</span>';
+    // Anular la remisión no devuelve la entrega al pedido: este botón sí.
+    var reabrirBtn = (remAnulada && !pedAnulado && AUTH.canReabrirEntrega())
+      ? '<button type="button" data-rem="' + escHtml(rem) + '" onclick="reabrirEntregaRemision(this.dataset.rem)" title="Devuelve a pendiente las líneas que esta remisión había entregado, para poder volver a despacharlas" style="background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:5px;padding:4px 10px;font-size:0.74rem;font-weight:700;cursor:pointer;white-space:nowrap">↩ Reabrir entrega</button>'
+      : '';
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:' + (anyAnulada ? '#fef2f2' : facturado ? '#eef2ff' : '#f7fafc') + ';border:1px solid ' + (anyAnulada ? '#fecaca' : facturado ? '#c7d2fe' : '#e2e8f0') + ';border-radius:6px;flex-wrap:wrap">' +
       '<div style="flex:1;min-width:200px">' +
         '<div style="font-weight:700;font-size:0.8rem;color:#1a5276">Rem: ' + escHtml(rem) + (fechaFmt ? ' <span style="font-weight:400;color:#718096">· ' + escHtml(fechaFmt) + '</span>' : '') + anuladaTag + '</div>' +
         '<div style="font-size:0.7rem;color:#718096;margin-top:2px">' + escHtml(prodsText) + '</div>' +
       '</div>' +
       '<div style="display:flex;gap:6px;align-items:center">' +
+        reabrirBtn +
         '<label style="font-size:0.72rem;color:#4a5568;font-weight:600;white-space:nowrap">N° Factura</label>' +
         '<input type="text" class="fac-rem-num" data-rem="' + escHtml(rem) + '" value="' + escHtml(nf) + '" placeholder="Ej: FAC-001" style="width:120px;font-size:0.78rem;padding:4px 8px;border:1px solid #d1d5db;border-radius:5px" onchange="onFacturaSeccionChange(this)">' +
         '<label style="font-size:0.72rem;color:#4a5568;font-weight:600;white-space:nowrap">Fecha</label>' +
@@ -2609,6 +2614,112 @@ async function _guardarFacturaRemision(remision, numFactura, fechaFactura) {
   } catch (e) {
     console.error('Error guardando factura:', e);
     showToast('Error al guardar factura: ' + e.message, '#e74c3c');
+  }
+}
+
+// ── Reabrir la entrega de una remisión anulada ──
+// Anular una remisión (Reportes → Remisiones Anuladas) solo la excluye del
+// Kardex y la marca en rojo: NO toca Pedidos. Las líneas seguían con
+// Cant_Entregada = Cantidad y la celda de asignación decía "sin pendiente por
+// asignar", sin forma de volver a despachar (AGROMAX #134 de IASO, remisión
+// IASO-RS-0114, 2026-10-08). Este botón devuelve a pendiente solo lo que ESA
+// remisión entregó: quita su entrada de Pedidos.Remisiones, resta su cantidad
+// de Cant_Entregada, recalcula Estado_Entrega y borra sus filas de
+// EntregasPedido (si no, el Dashboard contaría la entrega dos veces).
+// Todo se lee del servidor, no del modal: guardarTodo también refresca las
+// entregas desde el servidor y pisaría cualquier baja hecha solo en pantalla.
+var _reabriendoEntrega = false;
+async function reabrirEntregaRemision(rem) {
+  rem = String(rem || '').trim();
+  if (!rem || activeIdx == null || !consecs[activeIdx]) return;
+  if (!AUTH.canReabrirEntrega()) { showToast('No tienes permiso para reabrir entregas', '#e74c3c'); return; }
+  if (_reabriendoEntrega || _guardadoEnCurso) return;
+  if (_detailPedidoAnulado) { showToast('El pedido está anulado: no se puede reabrir una entrega', '#e74c3c'); return; }
+  var c = consecs[activeIdx];
+  var lineIds = detailWorkingLines.map(function(l) { return l && l.__row; }).filter(Boolean);
+  if (!lineIds.length) return;
+  if (!window.confirm('¿Reabrir la entrega de la remisión ' + rem + '?\n\n' +
+      'Las líneas de este pedido que salieron en esa remisión vuelven a quedar pendientes de entrega ' +
+      '(y se borra su registro de entrega). La remisión sigue anulada y su número no se reutiliza.\n\n' +
+      'Los cambios sin guardar de esta ventana se perderán.')) return;
+
+  _reabriendoEntrega = true;
+  try {
+    var anul = await _sb.from('RemisionesAnuladas').select('id').eq('Remision', rem).limit(1);
+    if (anul.error) throw anul.error;
+    if (!anul.data || !anul.data.length) throw new Error('La remisión ' + rem + ' no está registrada como anulada (Reportes → Remisiones Anuladas)');
+
+    var ped = await _sb.from('Pedidos').select('id,Cantidad,Cant_Entregada,Remisiones,Fecha_Ult_Entrega,Estado_2').in('id', lineIds);
+    if (ped.error) throw ped.error;
+    var ent = await _sb.from('EntregasPedido').select('id,num_factura,fecha_factura').eq('remision', rem).in('pedido_id', lineIds);
+    if (ent.error) throw ent.error;
+    var conFactura = (ent.data || []).some(function(r) { return (r.num_factura || '').trim() || (r.fecha_factura || '').trim(); });
+    if (conFactura) throw new Error('La remisión ' + rem + ' tiene factura registrada. Borra el N° de factura y la fecha (sección Facturación por remisión) y vuelve a intentar.');
+
+    var cambios = [];
+    (ped.data || []).forEach(function(p) {
+      var entradas = parseEntregas(p.Remisiones, Number(p.Cant_Entregada) || 0, p.Fecha_Ult_Entrega);
+      var quitar = entradas.filter(function(e) { return (e.remision || '').trim() === rem; });
+      if (!quitar.length) return;
+      var resto = entradas.filter(function(e) { return (e.remision || '').trim() !== rem; });
+      var cantQuitada = quitar.reduce(function(s, e) { return s + (Number(e.cantidad) || 0); }, 0);
+      var pedida = Number(p.Cantidad) || 0;
+      var nuevaEnt = Math.max(0, (Number(p.Cant_Entregada) || 0) - cantQuitada);
+      // Mismo criterio de Estado_Entrega que guardarTodo.
+      var estado;
+      if (pedida > 0 && nuevaEnt >= pedida) {
+        estado = (resto.length > 0 && resto.every(function(e) { return (e.remision || '').trim() !== ''; })) ? 'Entregado' : 'Alistado';
+      } else if (nuevaEnt > 0) {
+        estado = 'Parcial';
+      } else {
+        estado = 'Recibido';
+      }
+      var maxFecha = '';
+      resto.forEach(function(e) { if (e.fecha && e.fecha > maxFecha) maxFecha = e.fecha; });
+      cambios.push({ id: p.id, upd: {
+        Cant_Entregada: nuevaEnt,
+        Cant_Pendiente: Math.max(0, pedida - nuevaEnt),
+        Estado_Entrega: estado,
+        Remisiones: formatEntregas(resto) || null,
+        Fecha_Ult_Entrega: maxFecha || null,
+        modificado_por: _uid()
+      } });
+    });
+
+    for (var i = 0; i < cambios.length; i++) {
+      var ru = await _sb.from('Pedidos').update(cambios[i].upd).eq('id', cambios[i].id).select('id');
+      if (ru.error) throw ru.error;
+      if (!ru.data || !ru.data.length) throw new Error('No se pudo actualizar la línea ' + cambios[i].id + ' (sin permiso sobre esta empresa). Vuelve a intentar.');
+    }
+
+    // Pedido "Cerrado" → vuelve a "Abierto" para poder despachar de nuevo.
+    var reabrirPedido = cambios.length > 0 && derivedEstado2(ped.data || []) === 'Cerrado';
+    if (reabrirPedido) {
+      var r2 = await _sb.from('Pedidos').update({ Estado_2: 'Abierto', modificado_por: _uid() }).in('id', (ped.data || []).map(function(p) { return p.id; }));
+      if (r2.error) throw r2.error;
+    }
+
+    // Se borra sobre TODAS las líneas del pedido (no solo las cambiadas) para que
+    // un reintento tras un fallo a medias también limpie estas filas.
+    var avisoEP = '';
+    var del = await _sb.from('EntregasPedido').delete().eq('remision', rem).in('pedido_id', lineIds).select('id');
+    if (del.error) avisoEP = ' · ⚠ no se pudo borrar el registro en EntregasPedido: ' + del.error.message;
+    else if ((ent.data || []).length > (del.data || []).length) avisoEP = ' · ⚠ quedaron filas de EntregasPedido sin borrar (revisa permisos)';
+
+    showToast(cambios.length
+      ? '↩ Entrega reabierta: ' + cambios.length + ' línea(s) de la remisión ' + rem + ' vuelven a pendiente' + (reabrirPedido ? ' · el pedido pasó a Abierto' : '') + avisoEP
+      : 'Ninguna línea de este pedido tiene ya la remisión ' + rem + ' (se recarga el pedido)' + avisoEP,
+      avisoEP ? '#e67e22' : undefined);
+
+    // Recargar y reabrir el modal sobre el mismo pedido (consecs se reordena).
+    var reopenKey = keyOf(c.Nombre_Empresa, c.Consecutivo, c.Cliente);
+    await loadFromAPI();
+    var ni = consecs.findIndex(function(cc) { return keyOf(cc.Nombre_Empresa, cc.Consecutivo, cc.Cliente) === reopenKey; });
+    if (ni >= 0) openDetail(ni);
+  } catch (err) {
+    showToast('❌ ' + ((err && err.message) || err), '#e74c3c');
+  } finally {
+    _reabriendoEntrega = false;
   }
 }
 

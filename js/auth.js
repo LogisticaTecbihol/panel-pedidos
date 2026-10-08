@@ -311,6 +311,14 @@ var AUTH = (function() {
     return _profile.rol === 'admin' || _profile.rol === 'editor';
   }
 
+  // Quién puede "Reabrir entrega" de una remisión anulada (devuelve a pendiente
+  // las líneas que esa remisión había entregado). Coincide con quienes RLS deja
+  // modificar Pedidos y borrar EntregasPedido, y con quien emite/anula remisiones.
+  function canReabrirEntrega() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'remisionador';
+  }
+
   // Quién puede clasificar un despacho (Ruta / Envío / Comercial) en la pestaña
   // Despachos de Pedidos. Coincide con las políticas de la tabla TipoDespacho.
   function canSetTipoDespacho() {
@@ -451,6 +459,7 @@ var AUTH = (function() {
     canToggleBloqueoCartera: canToggleBloqueoCartera,
     canApproveNuevoCliente: canApproveNuevoCliente,
     canDescomprometer: canDescomprometer,
+    canReabrirEntrega: canReabrirEntrega,
     canUploadAdjuntos: canUploadAdjuntos,
     canSetTipoDespacho: canSetTipoDespacho,
     hasCompany: hasCompany,
