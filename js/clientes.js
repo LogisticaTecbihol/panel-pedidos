@@ -239,8 +239,8 @@ function _estadoBadge(estado, mixto) {
 // UNA por cliente unificado (mismo NIT): el trigger sync_documentacion_cliente
 // la replica a todos los registros del NIT y los registros nuevos la heredan.
 // Solo admin/editor/cartera la cambian (mismo candado que Observaciones_Cartera).
-var _DOC_ESTADOS = ['Sin revisar', 'Completa y vigente', 'Incompleta', 'Desactualizada', 'Incompleta y desactualizada'];
-var _DOC_CLS = { 'Sin revisar': 'doc-sin', 'Completa y vigente': 'doc-ok', 'Incompleta': 'doc-inc', 'Desactualizada': 'doc-des', 'Incompleta y desactualizada': 'doc-incdes' };
+var _DOC_ESTADOS = ['Sin revisar', 'Sin documentación', 'Completa y vigente', 'Incompleta', 'Desactualizada', 'Incompleta y desactualizada'];
+var _DOC_CLS = { 'Sin revisar': 'doc-sin', 'Sin documentación': 'doc-nodoc', 'Completa y vigente': 'doc-ok', 'Incompleta': 'doc-inc', 'Desactualizada': 'doc-des', 'Incompleta y desactualizada': 'doc-incdes' };
 
 function _docNorm(d) {
   d = (d || '').trim();

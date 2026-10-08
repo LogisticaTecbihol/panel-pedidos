@@ -200,9 +200,9 @@ function carEstadoCliente(regs) {
 // ── Documentación de cartera (una por cliente unificado / NIT) ──
 // Se califica en clientes.html; el trigger sync_documentacion_cliente la
 // replica a todos los registros del mismo NIT.
-var CAR_DOC_ESTADOS = ['Incompleta y desactualizada', 'Incompleta', 'Desactualizada', 'Sin revisar', 'Completa y vigente'];  // de más a menos grave
-var CAR_DOC_PEND = ['Incompleta y desactualizada', 'Incompleta', 'Desactualizada'];
-var CAR_DOC_CLS = { 'Sin revisar': 'doc-sin', 'Completa y vigente': 'doc-ok', 'Incompleta': 'doc-inc', 'Desactualizada': 'doc-des', 'Incompleta y desactualizada': 'doc-incdes' };
+var CAR_DOC_ESTADOS = ['Sin documentación', 'Incompleta y desactualizada', 'Incompleta', 'Desactualizada', 'Sin revisar', 'Completa y vigente'];  // de más a menos grave
+var CAR_DOC_PEND = ['Sin documentación', 'Incompleta y desactualizada', 'Incompleta', 'Desactualizada'];
+var CAR_DOC_CLS = { 'Sin revisar': 'doc-sin', 'Sin documentación': 'doc-nodoc', 'Completa y vigente': 'doc-ok', 'Incompleta': 'doc-inc', 'Desactualizada': 'doc-des', 'Incompleta y desactualizada': 'doc-incdes' };
 
 function carDocNorm(d) {
   d = (d || '').trim();
@@ -1337,7 +1337,7 @@ function carBloqueadosPorCliente(bloq) {
 
 function carRenderResumen(bloq, cliDoc) {
   var dec = carDecisiones30d();
-  var docCls = { 'Incompleta y desactualizada': 'sol-pend', 'Incompleta': 'recibido', 'Desactualizada': 'parcial', 'Sin revisar': 'total', 'Completa y vigente': 'entregado' };
+  var docCls = { 'Sin documentación': 'sin-doc', 'Incompleta y desactualizada': 'sol-pend', 'Incompleta': 'recibido', 'Desactualizada': 'parcial', 'Sin revisar': 'total', 'Completa y vigente': 'entregado' };
   document.getElementById('res-doc-stats').innerHTML = CAR_DOC_ESTADOS.map(function(e) {
     var n = (cliDoc || []).filter(function(x) { return x.doc.estado === e; }).length;
     return '<div class="sc ' + docCls[e] + '" style="cursor:pointer" data-doc="' + escHtml(e) + '" onclick="carVerDoc(this.getAttribute(\'data-doc\'))">' +

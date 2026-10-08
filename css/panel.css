@@ -731,3 +731,6 @@ thead th:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' \2195'; c
 .doc-des { background: #fefcbf; color: #975a16; }
 .doc-incdes { background: #fde8e8; color: #9b2c2c; }
 .doc-sin { background: #edf2f7; color: #718096; }
+.doc-nodoc { background: #9b2c2c; color: #fff; }
+.sc.sin-doc { border-color: #742a2a; }
+.sc.sin-doc .num { color: #742a2a; }

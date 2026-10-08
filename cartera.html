@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#1a5276">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
 <title>Cartera – Sistema de Gestión Logística</title>
-<link rel="stylesheet" href="css/panel.css?v=20261006b">
+<link rel="stylesheet" href="css/panel.css?v=20261008a">
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-modulo="cartera">
@@ -93,7 +93,8 @@
   <div class="filters" id="car-filters">
     <div class="fg"><label>Empresa</label><select id="f-emp" onchange="carRender()"><option value="">Todas</option></select></div>
     <div class="fg" id="fg-doc" style="display:none"><label>Documentación</label><select id="f-doc" onchange="carRender()">
-      <option value="pendientes">Pendientes (incompleta / desactualizada)</option>
+      <option value="pendientes">Pendientes (sin documentación / incompleta / desactualizada)</option>
+      <option value="Sin documentación">Sin documentación</option>
       <option value="Incompleta y desactualizada">Incompleta y desactualizada</option>
       <option value="Incompleta">Incompleta</option>
       <option value="Desactualizada">Desactualizada</option>
@@ -351,6 +352,6 @@
 <script src="js/shared.js?v=20261006c"></script>
 <script src="js/auth.js?v=20261006a"></script>
 <script src="js/notificaciones.js?v=20261006a"></script>
-<script src="js/cartera.js?v=20261006c"></script>
+<script src="js/cartera.js?v=20261008a"></script>
 </body>
 </html>
