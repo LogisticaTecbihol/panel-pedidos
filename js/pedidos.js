@@ -2479,7 +2479,9 @@ function renderEntregasHTML(lineIdx, entregas) {
     if (remAnulada) anuladaTag += ' <span style="color:#dc2626;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — se excluye del Kardex">⛔ Remisión anulada</span>';
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;color:#4a5568;background:' + (anyAnulada ? '#fef2f2' : '#f7fafc') + ';padding:2px 6px;border-radius:4px;border:1px solid ' + (anyAnulada ? '#fecaca' : '#e2e8f0') + '">' +
       '<span style="flex:1' + (anyAnulada ? ';text-decoration:line-through;text-decoration-color:#fca5a5' : '') + '">' + parts.join(' · ') + '</span>' + anuladaTag +
-      '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>' +
+      // En una remisión anulada el ✕ no sirve: solo quita la entrega en pantalla y
+      // guardarTodo la vuelve a leer del servidor. Se usa "↩ Reabrir entrega".
+      (remAnulada ? '' : '<button onclick="removeEntrega(' + lineIdx + ',' + ei + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px;line-height:1" title="Eliminar entrega">✕</button>') +
     '</div>';
   }).join('');
   return html;
