@@ -3429,6 +3429,15 @@ async function guardarTodo() {
   if (activeIdx === null) return;
   var c = consecs[activeIdx];
 
+  // Antes de generar la remisión consecutiva más abajo: si cancela, no se "quema".
+  if (!_avisarCompromisoMismoDia(
+        document.getElementById('md-fecha-pedido').value,
+        document.getElementById('md-compromiso').value,
+        c.Fecha_Compromiso)) {
+    document.getElementById('md-compromiso').focus();
+    return;
+  }
+
   var prods = [].slice.call(document.querySelectorAll('.md-prod'));
   var press = [].slice.call(document.querySelectorAll('.md-pres'));
   var cants = [].slice.call(document.querySelectorAll('.md-cant'));
@@ -4245,6 +4254,14 @@ function removeEditLine(i) {
 
 async function saveEdit() {
   if (editIdx === null) return;
+
+  if (!_avisarCompromisoMismoDia(
+        document.getElementById('ed-fecha').value,
+        document.getElementById('ed-compromiso').value,
+        consecs[editIdx] && consecs[editIdx].Fecha_Compromiso)) {
+    document.getElementById('ed-compromiso').focus();
+    return;
+  }
 
   var prods = [].slice.call(document.querySelectorAll('.ed-prod'));
   var press = [].slice.call(document.querySelectorAll('.ed-pres'));
@@ -5725,6 +5742,20 @@ function removeNuevoLine(i) {
   renderNuevoLines();
 }
 
+// Aviso cuando la fecha de compromiso queda IGUAL a la del pedido (entrega
+// prometida el mismo día): si no se despacha ese día el pedido aparece atrasado
+// desde el día siguiente y cuenta como incumplido en el OTD. Devuelve true si
+// se puede seguir guardando. `original` solo se pasa al EDITAR: si el
+// compromiso ya venía así no se vuelve a avisar en cada guardado.
+function _avisarCompromisoMismoDia(fecha, compromiso, original) {
+  if (!fecha || !compromiso || compromiso !== fecha) return true;
+  if (original !== undefined && toDateInput(original) === compromiso) return true;
+  return confirm('⚠️  La fecha de compromiso (' + fmtDate(compromiso) + ') es la MISMA fecha del pedido.\n\n' +
+    'Eso significa prometer la entrega el mismo día. Si no se despacha ese día, el pedido aparecerá atrasado desde el día siguiente y contará como incumplido en el cumplimiento de entregas (OTD).\n\n' +
+    'El plazo habitual es ' + PLAZO_COMPROMISO_DIAS_HABILES + ' días hábiles (' + fmtDate(addDiasHabiles(fecha, PLAZO_COMPROMISO_DIAS_HABILES)) + ').\n\n' +
+    '¿Confirmas que la entrega es el mismo día?');
+}
+
 async function guardarNuevoPedido() {
   syncNuevoFromDOM();
 
@@ -5756,6 +5787,12 @@ async function guardarNuevoPedido() {
 
   var productosValidos = nuevoProductos.filter(function(p) { return p.producto && p.cantidad > 0; });
   if (!productosValidos.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }
+
+  // Antes de consumir el consecutivo (RPC): si cancela, el N° no se "quema".
+  if (!esHistoricoPed && !_avisarCompromisoMismoDia(fecha, compromiso)) {
+    document.getElementById('nv-compromiso').focus();
+    return;
+  }
 
   var btn = document.getElementById('btn-guardar-nuevo');
   btn.disabled = true;
