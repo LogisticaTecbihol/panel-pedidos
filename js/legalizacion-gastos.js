@@ -1116,8 +1116,8 @@ function renderMantenimientoPorEmpresa(calc) {
   _renderGastoAparte('gpm-body', calc.mantenimiento, 'Sin gastos de Mantenimiento para este período.');
 }
 
-// Otros por empresa: las líneas con concepto "Otros" de los viajes de Ruta, con
-// el mismo tratamiento que el Combustible.
+// Otros por empresa: las líneas con concepto "Otros" de los viajes de Ruta, en
+// un solo monto ("Sin reparto asignado"), sin discriminar por empresa.
 function renderOtrosPorEmpresa(calc) {
   _renderGastoAparte('gpo-body', calc.otros, 'Sin gastos de Otros para este período.');
 }

@@ -19,7 +19,8 @@ var LegProrrateo = (function() {
 
   // Conceptos fijos del formulario de gasto de ruta. Cualquier otro texto (lo que
   // se escribe en "Otros → Especifique…") es un gasto "Otros": no se prorratea
-  // por producto, va en su propia tabla "Otros por empresa" (como el Combustible).
+  // por producto ni se discrimina por empresa; va como un solo monto en su
+  // propia tabla "Otros por empresa" (como se ve el Combustible).
   var CONCEPTOS_RUTA_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Envío', 'Alojamiento'];
   function esConceptoOtros(concepto) {
     return CONCEPTOS_RUTA_FIJOS.indexOf(concepto || '') < 0;
@@ -319,11 +320,11 @@ var LegProrrateo = (function() {
   // entre empresas; el resto del mantenimiento va a "Mantenimiento por empresa".
   //
   // Otros aparte: las líneas de un viaje de Ruta cuyo concepto es "Otros" (texto
-  // libre fuera de CONCEPTOS_RUTA_FIJOS) reciben el mismo tratamiento que el
-  // Combustible: salen del prorrateo por producto y se muestran en la tabla
-  // "Otros por empresa", según el reparto manual del viaje (ver cobertura()).
-  // Los Envíos y el Mantenimiento no tienen "Otros" (el mantenimiento ya va
-  // completo a su tabla).
+  // libre fuera de CONCEPTOS_RUTA_FIJOS) salen del prorrateo por producto y se
+  // muestran en su tabla "Otros por empresa" como UN solo monto, sin discriminar
+  // por empresa: todo queda en "Sin reparto asignado", tal como se ve hoy el
+  // Combustible y el Mantenimiento. Los Envíos y el Mantenimiento no tienen
+  // "Otros" (el mantenimiento ya va completo a su tabla).
   //
   // datos = { legs, items, empresas, mapa, mapaReparto }
   //   legs/items/empresas: LegalizacionGastos / ...Items / ...Empresas (en el
@@ -388,8 +389,9 @@ var LegProrrateo = (function() {
     // Mantenimiento: igual que el Combustible (tabla propia, sin litros/kilos).
     var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
 
-    // Otros (concepto "Otros" de los viajes de Ruta): igual que el Combustible.
-    var otros = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
+    // Otros (concepto "Otros" de los viajes de Ruta): misma forma que el
+    // Combustible, pero porEmpresa/legs quedan siempre vacíos (ver _acumularOtros).
+    var otros ={ porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
 
     // Reparte subMonto (la porción de líquidos, sólidos o unidades del viaje) entre
     // las líneas de ese tipo, proporcional a sus litros/kilos/unidades movidos.
@@ -435,21 +437,15 @@ var LegProrrateo = (function() {
       _repartirPorMonto(leg, monto, combustible);
     }
 
-    // Igual que el Combustible, para el concepto "Otros" de un viaje de Ruta: si
-    // el reparto del viaje no lo incluye (lo calculó "Calcular reparto", que deja
-    // por fuera Combustible y Otros) o no hay reparto, queda "Sin reparto asignado".
-    function _acumularOtros(leg, monto, montoComb) {
-      var totalReparto = totalRepartoOf(leg.id);
-      var cob = cobertura(totalGastosOf(leg.id), totalReparto, montoComb, monto);
-      if (totalReparto <= 0 || cob.otros) {
-        if (!fEmp) {
-          otros.sinAsignar += monto;
-          otros.total += monto;
-          otros.sinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
-        }
-        return;
-      }
-      _repartirPorMonto(leg, monto, otros);
+    // El concepto "Otros" de un viaje de Ruta NO se discrimina por empresa: va
+    // completo, en un solo monto, a "Sin reparto asignado" de su tabla (así se ve
+    // hoy el Combustible y el Mantenimiento), tenga o no reparto el viaje. Con
+    // filtro de empresa no se atribuye a nadie, igual que los otros "Sin …".
+    function _acumularOtros(leg, monto) {
+      if (fEmp) return;
+      otros.sinAsignar += monto;
+      otros.total += monto;
+      otros.sinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
     }
 
     // Reparte `monto` de una legalización entre las empresas de su reparto
@@ -502,7 +498,7 @@ var LegProrrateo = (function() {
       var totalCombustible = totalGastosConceptoOf(leg.id, 'Combustible');
       var totalOtros = esEnvio(leg) ? 0 : totalGastosOtrosOf(leg.id);
       if (totalCombustible > 0) _acumularCombustible(leg, totalCombustible, totalOtros);
-      if (totalOtros > 0) _acumularOtros(leg, totalOtros, totalCombustible);
+      if (totalOtros > 0) _acumularOtros(leg, totalOtros);
 
       var totalViaje = totalGastosOf(leg.id) - totalCombustible - totalOtros;
       if (totalViaje <= 0) return;
