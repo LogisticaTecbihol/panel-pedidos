@@ -330,6 +330,52 @@ function dBuildOrders(ped) {
   });
 }
 
+// <compartidas>
+// Tablas que el dashboard comparte con el snapshot de existencias
+// (Existencias.loadSnapshot). Se bajan UNA sola vez con la unión de las
+// columnas de ambos y a cada consumidor se le entrega su proyección, con
+// exactamente las columnas que pedía antes (así ningún campo "nuevo" cambia lo
+// que ve cada cálculo). Cada fila: [clave en Existencias.SNAPSHOT_COLS, acción
+// de apiGet, clave del arreglo en la respuesta, columnas del dashboard].
+var D_COMPARTIDAS = [
+  ['pedidos', 'getPedidos', 'pedidos',
+   'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion'],
+  ['devoluciones', 'getDevoluciones', 'devoluciones',
+   'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total,Cliente,Vendedor'],
+  ['ingresos', 'getIngresos', 'ingresos',
+   'Empresa_Origen,Empresa_Destino,Cantidad,Fecha,Origen,Responsable,Remision_Origen,Remision_Destino,Reenvase_Ref'],
+  ['ordenes', 'getOrdenesCompra', 'ordenes',
+   'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad'],
+  ['muestras', 'getMuestras', 'muestras',
+   'id,Empresa,Consecutivo,Estado,Fecha_Solicitud,Fecha_Despacho,Cantidad,Tipo_Solicitud'],
+  ['reenvases', 'getReenvases', 'reenvases',
+   'Empresa,Empresa_Destino,Planta,Remision,Remision_Destino,Bodega,Cantidad,Fecha,Estado'],
+  ['cambios', 'getCambios', 'cambios',
+   'id,Empresa,Consecutivo,Estado,Fecha_Solicitud,Producto,Cantidad']
+];
+
+// Devuelve { prefetched, p }: p[clave] = promesa de la respuesta lista para el
+// dashboard; prefetched = lo que se le pasa a Existencias.loadSnapshot. Si
+// existencias.js no trae las utilidades (otra versión en caché), cada uno baja
+// lo suyo, como antes.
+function dPedirCompartidas() {
+  var ex = (typeof Existencias !== 'undefined') ? Existencias : null;
+  var compartir = !!(ex && ex.SNAPSHOT_COLS && ex.unirColumnas && ex.proyectarRespuesta);
+  var prefetched = {}, p = {};
+  D_COMPARTIDAS.forEach(function(t) {
+    var key = t[0], action = t[1], arrKey = t[2], dashCols = t[3];
+    if (!compartir || !ex.SNAPSHOT_COLS[key]) {
+      p[key] = apiGet(action, { columns: dashCols });
+      return;
+    }
+    var crudo = apiGet(action, { columns: ex.unirColumnas(dashCols, ex.SNAPSHOT_COLS[key]) });
+    prefetched[key] = crudo;
+    p[key] = crudo.then(function(r) { return ex.proyectarRespuesta(r, arrKey, dashCols); });
+  });
+  return { prefetched: prefetched, p: p };
+}
+// </compartidas>
+
 // ── Load ──
 async function loadDashboard() {
   await _authReady;
@@ -352,25 +398,28 @@ async function loadDashboard() {
 
   try {
     // Snapshot de existencias (mismo cálculo que Kardex / Inventario / Reportes).
-    // Se pide EN PARALELO con las tablas del dashboard: antes iba después y en
-    // serie, y duplicaba la espera al abrir. No depende de ningún estado del
-    // dashboard; el catch evita un rechazo sin manejar si el resto falla antes.
+    // Se pide EN PARALELO con las tablas del dashboard y reutilizando las que
+    // ambos necesitan (D_COMPARTIDAS: una sola descarga). No depende de ningún
+    // estado del dashboard; el catch evita un rechazo sin manejar si el resto
+    // falla antes.
+    var compartidas = dPedirCompartidas();
+    var cp = compartidas.p;
     var existPromise = (typeof Existencias !== 'undefined' && Existencias.loadSnapshot)
-      ? Existencias.loadSnapshot().catch(function(e) {
+      ? Existencias.loadSnapshot({ prefetched: compartidas.prefetched }).catch(function(e) {
           console.warn('No se pudo cargar snapshot de existencias:', e);
           return null;
         })
       : Promise.resolve(null);
 
     var results = await Promise.all([
-      apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion' }),
-      apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total,Cliente,Vendedor' }).catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getIngresos', { columns: 'Empresa_Origen,Empresa_Destino,Cantidad,Fecha,Origen,Responsable,Remision_Origen,Remision_Destino,Reenvase_Ref' }).catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'Empresa_Destino,Empresa_Origen,Consecutivo,Estado,Fecha,Estado_Aprobacion,Fecha_Aprobacion,creado_en,Total_Orden,Valor_Total,Tipo,Cantidad' }).catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras', { columns: 'id,Empresa,Consecutivo,Estado,Fecha_Solicitud,Fecha_Despacho,Cantidad,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases', { columns: 'Empresa,Empresa_Destino,Planta,Remision,Remision_Destino,Bodega,Cantidad,Fecha,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
+      cp.pedidos,
+      cp.devoluciones.catch(function() { return { ok: true, devoluciones: [] }; }),
+      cp.ingresos.catch(function() { return { ok: true, ingresos: [] }; }),
+      cp.ordenes.catch(function() { return { ok: true, ordenes: [] }; }),
+      cp.muestras.catch(function() { return { ok: true, muestras: [] }; }),
+      cp.reenvases.catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getEntregasPedido', { columns: 'pedido_id,empresa_pedido,empresa_stock,producto,cantidad,fecha' }).catch(function() { return { ok: true, entregas: [] }; }),
-      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Fecha_Solicitud,Producto,Cantidad' }).catch(function() { return { ok: true, cambios: [] }; }),
+      cp.cambios.catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getInventarioFisico', { columns: 'Empresa,Producto,Presentacion,Cantidad_Fisica,Cantidad_Sistema,Diferencia,Fecha_Conteo,Observaciones' }).catch(function() { return { ok: true, conteos: [] }; }),
       apiGet('getClientesAll', { columns: 'Cliente,Identificacion,Nombre_Empresa,Cliente_Nuevo,creado_en' }).catch(function() { return { ok: true, clientes: [] }; }),
       apiGet('getListaPrecios', { columns: 'Empresa,Tipo_Precio,Producto,Precio' }).catch(function() { return { ok: false }; })

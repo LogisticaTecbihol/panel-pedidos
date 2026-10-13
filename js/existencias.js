@@ -395,34 +395,94 @@
     return saldos;
   }
 
-  async function loadSnapshot() {
+  // Columnas que loadSnapshot pide a cada fuente. Única fuente de verdad: el
+  // dashboard las une con las suyas para bajar cada tabla UNA sola vez
+  // (opts.prefetched) y aun así entregar al cálculo exactamente estas columnas.
+  var SNAPSHOT_COLS = {
+    pedidos:          'Nombre_Empresa,Cant_Entregada,Estado_2,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido,Historico',
+    ingresos:         'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion,Historico',
+    ordenes:          'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido',
+    muestras:         'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion,Tipo_Solicitud,Historico',
+    reenvases:        'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Historico',
+    devoluciones:     'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Historico',
+    ajustes:          'id,Cantidad,Tipo,Fecha,Empresa,Producto,Presentacion',
+    ajustesNC:        'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion,Historico',
+    cambios:          'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico,Cierre_Sin_Recepcion',
+    remAnuladas:      'Remision',
+    apartadosPedido:  'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado',
+    apartadosMuestra: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_despacho,fecha_aplicacion'
+  };
+
+  // 'a,b' + 'b,c' → 'a,b,c' (sin repetir; conserva el orden).
+  function unirColumnas(a, b) {
+    var visto = {}, out = [];
+    ((a || '') + ',' + (b || '')).split(',').forEach(function(c) {
+      c = c.trim();
+      if (c && !visto[c]) { visto[c] = true; out.push(c); }
+    });
+    return out.join(',');
+  }
+
+  // Deja en cada fila de resp[arrKey] solo las columnas pedidas: equivale a
+  // haber consultado únicamente esas (incluye __row, como _addRow). No muta la
+  // respuesta original porque otro consumidor puede estar leyéndola.
+  function proyectarRespuesta(resp, arrKey, colsCsv) {
+    if (!resp || !resp.ok || !Array.isArray(resp[arrKey])) return resp;
+    var cols = colsCsv.split(',').map(function(c) { return c.trim(); });
+    var tieneId = cols.indexOf('id') >= 0;
+    var out = {};
+    Object.keys(resp).forEach(function(k) { out[k] = resp[k]; });
+    out[arrKey] = resp[arrKey].map(function(row) {
+      var o = {};
+      for (var i = 0; i < cols.length; i++) o[cols[i]] = row[cols[i]];
+      o.__row = tieneId ? o.id : undefined;
+      return o;
+    });
+    return out;
+  }
+
+  // opts.prefetched (opcional): { pedidos, ingresos, ordenes, muestras,
+  // reenvases, devoluciones, cambios } → promesa de la respuesta de apiGet ya
+  // pedida con un SUPERCONJUNTO de SNAPSHOT_COLS. Se usa en vez de volver a
+  // consultar la tabla y se proyecta a SNAPSHOT_COLS, de modo que el cálculo
+  // ve las mismas filas que con su propia consulta. Sin opts nada cambia.
+  async function loadSnapshot(opts) {
     if (typeof _authReady !== 'undefined') {
       try { await _authReady; } catch(e) {}
     }
+    var pre = (opts && opts.prefetched) || {};
+    function fuente(key, action, arrKey) {
+      if (pre[key]) {
+        return Promise.resolve(pre[key]).then(function(r) {
+          return proyectarRespuesta(r, arrKey, SNAPSHOT_COLS[key]);
+        });
+      }
+      return apiGet(action, { columns: SNAPSHOT_COLS[key] });
+    }
     var res = await Promise.all([
-      apiGet('getPedidos',     { columns: 'Nombre_Empresa,Cant_Entregada,Estado_2,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido,Historico' })
+      fuente('pedidos', 'getPedidos', 'pedidos')
         .catch(function() { return { ok: true, pedidos: [] }; }),
-      apiGet('getIngresos',    { columns: 'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion,Historico' })
+      fuente('ingresos', 'getIngresos', 'ingresos')
         .catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getOrdenesCompra', { columns: 'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido' })
+      fuente('ordenes', 'getOrdenesCompra', 'ordenes')
         .catch(function() { return { ok: true, ordenes: [] }; }),
-      apiGet('getMuestras',    { columns: 'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion,Tipo_Solicitud,Historico' })
+      fuente('muestras', 'getMuestras', 'muestras')
         .catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getReenvases',   { columns: 'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Historico' })
+      fuente('reenvases', 'getReenvases', 'reenvases')
         .catch(function() { return { ok: true, reenvases: [] }; }),
-      apiGet('getDevoluciones',{ columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Historico' })
+      fuente('devoluciones', 'getDevoluciones', 'devoluciones')
         .catch(function() { return { ok: true, devoluciones: [] }; }),
-      apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Empresa,Producto,Presentacion' })
+      fuente('ajustes', 'getKardexAjustes', 'ajustes')
         .catch(function() { return { ok: true, ajustes: [] }; }),
-      apiGet('getKardexNC',    { columns: 'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion,Historico' })
+      fuente('ajustesNC', 'getKardexNC', 'ajustesNC')
         .catch(function() { return { ok: true, ajustesNC: [] }; }),
-      apiGet('getCambios',     { columns: 'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico,Cierre_Sin_Recepcion' })
+      fuente('cambios', 'getCambios', 'cambios')
         .catch(function() { return { ok: true, cambios: [] }; }),
-      apiGet('getRemisionesAnuladas', { columns: 'Remision' })
+      fuente('remAnuladas', 'getRemisionesAnuladas', 'remisionesAnuladas')
         .catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
-      apiGet('getApartadosPedido', { columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado' })
+      fuente('apartadosPedido', 'getApartadosPedido', 'apartados')
         .catch(function() { return { ok: true, apartados: [] }; }),
-      apiGet('getApartadosMuestra', { columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_despacho,fecha_aplicacion' })
+      fuente('apartadosMuestra', 'getApartadosMuestra', 'apartados')
         .catch(function() { return { ok: true, apartados: [] }; })
     ]);
 
@@ -773,6 +833,9 @@
 
   global.Existencias = {
     loadSnapshot: loadSnapshot,
+    SNAPSHOT_COLS: SNAPSHOT_COLS,
+    unirColumnas: unirColumnas,
+    proyectarRespuesta: proyectarRespuesta,
     getPorEmpresa: getPorEmpresa,
     getPorEmpresaEspecifica: getPorEmpresaEspecifica,
     getApartadoEspecifico: getApartadoEspecifico,
