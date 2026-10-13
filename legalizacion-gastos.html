@@ -223,13 +223,22 @@
       </div>
       <div id="gpm-body"></div>
     </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
+        <h3>Otros por empresa</h3>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Las líneas de gasto de ruta con concepto "Otros" (el que se especifica a mano, p. ej. Parqueadero) tampoco se prorratean por producto: se reparten aquí según el reparto manual entre empresas de cada legalización, igual que el Combustible. "Sin reparto asignado" agrupa los "Otros" de viajes que no tienen ese reparto cargado o cuyo reparto se calculó sin ellos.</div>
+      </div>
+      <div id="gpo-body"></div>
+    </div>
     <div class="lg-row">
       <div class="card">
         <div class="card-head">
           <h3>Proporción de gastos por producto</h3>
         </div>
         <div style="padding:12px 20px 0">
-          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje (sin Combustible, ver aparte arriba) entre los productos de sus remisiones relacionadas: primero entre líquidos, sólidos y unidades (materia prima en Unidades que no se convierte a litros/kilos) según cuántas remisiones son de cada tipo, y luego, dentro de cada grupo, por litros, kilos o unidades movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
+          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje (sin Combustible ni Otros, ver aparte arriba) entre los productos de sus remisiones relacionadas: primero entre líquidos, sólidos y unidades (materia prima en Unidades que no se convierte a litros/kilos) según cuántas remisiones son de cada tipo, y luego, dentro de cada grupo, por litros, kilos o unidades movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
         </div>
         <div id="gpp-body"></div>
       </div>
@@ -480,7 +489,7 @@
       </table>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="btn-edit" onclick="addLgEmpresa()">+ Agregar empresa</button>
-        <button class="btn-edit" onclick="calcularRepartoForm()" title="Reparte los gastos (sin Combustible) según los litros/kilos de las remisiones relacionadas de cada empresa">⚖ Calcular reparto</button>
+        <button class="btn-edit" onclick="calcularRepartoForm()" title="Reparte los gastos (sin Combustible ni Otros) según los litros/kilos de las remisiones relacionadas de cada empresa">⚖ Calcular reparto</button>
       </div>
 
       <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Líneas de gasto</h3>
@@ -754,7 +763,7 @@
 <script src="js/auth.js?v=20261006a"></script>
 <script src="js/notificaciones.js?v=20261006a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/legalizacion-prorrateo.js?v=20261007b"></script>
-<script src="js/legalizacion-gastos.js?v=20261007c"></script>
+<script src="js/legalizacion-prorrateo.js?v=20261013a"></script>
+<script src="js/legalizacion-gastos.js?v=20261013a"></script>
 </body>
 </html>

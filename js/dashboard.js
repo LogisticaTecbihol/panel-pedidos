@@ -2952,7 +2952,7 @@ function dLegCalcular(datos, desde, hasta, fEmp) {
   var partic = null;
   if (fEmp) {
     partic = {};
-    [d.pro.porEmpresaLegs, d.pro.combustibleLegs, d.pro.mantenimiento.legs].forEach(function(porEmp) {
+    [d.pro.porEmpresaLegs, d.pro.combustibleLegs, d.pro.mantenimiento.legs, d.pro.otros.legs].forEach(function(porEmp) {
       Object.keys(porEmp).forEach(function(emp) {
         Object.keys(porEmp[emp]).forEach(function(id) { partic[id] = true; });
       });
@@ -3027,10 +3027,11 @@ function dLegCalcular(datos, desde, hasta, fEmp) {
     return v;
   }).sort(function(a, b) { return b.km - a.km; });
 
-  // Autoverificación: gasto prorrateado + combustible + mantenimiento debe sumar el
-  // total de gastos del período (si no, se avisa en la nota). Con una empresa elegida
-  // el prorrateo es solo su parte, así que no hay nada que cuadrar contra el total.
-  d.cuadre = fEmp ? 0 : d.total - (d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total);
+  // Autoverificación: gasto prorrateado + combustible + mantenimiento + otros debe
+  // sumar el total de gastos del período (si no, se avisa en la nota). Con una
+  // empresa elegida el prorrateo es solo su parte, así que no hay nada que cuadrar
+  // contra el total.
+  d.cuadre = fEmp ? 0 : d.total - (d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total + d.pro.otros.total);
 
   // Carga transportada del período (litros / kilos / unidades de las remisiones
   // relacionadas, rutas y envíos) y costo por unidad movida: la parte del gasto
@@ -3167,14 +3168,14 @@ async function buildLegalizacionDash() {
   var enEmp = fEmp ? ' · ' + escHtml(sigEmp) : '';   // tarjetas de documentos donde participa la empresa
   var parti = fEmp ? ' · donde participa' : '';
   // Con empresa elegida, la parte propia del total = lo de sus tres tablas por empresa
-  // (Gasto + Combustible + Mantenimiento); el resto del total es de otras empresas.
-  var parteEmp = d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total;
+  // (Gasto + Combustible + Mantenimiento + Otros); el resto del total es de otras empresas.
+  var parteEmp = d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total + d.pro.otros.total;
 
   // KPIs. Con empresa elegida, las de documentos cuentan solo aquellos donde ella
   // participa, con el monto completo de cada documento.
   document.getElementById('leg-kpis').innerHTML =
     kpiCard('', dMoneyM(s.total), 'Total legalizado' + enEmp, dMoneyFull(s.total) +
-      (fEmp ? ' · monto completo de los documentos<br>Su parte: ' + escHtml(dLegMoney2(parteEmp)) + ' (gasto + combustible + mantenimiento)' : '')) +
+      (fEmp ? ' · monto completo de los documentos<br>Su parte: ' + escHtml(dLegMoney2(parteEmp)) + ' (gasto + combustible + mantenimiento + otros)' : '')) +
     kpiCard('teal', dLegNum(s.nLeg), 'Legalizaciones (LEG)' + enEmp, 'rutas y mantenimiento' + parti) +
     kpiCard('purple', dLegNum(s.nEnv), 'Envíos (ENV)' + enEmp, 'fletes registrados' + parti) +
     kpiCard('green', dMoneyM(nDocs ? s.total / nDocs : 0), 'Promedio por documento' + enEmp, 'LEG + ENV' + (fEmp ? ' · monto completo' : '')) +
@@ -3195,8 +3196,8 @@ async function buildLegalizacionDash() {
   document.getElementById('leg-veh-sub').textContent = 'viajes con kilometraje registrado' + (fEmp ? ' · documentos donde participa ' + sigEmp : '');
   document.getElementById('leg-concepto').innerHTML = dHbarList(conceptoRows, null, { stack: true });
 
-  // Gasto / Combustible / Mantenimiento por empresa (prorrateo — mismas cifras que
-  // la pestaña "Prorrateo de gastos" del módulo Legalización)
+  // Gasto / Combustible / Mantenimiento / Otros por empresa (prorrateo — mismas cifras
+  // que la pestaña "Prorrateo de gastos" del módulo Legalización)
   var pro = d.pro;
   var proRows = dLegFilasEmpresa(pro.porEmpresa, pro.totalGeneral,
     { label: 'Sin identificar', value: pro.sinIdentificar, legs: dLegLegsTxt(pro.sinIdentificarLegs) });
@@ -3204,9 +3205,12 @@ async function buildLegalizacionDash() {
     { label: 'Sin reparto asignado', value: pro.combustibleSinAsignar, legs: dLegLegsTxt(pro.combustibleSinAsignarLegs) });
   var mantRows = dLegFilasEmpresa(pro.mantenimiento.porEmpresa, pro.mantenimiento.total,
     { label: 'Sin reparto asignado', value: pro.mantenimiento.sinAsignar, legs: dLegLegsTxt(pro.mantenimiento.sinAsignarLegs) });
+  var otrosRows = dLegFilasEmpresa(pro.otros.porEmpresa, pro.otros.total,
+    { label: 'Sin reparto asignado', value: pro.otros.sinAsignar, legs: dLegLegsTxt(pro.otros.sinAsignarLegs) });
   document.getElementById('leg-pro-emp').innerHTML = dLegTablaEmpresa(proRows, pro.totalGeneral, dLegExtraCarga(pro, d.carga));
   document.getElementById('leg-comb').innerHTML = dLegTablaEmpresa(combRows, pro.combustibleTotalGeneral);
   document.getElementById('leg-mant').innerHTML = dLegTablaEmpresa(mantRows, pro.mantenimiento.total);
+  document.getElementById('leg-otros').innerHTML = dLegTablaEmpresa(otrosRows, pro.otros.total);
 
   // Vehículos
   var vehEl = document.getElementById('leg-veh');
@@ -3256,16 +3260,16 @@ async function buildLegalizacionDash() {
   document.getElementById('leg-nota').innerHTML =
     '<p>• Incluye legalizaciones de ruta, mantenimiento y envíos por <b>fecha de la legalización</b>; excluye las rechazadas' +
       (d.rechazadas ? ' (' + dLegNum(d.rechazadas) + ' en el período)' : '') + '.</p>' +
-    '<p>• <b>Gasto por empresa:</b> el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas, por litros, kilos o unidades, y se asigna a la empresa dueña de cada remisión; lo que no se puede ligar a un producto queda en «Sin identificar». <b>Combustible</b> y <b>Mantenimiento</b> se reparten según el reparto manual de cada legalización; sin reparto, quedan en «Sin reparto asignado». Son las mismas cifras de la pestaña Prorrateo de gastos del módulo Legalización (mismo rango' + (fEmp ? ' y misma empresa' : ', sin filtro de empresa') + '). Pasa el cursor sobre «Sin …» para ver qué legalizaciones lo componen.</p>' +
-    (fEmp ? '<p>• <b>Empresa elegida (' + escHtml(sigEmp) + '):</b> las tarjetas de Total legalizado, LEG, ENV, Promedio y Por conciliar cuentan solo los documentos donde participa la empresa (con productos suyos en las remisiones relacionadas o con combustible / mantenimiento repartido a ella) y suman el monto <b>completo</b> de cada documento, que no se divide por empresa (la tarjeta de Total legalizado indica «Su parte»: Gasto + Combustible + Mantenimiento de la empresa; la diferencia es de otras empresas en esos mismos documentos); un mismo documento puede contar en varias empresas, así que las cifras de distintas empresas no suman el total. Gasto, Combustible y Mantenimiento por empresa y las tarjetas de litros y kilos muestran solo su parte; el 100 % es su parte, y «Sin identificar» / «Sin reparto asignado» no se muestran porque no se pueden atribuir a una empresa. El listado y los vehículos muestran esos mismos documentos (con su valor completo y el combustible completo de cada viaje); el gasto por concepto sigue siendo de todas las empresas.</p>' : '') +
+    '<p>• <b>Gasto por empresa:</b> el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas, por litros, kilos o unidades, y se asigna a la empresa dueña de cada remisión; lo que no se puede ligar a un producto queda en «Sin identificar». <b>Combustible</b>, <b>Mantenimiento</b> y <b>Otros</b> (las líneas de ruta con concepto «Otros») se reparten según el reparto manual de cada legalización; sin reparto, quedan en «Sin reparto asignado». Son las mismas cifras de la pestaña Prorrateo de gastos del módulo Legalización (mismo rango' + (fEmp ? ' y misma empresa' : ', sin filtro de empresa') + '). Pasa el cursor sobre «Sin …» para ver qué legalizaciones lo componen.</p>' +
+    (fEmp ? '<p>• <b>Empresa elegida (' + escHtml(sigEmp) + '):</b> las tarjetas de Total legalizado, LEG, ENV, Promedio y Por conciliar cuentan solo los documentos donde participa la empresa (con productos suyos en las remisiones relacionadas o con combustible / mantenimiento repartido a ella) y suman el monto <b>completo</b> de cada documento, que no se divide por empresa (la tarjeta de Total legalizado indica «Su parte»: Gasto + Combustible + Mantenimiento + Otros de la empresa; la diferencia es de otras empresas en esos mismos documentos); un mismo documento puede contar en varias empresas, así que las cifras de distintas empresas no suman el total. Gasto, Combustible, Mantenimiento y Otros por empresa y las tarjetas de litros y kilos muestran solo su parte; el 100 % es su parte, y «Sin identificar» / «Sin reparto asignado» no se muestran porque no se pueden atribuir a una empresa. El listado y los vehículos muestran esos mismos documentos (con su valor completo y el combustible completo de cada viaje); el gasto por concepto sigue siendo de todas las empresas.</p>' : '') +
     '<p>• <b>Litros, kilos y unidades transportados:</b> los de los productos de las remisiones relacionadas a rutas y envíos (mismas cantidades del «Resumen del período» de Prorrateo); una remisión relacionada en dos legalizaciones cuenta en cada una. <b>$/litro</b> y <b>$/kilo</b> = parte del gasto prorrateada a líquidos (o a sólidos) ÷ litros (o kilos) movidos. Lo que quedó en «Sin identificar» no tiene cantidades.</p>' +
-    (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
+    (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento + otros (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
     (datos.fallidas.length ? '<p class="leg-aviso">⚠ No se pudieron cargar: ' + escHtml(datos.fallidas.join(', ')) + '. Las remisiones que dependen de esas fuentes pueden aparecer como «Sin identificar».</p>' : '') +
     '<p>• <b>Rendimiento:</b> km de los viajes con galones registrados ÷ galones de combustible; ⚠ si queda más de 25 % por debajo del esperado. Solo hay datos de las placas del piloto de kilometraje; los envíos y el mantenimiento no suman km.</p>' +
     ((rolP === 'admin' || rolP === 'cartera') ? '' : '<p>• Si tu usuario está limitado a ciertas empresas, solo ves las legalizaciones que las involucran: los totales pueden ser parciales.</p>');
 }
 
-// Exporta a Excel lo que muestra la pestaña (7 hojas, la última con los criterios).
+// Exporta a Excel lo que muestra la pestaña (8 hojas, la última con los criterios).
 function exportLegalizacionExcel() {
   if (typeof XLSX === 'undefined') { showToast('La librería de Excel aún no carga; intenta de nuevo en unos segundos', '#e74c3c'); return; }
   if (!dLegUltimo || !dLegUltimo.d.filas.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
@@ -3337,6 +3341,7 @@ function exportLegalizacionExcel() {
   });
   var hojaComb = hojaBloque(pro.combustiblePorEmpresa, pro.combustibleTotalGeneral, 'Sin reparto asignado', pro.combustibleSinAsignar);
   var hojaMant = hojaBloque(pro.mantenimiento.porEmpresa, pro.mantenimiento.total, 'Sin reparto asignado', pro.mantenimiento.sinAsignar);
+  var hojaOtros = hojaBloque(pro.otros.porEmpresa, pro.otros.total, 'Sin reparto asignado', pro.otros.sinAsignar);
 
   var hojaVeh = d.vehiculos.map(function(v) {
     return {
@@ -3357,13 +3362,13 @@ function exportLegalizacionExcel() {
     ['Generado', new Date().toLocaleString('es-CO')],
     [],
     dLegUltimo.fEmp
-      ? ['Con empresa elegida: las hojas Gasto / Combustible / Mantenimiento por empresa y las cifras de litros, kilos y costos son solo de esa empresa (el 100 % es su parte; sin "Sin identificar" ni "Sin reparto asignado", que no se pueden atribuir). Las hojas Legalizaciones y Vehículos traen solo los documentos donde participa la empresa (con su valor completo); Gasto por mes es de todas las empresas.']
+      ? ['Con empresa elegida: las hojas Gasto / Combustible / Mantenimiento / Otros por empresa y las cifras de litros, kilos y costos son solo de esa empresa (el 100 % es su parte; sin "Sin identificar" ni "Sin reparto asignado", que no se pueden atribuir). Las hojas Legalizaciones y Vehículos traen solo los documentos donde participa la empresa (con su valor completo); Gasto por mes es de todas las empresas.']
       : ['Sin empresa elegida: todas las empresas.'],
     ['Incluye legalizaciones de ruta, mantenimiento y envíos por fecha de la legalización; excluye las rechazadas (' + d.rechazadas + ' en el período).'],
     ['Concepto: Combustible, Peaje, Alimentación, Alojamiento y Envío; el resto es "Otros". Las líneas de mantenimiento van a "Mantenimiento" salvo su combustible.'],
-    ['Gasto por empresa: el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas por litros, kilos o unidades, a la empresa dueña de cada remisión; lo que no se liga a un producto es "Sin identificar".'],
+    ['Gasto por empresa: el gasto de cada ruta o envío (sin combustible ni "Otros") se prorratea entre los productos de sus remisiones relacionadas por litros, kilos o unidades, a la empresa dueña de cada remisión; lo que no se liga a un producto es "Sin identificar".'],
     ['Litros / kilos / unidades movidos: los de los productos de las remisiones relacionadas a rutas y envíos; $ por litro / kilo / unidad = parte del gasto prorrateada a esa bolsa ÷ cantidad movida. Lo "Sin identificar" no tiene cantidades.'],
-    ['Combustible y Mantenimiento por empresa: según el reparto manual de cada legalización; sin reparto, "Sin reparto asignado". Las líneas de combustible de mantenimiento van a la hoja de Combustible.'],
+    ['Combustible, Mantenimiento y Otros por empresa: según el reparto manual de cada legalización; sin reparto, "Sin reparto asignado". Las líneas de combustible de mantenimiento van a la hoja de Combustible; "Otros" son las líneas de ruta con concepto "Otros".'],
     ['Las hojas de empresa son las mismas cifras de la pestaña "Prorrateo de gastos" del módulo Legalización (mismo rango, sin filtro de empresa).'],
     ['Vehículos: viajes de ruta con km de salida y llegada. Km/galón = km de los viajes con galones ÷ galones de combustible.'],
     ['Si el usuario está limitado a ciertas empresas, RLS solo le entrega las legalizaciones que las involucran: los totales pueden ser parciales.']
@@ -3377,6 +3382,7 @@ function exportLegalizacionExcel() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaPro), 'Gasto por empresa');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaComb), 'Combustible por empresa');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMant), 'Mantenimiento por empresa');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaOtros), 'Otros por empresa');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaVeh.length ? hojaVeh : [{ 'Placa': '(sin viajes con kilometraje en el período)' }]), 'Vehículos');
   XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
   XLSX.writeFile(wb, 'legalizacion_gastos_' + (dLegUltimo.fEmp ? dGetSigla(dLegUltimo.fEmp) + '_' : '') + today() + '.xlsx');

@@ -17,6 +17,34 @@ var LegProrrateo = (function() {
   var EMPRESA_ABAGO = 'CHIA ABAGO';
   var EMPRESA_MP = 'MATERIAS PRIMAS';
 
+  // Conceptos fijos del formulario de gasto de ruta. Cualquier otro texto (lo que
+  // se escribe en "Otros → Especifique…") es un gasto "Otros": no se prorratea
+  // por producto, va en su propia tabla "Otros por empresa" (como el Combustible).
+  var CONCEPTOS_RUTA_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Envío', 'Alojamiento'];
+  function esConceptoOtros(concepto) {
+    return CONCEPTOS_RUTA_FIJOS.indexOf(concepto || '') < 0;
+  }
+
+  // ¿Qué de los gastos de un viaje deja por fuera su reparto entre empresas?
+  // El reparto manual puede sumar el total de gastos o, si lo calculó el botón
+  // "Calcular reparto", el total sin Combustible y/o sin Otros. Devuelve
+  // { comb, otros, cuadra }: comb/otros = true si el reparto NO incluye ese
+  // gasto (hay que mostrarlo "Sin reparto asignado"); cuadra = el reparto
+  // coincide con alguna de esas combinaciones. Un reparto que no coincide con
+  // ninguna queda con comb/otros = false (se prorratea por sus proporciones).
+  // Prioridad ante montos iguales: total − combustible (reparto histórico, que
+  // sí cubría Otros) antes que total − otros.
+  function cobertura(total, reparto, comb, otros) {
+    total = Math.round(total); reparto = Math.round(reparto);
+    comb = Math.round(comb); otros = Math.round(otros);
+    var r = { comb: false, otros: false, cuadra: false };
+    if (reparto === total) { r.cuadra = true; return r; }
+    if (comb > 0 && otros > 0 && reparto === total - comb - otros) { r.comb = true; r.otros = true; r.cuadra = true; return r; }
+    if (comb > 0 && reparto === total - comb) { r.comb = true; r.cuadra = true; return r; }
+    if (otros > 0 && reparto === total - otros) { r.otros = true; r.cuadra = true; return r; }
+    return r;
+  }
+
   // Planta de destino de una remisión de materia prima; define la empresa a la
   // que se cargan sus gastos (misma relación de ORIGEN_EMPRESA en ingresos.js).
   var PLANTAS_MP = {
@@ -290,6 +318,13 @@ var LegProrrateo = (function() {
   // Mantenimiento (Tipo='Mantenimiento'), repartidas por el Monto de su reparto
   // entre empresas; el resto del mantenimiento va a "Mantenimiento por empresa".
   //
+  // Otros aparte: las líneas de un viaje de Ruta cuyo concepto es "Otros" (texto
+  // libre fuera de CONCEPTOS_RUTA_FIJOS) reciben el mismo tratamiento que el
+  // Combustible: salen del prorrateo por producto y se muestran en la tabla
+  // "Otros por empresa", según el reparto manual del viaje (ver cobertura()).
+  // Los Envíos y el Mantenimiento no tienen "Otros" (el mantenimiento ya va
+  // completo a su tabla).
+  //
   // datos = { legs, items, empresas, mapa, mapaReparto }
   //   legs/items/empresas: LegalizacionGastos / ...Items / ...Empresas (en el
   //   orden de id: el orden de suma afecta los decimales); mapa y mapaReparto:
@@ -317,6 +352,11 @@ var LegProrrateo = (function() {
     // para sacarlo del prorrateo por producto.
     function totalGastosConceptoOf(legId, concepto) {
       return itemsOf(legId).filter(function(it) { return it.Concepto === concepto; })
+        .reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0);
+    }
+    // Suma las líneas con concepto "Otros" (texto fuera de los conceptos fijos).
+    function totalGastosOtrosOf(legId) {
+      return itemsOf(legId).filter(function(it) { return esConceptoOtros(it.Concepto); })
         .reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0);
     }
     function esEnvio(leg) { return !!leg && leg.Tipo === 'Envio'; }
@@ -348,6 +388,9 @@ var LegProrrateo = (function() {
     // Mantenimiento: igual que el Combustible (tabla propia, sin litros/kilos).
     var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
 
+    // Otros (concepto "Otros" de los viajes de Ruta): igual que el Combustible.
+    var otros = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
+
     // Reparte subMonto (la porción de líquidos, sólidos o unidades del viaje) entre
     // las líneas de ese tipo, proporcional a sus litros/kilos/unidades movidos.
     function _acumularLineas(leg, items, totalUnidad, subMonto, campoUnidad, campoAcumEmp, campoAcumMonto) {
@@ -378,10 +421,10 @@ var LegProrrateo = (function() {
     // del viaje cubre solo los gastos SIN Combustible (el que calcula el botón
     // "Calcular reparto"), el combustible no tiene reparto asignado: se queda
     // en "Sin reparto asignado" en vez de prorratearse con esas proporciones.
-    function _acumularCombustible(leg, monto) {
+    function _acumularCombustible(leg, monto, montoOtros) {
       var totalReparto = totalRepartoOf(leg.id);
-      var repartoSinCombustible = totalReparto === totalGastosOf(leg.id) - monto;
-      if (totalReparto <= 0 || repartoSinCombustible) {
+      var cob = cobertura(totalGastosOf(leg.id), totalReparto, monto, montoOtros);
+      if (totalReparto <= 0 || cob.comb) {
         if (!fEmp) {
           combustible.sinAsignar += monto;
           combustible.total += monto;
@@ -390,6 +433,23 @@ var LegProrrateo = (function() {
         return;
       }
       _repartirPorMonto(leg, monto, combustible);
+    }
+
+    // Igual que el Combustible, para el concepto "Otros" de un viaje de Ruta: si
+    // el reparto del viaje no lo incluye (lo calculó "Calcular reparto", que deja
+    // por fuera Combustible y Otros) o no hay reparto, queda "Sin reparto asignado".
+    function _acumularOtros(leg, monto, montoComb) {
+      var totalReparto = totalRepartoOf(leg.id);
+      var cob = cobertura(totalGastosOf(leg.id), totalReparto, montoComb, monto);
+      if (totalReparto <= 0 || cob.otros) {
+        if (!fEmp) {
+          otros.sinAsignar += monto;
+          otros.total += monto;
+          otros.sinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+        }
+        return;
+      }
+      _repartirPorMonto(leg, monto, otros);
     }
 
     // Reparte `monto` de una legalización entre las empresas de su reparto
@@ -440,9 +500,11 @@ var LegProrrateo = (function() {
       legsPeriodo[leg.id] = true;
 
       var totalCombustible = totalGastosConceptoOf(leg.id, 'Combustible');
-      if (totalCombustible > 0) _acumularCombustible(leg, totalCombustible);
+      var totalOtros = esEnvio(leg) ? 0 : totalGastosOtrosOf(leg.id);
+      if (totalCombustible > 0) _acumularCombustible(leg, totalCombustible, totalOtros);
+      if (totalOtros > 0) _acumularOtros(leg, totalOtros, totalCombustible);
 
-      var totalViaje = totalGastosOf(leg.id) - totalCombustible;
+      var totalViaje = totalGastosOf(leg.id) - totalCombustible - totalOtros;
       if (totalViaje <= 0) return;
 
       // Remisiones_Relacionadas es un CSV simple de códigos (sin "|cant|fecha"),
@@ -521,11 +583,15 @@ var LegProrrateo = (function() {
       combustibleSinAsignar: combustible.sinAsignar,
       combustibleSinAsignarLegs: combustible.sinAsignarLegs,
       combustibleTotalGeneral: combustible.total,
-      mantenimiento: mantenimiento
+      mantenimiento: mantenimiento,
+      otros: otros
     };
   }
 
   return {
+    CONCEPTOS_RUTA_FIJOS: CONCEPTOS_RUTA_FIJOS,
+    esConceptoOtros: esConceptoOtros,
+    cobertura: cobertura,
     EMPRESA_ABAGO: EMPRESA_ABAGO,
     EMPRESA_MP: EMPRESA_MP,
     PLANTAS_MP: PLANTAS_MP,

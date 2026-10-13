@@ -353,8 +353,10 @@ function joinNitDv(nit, dv) {
 
 // Conceptos fijos del formulario de gasto de ruta; "Otros" pide especificar
 // el detalle. Mantenimiento tiene su propio formulario aparte (ver
-// MANTENIMIENTO_DETALLE_FIJOS) y no aparece aquí.
-var CONCEPTO_FIJOS = ['Combustible', 'Alimentación', 'Peaje', 'Envío', 'Alojamiento'];
+// MANTENIMIENTO_DETALLE_FIJOS) y no aparece aquí. La lista vive en
+// js/legalizacion-prorrateo.js: es la misma que usa el cálculo para saber qué
+// líneas son "Otros" (fuera del prorrateo por empresas, como el Combustible).
+var CONCEPTO_FIJOS = LegProrrateo.CONCEPTOS_RUTA_FIJOS;
 
 // Detalle de mantenimiento (líneas de gasto del formulario de mantenimiento,
 // en vez de Concepto); "Otros" pide especificar.
@@ -968,6 +970,12 @@ function totalGastosConceptoOf(legId, concepto) {
   return itemsOf(legId).filter(function(it) { return it.Concepto === concepto; })
     .reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0);
 }
+// Suma las líneas con concepto "Otros" (texto fuera de CONCEPTO_FIJOS) de una
+// legalización de Ruta; aparte del prorrateo por producto, como el Combustible.
+function totalGastosOtrosOf(legId) {
+  return itemsOf(legId).filter(function(it) { return LegProrrateo.esConceptoOtros(it.Concepto); })
+    .reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0);
+}
 
 // ── Proporción de gastos por producto y por empresa (estimada) ──
 // El cálculo (prorrateo por litros/kilos/unidades de las remisiones de cada
@@ -1053,6 +1061,7 @@ function renderProrrateoGastos() {
   renderResumenProrrateo(calc);
   renderCombustiblePorEmpresa(calc);
   renderMantenimientoPorEmpresa(calc);
+  renderOtrosPorEmpresa(calc);
   renderGastoPorProducto(calc);
   renderGastoPorEmpresa(calc);
 }
@@ -1105,6 +1114,12 @@ function renderCombustiblePorEmpresa(calc) {
 // Mantenimiento por empresa: mismo tratamiento que el Combustible.
 function renderMantenimientoPorEmpresa(calc) {
   _renderGastoAparte('gpm-body', calc.mantenimiento, 'Sin gastos de Mantenimiento para este período.');
+}
+
+// Otros por empresa: las líneas con concepto "Otros" de los viajes de Ruta, con
+// el mismo tratamiento que el Combustible.
+function renderOtrosPorEmpresa(calc) {
+  _renderGastoAparte('gpo-body', calc.otros, 'Sin gastos de Otros para este período.');
 }
 
 // Resumen del período: litros, kilos y unidades totales movidos y remisiones
@@ -1186,13 +1201,13 @@ function clearProrrateoFiltros() {
 // Exporta a Excel el mismo prorrateo que se ve en pantalla (respeta los
 // filtros de Empresa/Desde/Hasta activos): hoja "Prorrateo" con una fila por
 // producto de cada empresa (más "Sin identificar" si aplica, ya sin
-// Combustible), y hoja "Combustible" con el reparto de ese concepto por
-// empresa (más "Sin reparto asignado" si aplica).
+// Combustible ni Otros), y hojas "Combustible", "Mantenimiento" y "Otros" con
+// el reparto de ese concepto por empresa (más "Sin reparto asignado" si aplica).
 function exportarProrrateoExcel() {
   var calc = calcularProrrateoGastos();
   var total = calc.totalGeneral;
   var empresas = Object.keys(calc.porEmpresa);
-  if (!empresas.length && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0) {
+  if (!empresas.length && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0 && calc.otros.total <= 0) {
     showToast('No hay datos para exportar', '#e74c3c');
     return;
   }
@@ -1255,6 +1270,7 @@ function exportarProrrateoExcel() {
     sinAsignarLegs: calc.combustibleSinAsignarLegs
   });
   var rowsMant = filasAparte(calc.mantenimiento);
+  var rowsOtros = filasAparte(calc.otros);
 
   var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
@@ -1269,6 +1285,11 @@ function exportarProrrateoExcel() {
     var wsMant = XLSX.utils.json_to_sheet(rowsMant);
     wsMant['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, wsMant, 'Mantenimiento');
+  }
+  if (rowsOtros.length) {
+    var wsOtros = XLSX.utils.json_to_sheet(rowsOtros);
+    wsOtros['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsOtros, 'Otros');
   }
   XLSX.writeFile(wb, 'prorrateo_gastos_' + today() + '.xlsx');
   showToast('Excel exportado');
@@ -1387,30 +1408,36 @@ function estadoBadgeHtml(leg) {
 }
 
 // ¿El reparto guardado no cuadra con los gastos? Mismo criterio del aviso del
-// formulario: el reparto debe sumar el total de gastos o, si hay Combustible
-// (que aún no se prorratea), el total sin Combustible. Detecta el reparto que
-// quedó desactualizado al editar los gastos después de calcularlo. Solo aplica
-// a lo que aún se puede editar ('Por conciliar'); en Mantenimiento el reparto
-// es opcional, así que sin montos no hay descuadre. Devuelve null si cuadra o
-// { reparto, esperado, dif, sinComb }.
+// formulario: el reparto debe sumar el total de gastos o, si hay Combustible u
+// Otros (que no se prorratean), el total sin Combustible y/o sin Otros. Detecta
+// el reparto que quedó desactualizado al editar los gastos después de
+// calcularlo. Solo aplica a lo que aún se puede editar ('Por conciliar'); en
+// Mantenimiento el reparto es opcional, así que sin montos no hay descuadre.
+// Devuelve null si cuadra o { reparto, esperado, dif, sin } (sin = texto de lo
+// que deja por fuera el esperado: 'Combustible', 'Otros', 'Combustible y Otros' o '').
 function repartoDescuadre(leg) {
   if (!leg || leg.Estado_Conciliacion !== 'Por conciliar') return null;
   var esMant = leg.Tipo === 'Mantenimiento';
   var total = Math.round(totalGastosOf(leg.id));
   var reparto = Math.round(totalRepartoOf(leg.id));
   if (esMant && reparto <= 0) return null;
-  var comb = (esMant || esEnvio(leg)) ? 0 : Math.round(totalGastosConceptoOf(leg.id, 'Combustible'));
-  var candidatos = comb > 0 ? [total, total - comb] : [total];
-  if (candidatos.indexOf(reparto) >= 0) return null;
+  var noEsRuta = esMant || esEnvio(leg);
+  var comb = noEsRuta ? 0 : Math.round(totalGastosConceptoOf(leg.id, 'Combustible'));
+  var otros = noEsRuta ? 0 : Math.round(totalGastosOtrosOf(leg.id));
+  var candidatos = [{ v: total, sin: '' }];
+  if (comb > 0) candidatos.push({ v: total - comb, sin: 'Combustible' });
+  if (otros > 0) candidatos.push({ v: total - otros, sin: 'Otros' });
+  if (comb > 0 && otros > 0) candidatos.push({ v: total - comb - otros, sin: 'Combustible y Otros' });
+  if (candidatos.some(function(c) { return c.v === reparto; })) return null;
   var esperado = candidatos.reduce(function(mejor, c) {
-    return Math.abs(reparto - c) < Math.abs(reparto - mejor) ? c : mejor;
+    return Math.abs(reparto - c.v) < Math.abs(reparto - mejor.v) ? c : mejor;
   }, candidatos[0]);
-  return { reparto: reparto, esperado: esperado, dif: reparto - esperado, sinComb: comb > 0 && esperado === total - comb };
+  return { reparto: reparto, esperado: esperado.v, dif: reparto - esperado.v, sin: esperado.sin };
 }
 
 // Texto del descuadre, para el tooltip de la marca y el aviso del detalle.
 function repartoDescuadreTxt(d) {
-  return 'El reparto suma ' + fmtMoney(d.reparto) + ' y los gastos' + (d.sinComb ? ' (sin Combustible)' : '') +
+  return 'El reparto suma ' + fmtMoney(d.reparto) + ' y los gastos' + (d.sin ? ' (sin ' + d.sin + ')' : '') +
     ' suman ' + fmtMoney(d.esperado) + ' (diferencia ' + (d.dif > 0 ? '+' : '−') + fmtMoney(Math.abs(d.dif)) + ').';
 }
 
@@ -2014,11 +2041,26 @@ function calcularRepartoSugerido(codigos, monto) {
 }
 
 // Combustible aparte: por ahora NO se prorratea entre empresas, así que el
-// reparto calculado cubre solo los gastos que no son Combustible.
+// reparto calculado cubre solo los gastos que no son Combustible. Lo mismo con
+// los gastos de concepto "Otros" (ver totalOtrosLista).
 function totalCombustibleLista(lista) {
   return (lista || []).reduce(function(s, g) {
     return s + (((g.Concepto || '').trim() === 'Combustible') ? (Number(g.Valor) || 0) : 0);
   }, 0);
+}
+
+// Suma las líneas con concepto "Otros" (texto fuera de los conceptos fijos).
+// Una línea "Otros" aún sin detalle escrito (Concepto vacío) también cuenta.
+function totalOtrosLista(lista) {
+  return (lista || []).reduce(function(s, g) {
+    return s + (LegProrrateo.esConceptoOtros(g.Concepto) ? (Number(g.Valor) || 0) : 0);
+  }, 0);
+}
+
+// "Combustible", "Otros" o "Combustible y Otros" según lo que el reparto deja por
+// fuera (cob = LegProrrateo.cobertura); '' si no excluye nada.
+function repartoExcluyeNombres(cob) {
+  return [cob.comb ? 'Combustible' : '', cob.otros ? 'Otros' : ''].filter(Boolean).join(' y ');
 }
 
 function calcularRepartoForm() {
@@ -2026,8 +2068,10 @@ function calcularRepartoForm() {
   readLgEmpresas();
   if (!formRemisiones.length) { showToast('Agrega primero las remisiones relacionadas', '#e67e22'); return; }
   var totalGastos = formGastos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
-  var base = totalGastos - totalCombustibleLista(formGastos);
-  if (base <= 0) { showToast('No hay gastos distintos de Combustible para repartir', '#e67e22'); return; }
+  var comb = totalCombustibleLista(formGastos);
+  var otros = totalOtrosLista(formGastos);
+  var base = totalGastos - comb - otros;
+  if (base <= 0) { showToast('No hay gastos distintos de Combustible u Otros para repartir', '#e67e22'); return; }
 
   var calc = calcularRepartoSugerido(formRemisiones, base);
   var emps = Object.keys(calc.porEmpresa);
@@ -2046,7 +2090,9 @@ function calcularRepartoForm() {
   renderLgEmpresas();
   recalcTotals();
 
-  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos/unidades' : 'número de remisiones') + ' (sin Combustible)';
+  var excluidos = repartoExcluyeNombres({ comb: comb > 0, otros: otros > 0 });
+  var msg = 'Reparto calculado por ' + (calc.metodo === 'litros/kilos' ? 'litros/kilos/unidades' : 'número de remisiones') +
+    (excluidos ? ' (sin ' + excluidos + ')' : '');
   if (calc.sinResolver.length) msg += ' · sin litros/kilos/unidades: ' + calc.sinResolver.join(', ');
   showToast(msg, calc.sinResolver.length ? '#e67e22' : '#27ae60');
 }
@@ -2864,14 +2910,17 @@ function recalcTotals() {
   var totalReparto = formEmpresas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
   document.getElementById('lg-total-gastos').textContent = fmtMoney(totalGastos);
   document.getElementById('lg-total-reparto').textContent = fmtMoney(totalReparto);
-  // Un reparto que cubre todo salvo el Combustible (ver calcularRepartoForm)
-  // no es un error: se avisa aparte en vez de marcarlo como descuadre.
+  // Un reparto que cubre todo salvo el Combustible y/o los gastos "Otros" (ver
+  // calcularRepartoForm) no es un error: se avisa aparte en vez de marcarlo
+  // como descuadre.
   var comb = totalCombustibleLista(formGastos);
-  var sinComb = comb > 0 && totalReparto === totalGastos - comb;
-  document.getElementById('lg-reparto-warn').style.display = (totalGastos !== totalReparto && !sinComb) ? 'block' : 'none';
+  var otros = totalOtrosLista(formGastos);
+  var cob = LegProrrateo.cobertura(totalGastos, totalReparto, comb, otros);
+  var excluye = repartoExcluyeNombres(cob);
+  document.getElementById('lg-reparto-warn').style.display = !cob.cuadra ? 'block' : 'none';
   var info = document.getElementById('lg-reparto-info');
-  info.textContent = 'ℹ El reparto no incluye el Combustible (' + fmtMoney(comb) + ')';
-  info.style.display = sinComb ? 'block' : 'none';
+  info.textContent = 'ℹ El reparto no incluye ' + [cob.comb ? 'el Combustible (' + fmtMoney(comb) + ')' : '', cob.otros ? 'Otros (' + fmtMoney(otros) + ')' : ''].filter(Boolean).join(' ni ');
+  info.style.display = excluye ? 'block' : 'none';
 }
 
 // ── Abrir / cerrar formulario (crear o editar) ──
@@ -2982,9 +3031,8 @@ async function saveForm() {
 
   var totalGastos = gastosValidos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
   var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
-  var combustible = totalCombustibleLista(gastosValidos);
-  var repartoSinCombustible = combustible > 0 && totalReparto === totalGastos - combustible;
-  if (totalGastos !== totalReparto && !repartoSinCombustible) {
+  var cobGuardar = LegProrrateo.cobertura(totalGastos, totalReparto, totalCombustibleLista(gastosValidos), totalOtrosLista(gastosValidos));
+  if (!cobGuardar.cuadra) {
     if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
   }
 
@@ -3620,7 +3668,9 @@ function renderVerBody(leg) {
   var esMant = leg.Tipo === 'Mantenimiento';
   var esEnv = esEnvio(leg);
   var combVer = totalCombustibleLista(items);
-  var repartoSinComb = !esMant && combVer > 0 && totalReparto === totalGastos - combVer;
+  var otrosVer = (esMant || esEnv) ? 0 : totalOtrosLista(items);
+  var cobVer = (esMant || esEnv) ? { comb: false, otros: false } : LegProrrateo.cobertura(totalGastos, totalReparto, combVer, otrosVer);
+  var excluyeVerTxt = [cobVer.comb ? 'el Combustible (' + fmtMoney(combVer) + ')' : '', cobVer.otros ? 'Otros (' + fmtMoney(otrosVer) + ')' : ''].filter(Boolean).join(' ni ');
   var descVer = repartoDescuadre(leg);
 
   var itemsHtml = items.map(function(it) {
@@ -3714,7 +3764,7 @@ function renderVerBody(leg) {
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:14px 0 6px">Reparto entre empresas</h3>' +
     '<table><thead><tr><th>Empresa</th><th style="text-align:right">Monto</th></tr></thead><tbody>' + empsHtml + '</tbody></table>' +
     '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong>' +
-      (repartoSinComb ? ' · <em>El reparto no incluye el Combustible (' + escHtml(fmtMoney(combVer)) + ')</em>' : '') + '</div>' +
+      (excluyeVerTxt ? ' · <em>El reparto no incluye ' + escHtml(excluyeVerTxt) + '</em>' : '') + '</div>' +
     // Reparto desactualizado (gastos editados después de calcularlo): aviso con la diferencia.
     (descVer ? '<div style="margin:0 0 14px;padding:8px 12px;background:#fffaf0;border:1px solid #f6ad55;border-radius:8px;font-size:0.84rem;color:#7b341e">⚠ <strong>Reparto desactualizado.</strong> ' +
       escHtml(repartoDescuadreTxt(descVer)) + ' ' + (esMant ? 'Edita la legalización y ajusta los montos del reparto.' : 'Edita y pulsa ⚖ Calcular reparto para recalcularlo.') + '</div>' : '') +
