@@ -351,6 +351,17 @@ async function loadDashboard() {
   }
 
   try {
+    // Snapshot de existencias (mismo cálculo que Kardex / Inventario / Reportes).
+    // Se pide EN PARALELO con las tablas del dashboard: antes iba después y en
+    // serie, y duplicaba la espera al abrir. No depende de ningún estado del
+    // dashboard; el catch evita un rechazo sin manejar si el resto falla antes.
+    var existPromise = (typeof Existencias !== 'undefined' && Existencias.loadSnapshot)
+      ? Existencias.loadSnapshot().catch(function(e) {
+          console.warn('No se pudo cargar snapshot de existencias:', e);
+          return null;
+        })
+      : Promise.resolve(null);
+
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion' }),
       apiGet('getDevoluciones', { columns: 'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total,Cliente,Vendedor' }).catch(function() { return { ok: true, devoluciones: [] }; }),
@@ -410,15 +421,8 @@ async function loadDashboard() {
     dLegInvalidar();                 // el informe de Legalización se vuelve a pedir al abrirlo / repintarlo
     dLoadedAt = new Date();
 
-    // Snapshot de existencias — mismo cálculo que Kardex / Inventario / Reportes.
-    try {
-      if (typeof Existencias !== 'undefined' && Existencias.loadSnapshot) {
-        dExist = await Existencias.loadSnapshot();
-      }
-    } catch (e) {
-      dExist = null;
-      console.warn('No se pudo cargar snapshot de existencias:', e);
-    }
+    // Snapshot de existencias: ya viene en vuelo desde arriba (null si falló).
+    dExist = await existPromise;
 
     // #main visible ANTES de construir: los <canvas> de Chart.js necesitan
     // que su contenedor tenga tamaño para dimensionarse bien.
