@@ -30,7 +30,8 @@ var AUTH = (function() {
     { key: 'clientes',                  label: '👥 Clientes' },
     { key: 'notificaciones',          label: '🔔 Notificaciones' },
     { key: 'legalizacion_gastos',          label: '🧾 Legalización de Gastos' },
-    { key: 'legalizacion_gastos_aprobar',  label: '✅ Conciliar legalización de gastos' }
+    { key: 'legalizacion_gastos_aprobar',  label: '✅ Conciliar legalización de gastos' },
+    { key: 'solicitudes_mercadeo',         label: '📣 Solicitudes a Mercadeo' }
   ];
 
   function init() {

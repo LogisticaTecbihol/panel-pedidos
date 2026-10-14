@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co https://kvfqcymeihglohkcckdp.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Solicitudes a Mercadeo — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📣</text></svg>">
+<title>Solicitudes a Mercadeo – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260921d">
+<style>
+  .sm-tabs { display: flex; gap: 6px; margin-bottom: 0; }
+  .sm-form { max-width: 760px; padding: 20px 24px; }
+  .sm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .sm-grid .full { grid-column: 1 / -1; }
+  .sm-hint { font-size: 0.78rem; color: #718096; margin-top: 4px; min-height: 1em; }
+  .sm-counter { font-size: 0.74rem; color: #a0aec0; text-align: right; margin-top: 2px; }
+  .sm-estado { background: #fef3cd; color: #b7791f; border-color: #f9e79f; font-weight: 700; }
+  .sm-files { list-style: none; margin: 8px 0 0; padding: 0; }
+  .sm-files li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 6px; font-size: 0.82rem; background: #f7fafc; }
+  .sm-files li .nm { flex: 1; word-break: break-all; }
+  .sm-files li .sz { color: #718096; white-space: nowrap; }
+  .sm-files li button { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 1rem; }
+  .sm-warn { background: #fef9e7; border: 1px solid #f9e79f; color: #b7791f; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; margin-bottom: 14px; }
+  .sm-actions { display: flex; gap: 12px; align-items: center; margin-top: 20px; flex-wrap: wrap; }
+  .sm-progreso { font-size: 0.82rem; color: #4a5568; }
+  .sm-det h4 { margin: 14px 0 6px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.3px; color: #4a5568; }
+  .sm-det .kv { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; font-size: 0.86rem; }
+  .sm-det .kv span.k { color: #718096; }
+  .sm-hist { list-style: none; margin: 0; padding: 0; }
+  .sm-hist li { padding: 8px 10px; border-left: 3px solid #cbd5e0; background: #f7fafc; margin-bottom: 6px; border-radius: 0 6px 6px 0; font-size: 0.84rem; }
+  .sm-hist li.resp { border-left-color: #1a5276; background: #ebf5fb; }
+  .sm-hist .meta { font-size: 0.74rem; color: #718096; margin-top: 2px; }
+  @media (max-width: 640px) { .sm-grid { grid-template-columns: 1fr; } .sm-det .kv { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body data-modulo="solicitudes_mercadeo">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="cartera.html" data-modulo="cartera">💳 Cartera</a>
+    <a href="legalizacion-gastos.html" data-modulo="legalizacion_gastos">🧾 Legalización de Gastos</a>
+    <a href="solicitudes-mercadeo.html" data-modulo="solicitudes_mercadeo" class="active">📣 Solicitudes a Mercadeo</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="reabastecimiento.html" data-modulo="reabastecimiento">🔄 Reabastecimiento</a>
+    <a href="bodegas-consignacion.html" data-modulo="bodegas_consignacion">🏬 Bodegas en Consignación</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando el formulario de solicitudes</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="smInit()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div class="sm-tabs">
+    <button class="car-tab active" id="sm-tab-nueva" data-sm-tab="nueva">➕ Nueva solicitud</button>
+    <button class="car-tab" id="sm-tab-mis" data-sm-tab="mis">📋 Mis solicitudes <span class="car-tab-ct" id="sm-ct-mis">0</span></button>
+  </div>
+
+  <!-- NUEVA SOLICITUD -->
+  <div class="card" id="sm-vista-nueva" style="border-top-left-radius:0">
+    <div class="sm-form">
+      <div id="sm-aviso-sin-empresa" class="sm-warn" style="display:none">
+        No tienes ninguna empresa asignada, así que todavía no puedes enviar solicitudes. Pide a un administrador que te asigne la empresa en Usuarios.
+      </div>
+
+      <div class="sm-grid">
+        <div>
+          <label class="ef-label" for="sm-solicitante">Solicitante *</label>
+          <select class="ef" id="sm-solicitante"></select>
+          <div class="sm-hint">Elige “Yo mismo” o el comercial a cuyo nombre haces la solicitud.</div>
+        </div>
+        <div>
+          <label class="ef-label" for="sm-empresa">Empresa *</label>
+          <select class="ef" id="sm-empresa"></select>
+        </div>
+
+        <div class="full">
+          <label class="ef-label" for="sm-asunto">Asunto *</label>
+          <select class="ef" id="sm-asunto"></select>
+          <div class="sm-hint" id="sm-asunto-ej"></div>
+        </div>
+
+        <div>
+          <label class="ef-label" for="sm-fecha">Fecha tentativa *</label>
+          <input class="ef" type="date" id="sm-fecha">
+          <div class="sm-hint">Cuándo lo necesitas. Mercadeo confirma la fecha de entrega.</div>
+        </div>
+        <div>
+          <label class="ef-label" for="sm-estado">Estado</label>
+          <input class="ef sm-estado" type="text" id="sm-estado" value="Recibido" readonly tabindex="-1">
+        </div>
+
+        <div class="full">
+          <label class="ef-label" for="sm-desc">Descripción de la solicitud *</label>
+          <textarea class="ef" id="sm-desc" rows="5" maxlength="2000" placeholder="Cuéntale a Mercadeo qué necesitas, para qué cliente o evento, medidas, cantidades, textos…"></textarea>
+          <div class="sm-counter"><span id="sm-desc-ct">0</span> / 2000</div>
+        </div>
+
+        <div class="full">
+          <label class="ef-label" for="sm-files">Adjuntar documentos (opcional)</label>
+          <input type="file" id="sm-files" multiple>
+          <div class="sm-hint">Hasta 5 archivos de 25 MB cada uno: PDF, Word, Excel, PowerPoint, imágenes, AI/PSD/EPS, video o audio, ZIP.</div>
+          <ul class="sm-files" id="sm-files-lista"></ul>
+        </div>
+      </div>
+
+      <div class="sm-actions">
+        <button class="btn-confirm" id="sm-enviar" type="button">📨 Enviar solicitud</button>
+        <button class="btn-cancel" id="sm-limpiar" type="button">Limpiar</button>
+        <span class="sm-progreso" id="sm-progreso"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIS SOLICITUDES -->
+  <div class="card" id="sm-vista-mis" style="display:none;border-top-left-radius:0">
+    <div class="card-head">
+      <h3>📋 Mis solicitudes <span id="sm-row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" id="sm-refrescar" type="button">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th><th>Enviada</th><th>Asunto</th><th>Empresa</th><th>A nombre de</th>
+            <th>Fecha tentativa</th><th>Fecha comprometida</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sm-lista"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: detalle de una solicitud -->
+<div class="overlay" id="sm-overlay">
+  <div class="modal-box" style="max-width:680px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="sm-det-titulo">Solicitud</h2>
+        <div class="meta" id="sm-det-meta"></div>
+      </div>
+      <button class="btn-close" id="sm-det-cerrar" type="button">✕</button>
+    </div>
+    <div class="mbody sm-det" id="sm-det-cuerpo"></div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" id="sm-det-cerrar2" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20261006b"></script>
+<script src="js/auth.js?v=20261014a"></script>
+<script src="js/notificaciones.js?v=20261006a"></script>
+<script src="js/solicitudes-mercadeo.js?v=20261014a"></script>
+</body>
+</html>
