@@ -21,16 +21,19 @@ var SM_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt',
 
 // Asuntos del formulario (códigos = los que guarda el Tablero) con sus ejemplos.
 var SM_ASUNTOS = [
-  { k: 'material_pop',                t: 'Material POP',                              ej: 'Por ejemplo: gorras, camisetas, pocillos, esferos.' },
-  { k: 'material_impreso',            t: 'Material impreso',                          ej: 'Por ejemplo: flyers, folletos, afiches, tarjetas, talonarios, post-its.' },
-  { k: 'piezas_graficas',             t: 'Piezas gráficas',                           ej: 'Por ejemplo: un carrusel, una imagen para un producto, etc.' },
-  { k: 'piezas_audiovisuales',        t: 'Piezas audiovisuales',                      ej: 'Por ejemplo: videos, audios.' },
+  { k: 'material_pop',                t: 'Material POP',                              ej: 'por ejemplo: gorras, camisetas, pocillos, esferos' },
+  { k: 'material_impreso',            t: 'Material impreso',                          ej: 'por ejemplo: flyers, folletos, afiches, tarjetas, talonarios, post-its' },
+  { k: 'piezas_graficas',             t: 'Piezas gráficas',                           ej: 'por ejemplo: carrusel, una imagen para un producto, etc.' },
+  { k: 'piezas_audiovisuales',        t: 'Piezas audiovisuales',                      ej: 'por ejemplo: videos, audios' },
   { k: 'diseno_nuevo_producto',       t: 'Diseño de nuevo producto',                  ej: '' },
   { k: 'diseno_ajuste_portafolios',   t: 'Diseño y ajuste de portafolios',            ej: '' },
-  { k: 'diseno_ajuste_institucional', t: 'Diseño y ajuste de material institucional', ej: 'Por ejemplo: carnets, membretes.' },
-  { k: 'desarrollo_marca',            t: 'Desarrollo de marca',                       ej: 'Por ejemplo: Brand book.' },
-  { k: 'otros',                       t: 'Otros',                                     ej: 'Por ejemplo: ajuste de fichas técnicas u hojas de seguridad.' }
+  { k: 'diseno_ajuste_institucional', t: 'Diseño y ajuste de material institucional', ej: 'por ejemplo: carnets, membretes' },
+  { k: 'desarrollo_marca',            t: 'Desarrollo de marca',                       ej: 'por ejemplo: Brand book' },
+  { k: 'otros',                       t: 'Otros',                                     ej: 'por ejemplo: ajuste de fichas técnicas u hojas de seguridad' }
 ];
+
+// Texto de cada opción del desplegable: nombre + ejemplos entre paréntesis (si los tiene).
+function smAsuntoOpcion(a) { return a.t + (a.ej ? ' (' + a.ej + ')' : ''); }
 
 // El estado que ve el solicitante (el código 'solicitada' del Tablero se muestra como "Recibido").
 var SM_ESTADOS = {
@@ -140,7 +143,7 @@ function smPoblarFormulario() {
   smEl('sm-enviar').disabled = !ctx.empresas.length;
 
   var as = '<option value="">— Seleccionar —</option>';
-  SM_ASUNTOS.forEach(function (a) { as += '<option value="' + a.k + '">' + escHtml(a.t) + '</option>'; });
+  SM_ASUNTOS.forEach(function (a) { as += '<option value="' + a.k + '">' + escHtml(smAsuntoOpcion(a)) + '</option>'; });
   smEl('sm-asunto').innerHTML = as;
 }
 
@@ -277,7 +280,6 @@ function smResetForm() {
   if (_sm.ctx && _sm.ctx.empresas.length === 1) smEl('sm-empresa').value = _sm.ctx.empresas[0];
   else smEl('sm-empresa').value = '';
   smEl('sm-asunto').value = '';
-  smEl('sm-asunto-ej').textContent = '';
   smEl('sm-fecha').value = '';
   smEl('sm-fecha').min = today();
   smEl('sm-desc').value = '';
@@ -531,9 +533,5 @@ document.addEventListener('DOMContentLoaded', function () {
     if (li) smComboElegir(li.getAttribute('data-id'));
   });
   smEl('sm-desc').addEventListener('input', function () { smEl('sm-desc-ct').textContent = this.value.length; });
-  smEl('sm-asunto').addEventListener('change', function () {
-    var a = smAsunto(this.value);
-    smEl('sm-asunto-ej').textContent = a ? a.ej : '';
-  });
   smInit();
 });
