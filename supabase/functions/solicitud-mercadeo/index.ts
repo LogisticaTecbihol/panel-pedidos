@@ -7,7 +7,7 @@
 // (server -> server). El navegador nunca habla con la función de pqrs.
 //
 // Acciones (campo `action`):
-//   contexto -> datos para armar el formulario: empresas del usuario y comerciales
+//   contexto -> datos para armar el formulario: empresas del usuario y usuarios activos del panel
 //   preparar -> URLs firmadas para subir adjuntos directo al Storage de pqrs
 //   crear    -> registra la solicitud (queda "Recibido" en el Tablero)
 //   listar   -> "Mis solicitudes": las que hizo el usuario o hechas a su nombre
@@ -148,22 +148,24 @@ serve(async (req) => {
 
     const body = await req.json()
 
-    // Comerciales activos (para "A nombre de"); nunca el propio usuario.
-    async function comerciales() {
-      const c = await admin.from('usuarios').select('id, nombre, email').eq('rol', 'comercial').eq('activo', true).order('nombre')
+    // Usuarios activos del panel (para "Solicitante"/"a nombre de"), incluido el propio usuario.
+    // Solo se expone nombre y rol (no el correo).
+    async function usuariosPanel() {
+      const c = await admin.from('usuarios').select('id, nombre, email, rol').eq('activo', true).order('nombre')
       if (c.error) throw c.error
-      return (c.data || [])
-        .filter((x: any) => x.id !== user.id)
-        .map((x: any) => ({ id: x.id, nombre: (x.nombre || '').trim() || x.email }))
+      return (c.data || []).map((x: any) => ({ id: x.id, nombre: (x.nombre || '').trim() || x.email, rol: x.rol }))
     }
 
     switch (body?.action) {
       case 'contexto': {
+        const usuarios = await usuariosPanel()
         return json(200, {
           ok: true,
           yo: { id: user.id, nombre: nombreUsuario, rol: perfil.rol },
           empresas,
-          comerciales: await comerciales(),
+          usuarios,
+          // Alias de la versión anterior de la página (lista de comerciales sin el propio usuario).
+          comerciales: usuarios.filter((u: any) => u.id !== user.id),
         })
       }
 
@@ -195,13 +197,14 @@ serve(async (req) => {
         if (descripcion.length < 10) throw new Rechazo('La descripción debe tener al menos 10 caracteres')
         if (descripcion.length > 2000) throw new Rechazo('La descripción no puede superar 2000 caracteres')
 
-        // "A nombre de": solo un comercial activo de la lista (el nombre sale de la BD, no del navegador).
+        // "A nombre de": cualquier usuario activo del panel (el nombre sale de la BD, no del navegador).
         let aNombre: { id: string; nombre: string } | null = null
         if (body.a_nombre_de_id) {
           const id = uuid(body.a_nombre_de_id, 'a_nombre_de_id')
           if (id !== user.id) {
-            aNombre = (await comerciales()).find((c: any) => c.id === id) || null
-            if (!aNombre) throw new Rechazo('El comercial elegido no está disponible')
+            const u = (await usuariosPanel()).find((x: any) => x.id === id)
+            if (!u) throw new Rechazo('El solicitante elegido no está disponible')
+            aNombre = { id: u.id, nombre: u.nombre }
           }
         }
 

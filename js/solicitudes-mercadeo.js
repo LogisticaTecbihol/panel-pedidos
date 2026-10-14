@@ -42,8 +42,15 @@ var SM_ESTADOS = {
   cancelada:     { t: 'Cancelada',     cls: 'b-anulado' }
 };
 
+var SM_ROLES = {
+  admin: 'Admin', editor: 'Editor', lector: 'Lector', comercial: 'Comercial', despachador: 'Despachador',
+  contabilidad: 'Contabilidad', gerente_iaso: 'Gerente IASO', remisionador: 'Remisionador',
+  cartera: 'Cartera', produccion: 'Producción', mercadeo: 'Mercadeo'
+};
+
 var _sm = {
-  ctx: null,          // { yo, empresas, comerciales }
+  combo: { opciones: [], visibles: [], activo: -1, ultimo: '' },   // combo de "Solicitante"
+  ctx: null,          // { yo, empresas, usuarios }
   requestId: null,    // se mantiene entre reintentos del MISMO envío (idempotencia)
   files: [],          // File[] elegidos
   uploaded: {},       // clave archivo -> { path, nombre, tamano, tipo } ya subido para este requestId
@@ -119,11 +126,7 @@ async function smInit() {
 function smPoblarFormulario() {
   var ctx = _sm.ctx;
 
-  var sol = '<option value="">Yo mismo (' + escHtml(ctx.yo.nombre) + ')</option>';
-  ctx.comerciales.forEach(function (c) {
-    sol += '<option value="' + escHtml(c.id) + '">' + escHtml(c.nombre) + '</option>';
-  });
-  smEl('sm-solicitante').innerHTML = sol;
+  smComboCargar();
 
   var nombres = {};
   EMPRESAS_HOLDING.forEach(function (e) { nombres[e.sigla] = e.value; });
@@ -141,12 +144,136 @@ function smPoblarFormulario() {
   smEl('sm-asunto').innerHTML = as;
 }
 
+// ── Combo "Solicitante": todos los usuarios activos del panel, con búsqueda por nombre ──
+function smNorm(s) {
+  return String(s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+}
+
+function smEtiqueta(o) { return o.yo ? o.nombre + ' (yo)' : o.nombre; }
+
+function smComboCargar() {
+  var ctx = _sm.ctx;
+  // Versiones anteriores del servidor solo mandaban "comerciales" (sin el propio usuario).
+  var lista = (ctx.usuarios || ctx.comerciales || []).slice();
+  if (!lista.some(function (u) { return u.id === ctx.yo.id; })) {
+    lista.push({ id: ctx.yo.id, nombre: ctx.yo.nombre, rol: ctx.yo.rol });
+  }
+  _sm.combo.opciones = lista.map(function (u) {
+    return { id: u.id, nombre: u.nombre, rol: u.rol, yo: u.id === ctx.yo.id };
+  }).sort(function (a, b) {
+    if (a.yo !== b.yo) return a.yo ? -1 : 1;                        // el propio usuario primero
+    return String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' });
+  });
+}
+
+function smComboOpcion(id) {
+  for (var i = 0; i < _sm.combo.opciones.length; i++) if (_sm.combo.opciones[i].id === id) return _sm.combo.opciones[i];
+  return null;
+}
+
+function smSolicitanteId() { return smEl('sm-solicitante-id').value || ''; }
+
+function smComboCerrar() {
+  smEl('sm-solicitante-lista').style.display = 'none';
+  smEl('sm-solicitante').setAttribute('aria-expanded', 'false');
+  smEl('sm-solicitante').removeAttribute('aria-activedescendant');
+}
+
+function smComboElegir(id) {
+  var o = smComboOpcion(id);
+  if (!o) return;
+  smEl('sm-solicitante-id').value = o.id;
+  smEl('sm-solicitante').value = smEtiqueta(o);
+  _sm.combo.ultimo = o.id;
+  smComboCerrar();
+}
+
+function smComboPintar() {
+  var ul = smEl('sm-solicitante-lista');
+  var c = _sm.combo;
+  if (!c.visibles.length) {
+    ul.innerHTML = '<li class="vacio" role="option" aria-disabled="true">Sin resultados</li>';
+    return;
+  }
+  var sel = smSolicitanteId();
+  ul.innerHTML = c.visibles.map(function (o, i) {
+    return '<li role="option" id="sm-op-' + i + '" data-id="' + escHtml(o.id) + '"' +
+      ' class="' + (i === c.activo ? 'activo ' : '') + (o.id === sel ? 'sel' : '') + '"' +
+      ' aria-selected="' + (o.id === sel ? 'true' : 'false') + '">' +
+      '<span>' + escHtml(smEtiqueta(o)) + '</span>' +
+      '<span class="rol">' + escHtml(SM_ROLES[o.rol] || o.rol || '') + '</span></li>';
+  }).join('');
+  if (c.activo >= 0) {
+    smEl('sm-solicitante').setAttribute('aria-activedescendant', 'sm-op-' + c.activo);
+    var li = document.getElementById('sm-op-' + c.activo);
+    if (li && li.scrollIntoView) li.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// Abre la lista filtrando por nombre: todas las palabras escritas deben aparecer (sin importar tildes ni mayúsculas).
+function smComboAbrir(filtro) {
+  var palabras = smNorm(filtro).split(/\s+/).filter(Boolean);
+  var c = _sm.combo;
+  c.visibles = c.opciones.filter(function (o) {
+    var h = smNorm(o.nombre);
+    return palabras.every(function (p) { return h.indexOf(p) >= 0; });
+  });
+  c.activo = c.visibles.length ? 0 : -1;
+  smEl('sm-solicitante-lista').style.display = '';
+  smEl('sm-solicitante').setAttribute('aria-expanded', 'true');
+  smComboPintar();
+}
+
+function smComboAlEnfocar() {
+  // Si el cuadro muestra la selección actual, se ofrece la lista completa (no filtrada por ese texto).
+  var o = smComboOpcion(smSolicitanteId());
+  var inp = smEl('sm-solicitante');
+  smComboAbrir(o && inp.value === smEtiqueta(o) ? '' : inp.value);
+}
+
+function smComboAlTeclear(e) {
+  var c = _sm.combo;
+  var abierta = smEl('sm-solicitante-lista').style.display !== 'none';
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!abierta) { smComboAlEnfocar(); return; }
+    if (!c.visibles.length) return;
+    c.activo = (c.activo + (e.key === 'ArrowDown' ? 1 : -1) + c.visibles.length) % c.visibles.length;
+    smComboPintar();
+  } else if (e.key === 'Enter') {
+    if (abierta) {
+      e.preventDefault();                       // no enviar nada con Enter
+      if (c.activo >= 0 && c.visibles[c.activo]) smComboElegir(c.visibles[c.activo].id);
+    }
+  } else if (e.key === 'Escape') {
+    if (abierta) { e.preventDefault(); smComboAlSalir(); }
+  }
+}
+
+// Al salir: si el texto no corresponde a una selección válida, vuelve a la última elegida.
+function smComboAlSalir() {
+  var inp = smEl('sm-solicitante');
+  if (!smSolicitanteId()) {
+    var t = smNorm(inp.value);
+    var exactos = _sm.combo.opciones.filter(function (o) { return smNorm(o.nombre) === t || smNorm(smEtiqueta(o)) === t; });
+    if (exactos.length === 1) smComboElegir(exactos[0].id);
+    else if (_sm.combo.ultimo) smComboElegir(_sm.combo.ultimo);
+  } else {
+    var o = smComboOpcion(smSolicitanteId());
+    if (o) inp.value = smEtiqueta(o);
+  }
+  smComboCerrar();
+}
+
 // ── Formulario ──
 function smResetForm() {
   _sm.requestId = smNuevoRequestId();
   _sm.files = [];
   _sm.uploaded = {};
+  _sm.combo.ultimo = '';
+  smEl('sm-solicitante-id').value = '';
   smEl('sm-solicitante').value = '';
+  if (_sm.ctx) smComboElegir(_sm.ctx.yo.id);
   if (_sm.ctx && _sm.ctx.empresas.length === 1) smEl('sm-empresa').value = _sm.ctx.empresas[0];
   else smEl('sm-empresa').value = '';
   smEl('sm-asunto').value = '';
@@ -186,8 +313,11 @@ function smAgregarArchivos(lista) {
 }
 
 function smLeerFormulario() {
+  var solId = smSolicitanteId();
   return {
-    a_nombre_de_id: smEl('sm-solicitante').value || null,
+    solicitante_id: solId,
+    // El propio usuario no es "a nombre de" nadie: se manda vacío.
+    a_nombre_de_id: solId && _sm.ctx && solId !== _sm.ctx.yo.id ? solId : null,
     empresa: smEl('sm-empresa').value,
     asunto: smEl('sm-asunto').value,
     fecha_tentativa: smEl('sm-fecha').value,
@@ -196,6 +326,7 @@ function smLeerFormulario() {
 }
 
 function smValidar(d) {
+  if (!d.solicitante_id || !smComboOpcion(d.solicitante_id)) return 'Elige el solicitante de la lista';
   if (!d.empresa) return 'Elige la empresa';
   if (!d.asunto) return 'Elige el asunto';
   if (!d.fecha_tentativa) return 'Indica la fecha tentativa';
@@ -386,6 +517,19 @@ document.addEventListener('DOMContentLoaded', function () {
   smEl('sm-det-cerrar2').addEventListener('click', smCerrarDetalle);
   smEl('sm-overlay').addEventListener('click', function (e) { if (isBackdropClick(e)) smCerrarDetalle(); });
   smEl('sm-files').addEventListener('change', function () { smAgregarArchivos(this.files); });
+  // Combo "Solicitante"
+  var cbo = smEl('sm-solicitante');
+  cbo.addEventListener('focus', smComboAlEnfocar);
+  cbo.addEventListener('click', smComboAlEnfocar);
+  cbo.addEventListener('input', function () { smEl('sm-solicitante-id').value = ''; smComboAbrir(this.value); });
+  cbo.addEventListener('keydown', smComboAlTeclear);
+  cbo.addEventListener('blur', smComboAlSalir);
+  // mousedown (no click): se elige antes de que el cuadro pierda el foco.
+  smEl('sm-solicitante-lista').addEventListener('mousedown', function (e) {
+    e.preventDefault();
+    var li = e.target.closest ? e.target.closest('li[data-id]') : null;
+    if (li) smComboElegir(li.getAttribute('data-id'));
+  });
   smEl('sm-desc').addEventListener('input', function () { smEl('sm-desc-ct').textContent = this.value.length; });
   smEl('sm-asunto').addEventListener('change', function () {
     var a = smAsunto(this.value);
