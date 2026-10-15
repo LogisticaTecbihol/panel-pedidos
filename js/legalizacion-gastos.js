@@ -3022,15 +3022,23 @@ async function saveForm() {
   if (header.Km_Salida != null && header.Km_Llegada != null && Number(header.Km_Llegada) <= Number(header.Km_Salida)) {
     showToast('El km de llegada debe ser mayor al km de salida', '#e67e22'); return;
   }
-  var gastosValidos = formGastos
-    .filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; })
-    .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor, Galones: g.Concepto === 'Combustible' ? g.Galones : null }; });
+  // Se guardan las líneas con valor. Un viaje sin gasto (todo en $0) también se
+  // puede registrar: queda una sola línea en $0 (la primera con concepto), para
+  // no llenar la legalización de líneas vacías.
+  var gastosConConcepto = formGastos.filter(function(g) { return (g.Concepto || '').trim(); });
+  var gastosConValor = gastosConConcepto.filter(function(g) { return Number(g.Valor) > 0; });
+  if (!gastosConValor.length && gastosConConcepto.length) gastosConValor = [gastosConConcepto[0]];
+  var gastosValidos = gastosConValor
+    .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: Number(g.Valor) || 0, Galones: g.Concepto === 'Combustible' ? g.Galones : null }; });
   if (!gastosValidos.length) { showToast('Agrega al menos una línea de gasto válida', '#e67e22'); return; }
   var empresasValidas = formEmpresas.filter(function(e) { return e.Empresa; });
   if (!empresasValidas.length) { showToast('Agrega al menos una empresa en el reparto', '#e67e22'); return; }
 
   var totalGastos = gastosValidos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
   var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
+  // Guardar en $0 es válido, pero se confirma para no registrar sin querer una
+  // legalización a la que se le olvidó digitar el valor.
+  if (totalGastos === 0 && !confirm('El total de gastos es ' + fmtMoney(0) + '. ¿Registrar la legalización sin gastos?')) return;
   var cobGuardar = LegProrrateo.cobertura(totalGastos, totalReparto, totalCombustibleLista(gastosValidos), totalOtrosLista(gastosValidos));
   if (!cobGuardar.cuadra) {
     if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
