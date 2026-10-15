@@ -10,6 +10,10 @@
 //   aprobar        -> SOLO entonces se crea en el Tablero de panel-pqrs (estado "Recibido") con la
 //                     función `solicitud-mercadeo-pedidos` y un secreto compartido (server -> server).
 //   rechazar       -> motivo obligatorio; el solicitante puede editarla y reenviarla.
+//   editar         -> el solicitante modifica su solicitud mientras Mercadeo no la haya entregado ni
+//                     cancelado. 'Por aprobar': se actualiza en el sitio y sigue por aprobar. 'Aprobada':
+//                     la tarjeta del Tablero se RETIRA (acción `retirar` de pqrs) y vuelve a aprobación;
+//                     al aprobarse llega como tarea nueva. 'Rechazada': igual que reenviar.
 // Mercadeo también puede rechazar en su Tablero una solicitud ya aprobada: eso entra por la función
 // `solicitud-mercadeo-aviso` (otra función, la llama pqrs), la deja 'Rechazada' con
 // rechazada_por_mercadeo = true y aquí se corrige y se reenvía igual que un rechazo de aprobador.
@@ -20,7 +24,8 @@
 //   preparar     -> URLs firmadas para subir adjuntos directo al Storage de pqrs
 //   crear        -> envía una solicitud nueva
 //   reenviar     -> corrige y reenvía una solicitud RECHAZADA propia
-//   listar       -> "Mis solicitudes" (las que hizo el usuario o hechas a su nombre)
+//   editar       -> modifica una solicitud propia por aprobar, rechazada o aprobada (aún no entregada)
+//   listar      -> "Mis solicitudes" (las que hizo el usuario o hechas a su nombre)
 //   pendientes   -> (aprobadores) solicitudes 'Por aprobar'
 //   aprobar      -> (aprobadores) aprueba y la manda al Tablero
 //   rechazar     -> (aprobadores) rechaza con motivo
@@ -234,13 +239,17 @@ serve(async (req) => {
       return r.asunto === 'otros' && r.asunto_otro ? `${base}: ${r.asunto_otro}` : base
     }
 
-    async function avisarAprobadores(r: any) {
+    async function avisarAprobadores(r: any, modificada = false) {
       const ids = await aprobadoresIds()
       const para = r.a_nombre_de_nombre ? ` (a nombre de ${r.a_nombre_de_nombre})` : ''
       await avisar(
         ids,
-        `📣 Solicitud a Mercadeo por aprobar: ${refSM(r.numero)}`,
-        `${r.creado_por_nombre}${para} pide: ${textoAsunto(r)} · ${r.empresa}.`,
+        modificada
+          ? `✏️ Solicitud a Mercadeo modificada, por aprobar: ${refSM(r.numero)}`
+          : `📣 Solicitud a Mercadeo por aprobar: ${refSM(r.numero)}`,
+        modificada
+          ? `${r.creado_por_nombre}${para} la modificó: ${textoAsunto(r)} · ${r.empresa}.`
+          : `${r.creado_por_nombre}${para} pide: ${textoAsunto(r)} · ${r.empresa}.`,
         refSM(r.numero),
       )
     }
@@ -341,7 +350,9 @@ serve(async (req) => {
       })
     }
 
-    // Marca la solicitud como aprobada (solo si sigue 'Por aprobar'). Devuelve la fila resultante.
+    // Marca la solicitud como aprobada (solo si sigue 'Por aprobar' Y sin cambios desde que se leyó:
+    // si el solicitante la editó mientras se aprobaba, la tarjeta creada ya no corresponde).
+    // Devuelve la fila resultante.
     async function marcarAprobada(r: any, tareaId: number, auto: boolean) {
       const ahora = new Date().toISOString()
       const historial = [...(r.historial || []), { tipo: auto ? 'autoaprobacion' : 'aprobacion', por: nombreUsuario, en: ahora }]
@@ -354,9 +365,9 @@ serve(async (req) => {
         pqrs_tarea_id: tareaId,
         modificado_en: ahora,
         historial,
-      }).eq('id', r.id).eq('estado_aprobacion', 'Por aprobar').select('*').maybeSingle()
+      }).eq('id', r.id).eq('estado_aprobacion', 'Por aprobar').eq('modificado_en', r.modificado_en).select('*').maybeSingle()
       if (u.error) throw u.error
-      return u.data // null si otro la resolvió antes
+      return u.data // null si otro la resolvió o la modificó antes
     }
 
     async function filaPorId(id: string) {
@@ -385,7 +396,12 @@ serve(async (req) => {
         aprobada_por: r.aprobada_por_nombre,
         fecha_aprobacion: r.fecha_aprobacion,
         auto_aprobada: r.auto_aprobada,
-        puede_editar: r.estado_aprobacion === 'Rechazada' && r.creado_por === user.id,
+        // Se puede modificar mientras Mercadeo no la haya entregado ni cancelado. Si no se pudo leer el
+        // Tablero (pq nulo) se ofrece igual: `editar` lo vuelve a comprobar con pqrs.
+        puede_editar: r.creado_por === user.id && (
+          r.estado_aprobacion === 'Por aprobar' || r.estado_aprobacion === 'Rechazada' ||
+          (r.estado_aprobacion === 'Aprobada' && !(pq && ['entregada', 'cancelada'].includes(pq.estado)))
+        ),
         asunto: r.asunto,
         asunto_otro: r.asunto_otro,
         empresas: [r.empresa],
@@ -408,7 +424,8 @@ serve(async (req) => {
     }
 
     // Registra (o reenvía) una solicitud y, si quien envía ya es aprobador, la aprueba sola.
-    async function resolverEnvio(fila: any, esReenvio: boolean) {
+    // `modificada`: es una edición, el aviso a los aprobadores lo dice.
+    async function resolverEnvio(fila: any, esReenvio: boolean, modificada = false) {
       let actual = fila
       let aviso: string | null = null
       if (puedeAprobar) {
@@ -423,7 +440,7 @@ serve(async (req) => {
           console.error('solicitud-mercadeo: autoaprobación fallida:', (e as Error)?.message)
         }
       }
-      if (actual.estado_aprobacion === 'Por aprobar') await avisarAprobadores(actual)
+      if (actual.estado_aprobacion === 'Por aprobar') await avisarAprobadores(actual, modificada)
       return { actual, aviso }
     }
 
@@ -555,6 +572,71 @@ serve(async (req) => {
         return json(200, { ok: true, solicitud: mapFila(actual, null), aviso })
       }
 
+      case 'editar': {
+        exigirEnviar()
+        const requestId = uuid(body.request_id, 'request_id')
+        const r = await filaPorId(requestId)
+        if (!r || r.creado_por !== user.id) throw new Rechazo('Solicitud no encontrada', 404)
+        const previo = r.estado_aprobacion
+        if (!['Por aprobar', 'Rechazada', 'Aprobada'].includes(previo)) {
+          throw new Rechazo('Esta solicitud ya no se puede modificar', 409)
+        }
+
+        const v = await validarFormulario(requestId)
+        const ahora = new Date().toISOString()
+        const historial = [...(r.historial || [])]
+
+        if (previo === 'Aprobada') {
+          // Primero sale la tarjeta del Tablero: si Mercadeo ya la entregó o canceló, esto falla (409)
+          // y no se toca nada. Es idempotente: si ya no hay tarjeta vigente, sigue.
+          await puente({
+            action: 'retirar',
+            request_id: r.id,
+            por: { id: user.id, nombre: nombreUsuario },
+            motivo: `Retirada por el solicitante: ${nombreUsuario} modificó la solicitud ${refSM(r.numero)}; vuelve a aprobación y llegará de nuevo cuando se apruebe.`,
+          })
+          historial.push({ tipo: 'retiro_tablero', por: nombreUsuario, en: ahora })
+        }
+        historial.push({ tipo: previo === 'Rechazada' ? 'reenvio' : 'edicion', por: nombreUsuario, en: ahora })
+
+        const cambios: Record<string, unknown> = {
+          a_nombre_de_id: v.aNombre ? v.aNombre.id : null,
+          a_nombre_de_nombre: v.aNombre ? v.aNombre.nombre : null,
+          empresa: v.empresa,
+          asunto: v.asunto,
+          asunto_otro: v.asuntoOtro,
+          fecha_tentativa: v.fecha,
+          descripcion: v.descripcion,
+          archivos: v.archivos,
+          modificado_en: ahora,
+          historial,
+        }
+        if (previo !== 'Por aprobar') {
+          // Vuelve a aprobación. La tarjeta vieja (si la había) ya salió del Tablero: al aprobarse
+          // de nuevo se crea una nueva y pqrs_tarea_id se vuelve a fijar entonces.
+          Object.assign(cambios, {
+            estado_aprobacion: 'Por aprobar',
+            motivo_rechazo: null,
+            aprobada_por: null,
+            aprobada_por_nombre: null,
+            fecha_aprobacion: null,
+            auto_aprobada: false,
+            rechazada_por_mercadeo: false,
+            pqrs_tarea_id: null,
+            reenvios: (r.reenvios || 0) + 1,
+          })
+        }
+        // Solo si nada cambió desde que se leyó (un aprobador pudo resolverla en medio).
+        let q = admin.from(TABLA).update(cambios).eq('id', requestId).eq('estado_aprobacion', previo)
+        if (previo === 'Por aprobar') q = q.eq('modificado_en', r.modificado_en)
+        const upd = await q.select('*').maybeSingle()
+        if (upd.error) throw upd.error
+        if (!upd.data) throw new Rechazo('La solicitud cambió mientras la editabas; recárgala e inténtalo de nuevo', 409)
+
+        const { actual, aviso } = await resolverEnvio(upd.data, true, previo !== 'Rechazada')
+        return json(200, { ok: true, solicitud: mapFila(actual, null), aviso, retirada: previo === 'Aprobada' })
+      }
+
       case 'listar': {
         // Siempre por el id del JWT verificado: el navegador no puede pedir las de otra persona.
         const t = await admin.from(TABLA).select('*')
@@ -607,6 +689,21 @@ serve(async (req) => {
         if (!m) {
           const ya = await filaPorId(id)
           if (ya && ya.estado_aprobacion === 'Aprobada') return json(200, { ok: true, duplicada: true, solicitud: mapFila(ya, null) })
+          if (ya && ya.estado_aprobacion === 'Por aprobar') {
+            // El solicitante la modificó mientras se aprobaba: la tarjeta recién creada tiene datos viejos.
+            // Se retira (mejor esfuerzo) y se vuelve a revisar con lo nuevo.
+            try {
+              await puente({
+                action: 'retirar',
+                request_id: id,
+                por: { id: user.id, nombre: nombreUsuario },
+                motivo: 'La solicitud cambió mientras se aprobaba; se aprobará de nuevo con los datos nuevos.',
+              })
+            } catch (e) {
+              console.error('solicitud-mercadeo: no se pudo retirar la tarjeta desactualizada:', (e as Error)?.message)
+            }
+            throw new Rechazo('El solicitante modificó la solicitud mientras la aprobabas; revísala de nuevo', 409)
+          }
           throw new Rechazo('La solicitud cambió de estado; recarga la lista', 409)
         }
         await avisarDecision(m, true)
@@ -634,9 +731,9 @@ serve(async (req) => {
           auto_aprobada: false,
           modificado_en: ahora,
           historial: [...(r.historial || []), { tipo: 'rechazo', por: nombreUsuario, en: ahora, motivo }],
-        }).eq('id', id).eq('estado_aprobacion', 'Por aprobar').select('*').maybeSingle()
+        }).eq('id', id).eq('estado_aprobacion', 'Por aprobar').eq('modificado_en', r.modificado_en).select('*').maybeSingle()
         if (u.error) throw u.error
-        if (!u.data) throw new Rechazo('La solicitud cambió de estado; recarga la lista', 409)
+        if (!u.data) throw new Rechazo('La solicitud cambió (el solicitante pudo modificarla); recarga la lista', 409)
         await avisarDecision(u.data, false)
         return json(200, { ok: true, solicitud: mapFila(u.data, null) })
       }

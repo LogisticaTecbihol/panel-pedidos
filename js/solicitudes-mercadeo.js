@@ -5,7 +5,9 @@
 // como "Por aprobar"; un aprobador (admin o permiso "Aprobar solicitudes a Mercadeo") la
 // aprueba o la rechaza con motivo. SOLO al aprobarse llega al Tablero de Mercadeo de
 // panel-pqrs, donde queda en "Recibido". Si quien envía ya puede aprobar, se aprueba sola.
-// Una solicitud rechazada se puede editar y reenviar.
+// El solicitante puede editar su solicitud mientras Mercadeo no la haya entregado ni cancelado:
+// por aprobar -> se actualiza y sigue por aprobar; rechazada -> se corrige y se reenvía; ya
+// aprobada -> sale del Tablero y vuelve a aprobación (llega de nuevo al aprobarse).
 //
 // Todo pasa por la Edge Function `solicitud-mercadeo` (sesión, permiso y empresas). Los
 // adjuntos suben directo al Storage de pqrs con URLs firmadas que entrega la función
@@ -63,7 +65,7 @@ var _sm = {
   combo: { opciones: [], visibles: [], activo: -1, ultimo: '' },   // combo de "Solicitante"
   ctx: null,          // { yo, empresas, usuarios, puede_aprobar, pendientes }
   requestId: null,    // se mantiene entre reintentos del MISMO envío (idempotencia)
-  editando: null,     // solicitud rechazada que se está corrigiendo (objeto) o null
+  editando: null,     // solicitud propia que se está modificando (objeto) o null
   keep: [],           // archivos ya subidos que se conservan al editar [{path,nombre,tamano,tipo}]
   files: [],          // File[] nuevos elegidos
   uploaded: {},       // clave archivo -> { path, nombre, tamano, tipo } ya subido para este requestId
@@ -352,8 +354,22 @@ function smResetForm() {
   smEl('sm-files').value = '';
   smEl('sm-progreso').textContent = '';
   smEl('sm-edit-banner').style.display = 'none';
-  smEl('sm-enviar').textContent = '📨 Enviar solicitud';
+  smEl('sm-enviar').textContent = smTextoEnviar();
   smRenderArchivos();
+}
+
+// Texto del botón de envío según lo que se está haciendo.
+function smTextoEnviar() {
+  var s = _sm.editando;
+  if (!s) return '📨 Enviar solicitud';
+  if (s.estado_aprobacion === 'Por aprobar') return '💾 Guardar cambios';
+  if (s.estado_aprobacion === 'Aprobada') return '📨 Guardar y volver a aprobación';
+  return '📨 Reenviar a aprobación';
+}
+
+// Texto del botón de la lista/detalle: "Editar y reenviar" solo cuando está rechazada.
+function smTextoEditar(s) {
+  return s.estado_aprobacion === 'Rechazada' ? '✏️ Editar y reenviar' : '✏️ Editar';
 }
 
 // Archivos: primero los ya subidos que se conservan (al editar) y luego los nuevos.
@@ -453,17 +469,25 @@ async function smEnviar() {
   var err = smValidar(d);
   if (err) { showToast(err, '#e74c3c'); return; }
 
+  var previa = _sm.editando;
+  // Una ya aprobada sale del Tablero de Mercadeo al modificarla: se pide confirmación.
+  if (previa && previa.estado_aprobacion === 'Aprobada' &&
+      !confirm('La solicitud ' + smRef(previa) + ' ya fue aprobada y está con Mercadeo' +
+        (previa.estado ? ' (' + smEstadoDe(previa.estado).t + ')' : '') + '.\n\n' +
+        'Si la modificas, sale del Tablero de Mercadeo y vuelve a aprobación del gerente comercial; ' +
+        'llegará de nuevo a Mercadeo cuando se apruebe.\n\n¿Quieres continuar?')) return;
+
   _sm.enviando = true;
   var btn = smEl('sm-enviar');
-  var reenvio = !!_sm.editando;
+  var reenvio = !!previa;
   btn.disabled = true;
   btn.textContent = 'Enviando…';
   try {
     var archivos = await smSubirArchivos();
     smEl('sm-progreso').textContent = 'Registrando la solicitud…';
     var res = await smInvocar({
-      action: reenvio ? 'reenviar' : 'crear',
-      request_id: reenvio ? _sm.editando.id : _sm.requestId,
+      action: reenvio ? 'editar' : 'crear',
+      request_id: reenvio ? previa.id : _sm.requestId,
       a_nombre_de_id: d.a_nombre_de_id,
       empresa: d.empresa,
       asunto: d.asunto,
@@ -473,8 +497,13 @@ async function smEnviar() {
       archivos: archivos
     });
     var s = res.solicitud || {};
+    var antes = previa ? previa.estado_aprobacion : null;
     if (s.estado_aprobacion === 'Aprobada') {
-      showToast('✅ Solicitud ' + smRef(s) + ' enviada: ya está con Mercadeo (Recibido)', '#27ae60');
+      showToast('✅ Solicitud ' + smRef(s) + (reenvio ? ' modificada' : ' enviada') + ': ya está con Mercadeo (Recibido)', '#27ae60');
+    } else if (antes === 'Por aprobar') {
+      showToast('✅ Solicitud ' + smRef(s) + ' modificada: sigue por aprobar', '#27ae60');
+    } else if (antes === 'Aprobada') {
+      showToast('✅ Solicitud ' + smRef(s) + ' modificada: salió del Tablero y vuelve a aprobación', '#27ae60');
     } else {
       showToast('✅ Solicitud ' + smRef(s) + (reenvio ? ' reenviada' : ' enviada') + ': queda por aprobar', '#27ae60');
     }
@@ -487,11 +516,11 @@ async function smEnviar() {
   } finally {
     _sm.enviando = false;
     btn.disabled = !(_sm.ctx && _sm.ctx.empresas.length);
-    btn.textContent = _sm.editando ? '📨 Reenviar a aprobación' : '📨 Enviar solicitud';
+    btn.textContent = smTextoEnviar();
   }
 }
 
-// ── Editar y reenviar una solicitud rechazada ──
+// ── Editar una solicitud propia (por aprobar, rechazada o aprobada y aún no entregada) ──
 function smEditar(s) {
   if (!s || !s.puede_editar) return;
   smResetForm();
@@ -508,13 +537,24 @@ function smEditar(s) {
   smEl('sm-desc').value = s.descripcion || '';
   smEl('sm-desc-ct').textContent = (s.descripcion || '').length;
   smEl('sm-edit-banner').style.display = '';
-  smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud <strong>' + escHtml(smRef(s)) + '</strong>, rechazada' +
-    (s.rechazada_por_mercadeo
-      ? ' por Mercadeo' + (s.aprobada_por ? ' (' + escHtml(s.aprobada_por) + ')' : '')
-      : (s.aprobada_por ? ' por ' + escHtml(s.aprobada_por) : '')) + '.' +
-    (s.motivo_rechazo ? ' <strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo) : '') +
-    ' Corrígela y reenvíala; “Limpiar” cancela la edición.';
-  smEl('sm-enviar').textContent = '📨 Reenviar a aprobación';
+  var ref = '<strong>' + escHtml(smRef(s)) + '</strong>';
+  if (s.estado_aprobacion === 'Por aprobar') {
+    smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud ' + ref + ', por aprobar. ' +
+      'Al guardar, los cambios quedan registrados y sigue por aprobar; “Limpiar” cancela la edición.';
+  } else if (s.estado_aprobacion === 'Aprobada') {
+    smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud ' + ref + ', ya aprobada' +
+      (s.estado ? ' y en Mercadeo (' + escHtml(smEstadoDe(s.estado).t) + ')' : '') + '. ' +
+      '<strong>Al guardar, sale del Tablero de Mercadeo y vuelve a aprobación del gerente comercial;</strong> ' +
+      'llegará de nuevo a Mercadeo cuando se apruebe. “Limpiar” cancela la edición.';
+  } else {
+    smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud ' + ref + ', rechazada' +
+      (s.rechazada_por_mercadeo
+        ? ' por Mercadeo' + (s.aprobada_por ? ' (' + escHtml(s.aprobada_por) + ')' : '')
+        : (s.aprobada_por ? ' por ' + escHtml(s.aprobada_por) : '')) + '.' +
+      (s.motivo_rechazo ? ' <strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo) : '') +
+      ' Corrígela y reenvíala; “Limpiar” cancela la edición.';
+  }
+  smEl('sm-enviar').textContent = smTextoEnviar();
   smRenderArchivos();
   smCerrarDetalle();
   smCambiarTab('nueva');
@@ -572,7 +612,7 @@ function smRenderLista() {
       '<td>' + escHtml(comprometida) + '</td>' +
       '<td>' + smBadgesEstado(s) + '</td>' +
       '<td><button class="btn-ver" type="button" data-sm-ver="mis:' + i + '">Ver</button>' +
-      (s.puede_editar ? ' <button class="btn-ver" type="button" style="background:#b7791f" data-sm-editar="' + i + '">✏️ Editar y reenviar</button>' : '') +
+      (s.puede_editar ? ' <button class="btn-ver" type="button" style="background:#b7791f" data-sm-editar="' + i + '">' + smTextoEditar(s) + '</button>' : '') +
       '</td></tr>';
   }).join('');
 }
@@ -667,6 +707,8 @@ async function smConfirmarRechazo() {
 var SM_TIPOS_HIST = {
   envio:         function (h) { return 'Enviada por <strong>' + escHtml(h.por) + '</strong>'; },
   reenvio:       function (h) { return 'Corregida y reenviada por <strong>' + escHtml(h.por) + '</strong>'; },
+  edicion:       function (h) { return '✏️ Modificada por <strong>' + escHtml(h.por) + '</strong>'; },
+  retiro_tablero: function () { return '↩ Retirada del Tablero de Mercadeo: vuelve a aprobación y llegará de nuevo al aprobarse'; },
   aprobacion:    function (h) { return '✅ Aprobada por <strong>' + escHtml(h.por) + '</strong>'; },
   autoaprobacion: function (h) { return '✅ Aprobada automáticamente (<strong>' + escHtml(h.por) + '</strong> puede aprobar)'; },
   rechazo:       function (h) { return '❌ Rechazada por <strong>' + escHtml(h.por) + '</strong>' + (h.motivo ? ' — ' + escHtml(h.motivo) : ''); },
@@ -735,7 +777,7 @@ function smVerDetalle(origen, i) {
     acc += '<button class="btn-confirm" type="button" style="background:#27ae60" data-sm-aprobar="' + i + '">✅ Aprobar</button> ' +
       '<button class="btn-confirm" type="button" style="background:#c0392b" data-sm-rechazar="' + i + '">❌ Rechazar</button>';
   } else if (s.puede_editar) {
-    acc += '<button class="btn-confirm" type="button" style="background:#b7791f" data-sm-editar="' + i + '">✏️ Editar y reenviar</button>';
+    acc += '<button class="btn-confirm" type="button" style="background:#b7791f" data-sm-editar="' + i + '">' + smTextoEditar(s) + '</button>';
   }
   smEl('sm-det-acciones').innerHTML = acc;
   smEl('sm-overlay').classList.add('show');
