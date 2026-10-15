@@ -182,9 +182,16 @@ var NOTIF = (function() {
 
   // ────────────────────────────────────────────────────────────
   // Sonido de notificación (WAV generado en memoria + Audio element)
+  // El navegador solo deja sonar a una página después de un clic o una tecla
+  // del usuario EN ESA CARGA (recargar con Ctrl+F5 lo reinicia). Se usa un único
+  // <audio> que se desbloquea en el primer gesto; si un aviso llega antes, se
+  // muestra un mensaje en vez de fallar en silencio.
   // ────────────────────────────────────────────────────────────
   var _notifAudioUrl = null;
-  var _audioWarmedUp = false;
+  var _notifAudioEl = null;
+  var _audioDesbloqueado = false;
+  var _avisosBloqueados = 0;
+  var _GESTOS_AUDIO = ['click', 'keydown', 'touchend'];
 
   function _buildNotifWav() {
     var sr = 44100, dur = 0.45;
@@ -234,25 +241,59 @@ var NOTIF = (function() {
     return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
   }
 
-  function _warmUpAudio() {
-    if (_audioWarmedUp) return;
-    _audioWarmedUp = true;
-    if (!_notifAudioUrl) _notifAudioUrl = _buildNotifWav();
-    var a = new Audio(_notifAudioUrl);
-    a.volume = 0;
-    a.play().then(function() { a.pause(); }).catch(function() {});
-    document.removeEventListener('click', _warmUpAudio, true);
-    document.removeEventListener('keydown', _warmUpAudio, true);
+  function _notifAudio() {
+    if (!_notifAudioEl) {
+      if (!_notifAudioUrl) _notifAudioUrl = _buildNotifWav();
+      _notifAudioEl = new Audio(_notifAudioUrl);
+      _notifAudioEl.preload = 'auto';
+    }
+    return _notifAudioEl;
   }
-  document.addEventListener('click', _warmUpAudio, true);
-  document.addEventListener('keydown', _warmUpAudio, true);
+
+  // Primer gesto real del usuario: deja el <audio> habilitado para sonar solo.
+  // Si el navegador lo rechaza (p. ej. una tecla que no cuenta como interacción),
+  // los listeners siguen armados para el próximo gesto.
+  function _desbloquearAudio() {
+    if (_audioDesbloqueado) return;
+    try {
+      var a = _notifAudio();
+      a.volume = 0;
+      var p = a.play();
+      var listo = function() {
+        _audioDesbloqueado = true;
+        // Si ya empezó a sonar un aviso de verdad (volumen subido), no se corta.
+        if (a.volume === 0) {
+          a.pause();
+          try { a.currentTime = 0; } catch (e) {}
+        }
+        _GESTOS_AUDIO.forEach(function(g) { document.removeEventListener(g, _desbloquearAudio, true); });
+      };
+      if (p && p.then) p.then(listo).catch(function() {});
+      else listo();
+    } catch (e) {}
+  }
+  _GESTOS_AUDIO.forEach(function(g) { document.addEventListener(g, _desbloquearAudio, true); });
+
+  // El navegador no deja sonar sin interacción previa: se avisa en pantalla.
+  function _avisoSonidoBloqueado() {
+    _avisosBloqueados++;
+    if (typeof showToast !== 'function') return;
+    showToast(_avisosBloqueados === 1
+      ? '🔔 Nueva notificación. Haz clic en cualquier parte de la página para activar el sonido.'
+      : '🔔 Nueva notificación', '#e67e22');
+  }
 
   function _playNotifSound() {
     try {
-      if (!_notifAudioUrl) _notifAudioUrl = _buildNotifWav();
-      var a = new Audio(_notifAudioUrl);
+      var a = _notifAudio();
       a.volume = 0.5;
-      a.play().catch(function() {});
+      try { a.currentTime = 0; } catch (e) {}
+      var p = a.play();
+      if (p && p.catch) {
+        p.catch(function(err) {
+          if (err && err.name === 'NotAllowedError') _avisoSonidoBloqueado();
+        });
+      }
     } catch (e) {}
   }
 
