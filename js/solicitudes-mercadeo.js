@@ -64,6 +64,13 @@ var _sm = {
 
 function smEl(id) { return document.getElementById(id); }
 
+// Nombre del asunto de una solicitud; con "Otros" agrega el asunto que escribió el solicitante.
+function smAsuntoTexto(s) {
+  var a = smAsunto(s.asunto);
+  var t = a ? a.t : String(s.asunto || '—');
+  return s.asunto === 'otros' && s.asunto_otro ? t + ' — ' + s.asunto_otro : t;
+}
+
 function smAsunto(k) {
   for (var i = 0; i < SM_ASUNTOS.length; i++) if (SM_ASUNTOS[i].k === k) return SM_ASUNTOS[i];
   return null;
@@ -268,6 +275,11 @@ function smComboAlSalir() {
   smComboCerrar();
 }
 
+// Con asunto "Otros" aparece el campo para escribir el asunto.
+function smMostrarAsuntoOtro(visible) {
+  smEl('sm-asunto-otro-box').style.display = visible ? '' : 'none';
+}
+
 // ── Formulario ──
 function smResetForm() {
   _sm.requestId = smNuevoRequestId();
@@ -280,6 +292,8 @@ function smResetForm() {
   if (_sm.ctx && _sm.ctx.empresas.length === 1) smEl('sm-empresa').value = _sm.ctx.empresas[0];
   else smEl('sm-empresa').value = '';
   smEl('sm-asunto').value = '';
+  smEl('sm-asunto-otro').value = '';
+  smMostrarAsuntoOtro(false);
   smEl('sm-fecha').value = '';
   smEl('sm-fecha').min = today();
   smEl('sm-desc').value = '';
@@ -322,6 +336,8 @@ function smLeerFormulario() {
     a_nombre_de_id: solId && _sm.ctx && solId !== _sm.ctx.yo.id ? solId : null,
     empresa: smEl('sm-empresa').value,
     asunto: smEl('sm-asunto').value,
+    // Solo cuenta con asunto "Otros".
+    asunto_otro: smEl('sm-asunto').value === 'otros' ? smEl('sm-asunto-otro').value.trim().replace(/\s+/g, ' ') : null,
     fecha_tentativa: smEl('sm-fecha').value,
     descripcion: smEl('sm-desc').value.trim()
   };
@@ -331,6 +347,10 @@ function smValidar(d) {
   if (!d.solicitante_id || !smComboOpcion(d.solicitante_id)) return 'Elige el solicitante de la lista';
   if (!d.empresa) return 'Elige la empresa';
   if (!d.asunto) return 'Elige el asunto';
+  if (d.asunto === 'otros') {
+    if (!d.asunto_otro || d.asunto_otro.length < 3) return 'Escribe el asunto (mínimo 3 caracteres)';
+    if (d.asunto_otro.length > 100) return 'El asunto no puede superar 100 caracteres';
+  }
   if (!d.fecha_tentativa) return 'Indica la fecha tentativa';
   if (d.fecha_tentativa < today()) return 'La fecha tentativa no puede ser anterior a hoy';
   if (d.descripcion.length < 10) return 'Describe la solicitud (mínimo 10 caracteres)';
@@ -388,6 +408,7 @@ async function smEnviar() {
       a_nombre_de_id: d.a_nombre_de_id,
       empresa: d.empresa,
       asunto: d.asunto,
+      asunto_otro: d.asunto_otro,
       fecha_tentativa: d.fecha_tentativa,
       descripcion: d.descripcion,
       archivos: archivos
@@ -437,13 +458,12 @@ function smRenderLista() {
     return;
   }
   tbody.innerHTML = _sm.lista.map(function (s, i) {
-    var a = smAsunto(s.asunto);
     var st = smEstado(s.estado);
     var aNombre = s.a_nombre_de ? s.a_nombre_de : '—';
     return '<tr>' +
       '<td>' + escHtml(s.id) + '</td>' +
       '<td>' + escHtml(smFmtFechaHora(s.creada_en)) + '</td>' +
-      '<td>' + escHtml(a ? a.t : s.asunto) + '</td>' +
+      '<td>' + escHtml(smAsuntoTexto(s)) + '</td>' +
       '<td>' + (s.empresas || []).map(function (e) { return '<span class="sigla-badge sigla-' + escHtml(e) + '">' + escHtml(e) + '</span>'; }).join(' ') + '</td>' +
       '<td>' + escHtml(aNombre) + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_tentativa)) + '</td>' +
@@ -457,9 +477,8 @@ function smRenderLista() {
 function smVerDetalle(i) {
   var s = _sm.lista[i];
   if (!s) return;
-  var a = smAsunto(s.asunto);
   var st = smEstado(s.estado);
-  smEl('sm-det-titulo').textContent = 'Solicitud N° ' + s.id + ' — ' + (a ? a.t : s.asunto);
+  smEl('sm-det-titulo').textContent = 'Solicitud N° ' + s.id + ' — ' + smAsuntoTexto(s);
   smEl('sm-det-meta').innerHTML = '<span>Enviada: ' + escHtml(smFmtFechaHora(s.creada_en)) + '</span>' +
     '<span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span>';
 
@@ -533,5 +552,10 @@ document.addEventListener('DOMContentLoaded', function () {
     if (li) smComboElegir(li.getAttribute('data-id'));
   });
   smEl('sm-desc').addEventListener('input', function () { smEl('sm-desc-ct').textContent = this.value.length; });
+  smEl('sm-asunto').addEventListener('change', function () {
+    var otros = this.value === 'otros';
+    smMostrarAsuntoOtro(otros);
+    if (otros) smEl('sm-asunto-otro').focus();
+  });
   smInit();
 });

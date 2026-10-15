@@ -187,6 +187,14 @@ serve(async (req) => {
         if (!empresas.includes(body.empresa)) throw new Rechazo('La empresa elegida no está entre las tuyas')
         if (!ASUNTOS.includes(body.asunto)) throw new Rechazo('Elige un asunto de la lista')
 
+        // Con asunto "Otros" el solicitante escribe el asunto (obligatorio); con cualquier otro no aplica.
+        let asuntoOtro: string | null = null
+        if (body.asunto === 'otros') {
+          asuntoOtro = typeof body.asunto_otro === 'string' ? body.asunto_otro.trim().replace(/\s+/g, ' ') : ''
+          if (asuntoOtro.length < 3) throw new Rechazo('Escribe el asunto (mínimo 3 caracteres)')
+          if (asuntoOtro.length > 100) throw new Rechazo('El asunto no puede superar 100 caracteres')
+        }
+
         const fecha = body.fecha_tentativa
         if (typeof fecha !== 'string' || !FECHA_RE.test(fecha) || Number.isNaN(Date.parse(fecha + 'T00:00:00Z'))) {
           throw new Rechazo('La fecha tentativa no es válida')
@@ -224,6 +232,7 @@ serve(async (req) => {
           a_nombre_de: aNombre,
           empresa: body.empresa,
           asunto: body.asunto,
+          asunto_otro: asuntoOtro,
           fecha_tentativa: fecha,
           descripcion,
           archivos: archivos.map((a: any) => ({ path: a.path, nombre: a.nombre, tamano: a.tamano, tipo: a.tipo })),
