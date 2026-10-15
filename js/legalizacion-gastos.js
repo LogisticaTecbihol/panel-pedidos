@@ -1062,6 +1062,7 @@ function renderProrrateoGastos() {
   renderCombustiblePorEmpresa(calc);
   renderMantenimientoPorEmpresa(calc);
   renderOtrosPorEmpresa(calc);
+  renderSinIdentificarPorEmpresa(calc);
   renderGastoPorProducto(calc);
   renderGastoPorEmpresa(calc);
 }
@@ -1120,6 +1121,13 @@ function renderMantenimientoPorEmpresa(calc) {
 // un solo monto ("Sin reparto asignado"), sin discriminar por empresa.
 function renderOtrosPorEmpresa(calc) {
   _renderGastoAparte('gpo-body', calc.otros, 'Sin gastos de Otros para este período.');
+}
+
+// Sin identificar: gasto de viajes cuyas remisiones no se ligan a ningún
+// producto. Va aparte, en un solo monto ("Sin reparto asignado"), y no cuenta
+// en el 100 % del prorrateo por producto/empresa.
+function renderSinIdentificarPorEmpresa(calc) {
+  _renderGastoAparte('gpi-body', calc.sinIdentificado, 'Sin gastos por identificar para este período.');
 }
 
 // Resumen del período: litros, kilos y unidades totales movidos y remisiones
@@ -1200,9 +1208,9 @@ function clearProrrateoFiltros() {
 
 // Exporta a Excel el mismo prorrateo que se ve en pantalla (respeta los
 // filtros de Empresa/Desde/Hasta activos): hoja "Prorrateo" con una fila por
-// producto de cada empresa (más "Sin identificar" si aplica, ya sin
-// Combustible ni Otros), y hojas "Combustible", "Mantenimiento" y "Otros" con
-// el reparto de ese concepto por empresa (más "Sin reparto asignado" si aplica).
+// producto de cada empresa (ya sin Combustible, Otros ni "Sin identificar"), y
+// hojas "Combustible", "Mantenimiento", "Otros" y "Sin identificar" con el
+// reparto de ese concepto por empresa (más "Sin reparto asignado" si aplica).
 function exportarProrrateoExcel() {
   var calc = calcularProrrateoGastos();
   var total = calc.totalGeneral;
@@ -1227,16 +1235,6 @@ function exportarProrrateoExcel() {
       });
     });
   });
-  if (calc.sinIdentificar > 0) {
-    rows.push({
-      'Empresa': '',
-      'Producto': 'Sin identificar',
-      'Monto': Number(calc.sinIdentificar.toFixed(2)),
-      '% del total': Number((total > 0 ? calc.sinIdentificar / total * 100 : 0).toFixed(2)),
-      'Legalizaciones': ''
-    });
-  }
-
   // Filas de una hoja "aparte" (Combustible / Mantenimiento): una por empresa
   // (más "Sin reparto asignado" si aplica).
   function filasAparte(d) {
@@ -1271,6 +1269,7 @@ function exportarProrrateoExcel() {
   });
   var rowsMant = filasAparte(calc.mantenimiento);
   var rowsOtros = filasAparte(calc.otros);
+  var rowsSinId = filasAparte(calc.sinIdentificado);
 
   var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
@@ -1291,6 +1290,11 @@ function exportarProrrateoExcel() {
     wsOtros['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, wsOtros, 'Otros');
   }
+  if (rowsSinId.length) {
+    var wsSinId = XLSX.utils.json_to_sheet(rowsSinId);
+    wsSinId['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsSinId, 'Sin identificar');
+  }
   XLSX.writeFile(wb, 'prorrateo_gastos_' + today() + '.xlsx');
   showToast('Excel exportado');
 }
@@ -1305,7 +1309,7 @@ function renderGastoPorProducto(calc) {
   var total = calc.totalGeneral;
   var empresas = Object.keys(calc.porEmpresa).sort(function(a, b) { return calc.porEmpresa[b] - calc.porEmpresa[a]; });
 
-  if (!empresas.length && calc.sinIdentificar <= 0) {
+  if (!empresas.length) {
     box.innerHTML = '<div class="empty">Sin gastos para calcular.</div>';
     return;
   }
@@ -1331,16 +1335,6 @@ function renderGastoPorProducto(calc) {
     '</div>';
   }).join('');
 
-  if (calc.sinIdentificar > 0) {
-    var pctSin = total > 0 ? (calc.sinIdentificar / total * 100) : 0;
-    html += '<div class="gpp-group">' +
-      '<div class="gpp-group-head">' +
-        '<span style="color:#718096;font-weight:700">Sin identificar</span>' +
-        '<span class="gpp-group-total">' + escHtml(fmtMoney2(calc.sinIdentificar)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctSin.toFixed(2) + '% del total)</span></span>' +
-      '</div>' +
-    '</div>';
-  }
-
   box.innerHTML = html;
 }
 
@@ -1353,11 +1347,11 @@ function renderGastoPorEmpresa(calc) {
     return;
   }
 
+  // "Sin identificar" no va aquí: se muestra aparte (renderSinIdentificarPorEmpresa)
+  // para que no altere los % por empresa.
   var rows = Object.keys(calc.porEmpresa).map(function(emp) {
     return { label: emp, value: calc.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' };
   }).sort(function(a, b) { return b.value - a.value; });
-
-  if (calc.sinIdentificar > 0) rows.push({ label: 'Sin identificar', value: calc.sinIdentificar });
 
   rows.forEach(function(r) { r.pct = r.value / total * 100; });
 

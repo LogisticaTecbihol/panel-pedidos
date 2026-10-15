@@ -376,10 +376,13 @@ var LegProrrateo = (function() {
     var porEmpresaRemisiones = {}; // empresaSigla -> { codigoRemision: true }
     var porEmpresaLegs = {};       // empresaSigla -> { legId -> Consecutivo } (legalizaciones que tocan esa empresa)
     var legsPeriodo = {};          // legId -> true (todas las legalizaciones del período, resuelvan o no litros/kilos)
+    // "Sin identificar": gasto de viajes cuyas remisiones no resuelven ningún
+    // producto litro/kilo/unidad. Va APARTE (como Combustible, Mantenimiento y
+    // Otros): NO entra en totalGeneral, para no mover los % de prorrateo por empresa.
     var sinIdentificar = 0;
     var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto litro/kilo resoluble)
     var sinIdentificarLegs = {};       // legId -> Consecutivo
-    var totalGeneral = 0;
+    var totalGeneral = 0;              // solo lo prorrateado por producto (sin "Sin identificar")
 
     // Combustible: porEmpresa = empresaSigla -> monto; legs = empresaSigla ->
     // { legId -> Consecutivo }; sinAsignar = monto de viajes/mantenimientos sin
@@ -539,7 +542,6 @@ var LegProrrateo = (function() {
       if (nLiq + nSol + nUni <= 0) {
         if (!fEmp) {
           sinIdentificar += totalViaje;
-          totalGeneral += totalViaje;
           sinIdentificarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
           codigos.forEach(function(c) { sinIdentificarRemisiones[c] = true; });
         }
@@ -573,6 +575,9 @@ var LegProrrateo = (function() {
       sinIdentificar: sinIdentificar,
       sinIdentificarRemisiones: sinIdentificarRemisiones,
       sinIdentificarLegs: sinIdentificarLegs,
+      // Misma forma que `otros`/`mantenimiento` para mostrarlo como tabla aparte:
+      // un solo monto en "Sin reparto asignado", sin discriminar por empresa.
+      sinIdentificado: { porEmpresa: {}, legs: {}, sinAsignar: sinIdentificar, sinAsignarLegs: sinIdentificarLegs, total: sinIdentificar },
       totalGeneral: totalGeneral,
       combustiblePorEmpresa: combustible.porEmpresa,
       combustibleLegs: combustible.legs,

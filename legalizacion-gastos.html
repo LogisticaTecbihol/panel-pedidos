@@ -233,13 +233,22 @@
       </div>
       <div id="gpo-body"></div>
     </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
+        <h3>Sin identificar</h3>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Gasto de los viajes cuyas remisiones no se pudieron ligar a ningún producto (o que no tienen remisión relacionada): no se puede prorratear por litros/kilos, así que se deja aparte en un solo monto ("Sin reparto asignado"), igual que Otros, y no cuenta en los porcentajes del prorrateo por producto ni por empresa. Debajo de "Sin reparto asignado" aparecen, con enlace, las legalizaciones que lo componen. Con el filtro de Empresa activo no se muestra, porque no se puede atribuir a una empresa.</div>
+      </div>
+      <div id="gpi-body"></div>
+    </div>
     <div class="lg-row">
       <div class="card">
         <div class="card-head">
           <h3>Proporción de gastos por producto</h3>
         </div>
         <div style="padding:12px 20px 0">
-          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje (sin Combustible ni Otros, ver aparte arriba) entre los productos de sus remisiones relacionadas: primero entre líquidos, sólidos y unidades (materia prima en Unidades que no se convierte a litros/kilos) según cuántas remisiones son de cada tipo, y luego, dentro de cada grupo, por litros, kilos o unidades movidos. "Sin identificar" agrupa gastos cuyas remisiones no se pudieron vincular a un producto.</div>
+          <div class="gpp-note">Estimado prorrateando el gasto de cada viaje (sin Combustible ni Otros, ver aparte arriba) entre los productos de sus remisiones relacionadas: primero entre líquidos, sólidos y unidades (materia prima en Unidades que no se convierte a litros/kilos) según cuántas remisiones son de cada tipo, y luego, dentro de cada grupo, por litros, kilos o unidades movidos. Los gastos cuyas remisiones no se pudieron vincular a un producto no entran aquí: se ven aparte en "Sin identificar" y no afectan estos porcentajes.</div>
         </div>
         <div id="gpp-body"></div>
       </div>
@@ -764,7 +773,7 @@
 <script src="js/auth.js?v=20261014a"></script>
 <script src="js/notificaciones.js?v=20261006a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/legalizacion-prorrateo.js?v=20261013b"></script>
-<script src="js/legalizacion-gastos.js?v=20261015a"></script>
+<script src="js/legalizacion-prorrateo.js?v=20261015b"></script>
+<script src="js/legalizacion-gastos.js?v=20261015b"></script>
 </body>
 </html>
