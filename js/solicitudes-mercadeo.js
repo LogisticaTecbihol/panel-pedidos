@@ -1,11 +1,15 @@
 // ══════════════════════════════════════════════════════════════
-// Solicitudes a Mercadeo — formulario + "Mis solicitudes"
+// Solicitudes a Mercadeo — formulario, "Mis solicitudes" y aprobación
 // ══════════════════════════════════════════════════════════════
-// La solicitud NO se guarda en este proyecto: la Edge Function `solicitud-mercadeo`
-// verifica la sesión, el permiso y las empresas del usuario y la reenvía al Tablero
-// de Mercadeo de panel-pqrs (otro proyecto Supabase), donde queda en "Recibido".
-// Los adjuntos suben directo al Storage de pqrs con URLs firmadas que entrega la
-// función (la clave anon de pqrs es pública; por sí sola no da acceso a nada).
+// Flujo (misma lógica que las solicitudes de muestras): la solicitud se guarda en Pedidos
+// como "Por aprobar"; un aprobador (admin o permiso "Aprobar solicitudes a Mercadeo") la
+// aprueba o la rechaza con motivo. SOLO al aprobarse llega al Tablero de Mercadeo de
+// panel-pqrs, donde queda en "Recibido". Si quien envía ya puede aprobar, se aprueba sola.
+// Una solicitud rechazada se puede editar y reenviar.
+//
+// Todo pasa por la Edge Function `solicitud-mercadeo` (sesión, permiso y empresas). Los
+// adjuntos suben directo al Storage de pqrs con URLs firmadas que entrega la función
+// (la clave anon de pqrs es pública; por sí sola no da acceso a nada).
 // Depende de: _sb, _authReady, EMPRESAS_HOLDING, escHtml, showToast, fmtDate, today
 // (shared.js) y AUTH (auth.js).
 
@@ -35,8 +39,12 @@ var SM_ASUNTOS = [
 // Texto de cada opción del desplegable: nombre + ejemplos entre paréntesis (si los tiene).
 function smAsuntoOpcion(a) { return a.t + (a.ej ? ' (' + a.ej + ')' : ''); }
 
-// El estado que ve el solicitante (el código 'solicitada' del Tablero se muestra como "Recibido").
+// Estado que ve el solicitante. Primero el de la aprobación; ya aprobada, el del Tablero
+// (el código 'solicitada' del Tablero se muestra como "Recibido").
 var SM_ESTADOS = {
+  por_aprobar:   { t: 'Por aprobar',   cls: 'b-pendiente-aprob' },
+  rechazada:     { t: 'Rechazada',     cls: 'b-anulado' },
+  aprobada:      { t: 'Aprobada',      cls: 'b-ent' },
   solicitada:    { t: 'Recibido',      cls: 'b-rec' },
   confirmada:    { t: 'Confirmada',    cls: 'b-par' },
   en_produccion: { t: 'En producción', cls: 'b-alistado' },
@@ -53,16 +61,26 @@ var SM_ROLES = {
 
 var _sm = {
   combo: { opciones: [], visibles: [], activo: -1, ultimo: '' },   // combo de "Solicitante"
-  ctx: null,          // { yo, empresas, usuarios }
+  ctx: null,          // { yo, empresas, usuarios, puede_aprobar, pendientes }
   requestId: null,    // se mantiene entre reintentos del MISMO envío (idempotencia)
-  files: [],          // File[] elegidos
+  editando: null,     // solicitud rechazada que se está corrigiendo (objeto) o null
+  keep: [],           // archivos ya subidos que se conservan al editar [{path,nombre,tamano,tipo}]
+  files: [],          // File[] nuevos elegidos
   uploaded: {},       // clave archivo -> { path, nombre, tamano, tipo } ya subido para este requestId
   enviando: false,
-  lista: [],
+  lista: [],          // Mis solicitudes
+  pend: [],           // por aprobar (aprobadores)
+  detalle: null,      // { origen: 'mis'|'pend', idx }
+  rechazando: null,   // solicitud que se está rechazando
   pqrs: null
 };
 
 function smEl(id) { return document.getElementById(id); }
+
+function smAsunto(k) {
+  for (var i = 0; i < SM_ASUNTOS.length; i++) if (SM_ASUNTOS[i].k === k) return SM_ASUNTOS[i];
+  return null;
+}
 
 // Nombre del asunto de una solicitud; con "Otros" agrega el asunto que escribió el solicitante.
 function smAsuntoTexto(s) {
@@ -71,11 +89,16 @@ function smAsuntoTexto(s) {
   return s.asunto === 'otros' && s.asunto_otro ? t + ' — ' + s.asunto_otro : t;
 }
 
-function smAsunto(k) {
-  for (var i = 0; i < SM_ASUNTOS.length; i++) if (SM_ASUNTOS[i].k === k) return SM_ASUNTOS[i];
-  return null;
+function smRef(s) { return 'SM-' + s.numero; }
+
+function smEstadoDe(k) { return SM_ESTADOS[k] || { t: String(k || '—'), cls: '' }; }
+
+// Estado completo de una solicitud para mostrar.
+function smEstadoSolicitud(s) {
+  if (s.estado_aprobacion === 'Por aprobar') return SM_ESTADOS.por_aprobar;
+  if (s.estado_aprobacion === 'Rechazada') return SM_ESTADOS.rechazada;
+  return s.estado ? smEstadoDe(s.estado) : SM_ESTADOS.aprobada;
 }
-function smEstado(k) { return SM_ESTADOS[k] || { t: String(k || '—'), cls: '' }; }
 
 function smNuevoRequestId() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -125,8 +148,16 @@ async function smInit() {
     _sm.ctx = await smInvocar({ action: 'contexto' });
     smPoblarFormulario();
     smResetForm();
+    var aprobar = !!_sm.ctx.puede_aprobar;
+    smEl('sm-tab-aprobar').style.display = aprobar ? '' : 'none';
+    if (aprobar) smEl('sm-ct-aprobar').textContent = _sm.ctx.pendientes || 0;
     smEl('load-zone').style.display = 'none';
     smEl('main').style.display = 'block';
+    // Aviso de la campanita: ?tab=aprobar abre directamente la bandeja de aprobación.
+    var qs = new URLSearchParams(location.search);
+    var tab = qs.get('tab');
+    if (tab === 'aprobar' && aprobar) smCambiarTab('aprobar');
+    else if (tab === 'mis') smCambiarTab('mis');
   } catch (err) {
     smEl('load-error').textContent = err.message;
     smEl('btn-retry').style.display = '';
@@ -152,6 +183,12 @@ function smPoblarFormulario() {
   var as = '<option value="">— Seleccionar —</option>';
   SM_ASUNTOS.forEach(function (a) { as += '<option value="' + a.k + '">' + escHtml(smAsuntoOpcion(a)) + '</option>'; });
   smEl('sm-asunto').innerHTML = as;
+
+  // El estado inicial es "Por aprobar"; si quien envía ya puede aprobar, pasa directo a Mercadeo.
+  smEl('sm-estado').value = 'Por aprobar';
+  smEl('sm-estado-hint').textContent = ctx.puede_aprobar
+    ? 'Como tienes permiso de aprobar, tu solicitud se aprueba sola y pasa directo a Mercadeo.'
+    : 'Un aprobador la revisa; al aprobarla pasa a Mercadeo.';
 }
 
 // ── Combo "Solicitante": todos los usuarios activos del panel, con búsqueda por nombre ──
@@ -283,6 +320,8 @@ function smMostrarAsuntoOtro(visible) {
 // ── Formulario ──
 function smResetForm() {
   _sm.requestId = smNuevoRequestId();
+  _sm.editando = null;
+  _sm.keep = [];
   _sm.files = [];
   _sm.uploaded = {};
   _sm.combo.ultimo = '';
@@ -300,23 +339,29 @@ function smResetForm() {
   smEl('sm-desc-ct').textContent = '0';
   smEl('sm-files').value = '';
   smEl('sm-progreso').textContent = '';
+  smEl('sm-edit-banner').style.display = 'none';
+  smEl('sm-enviar').textContent = '📨 Enviar solicitud';
   smRenderArchivos();
 }
 
+// Archivos: primero los ya subidos que se conservan (al editar) y luego los nuevos.
 function smRenderArchivos() {
   var ul = smEl('sm-files-lista');
-  if (!_sm.files.length) { ul.innerHTML = ''; return; }
-  ul.innerHTML = _sm.files.map(function (f, i) {
+  var html = _sm.keep.map(function (a, i) {
+    return '<li><span class="nm">📎 ' + escHtml(a.nombre) + ' <em style="color:#718096">(ya enviado)</em></span><span class="sz">' + escHtml(smFmtTam(a.tamano)) + '</span>' +
+      '<button type="button" data-sm-quitar-keep="' + i + '" aria-label="Quitar ' + escHtml(a.nombre) + '">✕</button></li>';
+  }).join('') + _sm.files.map(function (f, i) {
     return '<li><span class="nm">📎 ' + escHtml(f.name) + '</span><span class="sz">' + escHtml(smFmtTam(f.size)) + '</span>' +
       '<button type="button" data-sm-quitar="' + i + '" aria-label="Quitar ' + escHtml(f.name) + '">✕</button></li>';
   }).join('');
+  ul.innerHTML = html;
 }
 
 function smAgregarArchivos(lista) {
   var errores = [];
   for (var i = 0; i < lista.length; i++) {
     var f = lista[i];
-    if (_sm.files.length >= SM_MAX_ARCHIVOS) { errores.push('Máximo ' + SM_MAX_ARCHIVOS + ' archivos'); break; }
+    if (_sm.keep.length + _sm.files.length >= SM_MAX_ARCHIVOS) { errores.push('Máximo ' + SM_MAX_ARCHIVOS + ' archivos'); break; }
     if (SM_EXT.indexOf(smExt(f.name)) < 0) { errores.push('"' + f.name + '" no es de un tipo permitido'); continue; }
     if (f.size > SM_MAX_BYTES) { errores.push('"' + f.name + '" supera 25 MB'); continue; }
     if (f.size <= 0) { errores.push('"' + f.name + '" está vacío'); continue; }
@@ -367,7 +412,7 @@ function smClientePqrs() {
   return _sm.pqrs;
 }
 
-// Sube los archivos que falten para este envío y devuelve la lista completa para `crear`.
+// Sube los archivos nuevos que falten para este envío y devuelve la lista completa para `crear`/`reenviar`.
 async function smSubirArchivos() {
   var pendientes = _sm.files.filter(function (f) { return !_sm.uploaded[smClaveArchivo(f)]; });
   if (pendientes.length) {
@@ -386,7 +431,8 @@ async function smSubirArchivos() {
       _sm.uploaded[smClaveArchivo(f)] = { path: u.path, nombre: f.name, tamano: f.size, tipo: f.type || null };
     }
   }
-  return _sm.files.map(function (f) { return _sm.uploaded[smClaveArchivo(f)]; });
+  var nuevos = _sm.files.map(function (f) { return _sm.uploaded[smClaveArchivo(f)]; });
+  return _sm.keep.map(function (a) { return { path: a.path, nombre: a.nombre, tamano: a.tamano, tipo: a.tipo }; }).concat(nuevos);
 }
 
 async function smEnviar() {
@@ -397,14 +443,15 @@ async function smEnviar() {
 
   _sm.enviando = true;
   var btn = smEl('sm-enviar');
+  var reenvio = !!_sm.editando;
   btn.disabled = true;
   btn.textContent = 'Enviando…';
   try {
     var archivos = await smSubirArchivos();
     smEl('sm-progreso').textContent = 'Registrando la solicitud…';
     var res = await smInvocar({
-      action: 'crear',
-      request_id: _sm.requestId,
+      action: reenvio ? 'reenviar' : 'crear',
+      request_id: reenvio ? _sm.editando.id : _sm.requestId,
       a_nombre_de_id: d.a_nombre_de_id,
       empresa: d.empresa,
       asunto: d.asunto,
@@ -413,7 +460,13 @@ async function smEnviar() {
       descripcion: d.descripcion,
       archivos: archivos
     });
-    showToast('✅ Solicitud enviada (N° ' + res.id + '): quedó en estado Recibido', '#27ae60');
+    var s = res.solicitud || {};
+    if (s.estado_aprobacion === 'Aprobada') {
+      showToast('✅ Solicitud ' + smRef(s) + ' enviada: ya está con Mercadeo (Recibido)', '#27ae60');
+    } else {
+      showToast('✅ Solicitud ' + smRef(s) + (reenvio ? ' reenviada' : ' enviada') + ': queda por aprobar', '#27ae60');
+    }
+    if (res.aviso) showToast('⚠ ' + res.aviso + '. Queda por aprobar.', '#e67e22');
     smResetForm();
     smCambiarTab('mis');
   } catch (e) {
@@ -422,18 +475,51 @@ async function smEnviar() {
   } finally {
     _sm.enviando = false;
     btn.disabled = !(_sm.ctx && _sm.ctx.empresas.length);
-    btn.textContent = '📨 Enviar solicitud';
+    btn.textContent = _sm.editando ? '📨 Reenviar a aprobación' : '📨 Enviar solicitud';
   }
+}
+
+// ── Editar y reenviar una solicitud rechazada ──
+function smEditar(s) {
+  if (!s || !s.puede_editar) return;
+  smResetForm();
+  _sm.editando = s;
+  _sm.requestId = s.id;                           // mismo id: los archivos nuevos van a su carpeta
+  _sm.keep = (s.archivos || []).slice();
+  if (s.a_nombre_de_id && smComboOpcion(s.a_nombre_de_id)) smComboElegir(s.a_nombre_de_id);
+  if (_sm.ctx.empresas.indexOf((s.empresas || [])[0]) >= 0) smEl('sm-empresa').value = s.empresas[0];
+  smEl('sm-asunto').value = s.asunto;
+  smEl('sm-asunto-otro').value = s.asunto_otro || '';
+  smMostrarAsuntoOtro(s.asunto === 'otros');
+  // La fecha tentativa anterior puede haber pasado: si es así se pide una nueva.
+  smEl('sm-fecha').value = s.fecha_tentativa && s.fecha_tentativa >= today() ? s.fecha_tentativa : '';
+  smEl('sm-desc').value = s.descripcion || '';
+  smEl('sm-desc-ct').textContent = (s.descripcion || '').length;
+  smEl('sm-edit-banner').style.display = '';
+  smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud <strong>' + escHtml(smRef(s)) + '</strong>, rechazada' +
+    (s.aprobada_por ? ' por ' + escHtml(s.aprobada_por) : '') + '.' +
+    (s.motivo_rechazo ? ' <strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo) : '') +
+    ' Corrígela y reenvíala; “Limpiar” cancela la edición.';
+  smEl('sm-enviar').textContent = '📨 Reenviar a aprobación';
+  smRenderArchivos();
+  smCerrarDetalle();
+  smCambiarTab('nueva');
 }
 
 // ── Pestañas ──
 function smCambiarTab(cual) {
-  var mis = cual === 'mis';
-  smEl('sm-vista-nueva').style.display = mis ? 'none' : '';
-  smEl('sm-vista-mis').style.display = mis ? '' : 'none';
-  smEl('sm-tab-nueva').classList.toggle('active', !mis);
-  smEl('sm-tab-mis').classList.toggle('active', mis);
-  if (mis) smCargarLista();
+  var vistas = { nueva: 'sm-vista-nueva', mis: 'sm-vista-mis', aprobar: 'sm-vista-aprobar' };
+  Object.keys(vistas).forEach(function (k) {
+    smEl(vistas[k]).style.display = k === cual ? '' : 'none';
+    smEl('sm-tab-' + k).classList.toggle('active', k === cual);
+  });
+  if (cual === 'mis') smCargarLista();
+  if (cual === 'aprobar') smCargarPendientes();
+}
+
+// ── Utilidades de pintado ──
+function smEmpresaChips(arr) {
+  return (arr || []).map(function (e) { return '<span class="sigla-badge sigla-' + escHtml(e) + '">' + escHtml(e) + '</span>'; }).join(' ');
 }
 
 // ── Mis solicitudes ──
@@ -443,6 +529,7 @@ async function smCargarLista() {
   try {
     var r = await smInvocar({ action: 'listar' });
     _sm.lista = r.solicitudes || [];
+    smEl('sm-aviso-mercadeo').style.display = r.mercadeo_disponible === false ? '' : 'none';
     smRenderLista();
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan="9" class="empty">No se pudieron cargar tus solicitudes: ' + escHtml(e.message) + '</td></tr>';
@@ -458,60 +545,203 @@ function smRenderLista() {
     return;
   }
   tbody.innerHTML = _sm.lista.map(function (s, i) {
-    var st = smEstado(s.estado);
-    var aNombre = s.a_nombre_de ? s.a_nombre_de : '—';
+    var st = smEstadoSolicitud(s);
+    var comprometida = s.estado_aprobacion === 'Aprobada'
+      ? (s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir')
+      : '—';
     return '<tr>' +
-      '<td>' + escHtml(s.id) + '</td>' +
+      '<td>' + escHtml(smRef(s)) + '</td>' +
       '<td>' + escHtml(smFmtFechaHora(s.creada_en)) + '</td>' +
       '<td>' + escHtml(smAsuntoTexto(s)) + '</td>' +
-      '<td>' + (s.empresas || []).map(function (e) { return '<span class="sigla-badge sigla-' + escHtml(e) + '">' + escHtml(e) + '</span>'; }).join(' ') + '</td>' +
-      '<td>' + escHtml(aNombre) + '</td>' +
+      '<td>' + smEmpresaChips(s.empresas) + '</td>' +
+      '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_tentativa)) + '</td>' +
-      '<td>' + escHtml(s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir') + '</td>' +
+      '<td>' + escHtml(comprometida) + '</td>' +
       '<td><span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span></td>' +
-      '<td><button class="btn-ver" type="button" data-sm-ver="' + i + '">Ver</button></td>' +
+      '<td><button class="btn-ver" type="button" data-sm-ver="mis:' + i + '">Ver</button>' +
+      (s.puede_editar ? ' <button class="btn-ver" type="button" style="background:#b7791f" data-sm-editar="' + i + '">✏️ Editar y reenviar</button>' : '') +
+      '</td></tr>';
+  }).join('');
+}
+
+// ── Por aprobar (aprobadores) ──
+async function smCargarPendientes() {
+  var tbody = smEl('sm-lista-aprobar');
+  tbody.innerHTML = '<tr><td colspan="8" class="empty">Cargando…</td></tr>';
+  try {
+    var r = await smInvocar({ action: 'pendientes' });
+    _sm.pend = r.solicitudes || [];
+    smEl('sm-ct-aprobar').textContent = _sm.pend.length;
+    smRenderPendientes();
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No se pudieron cargar las pendientes: ' + escHtml(e.message) + '</td></tr>';
+  }
+}
+
+function smRenderPendientes() {
+  var tbody = smEl('sm-lista-aprobar');
+  smEl('sm-row-ct-aprobar').textContent = '(' + _sm.pend.length + ')';
+  if (!_sm.pend.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay solicitudes por aprobar. 🎉</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _sm.pend.map(function (s, i) {
+    return '<tr>' +
+      '<td>' + escHtml(smRef(s)) + '</td>' +
+      '<td>' + escHtml(smFmtFechaHora(s.creada_en)) + '</td>' +
+      '<td>' + escHtml(s.solicitante || '—') + '</td>' +
+      '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
+      '<td>' + escHtml(smAsuntoTexto(s)) + '</td>' +
+      '<td>' + smEmpresaChips(s.empresas) + '</td>' +
+      '<td>' + escHtml(fmtDate(s.fecha_tentativa)) + '</td>' +
+      '<td><button class="btn-ver" type="button" data-sm-ver="pend:' + i + '">Revisar</button> ' +
+      '<button class="btn-ver" type="button" style="background:#27ae60" data-sm-aprobar="' + i + '">✅ Aprobar</button> ' +
+      '<button class="btn-ver" type="button" style="background:#c0392b" data-sm-rechazar="' + i + '">❌ Rechazar</button></td>' +
       '</tr>';
   }).join('');
 }
 
-function smVerDetalle(i) {
-  var s = _sm.lista[i];
+async function smAprobar(i) {
+  var s = _sm.pend[i];
   if (!s) return;
-  var st = smEstado(s.estado);
-  smEl('sm-det-titulo').textContent = 'Solicitud N° ' + s.id + ' — ' + smAsuntoTexto(s);
+  if (!confirm('¿Aprobar la solicitud ' + smRef(s) + '? Pasará al equipo de Mercadeo.')) return;
+  try {
+    await smInvocar({ action: 'aprobar', id: s.id });
+    showToast('✅ Solicitud ' + smRef(s) + ' aprobada: ya está con Mercadeo', '#27ae60');
+  } catch (e) {
+    showToast(e.message, '#e74c3c');
+  }
+  smCerrarDetalle();
+  await smCargarPendientes();
+}
+
+function smPedirRechazo(i) {
+  var s = _sm.pend[i];
+  if (!s) return;
+  _sm.rechazando = s;
+  smEl('sm-rej-detalle').textContent = smRef(s) + ' · ' + smAsuntoTexto(s) + ' · ' + (s.solicitante || '');
+  smEl('sm-rej-motivo').value = '';
+  smEl('sm-rej-confirmar').disabled = false;
+  smEl('sm-rej-overlay').classList.add('show');
+  setTimeout(function () { smEl('sm-rej-motivo').focus(); }, 50);
+}
+
+function smCerrarRechazo() {
+  smEl('sm-rej-overlay').classList.remove('show');
+  _sm.rechazando = null;
+}
+
+async function smConfirmarRechazo() {
+  var s = _sm.rechazando;
+  if (!s) return;
+  var motivo = smEl('sm-rej-motivo').value.trim();
+  if (motivo.length < 3) { showToast('Escribe el motivo del rechazo.', '#e67e22'); return; }
+  var btn = smEl('sm-rej-confirmar');
+  btn.disabled = true;
+  try {
+    await smInvocar({ action: 'rechazar', id: s.id, motivo: motivo });
+    showToast('✅ Solicitud ' + smRef(s) + ' rechazada', '#27ae60');
+    smCerrarRechazo();
+    smCerrarDetalle();
+    await smCargarPendientes();
+  } catch (e) {
+    showToast(e.message, '#e74c3c');
+    btn.disabled = false;
+  }
+}
+
+// ── Detalle (de "Mis solicitudes" o de "Por aprobar") ──
+var SM_TIPOS_HIST = {
+  envio:         function (h) { return 'Enviada por <strong>' + escHtml(h.por) + '</strong>'; },
+  reenvio:       function (h) { return 'Corregida y reenviada por <strong>' + escHtml(h.por) + '</strong>'; },
+  aprobacion:    function (h) { return '✅ Aprobada por <strong>' + escHtml(h.por) + '</strong>'; },
+  autoaprobacion: function (h) { return '✅ Aprobada automáticamente (<strong>' + escHtml(h.por) + '</strong> puede aprobar)'; },
+  rechazo:       function (h) { return '❌ Rechazada por <strong>' + escHtml(h.por) + '</strong>' + (h.motivo ? ' — ' + escHtml(h.motivo) : ''); },
+  estado:        function (h) { return 'En Mercadeo: <strong>' + escHtml(smEstadoDe(h.estado).t) + '</strong>'; }
+};
+
+function smVerDetalle(origen, i) {
+  var lista = origen === 'pend' ? _sm.pend : _sm.lista;
+  var s = lista[i];
+  if (!s) return;
+  _sm.detalle = { origen: origen, idx: i };
+  var st = smEstadoSolicitud(s);
+  smEl('sm-det-titulo').textContent = 'Solicitud ' + smRef(s) + ' — ' + smAsuntoTexto(s);
   smEl('sm-det-meta').innerHTML = '<span>Enviada: ' + escHtml(smFmtFechaHora(s.creada_en)) + '</span>' +
     '<span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span>';
 
   var historial = (s.historial || []).map(function (h) {
-    if (h.tipo === 'estado') {
-      return '<li><div>Cambió a <strong>' + escHtml(smEstado(h.estado).t) + '</strong></div>' +
-        '<div class="meta">' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
+    if (h.tipo === 'respuesta') {
+      return '<li class="resp"><div>📣 ' + escHtml(h.texto) + '</div>' +
+        '<div class="meta">' + escHtml(h.por || 'Mercadeo') + ' · ' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
     }
-    return '<li class="resp"><div>📣 ' + escHtml(h.texto) + '</div>' +
-      '<div class="meta">' + escHtml(h.por || 'Mercadeo') + ' · ' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
+    var f = SM_TIPOS_HIST[h.tipo];
+    return '<li' + (h.tipo === 'rechazo' ? ' style="border-left-color:#c0392b"' : '') + '><div>' + (f ? f(h) : escHtml(h.tipo)) + '</div>' +
+      '<div class="meta">' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
   }).join('');
 
-  var adjuntos = (s.adjuntos || []).map(function (x) {
-    return '<li style="font-size:0.84rem">📎 ' + escHtml(x.nombre) + ' <span style="color:#718096">(' + escHtml(smFmtTam(x.tamano)) + ')</span></li>';
+  var adjuntos = (s.archivos || []).map(function (x, k) {
+    return '<li style="font-size:0.84rem">📎 ' + escHtml(x.nombre) + ' <span style="color:#718096">(' + escHtml(smFmtTam(x.tamano)) + ')</span> ' +
+      '<button type="button" class="btn-ver" data-sm-adj="' + origen + ':' + i + ':' + k + '" style="padding:2px 10px">Abrir</button></li>';
   }).join('');
 
-  smEl('sm-det-cuerpo').innerHTML =
+  var aprobacion = '';
+  if (s.estado_aprobacion === 'Por aprobar') {
+    aprobacion = '<div class="sm-box sm-box-pend">⏳ Por aprobar: un aprobador la revisará antes de que pase a Mercadeo.</div>';
+  } else if (s.estado_aprobacion === 'Rechazada') {
+    aprobacion = '<div class="sm-box sm-box-rech">❌ Rechazada' + (s.aprobada_por ? ' por <strong>' + escHtml(s.aprobada_por) + '</strong>' : '') +
+      (s.fecha_aprobacion ? ' el ' + escHtml(smFmtFechaHora(s.fecha_aprobacion)) : '') +
+      '<br><strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo || '—') + '</div>';
+  } else {
+    aprobacion = '<div class="sm-box sm-box-ok">✅ Aprobada' + (s.auto_aprobada ? ' automáticamente' : '') +
+      (s.aprobada_por ? ' por <strong>' + escHtml(s.aprobada_por) + '</strong>' : '') +
+      (s.fecha_aprobacion ? ' el ' + escHtml(smFmtFechaHora(s.fecha_aprobacion)) : '') + '</div>';
+  }
+
+  var enMercadeo = s.estado_aprobacion === 'Aprobada';
+  smEl('sm-det-cuerpo').innerHTML = aprobacion +
     '<div class="kv">' +
       '<span class="k">Empresa</span><span>' + escHtml((s.empresas || []).join(', ') || '—') + '</span>' +
       '<span class="k">Solicitante</span><span>' + escHtml(s.solicitante || '—') + '</span>' +
       '<span class="k">A nombre de</span><span>' + escHtml(s.a_nombre_de || '—') + '</span>' +
       '<span class="k">Fecha tentativa</span><span>' + escHtml(fmtDate(s.fecha_tentativa)) + '</span>' +
-      '<span class="k">Fecha comprometida</span><span>' + escHtml(s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir por Mercadeo') + '</span>' +
-      '<span class="k">Entregada</span><span>' + escHtml(s.entregada_en ? smFmtFechaHora(s.entregada_en) : '—') + '</span>' +
-      '<span class="k">Responsables</span><span>' + escHtml((s.responsables || []).join(', ') || 'Sin asignar') + '</span>' +
+      (enMercadeo
+        ? '<span class="k">Fecha comprometida</span><span>' + escHtml(s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir por Mercadeo') + '</span>' +
+          '<span class="k">Entregada</span><span>' + escHtml(s.entregada_en ? smFmtFechaHora(s.entregada_en) : '—') + '</span>' +
+          '<span class="k">Responsables</span><span>' + escHtml((s.responsables || []).join(', ') || 'Sin asignar') + '</span>'
+        : '') +
     '</div>' +
     '<h4>Descripción</h4><div style="white-space:pre-wrap;font-size:0.88rem">' + escHtml(s.descripcion) + '</div>' +
     '<h4>Archivos enviados</h4>' + (adjuntos ? '<ul style="margin:0;padding-left:18px">' + adjuntos + '</ul>' : '<div class="sm-hint">Sin archivos.</div>') +
-    '<h4>Seguimiento</h4>' + (historial ? '<ul class="sm-hist">' + historial + '</ul>' : '<div class="sm-hint">Aún no hay novedades: Mercadeo la revisará pronto.</div>');
+    '<h4>Seguimiento</h4>' + (historial ? '<ul class="sm-hist">' + historial + '</ul>' : '<div class="sm-hint">Sin novedades.</div>');
+
+  // Acciones según quién mira y en qué estado está
+  var acc = '';
+  if (origen === 'pend') {
+    acc += '<button class="btn-confirm" type="button" style="background:#27ae60" data-sm-aprobar="' + i + '">✅ Aprobar</button> ' +
+      '<button class="btn-confirm" type="button" style="background:#c0392b" data-sm-rechazar="' + i + '">❌ Rechazar</button>';
+  } else if (s.puede_editar) {
+    acc += '<button class="btn-confirm" type="button" style="background:#b7791f" data-sm-editar="' + i + '">✏️ Editar y reenviar</button>';
+  }
+  smEl('sm-det-acciones').innerHTML = acc;
   smEl('sm-overlay').classList.add('show');
 }
 
-function smCerrarDetalle() { smEl('sm-overlay').classList.remove('show'); }
+async function smAbrirAdjunto(origen, i, k) {
+  var s = (origen === 'pend' ? _sm.pend : _sm.lista)[i];
+  if (!s) return;
+  // Se abre la pestaña de inmediato (evita el bloqueo de ventanas) y se completa con la URL firmada.
+  var w = window.open('', '_blank');
+  try {
+    var r = await smInvocar({ action: 'archivo_url', id: s.id, indice: k });
+    if (w) { w.opener = null; w.location.href = r.url; } else { window.open(r.url, '_blank', 'noopener'); }
+  } catch (e) {
+    if (w) w.close();
+    showToast(e.message, '#e74c3c');
+  }
+}
+
+function smCerrarDetalle() { smEl('sm-overlay').classList.remove('show'); _sm.detalle = null; }
 
 // ── Eventos ──
 document.addEventListener('click', function (e) {
@@ -521,22 +751,47 @@ document.addEventListener('click', function (e) {
   if (tab) { smCambiarTab(tab.getAttribute('data-sm-tab')); return; }
   var quitar = t.closest('[data-sm-quitar]');
   if (quitar) {
-    var i = Number(quitar.getAttribute('data-sm-quitar'));
-    _sm.files.splice(i, 1);
+    _sm.files.splice(Number(quitar.getAttribute('data-sm-quitar')), 1);
+    smRenderArchivos();
+    return;
+  }
+  var quitarKeep = t.closest('[data-sm-quitar-keep]');
+  if (quitarKeep) {
+    _sm.keep.splice(Number(quitarKeep.getAttribute('data-sm-quitar-keep')), 1);
     smRenderArchivos();
     return;
   }
   var ver = t.closest('[data-sm-ver]');
-  if (ver) { smVerDetalle(Number(ver.getAttribute('data-sm-ver'))); return; }
+  if (ver) {
+    var p = ver.getAttribute('data-sm-ver').split(':');
+    smVerDetalle(p[0], Number(p[1]));
+    return;
+  }
+  var adj = t.closest('[data-sm-adj]');
+  if (adj) {
+    var a = adj.getAttribute('data-sm-adj').split(':');
+    smAbrirAdjunto(a[0], Number(a[1]), Number(a[2]));
+    return;
+  }
+  var ed = t.closest('[data-sm-editar]');
+  if (ed) { smEditar(_sm.lista[Number(ed.getAttribute('data-sm-editar'))]); return; }
+  var apr = t.closest('[data-sm-aprobar]');
+  if (apr) { smAprobar(Number(apr.getAttribute('data-sm-aprobar'))); return; }
+  var rec = t.closest('[data-sm-rechazar]');
+  if (rec) { smPedirRechazo(Number(rec.getAttribute('data-sm-rechazar'))); return; }
 });
 
 document.addEventListener('DOMContentLoaded', function () {
   smEl('sm-enviar').addEventListener('click', smEnviar);
   smEl('sm-limpiar').addEventListener('click', function () { if (!_sm.enviando) smResetForm(); });
   smEl('sm-refrescar').addEventListener('click', smCargarLista);
+  smEl('sm-refrescar-aprobar').addEventListener('click', smCargarPendientes);
   smEl('sm-det-cerrar').addEventListener('click', smCerrarDetalle);
   smEl('sm-det-cerrar2').addEventListener('click', smCerrarDetalle);
   smEl('sm-overlay').addEventListener('click', function (e) { if (isBackdropClick(e)) smCerrarDetalle(); });
+  smEl('sm-rej-cancelar').addEventListener('click', smCerrarRechazo);
+  smEl('sm-rej-confirmar').addEventListener('click', smConfirmarRechazo);
+  smEl('sm-rej-overlay').addEventListener('click', function (e) { if (isBackdropClick(e)) smCerrarRechazo(); });
   smEl('sm-files').addEventListener('change', function () { smAgregarArchivos(this.files); });
   // Combo "Solicitante"
   var cbo = smEl('sm-solicitante');

@@ -13,7 +13,8 @@ var NOTIF = (function() {
     ordenes:      '🛒 Orden de compra',
     ingresos:     '📦 Ingreso',
     reenvases:    '🔃 Reenvase',
-    reportes:     '📈 Reporte'
+    reportes:     '📈 Reporte',
+    solicitudes_mercadeo: '📣 Solicitud a Mercadeo'
   };
 
   var _uid = null;
@@ -476,7 +477,8 @@ var NOTIF = (function() {
     reportes:     'reportes.html',
     cartera:      'cartera.html',
     reabastecimiento:    'reabastecimiento.html',
-    legalizacion_gastos: 'legalizacion-gastos.html'
+    legalizacion_gastos: 'legalizacion-gastos.html',
+    solicitudes_mercadeo: 'solicitudes-mercadeo.html'
   };
 
   function destino(row) {
@@ -497,6 +499,9 @@ var NOTIF = (function() {
       if (mod === 'pedidos' && /por aprobar/i.test(tit)) page = 'cartera.html';
     } else if (mod === 'ordenes') {
       if (ref) q.buscar = ref;                 // OC-<destino>-<origen>-<n> es único
+    } else if (mod === 'solicitudes_mercadeo') {
+      // "por aprobar" -> bandeja de aprobación; aprobada/rechazada -> Mis solicitudes.
+      q.tab = /por aprobar/i.test(tit) ? 'aprobar' : 'mis';
     }
 
     var qs = new URLSearchParams(q).toString();

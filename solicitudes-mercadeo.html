@@ -31,6 +31,10 @@
   .sm-combo-lista li.activo, .sm-combo-lista li:hover { background: #ebf5fb; }
   .sm-combo-lista li.sel { font-weight: 700; }
   .sm-combo-lista li.vacio { color: #a0aec0; cursor: default; font-style: italic; }
+  .sm-box { border-radius: 8px; padding: 10px 14px; font-size: 0.86rem; margin-bottom: 12px; border: 1px solid; }
+  .sm-box-pend { background: #fef3c7; border-color: #f9e79f; color: #92400e; }
+  .sm-box-ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+  .sm-box-rech { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
   .sm-warn { background: #fef9e7; border: 1px solid #f9e79f; color: #b7791f; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; margin-bottom: 14px; }
   .sm-actions { display: flex; gap: 12px; align-items: center; margin-top: 20px; flex-wrap: wrap; }
   .sm-progreso { font-size: 0.82rem; color: #4a5568; }
@@ -102,11 +106,13 @@
   <div class="sm-tabs">
     <button class="car-tab active" id="sm-tab-nueva" data-sm-tab="nueva">➕ Nueva solicitud</button>
     <button class="car-tab" id="sm-tab-mis" data-sm-tab="mis">📋 Mis solicitudes <span class="car-tab-ct" id="sm-ct-mis">0</span></button>
+    <button class="car-tab" id="sm-tab-aprobar" data-sm-tab="aprobar" style="display:none">✅ Por aprobar <span class="car-tab-ct" id="sm-ct-aprobar">0</span></button>
   </div>
 
   <!-- NUEVA SOLICITUD -->
   <div class="card" id="sm-vista-nueva" style="border-top-left-radius:0">
     <div class="sm-form">
+      <div id="sm-edit-banner" class="sm-warn" style="display:none"></div>
       <div id="sm-aviso-sin-empresa" class="sm-warn" style="display:none">
         No tienes ninguna empresa asignada, así que todavía no puedes enviar solicitudes. Pide a un administrador que te asigne la empresa en Usuarios.
       </div>
@@ -144,7 +150,8 @@
         </div>
         <div>
           <label class="ef-label" for="sm-estado">Estado</label>
-          <input class="ef sm-estado" type="text" id="sm-estado" value="Recibido" readonly tabindex="-1">
+          <input class="ef sm-estado" type="text" id="sm-estado" value="Por aprobar" readonly tabindex="-1">
+          <div class="sm-hint" id="sm-estado-hint"></div>
         </div>
 
         <div class="full">
@@ -177,6 +184,9 @@
         <button class="btn-dl" id="sm-refrescar" type="button">🔄 Actualizar</button>
       </div>
     </div>
+    <div id="sm-aviso-mercadeo" class="sm-warn" style="display:none;margin:12px 16px 0">
+      No se pudo consultar el estado en Mercadeo en este momento; las solicitudes aprobadas aparecen como “Aprobada”.
+    </div>
     <div style="overflow-x:auto">
       <table>
         <thead>
@@ -186,6 +196,27 @@
           </tr>
         </thead>
         <tbody id="sm-lista"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- POR APROBAR (aprobadores) -->
+  <div class="card" id="sm-vista-aprobar" style="display:none;border-top-left-radius:0">
+    <div class="card-head">
+      <h3>✅ Solicitudes por aprobar <span id="sm-row-ct-aprobar" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" id="sm-refrescar-aprobar" type="button">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th><th>Enviada</th><th>Solicitante</th><th>A nombre de</th><th>Asunto</th>
+            <th>Empresa</th><th>Fecha tentativa</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sm-lista-aprobar"></tbody>
       </table>
     </div>
   </div>
@@ -203,8 +234,32 @@
     </div>
     <div class="mbody sm-det" id="sm-det-cuerpo"></div>
     <div class="mftr">
+      <div class="mftr-btns" id="sm-det-acciones"></div>
       <div class="mftr-btns">
         <button class="btn-cancel" id="sm-det-cerrar2" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: motivo del rechazo -->
+<div class="overlay" id="sm-rej-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1">
+        <h2>❌ Rechazar solicitud</h2>
+        <div class="meta" id="sm-rej-detalle"></div>
+      </div>
+    </div>
+    <div class="mbody">
+      <label class="ef-label" for="sm-rej-motivo">Motivo del rechazo *</label>
+      <textarea class="ef" id="sm-rej-motivo" rows="3" maxlength="500" placeholder="Explícale al solicitante qué debe corregir…"></textarea>
+      <div class="sm-hint">El solicitante verá este motivo y podrá corregir la solicitud y reenviarla.</div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" id="sm-rej-cancelar" type="button">Cancelar</button>
+        <button class="btn-confirm" id="sm-rej-confirmar" type="button" style="background:#c0392b">❌ Rechazar</button>
       </div>
     </div>
   </div>
@@ -214,8 +269,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js?v=20261006b"></script>
-<script src="js/auth.js?v=20261014a"></script>
-<script src="js/notificaciones.js?v=20261006a"></script>
-<script src="js/solicitudes-mercadeo.js?v=20261015a"></script>
+<script src="js/auth.js?v=20261016a"></script>
+<script src="js/notificaciones.js?v=20261016a"></script>
+<script src="js/solicitudes-mercadeo.js?v=20261016a"></script>
 </body>
 </html>
