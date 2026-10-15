@@ -101,6 +101,16 @@ function smEstadoSolicitud(s) {
   return s.estado ? smEstadoDe(s.estado) : SM_ESTADOS.aprobada;
 }
 
+// Etiquetas de estado a mostrar. Ya aprobada: "Aprobada" junto al estado que le da Mercadeo en su
+// Tablero (Recibido, Confirmada, En producción...), para que se vea que pasó la aprobación.
+function smBadgesEstado(s) {
+  var badge = function (st) { return '<span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span>'; };
+  if (s.estado_aprobacion === 'Aprobada') {
+    return badge(SM_ESTADOS.aprobada) + (s.estado ? ' ' + badge(smEstadoDe(s.estado)) : '');
+  }
+  return badge(smEstadoSolicitud(s));
+}
+
 function smNuevoRequestId() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   var b = new Uint8Array(16);
@@ -548,7 +558,6 @@ function smRenderLista() {
     return;
   }
   tbody.innerHTML = _sm.lista.map(function (s, i) {
-    var st = smEstadoSolicitud(s);
     var comprometida = s.estado_aprobacion === 'Aprobada'
       ? (s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir')
       : '—';
@@ -560,7 +569,7 @@ function smRenderLista() {
       '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_tentativa)) + '</td>' +
       '<td>' + escHtml(comprometida) + '</td>' +
-      '<td><span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span></td>' +
+      '<td>' + smBadgesEstado(s) + '</td>' +
       '<td><button class="btn-ver" type="button" data-sm-ver="mis:' + i + '">Ver</button>' +
       (s.puede_editar ? ' <button class="btn-ver" type="button" style="background:#b7791f" data-sm-editar="' + i + '">✏️ Editar y reenviar</button>' : '') +
       '</td></tr>';
@@ -669,10 +678,9 @@ function smVerDetalle(origen, i) {
   var s = lista[i];
   if (!s) return;
   _sm.detalle = { origen: origen, idx: i };
-  var st = smEstadoSolicitud(s);
   smEl('sm-det-titulo').textContent = 'Solicitud ' + smRef(s) + ' — ' + smAsuntoTexto(s);
   smEl('sm-det-meta').innerHTML = '<span>Enviada: ' + escHtml(smFmtFechaHora(s.creada_en)) + '</span>' +
-    '<span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span>';
+    '<span>' + smBadgesEstado(s) + '</span>';
 
   var historial = (s.historial || []).map(function (h) {
     if (h.tipo === 'respuesta') {
