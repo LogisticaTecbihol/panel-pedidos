@@ -46,30 +46,58 @@ var LegProrrateo = (function() {
     return r;
   }
 
-  // Planta de destino de una remisión de materia prima; define la empresa a la
-  // que se cargan sus gastos (misma relación de ORIGEN_EMPRESA en ingresos.js).
+  // "Planta" de destino de una remisión de materia prima; define la(s) empresa(s)
+  // a la(s) que se cargan sus gastos. Las dos plantas van a su empresa (misma
+  // relación de ORIGEN_EMPRESA en ingresos.js); IASO, IAS y RESO se eligen
+  // directamente por empresa. Se pueden elegir varias: Remisiones_Externas.Planta
+  // guarda los códigos separados por coma ("CACHIPAY,IASO"), en este orden.
   var PLANTAS_MP = {
     CACHIPAY: { nombre: 'Planta Cachipay', sigla: 'PARCELAR' },
-    MOSQUERA: { nombre: 'Planta Mosquera', sigla: 'GREEN' }
+    MOSQUERA: { nombre: 'Planta Mosquera', sigla: 'GREEN' },
+    IASO:     { nombre: 'IASO', sigla: 'IASO' },
+    IAS:      { nombre: 'IAS',  sigla: 'IAS' },
+    RESO:     { nombre: 'RESO', sigla: 'RESO' }
   };
+  var PLANTAS_MP_ORDEN = ['CACHIPAY', 'MOSQUERA', 'IASO', 'IAS', 'RESO'];
   function empresaDePlanta(planta) {
     var p = PLANTAS_MP[planta];
     var e = p && EMPRESAS_HOLDING.find(function(x) { return x.sigla === p.sigla; });
     return e ? e.value : null;
   }
-  // Empresa a la que se cargan los gastos de una remisión externa: Abago → grupo
-  // "CHIA ABAGO"; materia prima → la empresa de su planta (las antiguas sin
-  // planta quedan en el grupo "MATERIAS PRIMAS" hasta que se les asigne una).
-  function empresaDeRemisionExterna(ex) {
-    if (ex && ex.Tipo === 'MATERIA_PRIMA') return empresaDePlanta(ex.Planta) || EMPRESA_MP;
-    return EMPRESA_ABAGO;
+  // Códigos válidos de un valor de Planta (texto con códigos separados por coma),
+  // sin repetidos y en el orden canónico.
+  function plantasDe(planta) {
+    var set = {};
+    String(planta || '').split(',').forEach(function(c) { c = c.trim().toUpperCase(); if (PLANTAS_MP[c]) set[c] = true; });
+    return PLANTAS_MP_ORDEN.filter(function(c) { return set[c]; });
   }
-  // Línea de un mapa de remisiones a partir de una línea guardada de remisión
-  // externa. `externa` la distingue de las líneas del sistema con el mismo código
+  // Empresas a las que se cargan los gastos de una remisión externa: Abago → grupo
+  // "CHIA ABAGO"; materia prima → las empresas de sus plantas (las antiguas sin
+  // planta quedan en el grupo "MATERIAS PRIMAS" hasta que se les asigne una).
+  function empresasDeRemisionExterna(ex) {
+    if (ex && ex.Tipo === 'MATERIA_PRIMA') {
+      var emps = [];
+      plantasDe(ex.Planta).forEach(function(c) {
+        var e = empresaDePlanta(c);
+        if (e && emps.indexOf(e) < 0) emps.push(e);
+      });
+      return emps.length ? emps : [EMPRESA_MP];
+    }
+    return [EMPRESA_ABAGO];
+  }
+  // La primera de esas empresas (para donde solo cabe una).
+  function empresaDeRemisionExterna(ex) { return empresasDeRemisionExterna(ex)[0]; }
+  // Líneas de un mapa de remisiones a partir de una línea guardada de remisión
+  // externa. `externa` las distingue de las líneas del sistema con el mismo código
   // (la empresa ya no basta: una materia prima cargada a PARCELAR o GREEN tiene
-  // empresa del holding).
-  function lineaExternaAMapa(ex, l) {
-    return { producto: l.Producto, presentacion: l.Presentacion, cantidad: l.Cantidad, empresa: empresaDeRemisionExterna(ex), unidad: l.Unidad || null, externa: true };
+  // empresa del holding). Con varias empresas la cantidad se divide en partes
+  // iguales: una línea de 1.000 Kg para IASO + IAS aporta 500 Kg a cada una.
+  function lineasExternasAMapa(ex, l) {
+    var emps = empresasDeRemisionExterna(ex);
+    var cant = Number(l.Cantidad) / emps.length;
+    return emps.map(function(emp) {
+      return { producto: l.Producto, presentacion: l.Presentacion, cantidad: cant, empresa: emp, unidad: l.Unidad || null, externa: true };
+    });
   }
 
   // Litros, kilos y unidades de una línea de remisión resuelta (para el reparto y
@@ -227,7 +255,7 @@ var LegProrrateo = (function() {
         var ex = remisionesExternas[key];
         ex.lineas.forEach(function(l) {
           if (!(l.Cantidad > 0)) return;
-          (prodMap[key] = prodMap[key] || []).push(lineaExternaAMapa(ex, l));
+          lineasExternasAMapa(ex, l).forEach(function(m) { (prodMap[key] = prodMap[key] || []).push(m); });
         });
       });
     }
@@ -596,9 +624,12 @@ var LegProrrateo = (function() {
     EMPRESA_ABAGO: EMPRESA_ABAGO,
     EMPRESA_MP: EMPRESA_MP,
     PLANTAS_MP: PLANTAS_MP,
+    PLANTAS_MP_ORDEN: PLANTAS_MP_ORDEN,
+    plantasDe: plantasDe,
     empresaDePlanta: empresaDePlanta,
     empresaDeRemisionExterna: empresaDeRemisionExterna,
-    lineaExternaAMapa: lineaExternaAMapa,
+    empresasDeRemisionExterna: empresasDeRemisionExterna,
+    lineasExternasAMapa: lineasExternasAMapa,
     litKiloDeLinea: litKiloDeLinea,
     parseRemisionesField: parseRemisionesField,
     construirMapas: construirMapas,

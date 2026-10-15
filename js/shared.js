@@ -2288,11 +2288,17 @@ async function _apiPostCore(body) {
       // directos en Unidad KG|L, o UND = unidades por presentación como en Abago, y
       // proveedor libre). El tipo se fija al crear.
       var esMPRE = body.Tipo === 'MATERIA_PRIMA';
-      // La materia prima puede llegar a una planta: CACHIPAY (empresa PARCELAR) o MOSQUERA
-      // (empresa GREEN); define a qué empresa se cargan sus gastos. Es opcional: sin planta
-      // (NULL) los gastos quedan en el grupo "MATERIAS PRIMAS".
+      // La materia prima puede llegar a una o varias plantas/empresas: CACHIPAY (empresa
+      // PARCELAR), MOSQUERA (GREEN), IASO, IAS o RESO, separadas por coma ("CACHIPAY,IASO");
+      // define a qué empresas se cargan sus gastos (en partes iguales). Es opcional: sin
+      // planta (NULL) los gastos quedan en el grupo "MATERIAS PRIMAS".
       if (esMPRE && body.Planta) {
-        if (body.Planta !== 'CACHIPAY' && body.Planta !== 'MOSQUERA') return { ok: false, error: 'Planta no válida (Cachipay o Mosquera)' };
+        var plantasOk = ['CACHIPAY', 'MOSQUERA', 'IASO', 'IAS', 'RESO'];
+        var plantasRE = String(body.Planta).split(',').map(function(p) { return p.trim().toUpperCase(); }).filter(function(p) { return p; });
+        if (!plantasRE.length || plantasRE.some(function(p) { return plantasOk.indexOf(p) < 0; })) {
+          return { ok: false, error: 'Planta no válida (Cachipay, Mosquera, IASO, IAS o RESO)' };
+        }
+        body.Planta = plantasOk.filter(function(p) { return plantasRE.indexOf(p) >= 0; }).join(',');
       } else {
         body.Planta = null;
       }

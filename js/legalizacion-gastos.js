@@ -114,23 +114,29 @@ function esEmpresaExterna(emp) { return emp === EMPRESA_ABAGO || emp === EMPRESA
 var UNIDADES_MP = [{ v: 'KG', t: 'Kg' }, { v: 'L', t: 'L' }, { v: 'UND', t: 'Unidades' }];
 function _unidadMP(v) { return v === 'L' || v === 'UND' ? v : 'KG'; }
 
-// Planta de destino de una remisión de materia prima; define la empresa a la
-// que se cargan sus gastos (misma relación de ORIGEN_EMPRESA en ingresos.js).
+// "Planta" de destino de una remisión de materia prima (una o varias: códigos
+// separados por coma en Planta); define la(s) empresa(s) a la(s) que se cargan
+// sus gastos. CACHIPAY/MOSQUERA van a PARCELAR/GREEN (misma relación de
+// ORIGEN_EMPRESA en ingresos.js); IASO, IAS y RESO se eligen por empresa.
 var PLANTAS_MP = LegProrrateo.PLANTAS_MP;
+var PLANTAS_MP_ORDEN = LegProrrateo.PLANTAS_MP_ORDEN;
+function plantasDe(planta) { return LegProrrateo.plantasDe(planta); }
 function empresaDePlanta(planta) { return LegProrrateo.empresaDePlanta(planta); }
-// Empresa a la que se cargan los gastos de una remisión externa: Abago → grupo
-// "CHIA ABAGO"; materia prima → la empresa de su planta (las antiguas sin
+// Empresas a las que se cargan los gastos de una remisión externa: Abago → grupo
+// "CHIA ABAGO"; materia prima → las empresas de sus plantas (las antiguas sin
 // planta quedan en el grupo "MATERIAS PRIMAS" hasta que se les asigne una).
+function empresasDeRemisionExterna(ex) { return LegProrrateo.empresasDeRemisionExterna(ex); }
 function empresaDeRemisionExterna(ex) { return LegProrrateo.empresaDeRemisionExterna(ex); }
-function empresaExternaDeCodigo(codigo) {
+function empresasExternasDeCodigo(codigo) {
   var ex = remisionesExternas[String(codigo || '').trim().toUpperCase()];
-  return ex ? empresaDeRemisionExterna(ex) : null;
+  return ex ? empresasDeRemisionExterna(ex) : [];
 }
-// Línea de un mapa de remisiones a partir de una línea guardada de remisión
-// externa. `externa` la distingue de las líneas del sistema con el mismo código
+// Líneas de un mapa de remisiones a partir de una línea guardada de remisión
+// externa (una por empresa; con varias, la cantidad se divide en partes
+// iguales). `externa` las distingue de las líneas del sistema con el mismo código
 // (la empresa ya no basta: una materia prima cargada a PARCELAR o GREEN tiene
 // empresa del holding).
-function _lineaExternaAMapa(ex, l) { return LegProrrateo.lineaExternaAMapa(ex, l); }
+function _lineasExternasAMapa(ex, l) { return LegProrrateo.lineasExternasAMapa(ex, l); }
 
 // Litros, kilos y unidades de una línea de remisión resuelta (para el reparto y
 // el Prorrateo). Las de materia prima externa traen kilos/litros directos
@@ -2028,8 +2034,10 @@ function calcularRepartoSugerido(codigos, monto) {
 
   var cuenta = {};
   codigosUnicos.forEach(function(c) {
-    var emp = empresaFromRemisionSigla(c) || empresaExternaDeCodigo(c);
-    if (emp) cuenta[emp] = (cuenta[emp] || 0) + 1;
+    var sig = empresaFromRemisionSigla(c);
+    // Una remisión externa de varias empresas cuenta en partes iguales entre ellas.
+    var emps = sig ? [sig] : empresasExternasDeCodigo(c);
+    emps.forEach(function(emp) { cuenta[emp] = (cuenta[emp] || 0) + 1 / emps.length; });
   });
   return { porEmpresa: _repartirEnteros(cuenta, monto), metodo: 'remisiones', sinResolver: [] };
 }
@@ -2209,7 +2217,7 @@ function _chipRemisionHtml(r, i, ctx) {
   var esMP = !!ext && ext.Tipo === 'MATERIA_PRIMA';
   var quitar = (ctx === 'env' ? 'removeEnvRemision' : 'removeLgRemision') + '(' + i + ')';
   return '<span class="badge ' + (ext ? 'b-ent' : 'b-par') + '" style="display:inline-flex;align-items:center;gap:6px' + (esMP ? ';background:#feebc8;color:#7b341e' : '') + '"' +
-      (ext ? ' title="Remisión de ' + REMISION_TIPOS[ext.Tipo || 'ABAGO'].nombre + (esMP && PLANTAS_MP[ext.Planta] ? ' — ' + PLANTAS_MP[ext.Planta].nombre + ' (' + PLANTAS_MP[ext.Planta].sigla + ')' : '') + ' (fuera del sistema)"' : '') + '>' + escHtml(r) +
+      (ext ? ' title="Remisión de ' + REMISION_TIPOS[ext.Tipo || 'ABAGO'].nombre + (esMP && plantasDe(ext.Planta).length ? ' — ' + _plantaExternaTxt(ext) : '') + ' (fuera del sistema)"' : '') + '>' + escHtml(r) +
     (ext ? '<span onclick="editarRemisionExternaChip(\'' + ctx + '\',' + i + ')" style="cursor:pointer" title="Ver / editar productos">✎</span>' : '') +
     '<span onclick="' + quitar + '" style="cursor:pointer;font-weight:700" title="Quitar">✕</span></span>';
 }
@@ -2256,8 +2264,8 @@ function addLgRemision() {
 
   // La empresa se extrae de la sigla al inicio del consecutivo, sin
   // necesidad de que la remisión exista en Pedidos.
-  var empAuto = empresaFromRemisionSigla(val) || empresaExternaDeCodigo(val);
-  if (empAuto) _addEmpresaToList(empAuto);
+  var sigAuto = empresaFromRemisionSigla(val);
+  (sigAuto ? [sigAuto] : empresasExternasDeCodigo(val)).forEach(function(e) { _addEmpresaToList(e); });
 }
 
 function removeLgRemision(i) {
@@ -2440,7 +2448,7 @@ function abrirRemisionExterna(codigo, ctx, tipo) {
   inp.value = ex ? ex.Remision : _numeroSinPrefijoExterno(cod0, tipoFinal);
   inp.readOnly = !!ex; // el número de una remisión ya registrada no se cambia
   document.getElementById('abago-proveedor').value = ex ? (ex.Proveedor || '') : '';
-  document.getElementById('abago-planta').value = ex ? (ex.Planta || '') : '';
+  _setPlantasForm(ex ? ex.Planta : '');
   document.getElementById('abago-fecha').value = ex ? (ex.Fecha || '').slice(0, 10) : today();
   document.getElementById('abago-btn-eliminar').style.display = (ex && AUTH.isAdmin()) ? '' : 'none'; // eliminar: solo admin
   document.getElementById('abago-btn-guardar').disabled = false;
@@ -2535,7 +2543,8 @@ function removeAbagoLinea(i) {
 function _setLineasExternasEnMapas(key, ex) {
   [remisionProductoMap, remisionProductoMapReparto].forEach(function(mapa) {
     var previas = (mapa[key] || []).filter(function(m) { return !m.externa; });
-    var nuevas = ex ? ex.lineas.filter(function(l) { return l.Cantidad > 0; }).map(function(l) { return _lineaExternaAMapa(ex, l); }) : [];
+    var nuevas = [];
+    if (ex) ex.lineas.filter(function(l) { return l.Cantidad > 0; }).forEach(function(l) { nuevas = nuevas.concat(_lineasExternasAMapa(ex, l)); });
     if (previas.length + nuevas.length) mapa[key] = previas.concat(nuevas); else delete mapa[key];
   });
 }
@@ -2550,8 +2559,9 @@ async function guardarRemisionExternaForm() {
   var cod = abagoModal.id ? document.getElementById('abago-remision').value.trim() : codigoRemisionNueva(document.getElementById('abago-remision').value, tipo);
   var fecha = document.getElementById('abago-fecha').value || today();
   var proveedor = esMP ? document.getElementById('abago-proveedor').value.trim() : '';
-  // La planta es opcional: sin planta los gastos quedan en el grupo "MATERIAS PRIMAS".
-  var planta = esMP ? (document.getElementById('abago-planta').value || null) : null;
+  // La planta es opcional (y se pueden elegir varias): sin planta los gastos quedan
+  // en el grupo "MATERIAS PRIMAS".
+  var planta = esMP ? (_leerPlantasForm() || null) : null;
   var key = cod.toUpperCase();
   if (!cod) { showToast('Escribe el número de la remisión', '#e67e22'); return; }
   // Remisiones_Relacionadas es un CSV (y Pedidos.Remisiones usa "|"): el número no puede llevarlos.
@@ -2618,17 +2628,17 @@ async function guardarRemisionExternaForm() {
     }
   } else {
     // La remisión queda relacionada en el formulario que la pidió, con su fila
-    // ("CHIA ABAGO" / "MATERIAS PRIMAS") en el reparto.
-    var empresaExt = empresaDeRemisionExterna(ex);
+    // ("CHIA ABAGO" / "MATERIAS PRIMAS", o una por empresa elegida) en el reparto.
+    var empresasExt = empresasDeRemisionExterna(ex);
     if (!yaEnForm) lista.push(cod);
     if (ctx === 'env') {
       renderEnvRemisiones();
-      _addEmpresaToListEnv(empresaExt);
+      empresasExt.forEach(function(e) { _addEmpresaToListEnv(e); });
       recalcTotalsEnv();
       document.getElementById('env-remision-nueva').value = '';
     } else {
       renderLgRemisiones();
-      _addEmpresaToList(empresaExt);
+      empresasExt.forEach(function(e) { _addEmpresaToList(e); });
       document.getElementById('lg-remision-nueva').value = '';
     }
   }
@@ -2711,15 +2721,44 @@ function _usoRemisionesExternas() {
   return uso;
 }
 
+// "Planta Cachipay, IASO" (las elegidas, en orden); sin planta: "Sin planta" (materia prima) o "—".
 function _plantaExternaTxt(ex) {
-  if (PLANTAS_MP[ex.Planta]) return PLANTAS_MP[ex.Planta].nombre;
+  var cods = plantasDe(ex.Planta);
+  if (cods.length) return cods.map(function(c) { return PLANTAS_MP[c].nombre; }).join(', ');
   return ex.Tipo === 'MATERIA_PRIMA' ? 'Sin planta' : '—';
 }
 
-// Grupo/empresa a la que se cargan sus gastos (sigla; los grupos externos, con su nombre).
-function _empresaExternaTxt(ex) {
-  var e = empresaDeRemisionExterna(ex);
-  return esEmpresaExterna(e) ? e : getSigla(e);
+// Grupos/empresas a las que se cargan sus gastos (siglas; los grupos externos, con su nombre).
+function _empresasExternaTxtList(ex) {
+  return empresasDeRemisionExterna(ex).map(function(e) { return esEmpresaExterna(e) ? e : getSigla(e); });
+}
+function _empresaExternaTxt(ex) { return _empresasExternaTxtList(ex).join(', '); }
+
+// Selector múltiple de "Planta" del formulario de remisión de materia prima: una
+// casilla por opción (data-planta = código). Se guarda como "CACHIPAY,IASO".
+function _plantaOpcionTxt(c) {
+  var p = PLANTAS_MP[c];
+  return p.nombre === p.sigla ? p.nombre : p.nombre + ' (' + p.sigla + ')';
+}
+function _renderPlantasForm() {
+  var box = document.getElementById('abago-planta-opts');
+  if (!box || box.dataset.listo) return;
+  box.dataset.listo = '1';
+  box.innerHTML = PLANTAS_MP_ORDEN.map(function(c) {
+    return '<label style="display:inline-flex;align-items:center;gap:6px;font-size:0.84rem;color:#2d3748;cursor:pointer;white-space:nowrap">' +
+      '<input type="checkbox" class="abago-planta-chk" data-planta="' + c + '"> ' + escHtml(_plantaOpcionTxt(c)) + '</label>';
+  }).join('');
+}
+function _setPlantasForm(valor) {
+  _renderPlantasForm();
+  var sel = {};
+  plantasDe(valor).forEach(function(c) { sel[c] = true; });
+  document.querySelectorAll('.abago-planta-chk').forEach(function(chk) { chk.checked = !!sel[chk.dataset.planta]; });
+}
+function _leerPlantasForm() {
+  var sel = {};
+  document.querySelectorAll('.abago-planta-chk').forEach(function(chk) { if (chk.checked) sel[chk.dataset.planta] = true; });
+  return PLANTAS_MP_ORDEN.filter(function(c) { return sel[c]; }).join(',');
 }
 
 // "2.000 Kg · ROOTFIT" / "12 und · CREOLINA X LITRO" (Abago: unidades por presentación).
@@ -2734,10 +2773,13 @@ function _litKiloExterna(ex) {
   var tot = { litros: 0, kilos: 0, unidades: 0 };
   ex.lineas.forEach(function(l) {
     if (!(l.Cantidad > 0)) return;
-    var lk = _litKiloDeLinea(_lineaExternaAMapa(ex, l));
-    tot.litros += lk.litros;
-    tot.kilos += lk.kilos;
-    tot.unidades += lk.unidades;
+    // Una entrada por empresa (con varias, cada una trae su parte): la suma es la línea completa.
+    _lineasExternasAMapa(ex, l).forEach(function(m) {
+      var lk = _litKiloDeLinea(m);
+      tot.litros += lk.litros;
+      tot.kilos += lk.kilos;
+      tot.unidades += lk.unidades;
+    });
   });
   return tot;
 }
@@ -2765,7 +2807,7 @@ function _remisionesExternasFilas() {
     var ex = r.ex;
     var fecha = String(ex.Fecha || '').slice(0, 10);
     if (fTipo && (ex.Tipo || 'ABAGO') !== fTipo) return false;
-    if (fPlanta && ex.Planta !== fPlanta) return false;
+    if (fPlanta && plantasDe(ex.Planta).indexOf(fPlanta) < 0) return false;
     if (fUso === 'usada' && !r.uso.length) return false;
     if (fUso === 'sinusar' && r.uso.length) return false;
     if (fDesde && fecha < fDesde) return false;
@@ -2800,7 +2842,9 @@ function renderRemisionesExternasTab() {
     var tipoBadge = esMP
       ? '<span class="badge" style="background:#feebc8;color:#7b341e">🏭 Materia prima</span>'
       : '<span class="badge b-ent">🌿 Chia Abago</span>';
-    var emp = _empresaExternaTxt(ex);
+    var empBadges = _empresasExternaTxtList(ex).map(function(e) {
+      return '<span class="sigla-badge ' + getSiglaClass(e) + '">' + escHtml(e) + '</span>';
+    }).join(' ');
     var productos = ex.lineas.map(function(l) { return escHtml(_lineaExternaTxt(l)); }).join('<br>') || '<span style="color:#a0aec0">Sin productos</span>';
     var usoHtml = r.uso.length
       ? r.uso.slice().sort(function(a, b) { return String(a.Consecutivo || '').localeCompare(String(b.Consecutivo || ''), 'es'); }).map(function(l) {
@@ -2815,7 +2859,7 @@ function renderRemisionesExternasTab() {
       '<td>' + escHtml(fmtDate(ex.Fecha)) + '</td>' +
       '<td>' + escHtml(ex.Proveedor || '—') + '</td>' +
       '<td>' + escHtml(_plantaExternaTxt(ex)) + '</td>' +
-      '<td><span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span></td>' +
+      '<td style="white-space:normal">' + empBadges + '</td>' +
       '<td style="white-space:normal;min-width:200px">' + productos + '</td>' +
       '<td style="white-space:nowrap">' + escHtml(_litKiloExternaTxt(r.kl)) + '</td>' +
       '<td style="white-space:normal;min-width:110px">' + usoHtml + '</td>' +
@@ -3419,8 +3463,8 @@ function addEnvRemision() {
   formRemisionesEnv.push(val);
   renderEnvRemisiones();
   // La empresa sale de la sigla al inicio del consecutivo (mismo criterio que la ruta).
-  var empAuto = empresaFromRemisionSigla(val) || empresaExternaDeCodigo(val);
-  if (empAuto) _addEmpresaToListEnv(empAuto);
+  var sigAutoEnv = empresaFromRemisionSigla(val);
+  (sigAutoEnv ? [sigAutoEnv] : empresasExternasDeCodigo(val)).forEach(function(e) { _addEmpresaToListEnv(e); });
   recalcTotalsEnv();
 }
 

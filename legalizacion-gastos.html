@@ -389,6 +389,9 @@
           <option value="">Todas</option>
           <option value="CACHIPAY">Cachipay</option>
           <option value="MOSQUERA">Mosquera</option>
+          <option value="IASO">IASO</option>
+          <option value="IAS">IAS</option>
+          <option value="RESO">RESO</option>
         </select>
       </div>
       <div class="fg"><label>Uso</label>
@@ -681,18 +684,15 @@
           <input class="ef" id="abago-remision" type="text" placeholder="Número que trae la remisión" autocomplete="off" oninput="actualizarHintCodigoAbago()">
           <div id="abago-codigo-hint" style="font-size:0.74rem;color:#276749;margin-top:3px;min-height:1em"></div>
         </div>
-        <div id="abago-planta-wrap" style="display:none">
-          <label class="ef-label">Planta</label>
-          <select class="ef" id="abago-planta">
-            <option value="">— Sin planta —</option>
-            <option value="CACHIPAY">Planta Cachipay (PARCELAR)</option>
-            <option value="MOSQUERA">Planta Mosquera (GREEN)</option>
-          </select>
-        </div>
         <div id="abago-proveedor-wrap" style="display:none">
           <label class="ef-label">Proveedor</label>
           <input class="ef" id="abago-proveedor" type="text" list="mp-proveedores" placeholder="Proveedor de la materia prima" autocomplete="off">
           <datalist id="mp-proveedores"></datalist>
+        </div>
+        <div id="abago-planta-wrap" style="display:none;grid-column:1 / -1">
+          <label class="ef-label">Planta / empresa (puedes elegir varias)</label>
+          <div id="abago-planta-opts" style="display:flex;flex-wrap:wrap;gap:6px 18px;padding:8px 10px;border:1px solid #cbd5e0;border-radius:6px;background:#fff"></div>
+          <div style="font-size:0.74rem;color:#718096;margin-top:3px">Sin elegir: sus gastos quedan en "Materias primas". Con varias, los productos se reparten en partes iguales entre ellas.</div>
         </div>
       </div>
 
@@ -769,11 +769,11 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261007a"></script>
+<script src="js/shared.js?v=20261015c"></script>
 <script src="js/auth.js?v=20261014a"></script>
 <script src="js/notificaciones.js?v=20261018a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/legalizacion-prorrateo.js?v=20261015b"></script>
-<script src="js/legalizacion-gastos.js?v=20261015b"></script>
+<script src="js/legalizacion-prorrateo.js?v=20261015c"></script>
+<script src="js/legalizacion-gastos.js?v=20261015c"></script>
 </body>
 </html>
