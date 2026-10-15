@@ -10,6 +10,9 @@
 //   aprobar        -> SOLO entonces se crea en el Tablero de panel-pqrs (estado "Recibido") con la
 //                     función `solicitud-mercadeo-pedidos` y un secreto compartido (server -> server).
 //   rechazar       -> motivo obligatorio; el solicitante puede editarla y reenviarla.
+// Mercadeo también puede rechazar en su Tablero una solicitud ya aprobada: eso entra por la función
+// `solicitud-mercadeo-aviso` (otra función, la llama pqrs), la deja 'Rechazada' con
+// rechazada_por_mercadeo = true y aquí se corrige y se reenvía igual que un rechazo de aprobador.
 // El navegador nunca habla con la función de pqrs ni con la tabla: todo pasa por aquí.
 //
 // Acciones (campo `action`):
@@ -378,6 +381,7 @@ serve(async (req) => {
         numero: r.numero,
         estado_aprobacion: r.estado_aprobacion,
         motivo_rechazo: r.motivo_rechazo,
+        rechazada_por_mercadeo: !!r.rechazada_por_mercadeo,
         aprobada_por: r.aprobada_por_nombre,
         fecha_aprobacion: r.fecha_aprobacion,
         auto_aprobada: r.auto_aprobada,
@@ -536,6 +540,10 @@ serve(async (req) => {
           aprobada_por_nombre: null,
           fecha_aprobacion: null,
           auto_aprobada: false,
+          // Si la había rechazado Mercadeo, la tarea vieja queda atrás: al aprobarse de nuevo
+          // se crea una nueva en el Tablero (pqrs_tarea_id se vuelve a fijar entonces).
+          rechazada_por_mercadeo: false,
+          pqrs_tarea_id: null,
           reenvios: (r.reenvios || 0) + 1,
           modificado_en: ahora,
           historial: [...(r.historial || []), { tipo: 'reenvio', por: nombreUsuario, en: ahora }],
@@ -557,9 +565,11 @@ serve(async (req) => {
         const filas = t.data || []
 
         // Estado en el Tablero de las ya aprobadas. Si pqrs no responde, se muestran igual las demás.
+        // La rechazada por Mercadeo ya no tiene tarea vigente en el Tablero: no se consulta.
+        const tablero = (f: any) => f.pqrs_tarea_id && !f.rechazada_por_mercadeo
         const porTarea = new Map<number, any>()
         let mercadeoDisponible = true
-        if (filas.some((f: any) => f.pqrs_tarea_id)) {
+        if (filas.some(tablero)) {
           try {
             const r = await puente({ action: 'listar', solicitante: { id: user.id } })
             for (const s of r.solicitudes || []) porTarea.set(Number(s.id), s)
@@ -571,7 +581,7 @@ serve(async (req) => {
         return json(200, {
           ok: true,
           mercadeo_disponible: mercadeoDisponible,
-          solicitudes: filas.map((f: any) => mapFila(f, f.pqrs_tarea_id ? porTarea.get(Number(f.pqrs_tarea_id)) || null : null)),
+          solicitudes: filas.map((f: any) => mapFila(f, tablero(f) ? porTarea.get(Number(f.pqrs_tarea_id)) || null : null)),
         })
       }
 

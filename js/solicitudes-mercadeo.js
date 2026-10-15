@@ -44,6 +44,7 @@ function smAsuntoOpcion(a) { return a.t + (a.ej ? ' (' + a.ej + ')' : ''); }
 var SM_ESTADOS = {
   por_aprobar:   { t: 'Por aprobar',   cls: 'b-pendiente-aprob' },
   rechazada:     { t: 'Rechazada',     cls: 'b-anulado' },
+  rechazada_mercadeo: { t: 'Rechazada por Mercadeo', cls: 'b-anulado' },
   aprobada:      { t: 'Aprobada',      cls: 'b-ent' },
   solicitada:    { t: 'Recibido',      cls: 'b-rec' },
   confirmada:    { t: 'Confirmada',    cls: 'b-par' },
@@ -96,7 +97,7 @@ function smEstadoDe(k) { return SM_ESTADOS[k] || { t: String(k || '—'), cls: '
 // Estado completo de una solicitud para mostrar.
 function smEstadoSolicitud(s) {
   if (s.estado_aprobacion === 'Por aprobar') return SM_ESTADOS.por_aprobar;
-  if (s.estado_aprobacion === 'Rechazada') return SM_ESTADOS.rechazada;
+  if (s.estado_aprobacion === 'Rechazada') return s.rechazada_por_mercadeo ? SM_ESTADOS.rechazada_mercadeo : SM_ESTADOS.rechazada;
   return s.estado ? smEstadoDe(s.estado) : SM_ESTADOS.aprobada;
 }
 
@@ -497,7 +498,9 @@ function smEditar(s) {
   smEl('sm-desc-ct').textContent = (s.descripcion || '').length;
   smEl('sm-edit-banner').style.display = '';
   smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud <strong>' + escHtml(smRef(s)) + '</strong>, rechazada' +
-    (s.aprobada_por ? ' por ' + escHtml(s.aprobada_por) : '') + '.' +
+    (s.rechazada_por_mercadeo
+      ? ' por Mercadeo' + (s.aprobada_por ? ' (' + escHtml(s.aprobada_por) + ')' : '')
+      : (s.aprobada_por ? ' por ' + escHtml(s.aprobada_por) : '')) + '.' +
     (s.motivo_rechazo ? ' <strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo) : '') +
     ' Corrígela y reenvíala; “Limpiar” cancela la edición.';
   smEl('sm-enviar').textContent = '📨 Reenviar a aprobación';
@@ -657,7 +660,8 @@ var SM_TIPOS_HIST = {
   aprobacion:    function (h) { return '✅ Aprobada por <strong>' + escHtml(h.por) + '</strong>'; },
   autoaprobacion: function (h) { return '✅ Aprobada automáticamente (<strong>' + escHtml(h.por) + '</strong> puede aprobar)'; },
   rechazo:       function (h) { return '❌ Rechazada por <strong>' + escHtml(h.por) + '</strong>' + (h.motivo ? ' — ' + escHtml(h.motivo) : ''); },
-  estado:        function (h) { return 'En Mercadeo: <strong>' + escHtml(smEstadoDe(h.estado).t) + '</strong>'; }
+  rechazo_mercadeo: function (h) { return '❌ Rechazada por Mercadeo (<strong>' + escHtml(h.por) + '</strong>)' + (h.motivo ? ' — ' + escHtml(h.motivo) : ''); },
+  estado:       function (h) { return 'En Mercadeo: <strong>' + escHtml(smEstadoDe(h.estado).t) + '</strong>'; }
 };
 
 function smVerDetalle(origen, i) {
@@ -676,7 +680,7 @@ function smVerDetalle(origen, i) {
         '<div class="meta">' + escHtml(h.por || 'Mercadeo') + ' · ' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
     }
     var f = SM_TIPOS_HIST[h.tipo];
-    return '<li' + (h.tipo === 'rechazo' ? ' style="border-left-color:#c0392b"' : '') + '><div>' + (f ? f(h) : escHtml(h.tipo)) + '</div>' +
+    return '<li' + (h.tipo === 'rechazo' || h.tipo === 'rechazo_mercadeo' ? ' style="border-left-color:#c0392b"' : '') + '><div>' + (f ? f(h) : escHtml(h.tipo)) + '</div>' +
       '<div class="meta">' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
   }).join('');
 
@@ -689,7 +693,8 @@ function smVerDetalle(origen, i) {
   if (s.estado_aprobacion === 'Por aprobar') {
     aprobacion = '<div class="sm-box sm-box-pend">⏳ Por aprobar: un aprobador la revisará antes de que pase a Mercadeo.</div>';
   } else if (s.estado_aprobacion === 'Rechazada') {
-    aprobacion = '<div class="sm-box sm-box-rech">❌ Rechazada' + (s.aprobada_por ? ' por <strong>' + escHtml(s.aprobada_por) + '</strong>' : '') +
+    aprobacion = '<div class="sm-box sm-box-rech">❌ Rechazada' + (s.rechazada_por_mercadeo ? ' por Mercadeo' : '') +
+      (s.aprobada_por ? (s.rechazada_por_mercadeo ? ' (' : ' por ') + '<strong>' + escHtml(s.aprobada_por) + '</strong>' + (s.rechazada_por_mercadeo ? ')' : '') : '') +
       (s.fecha_aprobacion ? ' el ' + escHtml(smFmtFechaHora(s.fecha_aprobacion)) : '') +
       '<br><strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo || '—') + '</div>';
   } else {
