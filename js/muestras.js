@@ -1457,7 +1457,11 @@ async function saveEntregas() {
       var cantEntAnterior = Number(row.Cant_Entregada) || 0;
       var cantEntNueva = cantEntAnterior + cantDirecta;
       var estado = cantDirecta > 0 ? 'Despachada' : row.Estado;
-      var generarRem = !remision && !(row.Remision || '').trim();
+      // La remisión se genera UNA sola vez arriba (solo si hay entregas
+      // directas) y se reparte a todas las líneas. Pedirla por línea
+      // (_generar_remision) consumía un número del contador por cada línea
+      // sin remisión aunque no se despachara nada (p. ej. al solo agregar
+      // líneas nuevas), y esos números quedaban huérfanos.
       var res = await apiPost({
         action: 'editarMuestra', row: wl.id,
         Empresa: row.Empresa, Consecutivo: row.Consecutivo,
@@ -1469,8 +1473,7 @@ async function saveEntregas() {
         Estado: estado, Objetivo: row.Objetivo, Observaciones: row.Observaciones,
         Producto: row.Producto, Presentacion: row.Presentacion,
         Cantidad: row.Cantidad, Cant_Entregada: cantEntNueva,
-        Fecha_Entrega: row.Fecha_Entrega || '',
-        _generar_remision: generarRem
+        Fecha_Entrega: row.Fecha_Entrega || ''
       });
       if (!res.ok) throw new Error(res.error || 'Error al guardar línea ' + wl.id);
     }
