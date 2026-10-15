@@ -7433,6 +7433,7 @@ async function deleteAdjunto(path) {
 var despachosData = [];
 var despachosFiltered = [];
 var _despActivo = null;
+var _despActivoIdx = -1;
 var _despFacturaMap = {};
 
 // Tipo de despacho: tabla TipoDespacho, una fila por (empresa, consecutivo,
@@ -7841,17 +7842,25 @@ function openDespachoAdjuntos(idx) {
   _despActivo = { empresa: d.empresa, consecutivo: d.consecutivo, cliente: d.cliente, remision: d.remision };
 
   document.getElementById('desp-adj-title').textContent = '📎 Adjuntos — ' + getSigla(d.empresa) + ' / ' + d.remision + ' / ' + d.cliente;
-  document.getElementById('desp-adjuntos-panel').style.display = 'block';
+  var panel = document.getElementById('desp-adjuntos-panel');
+  panel.style.display = 'block';
 
   var canUpload = AUTH.canUploadAdjuntos();
   document.getElementById('desp-adjunto-dropzone').style.display = canUpload ? 'block' : 'none';
 
   loadDespachoAdjuntos();
+  // El panel va debajo de toda la tabla: se baja hasta él para que el clic se note.
+  _despActivoIdx = idx;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function closeDespachoAdjuntos() {
   document.getElementById('desp-adjuntos-panel').style.display = 'none';
   _despActivo = null;
+  // Vuelve a la fila desde la que se abrió, en vez de dejar al usuario al final de la lista.
+  var row = document.getElementById('desp-body').rows[_despActivoIdx];
+  _despActivoIdx = -1;
+  if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 async function loadDespachoAdjuntos() {
