@@ -44,8 +44,7 @@ function smAsuntoOpcion(a) { return a.t + (a.ej ? ' (' + a.ej + ')' : ''); }
 var SM_ESTADOS = {
   por_aprobar:   { t: 'Por aprobar',   cls: 'b-pendiente-aprob' },
   rechazada:     { t: 'Rechazada',     cls: 'b-anulado' },
-  rechazada_mercadeo: { t: 'Rechazada por Mercadeo', cls: 'b-anulado' },
-  aprobada:      { t: 'Aprobada',      cls: 'b-ent' },
+  aprobada:     { t: 'Aprobada',      cls: 'b-ent' },
   solicitada:    { t: 'Recibido',      cls: 'b-rec' },
   confirmada:    { t: 'Confirmada',    cls: 'b-par' },
   en_produccion: { t: 'En producción', cls: 'b-alistado' },
@@ -94,21 +93,23 @@ function smRef(s) { return 'SM-' + s.numero; }
 
 function smEstadoDe(k) { return SM_ESTADOS[k] || { t: String(k || '—'), cls: '' }; }
 
-// Estado completo de una solicitud para mostrar.
-function smEstadoSolicitud(s) {
-  if (s.estado_aprobacion === 'Por aprobar') return SM_ESTADOS.por_aprobar;
-  if (s.estado_aprobacion === 'Rechazada') return s.rechazada_por_mercadeo ? SM_ESTADOS.rechazada_mercadeo : SM_ESTADOS.rechazada;
-  return s.estado ? smEstadoDe(s.estado) : SM_ESTADOS.aprobada;
-}
-
-// Etiquetas de estado a mostrar. Ya aprobada: "Aprobada" junto al estado que le da Mercadeo en su
-// Tablero (Recibido, Confirmada, En producción...), para que se vea que pasó la aprobación.
+// Etiquetas de estado a mostrar, cada una rotulada con la etapa a la que corresponde:
+//  · "Gerente comercial": la aprobación previa (Por aprobar / Aprobada / Rechazada).
+//  · "Mercadeo": el estado que le da el equipo en su Tablero (Recibido, Confirmada, En producción...
+//    o Rechazada si Mercadeo la devolvió). Solo aparece una vez aprobada.
 function smBadgesEstado(s) {
-  var badge = function (st) { return '<span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span>'; };
-  if (s.estado_aprobacion === 'Aprobada') {
-    return badge(SM_ESTADOS.aprobada) + (s.estado ? ' ' + badge(smEstadoDe(s.estado)) : '');
-  }
-  return badge(smEstadoSolicitud(s));
+  var etapa = function (rotulo, ayuda, st) {
+    return '<span class="sm-etapa" title="' + escHtml(ayuda) + '"><span class="sm-etapa-t">' + escHtml(rotulo) + ':</span> ' +
+      '<span class="badge ' + st.cls + '">' + escHtml(st.t) + '</span></span>';
+  };
+  var ayudaGerente = 'Aprobación del gerente comercial: es la revisión previa para que la solicitud pase a Mercadeo.';
+  var ayudaMercadeo = 'Estado de la solicitud dentro del equipo de Mercadeo.';
+  if (s.estado_aprobacion === 'Por aprobar') return etapa('Gerente comercial', ayudaGerente, SM_ESTADOS.por_aprobar);
+  if (s.estado_aprobacion === 'Rechazada' && !s.rechazada_por_mercadeo) return etapa('Gerente comercial', ayudaGerente, SM_ESTADOS.rechazada);
+  // Aprobada (también la que Mercadeo devolvió después): la aprobación quedó firme y Mercadeo tiene su propio estado.
+  var merc = s.rechazada_por_mercadeo ? SM_ESTADOS.rechazada : (s.estado ? smEstadoDe(s.estado) : null);
+  return etapa('Gerente comercial', s.auto_aprobada ? ayudaGerente + ' Se aprobó sola porque quien envió tiene permiso de aprobar.' : ayudaGerente, SM_ESTADOS.aprobada) +
+    (merc ? etapa('Mercadeo', ayudaMercadeo, merc) : '');
 }
 
 function smNuevoRequestId() {
