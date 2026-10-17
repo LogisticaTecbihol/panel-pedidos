@@ -7,22 +7,45 @@ var BACKUP_TABLES = [
   { name: 'Ingresos',          label: 'Ingresos' },
   { name: 'Devoluciones',      label: 'Devoluciones' },
   { name: 'CambiosMercancia',  label: 'Cambios Mercancía' },
-  { name: 'Inventario',        label: 'Inventario' },
+  { name: 'InventarioFisico',  label: 'Inventario Físico' },
   { name: 'OrdenesCompra',     label: 'Órdenes Compra' },
   { name: 'SolicitudMuestras', label: 'Solicitud Muestras' },
   { name: 'Reenvases',         label: 'Reenvases' },
   { name: 'KardexAjustes',     label: 'Kardex Ajustes' },
   { name: 'KardexNC',          label: 'Kardex NC' },
   { name: 'RemisionesAnuladas', label: 'Remisiones Anuladas' },
-  { name: 'Clientes',          label: 'Clientes' },
+  { name: 'apartados_pedido',  label: 'Apartados Pedido' },
+  { name: 'apartados_muestra', label: 'Apartados Muestra' },
+  { name: 'TipoDespacho',      label: 'Tipo Despacho' },
+  { name: 'TipoDespachoDevCam', label: 'Tipo Despacho Dev-Cambios' },
+  { name: 'TipoDespachoMuestra', label: 'Tipo Despacho Muestra' },
+  { name: 'consecutivos_remisiones', label: 'Consecutivos Remisiones' },
+  { name: 'remisiones_enviadas', label: 'Remisiones Enviadas' },
+  { name: 'LegalizacionGastos', label: 'Legalización Gastos' },
+  { name: 'LegalizacionGastosItems', label: 'Legalización Items' },
+  { name: 'LegalizacionGastosEmpresas', label: 'Legalización Empresas' },
+  { name: 'LegalizacionGastosConsecutivoNotas', label: 'Legalización Notas Consec.' },
+  { name: 'Vehiculos',         label: 'Vehículos' },
+  { name: 'RemisionesExternas', label: 'Remisiones Externas' },
+  { name: 'RemisionesExternasItems', label: 'Remisiones Externas Items' },
+  { name: 'BitacoraContactoClientes', label: 'Bitácora Contacto Clientes' },
+  { name: 'BodegasConsignacion', label: 'Bodegas Consignación' },
+  { name: 'solicitudes_mercadeo', label: 'Solicitudes Mercadeo' },
+  { name: 'parametros_inventario', label: 'Parámetros Inventario' },
+  { name: 'solicitudes_reabastecimiento', label: 'Solicitudes Reabastecimiento' },
+  { name: 'Clientes',          label: 'Clientes', sinId: true },
   { name: 'Comerciales',       label: 'Comerciales' },
   { name: 'Productos',         label: 'Productos' },
   { name: 'maestro_productos', label: 'Maestro Productos' },
   { name: 'ClientesUnicos',    label: 'Clientes Únicos' },
+  { name: 'ListaPrecios',      label: 'Lista de Precios' },
   { name: 'usuarios',          label: 'Usuarios' },
-  { name: 'usuario_empresas',  label: 'Usuario Empresas' },
-  { name: 'usuario_modulos',   label: 'Usuario Módulos' },
-  { name: 'empresas',          label: 'Empresas' },
+  { name: 'usuario_empresas',  label: 'Usuario Empresas', sinId: true },
+  { name: 'usuario_modulos',   label: 'Usuario Módulos', sinId: true },
+  { name: 'empresas',          label: 'Empresas', sinId: true },
+  { name: 'notificaciones',    label: 'Notificaciones' },
+  { name: 'acceso_reportes',   label: 'Acceso Reportes' },
+  { name: 'audit_log',         label: 'Audit Log' },
 ];
 
 (async function initBackup() {
@@ -51,12 +74,16 @@ function renderTableList() {
   }).join('');
 }
 
-async function fetchAllRows(tableName) {
+// sinId: tablas sin columna id (no se pueden ordenar por id; todas caben en una página).
+// Ordenar por id evita filas repetidas/omitidas al paginar tablas grandes como audit_log.
+async function fetchAllRows(tableName, sinId) {
   var allData = [];
   var pageSize = 1000;
   var from = 0;
   while (true) {
-    var res = await _sb.from(tableName).select('*').range(from, from + pageSize - 1);
+    var q = _sb.from(tableName).select('*');
+    if (!sinId) q = q.order('id');
+    var res = await q.range(from, from + pageSize - 1);
     if (res.error) throw new Error(tableName + ': ' + res.error.message);
     if (!res.data || !res.data.length) break;
     allData = allData.concat(res.data);
@@ -64,6 +91,21 @@ async function fetchAllRows(tableName) {
     from += pageSize;
   }
   return allData;
+}
+
+// Excel no admite objetos en una celda (jsonb de audit_log y solicitudes_mercadeo
+// saldrían como "[object Object]") y rechaza textos de más de 32767 caracteres.
+function filasParaExcel(data) {
+  return data.map(function(row) {
+    var out = {};
+    Object.keys(row).forEach(function(k) {
+      var v = row[k];
+      if (v !== null && typeof v === 'object') v = JSON.stringify(v);
+      if (typeof v === 'string' && v.length > 32767) v = v.substring(0, 32767);
+      out[k] = v;
+    });
+    return out;
+  });
 }
 
 async function startBackup() {
@@ -102,14 +144,14 @@ async function startBackup() {
     var ct = document.getElementById('tc-' + t.name);
 
     try {
-      var data = await fetchAllRows(t.name);
+      var data = await fetchAllRows(t.name, t.sinId);
       totalRows += data.length;
 
       if (ct) ct.textContent = data.length + ' registros';
       if (item) { item.className = 'backup-table-item done'; }
 
       var sheetName = t.label.substring(0, 31);
-      var ws = XLSX.utils.json_to_sheet(data.length ? data : [{}]);
+      var ws = XLSX.utils.json_to_sheet(data.length ? filasParaExcel(data) : [{}]);
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     } catch (err) {
       errors.push(t.label + ': ' + err.message);
