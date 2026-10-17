@@ -109,6 +109,25 @@
     <div class="backup-result" id="backup-result"></div>
   </div>
 
+  <div class="card">
+    <div class="card-head">
+      <h3>🧱 Backup de la Estructura de la Base</h3>
+    </div>
+
+    <div class="backup-info">
+      Descarga un script SQL (.sql) con la <b>estructura</b> de la base: tablas, columnas, claves, índices,
+      funciones, triggers, políticas de seguridad (RLS), permisos, buckets de Storage y tareas programadas.
+      <b>No incluye datos</b> (para eso está el Excel de arriba), ni los usuarios de acceso, ni los archivos
+      adjuntos de Storage, ni la configuración de autenticación.
+    </div>
+
+    <div style="text-align:center;margin:24px 0">
+      <button class="btn-backup" id="btn-estructura" onclick="descargarEstructura()">🧱 Descargar Estructura (.sql)</button>
+    </div>
+
+    <div class="backup-result" id="estructura-result"></div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
@@ -118,6 +137,6 @@
 <script src="js/shared.js?v=20261006b"></script>
 <script src="js/auth.js?v=20261016a"></script>
 <script src="js/notificaciones.js?v=20261018a"></script>
-<script src="js/backup.js?v=20261017a"></script>
+<script src="js/backup.js?v=20261017b"></script>
 </body>
 </html>

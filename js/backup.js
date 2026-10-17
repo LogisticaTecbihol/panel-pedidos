@@ -187,3 +187,44 @@ async function startBackup() {
   btn.disabled = false;
   btn.textContent = '💾 Descargar Backup Completo';
 }
+
+// Estructura de la base como script SQL. La arma la RPC exportar_estructura_bd
+// (solo admin; ver supabase/migrations/exportar_estructura_bd.sql).
+async function descargarEstructura() {
+  var btn = document.getElementById('btn-estructura');
+  var resultEl = document.getElementById('estructura-result');
+
+  btn.disabled = true;
+  btn.textContent = 'Generando...';
+  resultEl.className = 'backup-result';
+  resultEl.style.display = 'none';
+
+  try {
+    var res = await _sb.rpc('exportar_estructura_bd');
+    if (res.error) throw new Error(res.error.message);
+    var sql = res.data || '';
+    if (!sql) throw new Error('La base devolvió un script vacío');
+
+    var filename = 'estructura_bd_' + today() + '.sql';
+    var blob = new Blob([sql], { type: 'application/sql;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+
+    var lineas = sql.split('\n').length;
+    var kb = Math.round(blob.size / 1024);
+    resultEl.className = 'backup-result success';
+    resultEl.textContent = '✅ Estructura descargada: ' + filename + ' — ' + lineas + ' líneas, ' + kb + ' KB.';
+  } catch (err) {
+    resultEl.className = 'backup-result error';
+    resultEl.innerHTML = '⚠️ No se pudo descargar la estructura: ' + escHtml(err.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🧱 Descargar Estructura (.sql)';
+}
