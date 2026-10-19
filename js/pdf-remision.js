@@ -373,7 +373,9 @@ function _drawRemisionCopy(doc, data, palette) {
   var pageTopY = drawPageTop();
 
   var lastColHeader = data.last_col_header || 'Bonif.';
-  var useObs = lastColHeader === 'Observaciones';
+  // last_col_texto: la última columna es texto libre (p. ej. "Placa" en la
+  // legalización de mantenimiento), no el Sí/No de Bonif.
+  var useObs = lastColHeader === 'Observaciones' || !!data.last_col_texto;
   var showValores = !!data.show_valores;
 
   var tableBody = (data.entregas || []).map(function(p, i) {

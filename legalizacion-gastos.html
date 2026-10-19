@@ -551,38 +551,33 @@
           </select>
           <input class="ef" id="mant-responsable-otro" type="text" placeholder="Nombre del responsable" style="margin-top:4px;display:none">
         </div>
-        <div>
-          <label class="ef-label">Placa *</label>
-          <select class="ef" id="mant-placa-select" onchange="onPlacaSelectChangeMant()">
-            <option value="">— Seleccionar —</option>
-            <option value="Otro">Otro (especificar)</option>
-          </select>
-          <input class="ef" id="mant-placa-otro" type="text" placeholder="Placa del vehículo" style="margin-top:4px;display:none">
-        </div>
-        <div id="mant-km-wrap" style="display:none;grid-column:span 3;padding:10px 12px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px">
-          <div style="font-size:0.8rem;font-weight:700;color:#1a5276;margin-bottom:8px">Kilometraje (piloto)</div>
-          <div style="max-width:220px">
-            <label class="ef-label">Km actual del vehículo</label><input class="ef" id="mant-km-actual" type="number" min="0" step="1">
-          </div>
-          <div id="mant-km-hint" style="font-size:0.76rem;color:#718096;margin-top:6px"></div>
-        </div>
         <div><label class="ef-label">Anticipo entregado ($)</label><input class="ef" id="mant-anticipo" type="number" min="0" step="1"></div>
-        <div style="grid-column:span 2"><label class="ef-label">Observaciones</label><textarea class="ef" id="mant-observaciones" rows="1" style="resize:vertical"></textarea></div>
+        <div id="mant-prov-wrap" style="grid-column:span 2"><label class="ef-label">Proveedor</label><input class="ef" id="mant-proveedor" type="text" placeholder="Proveedor de la factura" autocomplete="off" oninput="readMantPlacas()"></div>
+        <div id="mant-nit-wrap">
+          <label class="ef-label">NIT</label>
+          <div style="display:flex;gap:4px">
+            <input class="ef" id="mant-nit" type="text" placeholder="NIT" style="flex:1;min-width:0" oninput="readMantPlacas()">
+            <input class="ef" id="mant-dv" type="text" placeholder="DV" maxlength="2" style="width:52px;text-align:center" oninput="readMantPlacas()">
+          </div>
+        </div>
+        <div style="grid-column:span 3">
+          <label style="display:flex;gap:6px;align-items:center;font-size:0.82rem;color:#4a5568;cursor:pointer">
+            <input type="checkbox" id="mant-prov-multi" onchange="onMantProvMultiChange()"> Las líneas tienen proveedores distintos (indicar proveedor y NIT en cada línea)
+          </label>
+        </div>
+        <div style="grid-column:span 3"><label class="ef-label">Observaciones</label><textarea class="ef" id="mant-observaciones" rows="1" style="resize:vertical"></textarea></div>
       </div>
 
-      <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Reparto entre empresas <span style="font-weight:400;color:#718096">(opcional — sin reparto queda en "Sin reparto asignado" en Prorrateo)</span></h3>
+      <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Vehículos y líneas de gasto <span style="font-weight:400;color:#718096">(una factura puede cubrir varios vehículos: agrega una placa por vehículo, con sus gastos)</span></h3>
+      <div id="mant-placas-box"></div>
+      <button class="btn-edit" style="margin-top:2px" onclick="addMantPlaca()">+ Agregar placa</button>
+
+      <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Reparto entre empresas <span style="font-weight:400;color:#718096">(opcional — sin reparto queda en "Sin reparto asignado" en Prorrateo; se reparte el total de todas las placas)</span></h3>
       <table>
         <thead><tr><th>Empresa</th><th style="text-align:right">Monto</th><th style="width:40px"></th></tr></thead>
         <tbody id="mant-emp-lines"></tbody>
       </table>
       <button class="btn-edit" style="margin-top:8px" onclick="addMantEmpresa()">+ Agregar empresa</button>
-
-      <h3 style="margin:18px 0 8px;font-size:0.9rem;color:#1a5276">Líneas de gasto</h3>
-      <table>
-        <thead><tr><th>Detalle</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th><th style="width:40px"></th></tr></thead>
-        <tbody id="mant-gasto-lines"></tbody>
-      </table>
-      <button class="btn-edit" style="margin-top:8px" onclick="addMantGasto()">+ Agregar gasto</button>
 
       <div style="margin-top:14px;padding:10px 14px;background:#eaf4fb;border:1px solid #aed6f1;border-radius:8px;font-size:0.86rem;display:flex;gap:24px;flex-wrap:wrap">
         <div>Total gastos: <strong id="mant-total-gastos">$0</strong></div>
@@ -769,11 +764,11 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261015c"></script>
+<script src="js/shared.js?v=20261019a"></script>
 <script src="js/auth.js?v=20261014a"></script>
 <script src="js/notificaciones.js?v=20261018a"></script>
-<script src="js/pdf-remision.js?v=20261001a"></script>
+<script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261015c"></script>
-<script src="js/legalizacion-gastos.js?v=20261015c"></script>
+<script src="js/legalizacion-gastos.js?v=20261019a"></script>
 </body>
 </html>

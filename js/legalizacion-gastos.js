@@ -47,9 +47,14 @@ var formGastoProveedorACs = []; // autocompletes de Proveedor (uno por línea de
 // ruta, pero sin remisiones/clientes/recorrido y con un detalle de
 // mantenimiento (en vez de Concepto) por línea. Estado propio, en paralelo
 // al del formulario de ruta (editingLegId se comparte: solo un modal a la vez).
-var formGastosMant = [];
+// Una legalización puede cubrir varios vehículos: un bloque por placa, cada
+// uno con su kilometraje (piloto) y sus líneas de gasto.
+var formPlacasMant = []; // [{ Sel, Otro, Km, KmAuto, Gastos: [{ Concepto, Proveedor, NIT, DV, Valor }] }]
 var formEmpresasMant = [];
-var formMantProveedorACs = [];
+var formMantProveedorACs = []; // autocompletes de Proveedor por línea (solo con "proveedores distintos")
+var formMantProveedorTopAC = null; // autocomplete del Proveedor único (se crea una vez)
+var formMantProvMulti = false;     // true = proveedor y NIT en cada línea
+var formMantProv = { Proveedor: '', NIT: '', DV: '' }; // proveedor único de la legalización
 
 // ── Formulario de Envío (Tipo='Envio'): pago de un flete/mensajería de
 // mercancía. Una sola línea de gasto (proveedor, NIT, valor) ligada a
@@ -262,10 +267,11 @@ function placaOptionsHtml(selected) {
 }
 
 // Se llama tras cargar/actualizar `vehiculos` (loadLegalizaciones,
-// loadVehiculosData) para refrescar ambos selects de Placa (Ruta y
-// Mantenimiento) conservando el valor actualmente seleccionado.
+// loadVehiculosData) para refrescar el select de Placa de Ruta conservando el
+// valor actualmente seleccionado (los de Mantenimiento se dibujan al abrir y
+// al agregar una placa: ver renderMantPlacas).
 function populatePlacaSelects() {
-  ['lg-placa-select', 'mant-placa-select'].forEach(function(id) {
+  ['lg-placa-select'].forEach(function(id) {
     var sel = document.getElementById(id);
     if (sel) sel.innerHTML = placaOptionsHtml(sel.value);
   });
@@ -470,7 +476,11 @@ function _empresasSortTxt(leg) {
 // columna Km de la Vista detallada. null si el viaje no está en el piloto.
 function _detalleKmNum(leg) {
   if (leg.Tipo !== 'Mantenimiento' && leg.Km_Salida != null && leg.Km_Llegada != null) return Number(leg.Km_Llegada) - Number(leg.Km_Salida);
-  if (leg.Tipo === 'Mantenimiento' && leg.Km_Llegada != null) return Number(leg.Km_Llegada);
+  if (leg.Tipo === 'Mantenimiento') {
+    // Con varias placas, el mayor odómetro.
+    var kms = kmPorPlacaDeLeg(leg).map(function(x) { return x.km; });
+    return kms.length ? Math.max.apply(null, kms) : null;
+  }
   return null;
 }
 
@@ -523,7 +533,7 @@ var LG_SORT_COLS = {
     { id: 'fecha', label: 'Fecha', fn: function(x) { return x.leg.Fecha || ''; } },
     { id: 'tipo', label: 'Tipo', fn: function(x) { return tipoLabel(x.leg); } },
     { id: 'responsable', label: 'Responsable', fn: function(x) { return x.leg.Responsable || ''; } },
-    { id: 'placa', label: 'Placa', fn: function(x) { return x.leg.Placa || ''; } },
+    { id: 'placa', label: 'Placa', fn: function(x) { return placaDeItem(x.it, x.leg); } },
     { id: 'empresas', label: 'Empresas', fn: function(x) { return _empresasSortTxt(x.leg); } },
     { id: 'concepto', label: 'Concepto', fn: function(x) { return x.it.Concepto || ''; } },
     { id: 'proveedor', label: 'Proveedor', fn: function(x) { return x.it.Proveedor || ''; } },
@@ -1514,8 +1524,9 @@ function _detalleKmTxt(leg) {
   if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
     return (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km';
   }
-  if (esMant && leg.Km_Llegada != null) {
-    return Number(leg.Km_Llegada).toLocaleString('es-CO') + ' km (odóm.)';
+  if (esMant) {
+    var kmTxt = kmMantTxt(leg);
+    if (kmTxt) return kmTxt + ' (odóm.)';
   }
   return '—';
 }
@@ -1550,7 +1561,9 @@ function _detalleLineas(rows) {
 function _detalleTablaLegalizacion(rows) {
   if (!rows.length) return '<div class="empty">Sin legalizaciones para este filtro.</div>';
   var body = rows.map(function(leg) {
-    var gastosTxt = itemsOf(leg.id).map(function(it) { return (it.Concepto || '—') + ': ' + fmtMoney(it.Valor); }).join(', ') || '—';
+    // Con varias placas (mantenimiento) cada gasto lleva la suya delante.
+    var multiPl = leg.Tipo === 'Mantenimiento' && placasDeLeg(leg).length > 1;
+    var gastosTxt = itemsOf(leg.id).map(function(it) { return (multiPl ? placaDeItem(it, leg) + ' · ' : '') + (it.Concepto || '—') + ': ' + fmtMoney(it.Valor); }).join(', ') || '—';
     return '<tr>' +
       '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
       '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
@@ -1582,7 +1595,7 @@ function _detalleTablaLinea(lineas) {
       '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
       '<td>' + tipoBadgeHtml(leg) + '</td>' +
       '<td>' + escHtml(leg.Responsable || '—') + '</td>' +
-      '<td>' + escHtml(leg.Placa || '—') + '</td>' +
+      '<td>' + escHtml(placaDeItem(it, leg) || '—') + '</td>' +
       '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
       '<td>' + escHtml(it.Concepto || '—') + '</td>' +
       '<td>' + escHtml(it.Proveedor || '—') + '</td>' +
@@ -1610,7 +1623,7 @@ function exportarDetalleExcel() {
         'Fecha': fmtDate(leg.Fecha),
         'Tipo': tipoLabel(leg),
         'Responsable': leg.Responsable || '',
-        'Placa': leg.Placa || '',
+        'Placa': placaDeItem(it, leg),
         'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
         'Concepto': it.Concepto || '',
         'Proveedor': it.Proveedor || '',
@@ -1626,8 +1639,14 @@ function exportarDetalleExcel() {
     var dataLeg = applySortLg('detleg', rows).map(function(leg) {
       var esMant = leg.Tipo === 'Mantenimiento';
       var km = '';
+      var multiPl = esMant && placasDeLeg(leg).length > 1;
       if (!esMant && leg.Km_Salida != null && leg.Km_Llegada != null) km = Number(leg.Km_Llegada) - Number(leg.Km_Salida);
-      else if (esMant && leg.Km_Llegada != null) km = Number(leg.Km_Llegada);
+      else if (esMant) {
+        // Una placa: el odómetro como número; varias: "JRM295: 76.954 km · LJT165: …".
+        var kms = kmPorPlacaDeLeg(leg);
+        if (kms.length === 1) km = kms[0].km;
+        else if (kms.length > 1) km = kmMantTxt(leg);
+      }
       return {
         'N°': leg.Consecutivo || '',
         'Fecha': fmtDate(leg.Fecha),
@@ -1638,7 +1657,7 @@ function exportarDetalleExcel() {
         'Clientes': leg.Clientes || '',
         'Remisiones': leg.Remisiones_Relacionadas || '',
         'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
-        'Gastos (detalle)': itemsOf(leg.id).map(function(it) { return (it.Concepto || '') + ': ' + fmtMoney(it.Valor); }).join(', '),
+        'Gastos (detalle)': itemsOf(leg.id).map(function(it) { return (multiPl ? placaDeItem(it, leg) + ' · ' : '') + (it.Concepto || '') + ': ' + fmtMoney(it.Valor); }).join(', '),
         'Total gastos': totalGastosOf(leg.id),
         'Anticipo': Number(leg.Anticipo_Entregado) || 0,
         'Km': km,
@@ -3109,8 +3128,9 @@ async function saveForm() {
 // ── Formulario de Mantenimiento (Tipo='Mantenimiento') ──
 // Mismo patrón que el formulario de ruta (cabecera + reparto entre empresas +
 // líneas de gasto + conciliación posterior), pero sin remisiones, clientes ni
-// recorrido/ruta, con Placa obligatoria y con un detalle de mantenimiento
-// (MANTENIMIENTO_DETALLE_FIJOS) en vez de Concepto por línea de gasto.
+// recorrido/ruta, con una o varias placas (obligatoria al menos una) y con un
+// detalle de mantenimiento (MANTENIMIENTO_DETALLE_FIJOS) en vez de Concepto
+// por línea de gasto.
 
 function setResponsableFieldMant(value) {
   var sel = document.getElementById('mant-responsable-select');
@@ -3148,62 +3168,114 @@ function readResponsableMant() {
   return sel;
 }
 
-function setPlacaFieldMant(value) {
-  var sel = document.getElementById('mant-placa-select');
-  var otro = document.getElementById('mant-placa-otro');
-  if (!value) {
-    sel.value = '';
-    otro.style.display = 'none';
-    otro.value = '';
-  } else if (placaExiste(value)) {
-    sel.value = value;
-    otro.style.display = 'none';
-    otro.value = '';
-  } else {
-    sel.value = 'Otro';
-    otro.style.display = '';
-    otro.value = value;
+// Una legalización de mantenimiento puede cubrir varios vehículos (una misma
+// factura aplica a varios): hay un bloque por placa, cada uno con su
+// kilometraje (piloto) y sus líneas de gasto. Cada línea guarda su placa y el
+// km de esa placa en LegalizacionGastosItems (Placa, Km_Placa); la cabecera
+// guarda las placas juntas ("JRM295, LJT165") para buscar y listar.
+
+function nuevaLineaMant() {
+  return { Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' };
+}
+
+function nuevoBloqueMant() {
+  return { Sel: '', Otro: '', Km: '', KmAuto: null, Gastos: [nuevaLineaMant()] };
+}
+
+// Placa de un bloque: la del catálogo o la escrita a mano ("Otro"), esta última
+// en mayúsculas para no duplicar el catálogo por diferencias de mayúsculas.
+function placaDeBloqueMant(b) {
+  return b.Sel === 'Otro' ? (b.Otro || '').trim().toUpperCase() : (b.Sel || '');
+}
+
+// Inverso: cómo mostrar una placa ya guardada. Una placa que no está activa en
+// el catálogo va como "Otro" para que siga viéndose en el formulario.
+function selDePlacaMant(placa) {
+  if (!placa) return { Sel: '', Otro: '' };
+  var activa = vehiculos.some(function(v) { return v.Placa === placa && v.Activo !== false; });
+  return activa ? { Sel: placa, Otro: '' } : { Sel: 'Otro', Otro: placa };
+}
+
+function esPilotoMant(placa) { return KM_PILOTO_PLACAS.indexOf(placa) >= 0; }
+
+function kmHintMant(placa) {
+  var info = esPilotoMant(placa) ? ultimoKmVehiculo(placa) : null;
+  return info ? ('Último odómetro conocido: ' + info.km.toLocaleString('es-CO') + ' km' + (info.fecha ? ' (' + fmtDate(info.fecha) + ')' : '')) : '';
+}
+
+// Precarga el km con el último odómetro conocido de la placa, solo en
+// legalizaciones nuevas y sin pisar lo que el usuario ya escribió (un km que
+// vino de una precarga anterior sí se reemplaza al cambiar de placa).
+function precargarKmMant(b) {
+  if (editingLegId) return;
+  var placa = placaDeBloqueMant(b);
+  var info = esPilotoMant(placa) ? ultimoKmVehiculo(placa) : null;
+  var km = (info && info.km > 0) ? info.km : null;
+  if (b.Km === '' || b.Km == null || Number(b.Km) === b.KmAuto) {
+    b.Km = km != null ? km : '';
+    b.KmAuto = km;
   }
 }
 
-// Mantenimiento no tiene "viaje" (sin salida/llegada), así que registra un
-// solo kilometraje puntual — el odómetro del vehículo al momento del
-// mantenimiento — reutilizando la misma columna Km_Llegada que usa Ruta.
-function updateKmWrapVisibilityMant() {
-  var placa = readPlacaMant();
-  var show = KM_PILOTO_PLACAS.indexOf(placa) >= 0;
-  var wrap = document.getElementById('mant-km-wrap');
-  if (wrap) wrap.style.display = show ? 'block' : 'none';
-  var hintEl = document.getElementById('mant-km-hint');
-  if (hintEl) {
-    var info = show ? ultimoKmVehiculo(placa) : null;
-    hintEl.textContent = info ? ('Último odómetro conocido: ' + info.km.toLocaleString('es-CO') + ' km' + (info.fecha ? ' (' + fmtDate(info.fecha) + ')' : '')) : '';
+// Placa de una línea: la suya o, en las legalizaciones de una sola placa
+// anteriores a las líneas con placa, la de la cabecera.
+function placaDeItem(it, leg) { return (it.Placa || '').trim() || ((leg && leg.Placa) || '').trim(); }
+
+// Placas de una legalización en orden de aparición (las de sus líneas; sin
+// líneas con placa, las de la cabecera separadas por coma).
+function placasDeLeg(leg) {
+  var out = [];
+  itemsOf(leg.id).forEach(function(it) {
+    var p = (it.Placa || '').trim();
+    if (p && out.indexOf(p) < 0) out.push(p);
+  });
+  if (!out.length) {
+    (leg.Placa || '').split(',').forEach(function(p) {
+      p = p.trim();
+      if (p && out.indexOf(p) < 0) out.push(p);
+    });
   }
+  return out;
 }
 
-function onPlacaSelectChangeMant() {
-  var sel = document.getElementById('mant-placa-select');
-  var otro = document.getElementById('mant-placa-otro');
-  if (sel.value === 'Otro') {
-    otro.style.display = '';
-    otro.focus();
-  } else {
-    otro.style.display = 'none';
-    otro.value = '';
-  }
-  updateKmWrapVisibilityMant();
-  if (!editingLegId) {
-    var placa = readPlacaMant();
-    var info = KM_PILOTO_PLACAS.indexOf(placa) >= 0 ? ultimoKmVehiculo(placa) : null;
-    var kmInp = document.getElementById('mant-km-actual');
-    if (info && kmInp && !kmInp.value) kmInp.value = info.km;
-  }
+// Kilometraje registrado por placa [{ placa, km }]; solo las que lo tienen.
+// Cae al Km_Llegada de la cabecera si ninguna línea trae km.
+function kmPorPlacaDeLeg(leg) {
+  var out = [];
+  itemsOf(leg.id).forEach(function(it) {
+    var p = (it.Placa || '').trim();
+    if (!p || it.Km_Placa == null || out.some(function(x) { return x.placa === p; })) return;
+    out.push({ placa: p, km: Number(it.Km_Placa) });
+  });
+  if (!out.length && leg.Km_Llegada != null && (leg.Placa || '').trim()) out.push({ placa: leg.Placa.trim(), km: Number(leg.Km_Llegada) });
+  return out;
 }
 
-function readPlacaMant() {
-  var sel = document.getElementById('mant-placa-select').value;
-  if (sel === 'Otro') return document.getElementById('mant-placa-otro').value.trim();
-  return sel;
+// "76.954 km" con una placa; "JRM295: 76.954 km · LJT165: 69.311 km" con varias.
+function kmMantTxt(leg) {
+  var kms = kmPorPlacaDeLeg(leg);
+  return kms.map(function(x) { return (kms.length > 1 ? x.placa + ': ' : '') + x.km.toLocaleString('es-CO') + ' km'; }).join(' · ');
+}
+
+// Un bloque por placa, en el orden en que aparecen las líneas guardadas.
+function bloquesDeLegMant(leg, its) {
+  var bloques = [];
+  var porPlaca = {};
+  its.forEach(function(it) {
+    var placa = placaDeItem(it, leg);
+    var b = porPlaca[placa];
+    if (!b) {
+      var s = selDePlacaMant(placa);
+      b = porPlaca[placa] = { Sel: s.Sel, Otro: s.Otro, Km: '', KmAuto: null, Gastos: [] };
+      bloques.push(b);
+    }
+    if (b.Km === '' && it.Km_Placa != null) b.Km = it.Km_Placa;
+    var nd = splitNitDv(it.NIT);
+    b.Gastos.push({ Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: nd.nit, DV: nd.dv, Valor: it.Valor });
+  });
+  // Legalización de una sola placa anterior a las líneas con km: lo trae la cabecera.
+  if (bloques.length === 1 && bloques[0].Km === '' && leg.Km_Llegada != null) bloques[0].Km = leg.Km_Llegada;
+  return bloques;
 }
 
 function renderMantEmpresas() {
@@ -3239,85 +3311,248 @@ function readMantEmpresas() {
   recalcTotalsMant();
 }
 
-function renderMantGastos() {
+function proveedorAcOptsMant(onSelect) {
+  return {
+    minChars: 1,
+    items: proveedoresConocidos,
+    display: function(p) {
+      return '<strong>' + escHtml(p.proveedor) + '</strong>' + (p.nit ? ' <span class="ac-sub">NIT ' + escHtml(p.nit) + '</span>' : '');
+    },
+    match: function(p, val) { return p.proveedor.toLowerCase().indexOf(val) >= 0; },
+    onSelect: onSelect
+  };
+}
+
+// Proveedor y NIT se piden una sola vez (una factura, un proveedor) y aplican
+// a todas las líneas; con "proveedores distintos" cada línea trae los suyos.
+function initProveedorMantTop() {
+  if (formMantProveedorTopAC) return;
+  var inp = document.getElementById('mant-proveedor');
+  formMantProveedorTopAC = initAutocomplete(inp, proveedorAcOptsMant(function(p) {
+    inp.value = p.proveedor;
+    var nd = splitNitDv(p.nit);
+    document.getElementById('mant-nit').value = nd.nit;
+    document.getElementById('mant-dv').value = nd.dv;
+    readMantPlacas();
+  }));
+}
+
+function syncProveedorMantUI() {
+  var multi = formMantProvMulti;
+  document.getElementById('mant-prov-multi').checked = multi;
+  document.getElementById('mant-prov-wrap').style.display = multi ? 'none' : '';
+  document.getElementById('mant-nit-wrap').style.display = multi ? 'none' : '';
+  document.getElementById('mant-proveedor').value = formMantProv.Proveedor || '';
+  document.getElementById('mant-nit').value = formMantProv.NIT || '';
+  document.getElementById('mant-dv').value = formMantProv.DV || '';
+}
+
+function onMantProvMultiChange() {
+  readMantPlacas();
+  var chk = document.getElementById('mant-prov-multi');
+  if (chk.checked) {
+    // Pasa a un proveedor por línea: cada línea parte del proveedor único.
+    formPlacasMant.forEach(function(b) {
+      b.Gastos.forEach(function(g) { g.Proveedor = formMantProv.Proveedor; g.NIT = formMantProv.NIT; g.DV = formMantProv.DV; });
+    });
+    formMantProvMulti = true;
+  } else {
+    // Vuelve a un solo proveedor: el de la primera línea que tenga uno.
+    var lineas = [];
+    formPlacasMant.forEach(function(b) { b.Gastos.forEach(function(g) { lineas.push(g); }); });
+    var base = lineas.find(function(g) { return (g.Proveedor || '').trim() || (g.NIT || '').trim(); }) || { Proveedor: '', NIT: '', DV: '' };
+    var hayOtros = lineas.some(function(g) {
+      return ((g.Proveedor || '').trim() || (g.NIT || '').trim()) &&
+        ((g.Proveedor || '').trim() !== (base.Proveedor || '').trim() || (g.NIT || '').trim() !== (base.NIT || '').trim());
+    });
+    if (hayOtros && !confirm('Las líneas tienen proveedores distintos: se usará "' + (base.Proveedor || base.NIT) + '" para todas. ¿Continuar?')) {
+      chk.checked = true;
+      return;
+    }
+    formMantProv = { Proveedor: base.Proveedor || '', NIT: base.NIT || '', DV: base.DV || '' };
+    formMantProvMulti = false;
+  }
+  syncProveedorMantUI();
+  renderMantPlacas();
+}
+
+function gastoMantDe(inp) {
+  var b = formPlacasMant[Number(inp.dataset.p)];
+  return b ? b.Gastos[Number(inp.dataset.line)] : null;
+}
+
+var BTN_QUITAR_MANT = 'background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700';
+
+function renderMantPlacas() {
   formMantProveedorACs.forEach(function(ac) { ac.destroy(); });
   formMantProveedorACs = [];
 
-  document.getElementById('mant-gasto-lines').innerHTML = formGastosMant.map(function(g, i) {
-    var parsed = parseConceptoLineFor(MANTENIMIENTO_DETALLE_FIJOS, g.Concepto || '');
-    return '<tr>' +
-      '<td>' +
-        '<select class="ef mant-g-concepto" data-line="' + i + '" onchange="onConceptoSelectChangeMant(this)">' + conceptoOptionsHtmlFor(MANTENIMIENTO_DETALLE_FIJOS, parsed.sel) + '</select>' +
-        (parsed.sel === 'Otros' ? '<input class="ef mant-g-concepto-otro" data-line="' + i + '" type="text" value="' + escHtml(parsed.detail) + '" placeholder="Especifique…" style="margin-top:4px" oninput="readMantGastos()">' : '') +
-      '</td>' +
-      '<td><input class="ef mant-g-proveedor" data-line="' + i + '" type="text" value="' + escHtml(g.Proveedor || '') + '" placeholder="Proveedor" autocomplete="off" oninput="readMantGastos()"></td>' +
-      '<td><div style="display:flex;gap:4px">' +
-        '<input class="ef mant-g-nit" data-line="' + i + '" type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:100px" oninput="readMantGastos()">' +
-        '<input class="ef mant-g-dv" data-line="' + i + '" type="text" value="' + escHtml(g.DV || '') + '" placeholder="DV" maxlength="2" style="width:44px;text-align:center" oninput="readMantGastos()">' +
-      '</div></td>' +
-      '<td><input class="ef mant-g-valor" data-line="' + i + '" type="number" min="0" step="1" value="' + (g.Valor || '') + '" style="text-align:right;width:120px" oninput="readMantGastos()"></td>' +
-      '<td style="text-align:center"><button onclick="removeMantGasto(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-weight:700">✕</button></td>' +
-    '</tr>';
-  }).join('') || '<tr><td colspan="5"><div class="no-lines">Sin líneas de gasto.</div></td></tr>';
+  var multi = formMantProvMulti;
+  var nCols = multi ? 5 : 3;
+  var thead = '<thead><tr><th>Detalle</th>' + (multi ? '<th>Proveedor</th><th>NIT</th>' : '') + '<th style="text-align:right">Valor</th><th style="width:40px"></th></tr></thead>';
+
+  document.getElementById('mant-placas-box').innerHTML = formPlacasMant.map(function(b, p) {
+    var placa = placaDeBloqueMant(b);
+    var lineas = b.Gastos.map(function(g, i) {
+      var parsed = parseConceptoLineFor(MANTENIMIENTO_DETALLE_FIJOS, g.Concepto || '');
+      var pos = 'data-p="' + p + '" data-line="' + i + '"';
+      return '<tr>' +
+        '<td>' +
+          '<select class="ef mant-g-concepto" ' + pos + ' onchange="onConceptoSelectChangeMant(this)">' + conceptoOptionsHtmlFor(MANTENIMIENTO_DETALLE_FIJOS, parsed.sel) + '</select>' +
+          (parsed.sel === 'Otros' ? '<input class="ef mant-g-concepto-otro" ' + pos + ' type="text" value="' + escHtml(parsed.detail) + '" placeholder="Especifique…" style="margin-top:4px" oninput="readMantPlacas()">' : '') +
+        '</td>' +
+        (multi ?
+          '<td><input class="ef mant-g-proveedor" ' + pos + ' type="text" value="' + escHtml(g.Proveedor || '') + '" placeholder="Proveedor" autocomplete="off" oninput="readMantPlacas()"></td>' +
+          '<td><div style="display:flex;gap:4px">' +
+            '<input class="ef mant-g-nit" ' + pos + ' type="text" value="' + escHtml(g.NIT || '') + '" placeholder="NIT" style="width:100px" oninput="readMantPlacas()">' +
+            '<input class="ef mant-g-dv" ' + pos + ' type="text" value="' + escHtml(g.DV || '') + '" placeholder="DV" maxlength="2" style="width:44px;text-align:center" oninput="readMantPlacas()">' +
+          '</div></td>' : '') +
+        '<td><input class="ef mant-g-valor" ' + pos + ' type="number" min="0" step="1" value="' + (g.Valor || '') + '" style="text-align:right;width:120px" oninput="readMantPlacas()"></td>' +
+        '<td style="text-align:center"><button onclick="removeMantGasto(' + p + ',' + i + ')" style="' + BTN_QUITAR_MANT + '">✕</button></td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="' + nCols + '"><div class="no-lines">Sin líneas de gasto.</div></td></tr>';
+
+    var kmHtml = esPilotoMant(placa) ?
+      '<div style="margin-bottom:10px;padding:8px 12px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px">' +
+        '<div style="font-size:0.78rem;font-weight:700;color:#1a5276;margin-bottom:6px">Kilometraje (piloto)</div>' +
+        '<div style="max-width:220px"><label class="ef-label">Km actual del vehículo</label>' +
+          '<input class="ef mant-p-km" data-p="' + p + '" type="number" min="0" step="1" value="' + escHtml(b.Km === '' || b.Km == null ? '' : String(b.Km)) + '" oninput="readMantPlacas()"></div>' +
+        '<div style="font-size:0.76rem;color:#718096;margin-top:6px">' + escHtml(kmHintMant(placa)) + '</div>' +
+      '</div>' : '';
+
+    return '<div style="border:1px solid #cbd5e0;border-radius:10px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:10px">' +
+        '<div style="width:260px">' +
+          '<label class="ef-label">Placa' + (formPlacasMant.length > 1 ? ' ' + (p + 1) : '') + ' *</label>' +
+          '<select class="ef mant-p-select" data-p="' + p + '" onchange="onMantPlacaSelectChange(this)">' + placaOptionsHtml(b.Sel) + '</select>' +
+          '<input class="ef mant-p-otro" data-p="' + p + '" type="text" value="' + escHtml(b.Otro || '') + '" placeholder="Placa del vehículo" style="margin-top:4px;' + (b.Sel === 'Otro' ? '' : 'display:none') + '" oninput="readMantPlacas()" onchange="onMantPlacaOtroChange(this)">' +
+        '</div>' +
+        '<span style="flex:1"></span>' +
+        (formPlacasMant.length > 1 ? '<button onclick="removeMantPlaca(' + p + ')" style="' + BTN_QUITAR_MANT + '">✕ Quitar placa</button>' : '') +
+      '</div>' +
+      kmHtml +
+      '<table>' + thead + '<tbody>' + lineas + '</tbody></table>' +
+      '<div style="display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="btn-edit" onclick="addMantGasto(' + p + ')">+ Agregar gasto</button>' +
+        '<span style="flex:1"></span>' +
+        '<span style="font-size:0.84rem;color:#4a5568">Subtotal' + (placa ? ' ' + escHtml(placa) : '') + ': <strong class="mant-p-sub" data-p="' + p + '">$0</strong></span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 
   document.querySelectorAll('.mant-g-proveedor').forEach(function(inp) {
-    formMantProveedorACs.push(initAutocomplete(inp, {
-      minChars: 1,
-      items: proveedoresConocidos,
-      display: function(p) {
-        return '<strong>' + escHtml(p.proveedor) + '</strong>' + (p.nit ? ' <span class="ac-sub">NIT ' + escHtml(p.nit) + '</span>' : '');
-      },
-      match: function(p, val) { return p.proveedor.toLowerCase().indexOf(val) >= 0; },
-      onSelect: function(p) {
-        var i = Number(inp.dataset.line);
-        inp.value = p.proveedor;
-        var nd = splitNitDv(p.nit);
-        var nitInput = document.querySelector('.mant-g-nit[data-line="' + i + '"]');
-        var dvInput = document.querySelector('.mant-g-dv[data-line="' + i + '"]');
-        if (nitInput) nitInput.value = nd.nit;
-        if (dvInput) dvInput.value = nd.dv;
-        readMantGastos();
-      }
-    }));
+    formMantProveedorACs.push(initAutocomplete(inp, proveedorAcOptsMant(function(p) {
+      inp.value = p.proveedor;
+      var nd = splitNitDv(p.nit);
+      var pos = '[data-p="' + inp.dataset.p + '"][data-line="' + inp.dataset.line + '"]';
+      var nitInput = document.querySelector('.mant-g-nit' + pos);
+      var dvInput = document.querySelector('.mant-g-dv' + pos);
+      if (nitInput) nitInput.value = nd.nit;
+      if (dvInput) dvInput.value = nd.dv;
+      readMantPlacas();
+    })));
   });
-}
-
-function addMantGasto() {
-  formGastosMant.push({ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' });
-  renderMantGastos();
-  var lastInput = document.querySelector('.mant-g-concepto[data-line="' + (formGastosMant.length - 1) + '"]');
-  if (lastInput) lastInput.focus();
-}
-
-function removeMantGasto(i) {
-  formGastosMant.splice(i, 1);
-  renderMantGastos();
   recalcTotalsMant();
+}
+
+function addMantPlaca() {
+  readMantPlacas();
+  formPlacasMant.push(nuevoBloqueMant());
+  renderMantPlacas();
+  var sels = document.querySelectorAll('.mant-p-select');
+  if (sels.length) sels[sels.length - 1].focus();
+}
+
+function removeMantPlaca(p) {
+  var b = formPlacasMant[p];
+  if (!b) return;
+  var conValor = b.Gastos.some(function(g) { return Number(g.Valor) > 0; });
+  if (conValor && !confirm('¿Quitar la placa ' + (placaDeBloqueMant(b) || (p + 1)) + ' con sus líneas de gasto?')) return;
+  formPlacasMant.splice(p, 1);
+  if (!formPlacasMant.length) formPlacasMant = [nuevoBloqueMant()];
+  renderMantPlacas();
+}
+
+function onMantPlacaSelectChange(sel) {
+  var b = formPlacasMant[Number(sel.dataset.p)];
+  if (!b) return;
+  b.Sel = sel.value;
+  if (b.Sel !== 'Otro') b.Otro = '';
+  precargarKmMant(b);
+  renderMantPlacas();
+  if (b.Sel === 'Otro') {
+    var otro = document.querySelector('.mant-p-otro[data-p="' + sel.dataset.p + '"]');
+    if (otro) otro.focus();
+  }
+}
+
+// Una placa escrita a mano que resulta ser piloto de kilometraje (o deja de
+// serlo) muestra/oculta su bloque de km. Solo se redibuja si eso cambió: un
+// redibujo al salir del campo se tragaría el clic en el botón que sigue.
+function onMantPlacaOtroChange(inp) {
+  var p = Number(inp.dataset.p);
+  var b = formPlacasMant[p];
+  if (!b) return;
+  b.Otro = inp.value;
+  var teniaKm = !!document.querySelector('.mant-p-km[data-p="' + p + '"]');
+  if (teniaKm !== esPilotoMant(placaDeBloqueMant(b))) {
+    precargarKmMant(b);
+    renderMantPlacas();
+  }
+}
+
+function addMantGasto(p) {
+  readMantPlacas();
+  var b = formPlacasMant[p];
+  if (!b) return;
+  b.Gastos.push(nuevaLineaMant());
+  renderMantPlacas();
+  var last = document.querySelector('.mant-g-concepto[data-p="' + p + '"][data-line="' + (b.Gastos.length - 1) + '"]');
+  if (last) last.focus();
+}
+
+function removeMantGasto(p, i) {
+  var b = formPlacasMant[p];
+  if (!b) return;
+  b.Gastos.splice(i, 1);
+  renderMantPlacas();
 }
 
 function onConceptoSelectChangeMant(sel) {
-  var i = Number(sel.dataset.line);
-  if (!formGastosMant[i]) return;
-  formGastosMant[i].Concepto = (sel.value === 'Otros') ? '' : sel.value;
-  renderMantGastos();
-  recalcTotalsMant();
+  var g = gastoMantDe(sel);
+  if (!g) return;
+  g.Concepto = (sel.value === 'Otros') ? '' : sel.value;
+  renderMantPlacas();
   if (sel.value === 'Otros') {
-    var det = document.querySelector('.mant-g-concepto-otro[data-line="' + i + '"]');
+    var det = document.querySelector('.mant-g-concepto-otro[data-p="' + sel.dataset.p + '"][data-line="' + sel.dataset.line + '"]');
     if (det) det.focus();
   }
 }
 
-function readMantGastos() {
-  document.querySelectorAll('.mant-g-concepto-otro').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].Concepto = inp.value; });
-  document.querySelectorAll('.mant-g-proveedor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].Proveedor = inp.value; });
-  document.querySelectorAll('.mant-g-nit').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].NIT = inp.value; });
-  document.querySelectorAll('.mant-g-dv').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].DV = inp.value; });
-  document.querySelectorAll('.mant-g-valor').forEach(function(inp) { var i = Number(inp.dataset.line); if (formGastosMant[i]) formGastosMant[i].Valor = Number(inp.value) || 0; });
+function readMantPlacas() {
+  document.querySelectorAll('.mant-p-otro').forEach(function(inp) { var b = formPlacasMant[Number(inp.dataset.p)]; if (b) b.Otro = inp.value; });
+  document.querySelectorAll('.mant-p-km').forEach(function(inp) { var b = formPlacasMant[Number(inp.dataset.p)]; if (b) b.Km = inp.value; });
+  document.querySelectorAll('.mant-g-concepto-otro').forEach(function(inp) { var g = gastoMantDe(inp); if (g) g.Concepto = inp.value; });
+  document.querySelectorAll('.mant-g-proveedor').forEach(function(inp) { var g = gastoMantDe(inp); if (g) g.Proveedor = inp.value; });
+  document.querySelectorAll('.mant-g-nit').forEach(function(inp) { var g = gastoMantDe(inp); if (g) g.NIT = inp.value; });
+  document.querySelectorAll('.mant-g-dv').forEach(function(inp) { var g = gastoMantDe(inp); if (g) g.DV = inp.value; });
+  document.querySelectorAll('.mant-g-valor').forEach(function(inp) { var g = gastoMantDe(inp); if (g) g.Valor = Number(inp.value) || 0; });
+  if (!formMantProvMulti) {
+    formMantProv.Proveedor = document.getElementById('mant-proveedor').value;
+    formMantProv.NIT = document.getElementById('mant-nit').value;
+    formMantProv.DV = document.getElementById('mant-dv').value;
+  }
   recalcTotalsMant();
 }
 
 function recalcTotalsMant() {
-  var totalGastos = formGastosMant.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
+  var totalGastos = 0;
+  formPlacasMant.forEach(function(b, p) {
+    var sub = b.Gastos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
+    totalGastos += sub;
+    var subEl = document.querySelector('.mant-p-sub[data-p="' + p + '"]');
+    if (subEl) subEl.textContent = fmtMoney(sub);
+  });
   var totalReparto = formEmpresasMant.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
   document.getElementById('mant-total-gastos').textContent = fmtMoney(totalGastos);
   document.getElementById('mant-total-reparto').textContent = fmtMoney(totalReparto);
@@ -3334,30 +3569,34 @@ function openFormMant(id) {
     document.getElementById('form-mant-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
     document.getElementById('mant-fecha').value = (leg.Fecha || '').slice(0, 10);
     setResponsableFieldMant(leg.Responsable || '');
-    setPlacaFieldMant(leg.Placa || '');
-    document.getElementById('mant-km-actual').value = leg.Km_Llegada != null ? leg.Km_Llegada : '';
     document.getElementById('mant-anticipo').value = leg.Anticipo_Entregado || '';
     document.getElementById('mant-observaciones').value = leg.Observaciones || '';
-    formGastosMant = itemsOf(editingLegId).map(function(it) {
-      var nd = splitNitDv(it.NIT);
-      return { Concepto: it.Concepto, Proveedor: it.Proveedor, NIT: nd.nit, DV: nd.dv, Valor: it.Valor };
-    });
+    var its = itemsOf(editingLegId);
+    formPlacasMant = bloquesDeLegMant(leg, its);
+    // Un solo proveedor si todas las líneas comparten proveedor y NIT; si no
+    // (legalizaciones hechas con un proveedor por línea), se conserva así.
+    var provs = {};
+    its.forEach(function(it) { provs[(it.Proveedor || '').trim() + '|' + (it.NIT || '').trim()] = true; });
+    formMantProvMulti = Object.keys(provs).length > 1;
+    var nd0 = splitNitDv(its.length ? its[0].NIT : '');
+    formMantProv = { Proveedor: its.length ? (its[0].Proveedor || '') : '', NIT: nd0.nit, DV: nd0.dv };
     formEmpresasMant = empresasOf(editingLegId).map(function(e) { return { Empresa: e.Empresa, Monto: e.Monto }; });
   } else {
     document.getElementById('form-mant-titulo').textContent = 'Nueva legalización de mantenimiento';
     document.getElementById('mant-fecha').value = today();
     setResponsableFieldMant('');
-    setPlacaFieldMant('');
-    document.getElementById('mant-km-actual').value = '';
     document.getElementById('mant-anticipo').value = '';
     document.getElementById('mant-observaciones').value = '';
-    formGastosMant = [{ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' }];
+    formPlacasMant = [nuevoBloqueMant()];
+    formMantProvMulti = false;
+    formMantProv = { Proveedor: '', NIT: '', DV: '' };
     formEmpresasMant = [{ Empresa: '', Monto: '' }];
   }
-  if (!formGastosMant.length) formGastosMant = [{ Concepto: MANTENIMIENTO_DETALLE_FIJOS[0], Proveedor: '', NIT: '', DV: '', Valor: '' }];
+  if (!formPlacasMant.length) formPlacasMant = [nuevoBloqueMant()];
   if (!formEmpresasMant.length) formEmpresasMant = [{ Empresa: '', Monto: '' }];
-  updateKmWrapVisibilityMant();
-  renderMantGastos();
+  initProveedorMantTop();
+  syncProveedorMantUI();
+  renderMantPlacas();
   renderMantEmpresas();
   recalcTotalsMant();
   document.getElementById('form-mant-overlay').classList.add('show');
@@ -3367,57 +3606,76 @@ function closeFormMant() {
   document.getElementById('form-mant-overlay').classList.remove('show');
 }
 
-function readHeaderFormMant() {
-  var placa = readPlacaMant();
-  var esPilotoKm = KM_PILOTO_PLACAS.indexOf(placa) >= 0;
-  return {
-    Fecha: document.getElementById('mant-fecha').value || today(),
-    Tipo: 'Mantenimiento',
-    Responsable: readResponsableMant(),
-    Placa: placa,
-    Recorrido_Ruta: '',
-    No_Personas: null,
-    Fecha_Salida: null,
-    Fecha_Llegada: null,
-    // Mantenimiento no es un viaje (sin salida/llegada): reutiliza Km_Llegada
-    // como el kilometraje puntual del vehículo al momento del mantenimiento.
-    Km_Salida: null,
-    Km_Llegada: esPilotoKm ? (document.getElementById('mant-km-actual').value || null) : null,
-    Clientes: '',
-    Remisiones_Relacionadas: '',
-    Anticipo_Entregado: Number(document.getElementById('mant-anticipo').value) || 0,
-    Observaciones: document.getElementById('mant-observaciones').value.trim()
-  };
-}
-
 async function saveFormMant() {
-  readMantGastos();
+  readMantPlacas();
   readMantEmpresas();
-  var header = readHeaderFormMant();
 
-  if (!header.Responsable) { showToast('Indica el responsable', '#e67e22'); return; }
-  if (!header.Placa) { showToast('Indica la placa del vehículo', '#e67e22'); return; }
-  var gastosValidos = formGastosMant
-    .filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; })
-    .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: g.Valor }; });
-  if (!gastosValidos.length) { showToast('Agrega al menos una línea de gasto válida', '#e67e22'); return; }
+  var responsable = readResponsableMant();
+  if (!responsable) { showToast('Indica el responsable', '#e67e22'); return; }
+
+  // Un bloque por placa; cada línea válida queda con su placa y el km de esa placa.
+  var provUnico = formMantProvMulti ? null : { Proveedor: (formMantProv.Proveedor || '').trim(), NIT: joinNitDv(formMantProv.NIT, formMantProv.DV) };
+  var placas = [];
+  var items = [];
+  for (var p = 0; p < formPlacasMant.length; p++) {
+    var b = formPlacasMant[p];
+    var placa = placaDeBloqueMant(b);
+    if (!placa) { showToast('Indica la placa del vehículo' + (formPlacasMant.length > 1 ? ' ' + (p + 1) : ''), '#e67e22'); return; }
+    if (placas.indexOf(placa) >= 0) { showToast('La placa ' + placa + ' está repetida: junta sus gastos en un solo bloque', '#e67e22'); return; }
+    var validas = b.Gastos.filter(function(g) { return (g.Concepto || '').trim() && Number(g.Valor) > 0; });
+    if (!validas.length) { showToast('Agrega al menos una línea de gasto válida para la placa ' + placa, '#e67e22'); return; }
+    placas.push(placa);
+    var km = (esPilotoMant(placa) && b.Km !== '' && b.Km != null && !isNaN(Number(b.Km))) ? Number(b.Km) : null;
+    validas.forEach(function(g) {
+      items.push({
+        Concepto: g.Concepto,
+        Proveedor: provUnico ? provUnico.Proveedor : g.Proveedor,
+        NIT: provUnico ? provUnico.NIT : joinNitDv(g.NIT, g.DV),
+        Valor: g.Valor,
+        Placa: placa,
+        Km_Placa: km
+      });
+    });
+  }
   // El reparto entre empresas es opcional en Mantenimiento: sin reparto, el
   // gasto queda en "Sin reparto asignado" en la pestaña Prorrateo (como el Combustible).
   var empresasValidas = formEmpresasMant.filter(function(e) { return e.Empresa; });
 
-  var totalGastos = gastosValidos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
+  var totalGastos = items.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
   var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
   if (empresasValidas.length && totalGastos !== totalReparto) {
     if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
   }
 
-  // Alta automática de la placa en el catálogo si el usuario escribió una
+  // Alta automática de las placas en el catálogo si el usuario escribió una
   // que no existe todavía (mismo patrón que "cliente nuevo desde pedido").
-  if (header.Placa && !placaExiste(header.Placa)) {
-    await apiPost({ action: 'agregarVehiculo', Placa: header.Placa, Descripcion: '' });
+  for (var q = 0; q < placas.length; q++) {
+    if (!placaExiste(placas[q])) {
+      await apiPost({ action: 'agregarVehiculo', Placa: placas[q], Descripcion: '' });
+    }
   }
 
-  var body = { header: header, items: gastosValidos, empresas: empresasValidas };
+  // Mantenimiento no es un viaje (sin salida/llegada): la cabecera guarda las
+  // placas juntas y, solo con UNA placa, su km puntual en Km_Llegada (el km de
+  // cada placa vive en sus líneas: Km_Placa).
+  var header = {
+    Fecha: document.getElementById('mant-fecha').value || today(),
+    Tipo: 'Mantenimiento',
+    Responsable: responsable,
+    Placa: placas.join(', '),
+    Recorrido_Ruta: '',
+    No_Personas: null,
+    Fecha_Salida: null,
+    Fecha_Llegada: null,
+    Km_Salida: null,
+    Km_Llegada: placas.length === 1 ? items[0].Km_Placa : null,
+    Clientes: '',
+    Remisiones_Relacionadas: '',
+    Anticipo_Entregado: Number(document.getElementById('mant-anticipo').value) || 0,
+    Observaciones: document.getElementById('mant-observaciones').value.trim()
+  };
+
+  var body = { header: header, items: items, empresas: empresasValidas };
   var res;
   if (editingLegId) {
     body.id = editingLegId;
@@ -3719,9 +3977,17 @@ function renderVerBody(leg) {
   var excluyeVerTxt = [cobVer.comb ? 'el Combustible (' + fmtMoney(combVer) + ')' : '', cobVer.otros ? 'Otros (' + fmtMoney(otrosVer) + ')' : ''].filter(Boolean).join(' ni ');
   var descVer = repartoDescuadre(leg);
 
+  // Mantenimiento: cada línea muestra su placa (una legalización puede cubrir
+  // varios vehículos) y, con más de una, el subtotal de cada una.
+  var placasMant = esMant ? placasDeLeg(leg) : [];
   var itemsHtml = items.map(function(it) {
-    return '<tr><td>' + escHtml(it.Concepto || '') + '</td><td>' + escHtml(it.Proveedor || '') + '</td><td>' + escHtml(it.NIT || '') + '</td><td style="text-align:right">' + escHtml(fmtMoney(it.Valor)) + '</td></tr>';
-  }).join('') || '<tr><td colspan="4"><div class="no-lines">Sin líneas de gasto.</div></td></tr>';
+    return '<tr>' + (esMant ? '<td>' + escHtml(placaDeItem(it, leg) || '—') + '</td>' : '') + '<td>' + escHtml(it.Concepto || '') + '</td><td>' + escHtml(it.Proveedor || '') + '</td><td>' + escHtml(it.NIT || '') + '</td><td style="text-align:right">' + escHtml(fmtMoney(it.Valor)) + '</td></tr>';
+  }).join('') || '<tr><td colspan="' + (esMant ? 5 : 4) + '"><div class="no-lines">Sin líneas de gasto.</div></td></tr>';
+  var subPlacasHtml = placasMant.length > 1 ?
+    '<div style="margin:8px 0 0;font-size:0.84rem;color:#4a5568">Subtotal por placa: ' + placasMant.map(function(pl) {
+      var sub = items.filter(function(it) { return placaDeItem(it, leg) === pl; }).reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0);
+      return '<strong>' + escHtml(pl) + '</strong> ' + escHtml(fmtMoney(sub));
+    }).join(' · ') + '</div>' : '';
 
   var empsHtml = emps.map(function(e) {
     return '<tr><td>' + escHtml(getSigla(e.Empresa)) + '</td><td style="text-align:right">' + escHtml(fmtMoney(e.Monto)) + '</td></tr>';
@@ -3785,8 +4051,8 @@ function renderVerBody(leg) {
     '</div>' :
     esMant ?
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:0.86rem;margin-bottom:14px">' +
-      '<div><strong>Placa:</strong> ' + escHtml(leg.Placa || '—') + '</div>' +
-      (leg.Km_Llegada != null ? '<div><strong>Kilometraje registrado:</strong> ' + escHtml(Number(leg.Km_Llegada).toLocaleString('es-CO')) + ' km</div>' : '') +
+      '<div><strong>' + (placasMant.length > 1 ? 'Placas' : 'Placa') + ':</strong> ' + escHtml(placasMant.join(', ') || leg.Placa || '—') + '</div>' +
+      (kmMantTxt(leg) ? '<div><strong>Kilometraje registrado:</strong> ' + escHtml(kmMantTxt(leg)) + '</div>' : '') +
       '<div><strong>Anticipo entregado:</strong> ' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</div>' +
       '<div style="grid-column:span 3"><strong>Observaciones:</strong> ' + escHtml(leg.Observaciones || '—') + '</div>' +
     '</div>' :
@@ -3806,7 +4072,8 @@ function renderVerBody(leg) {
   document.getElementById('ver-body').innerHTML =
     infoGridHtml +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">' + (esEnv ? 'Envío' : (esMant ? 'Líneas de gasto (detalle de mantenimiento)' : 'Líneas de gasto')) + '</h3>' +
-    '<table><thead><tr><th>' + (esMant ? 'Detalle' : 'Concepto') + '</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>' +
+    '<table><thead><tr>' + (esMant ? '<th>Placa</th>' : '') + '<th>' + (esMant ? 'Detalle' : 'Concepto') + '</th><th>Proveedor</th><th>NIT</th><th style="text-align:right">Valor</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>' +
+    subPlacasHtml +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:14px 0 6px">Reparto entre empresas</h3>' +
     '<table><thead><tr><th>Empresa</th><th style="text-align:right">Monto</th></tr></thead><tbody>' + empsHtml + '</tbody></table>' +
     '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong>' +
@@ -3950,12 +4217,13 @@ function exportarPDF() {
   var esEnv = esEnvio(leg);
 
   var reparto = emps.map(function(e) { return getSigla(e.Empresa) + ': ' + fmtMoney(e.Monto); }).join('  ·  ');
+  var placasPdf = esMant ? placasDeLeg(leg) : [];
 
   var leftFields = esEnv ? [
     ['Remisiones relacionadas', leg.Remisiones_Relacionadas || '—'],
   ] : esMant ? [
     ['Responsable', leg.Responsable || ''],
-    ['Placa', leg.Placa || '—'],
+    [placasPdf.length > 1 ? 'Placas' : 'Placa', placasPdf.join(', ') || leg.Placa || '—'],
     ['Observaciones', leg.Observaciones || '—'],
   ] : [
     ['Responsable', leg.Responsable || ''],
@@ -3983,8 +4251,8 @@ function exportarPDF() {
   if (!esMant && !esEnv && leg.Km_Salida != null && leg.Km_Llegada != null) {
     rightFields.push(['Km recorridos', (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km']);
   }
-  if (esMant && leg.Km_Llegada != null) {
-    rightFields.push(['Kilometraje', Number(leg.Km_Llegada).toLocaleString('es-CO') + ' km']);
+  if (esMant && kmMantTxt(leg)) {
+    rightFields.push(['Kilometraje', kmMantTxt(leg)]);
   }
 
   // El gasto se reparte entre varias empresas del holding (ver "reparto" /
@@ -4037,9 +4305,12 @@ function exportarPDF() {
     row_page_break: 'avoid',
     qty_header: 'Valor',
     show_valores: false,
-    last_col_header: 'Observaciones',
+    // Mantenimiento: la última columna lleva la placa de cada línea (una
+    // legalización puede cubrir varios vehículos) en vez de Observaciones.
+    last_col_header: esMant ? 'Placa' : 'Observaciones',
+    last_col_texto: esMant,
     entregas: items.map(function(it) {
-      return { producto: it.Concepto, presentacion: it.Proveedor + (it.NIT ? ' (NIT ' + it.NIT + ')' : ''), cantidad: it.Valor, observaciones: '' };
+      return { producto: it.Concepto, presentacion: it.Proveedor + (it.NIT ? ' (NIT ' + it.NIT + ')' : ''), cantidad: it.Valor, observaciones: esMant ? placaDeItem(it, leg) : '' };
     }),
     left_fields: leftFields,
     right_fields: rightFields

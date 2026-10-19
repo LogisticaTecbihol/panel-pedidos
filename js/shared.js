@@ -2206,7 +2206,7 @@ async function _apiPostCore(body) {
       if (resLG.error) return { ok: false, error: resLG.error.message };
       var idLG = resLG.data.id;
       var rowsItemsLG = itemsLG.map(function(it) {
-        return { Legalizacion_Id: idLG, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, Galones: (it.Galones != null && it.Galones !== '') ? Number(it.Galones) : null, creado_por: _uid() };
+        return { Legalizacion_Id: idLG, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, Galones: (it.Galones != null && it.Galones !== '') ? Number(it.Galones) : null, Placa: it.Placa || '', Km_Placa: (it.Km_Placa != null && it.Km_Placa !== '') ? Number(it.Km_Placa) : null, creado_por: _uid() };
       });
       var resItemsLG = await _sb.from('LegalizacionGastosItems').insert(rowsItemsLG);
       if (resItemsLG.error) return { ok: false, error: resItemsLG.error.message };
@@ -2251,7 +2251,7 @@ async function _apiPostCore(body) {
       var delItemsLG = await _sb.from('LegalizacionGastosItems').delete().eq('Legalizacion_Id', body.id);
       if (delItemsLG.error) return { ok: false, error: delItemsLG.error.message };
       var rowsItemsLGe = itemsLGe.map(function(it) {
-        return { Legalizacion_Id: body.id, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, Galones: (it.Galones != null && it.Galones !== '') ? Number(it.Galones) : null, creado_por: _uid() };
+        return { Legalizacion_Id: body.id, Concepto: it.Concepto || '', Proveedor: it.Proveedor || '', NIT: it.NIT || '', Valor: Number(it.Valor) || 0, Galones: (it.Galones != null && it.Galones !== '') ? Number(it.Galones) : null, Placa: it.Placa || '', Km_Placa: (it.Km_Placa != null && it.Km_Placa !== '') ? Number(it.Km_Placa) : null, creado_por: _uid() };
       });
       var resItemsLGe = await _sb.from('LegalizacionGastosItems').insert(rowsItemsLGe);
       if (resItemsLGe.error) return { ok: false, error: resItemsLGe.error.message };
