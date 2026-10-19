@@ -27,6 +27,10 @@
 //   editar       -> modifica una solicitud propia por aprobar, rechazada o aprobada (aún no entregada)
 //   listar      -> "Mis solicitudes" (las que hizo el usuario o hechas a su nombre)
 //   pendientes   -> (aprobadores) solicitudes 'Por aprobar'
+//   aprobadas    -> (aprobadores) solicitudes ya aprobadas que siguen con Mercadeo (no entregadas ni canceladas)
+//   observar     -> el solicitante, a nombre de quién se hizo o un aprobador le deja una OBSERVACIÓN a
+//                   Mercadeo sobre los requisitos de una solicitud que sigue con Mercadeo (queda en la
+//                   bitácora de la tarjeta del Tablero y avisa al equipo por campanita)
 //   aprobar      -> (aprobadores) aprueba y la manda al Tablero
 //   rechazar     -> (aprobadores) rechaza con motivo
 //   archivo_url  -> URL temporal para abrir un adjunto (aprobador, solicitante o a_nombre_de)
@@ -64,6 +68,8 @@ const ASUNTO_ETIQUETA: Record<string, string> = {
   desarrollo_marca: 'Desarrollo de marca', otros: 'Otros',
 }
 const MAX_ARCHIVOS = 5
+// Estados del Tablero en los que la solicitud sigue con Mercadeo (después ya no se modifica ni se observa).
+const ESTADOS_ABIERTOS = ['solicitada', 'confirmada', 'en_produccion', 'en_validacion']
 const MAX_PENDIENTES_POR_USUARIO = 30
 const MAX_ENVIOS_POR_HORA = 10
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -383,7 +389,9 @@ serve(async (req) => {
         for (const h of pq.historial || []) {
           hist.push(h.tipo === 'estado'
             ? { tipo: 'estado', estado: h.estado, en: h.en }
-            : { tipo: 'respuesta', texto: h.texto, por: h.por, en: h.en })
+            : h.tipo === 'observacion'
+              ? { tipo: 'observacion', texto: h.texto, por: h.por, como: h.como, en: h.en }
+              : { tipo: 'respuesta', texto: h.texto, por: h.por, en: h.en })
         }
       }
       hist.sort((a: any, b: any) => String(a.en).localeCompare(String(b.en)))
@@ -402,6 +410,12 @@ serve(async (req) => {
           r.estado_aprobacion === 'Por aprobar' || r.estado_aprobacion === 'Rechazada' ||
           (r.estado_aprobacion === 'Aprobada' && !(pq && ['entregada', 'cancelada'].includes(pq.estado)))
         ),
+        // Se le puede dejar una observación a Mercadeo mientras la solicitud siga con ella (aprobada y en el
+        // Tablero sin entregar ni cancelar): quien la hizo, a nombre de quién y los aprobadores. Igual que
+        // arriba, si el Tablero no se pudo leer se ofrece y `observar` lo vuelve a comprobar.
+        puede_observar: r.estado_aprobacion === 'Aprobada' && !!r.pqrs_tarea_id &&
+          !(pq && !ESTADOS_ABIERTOS.includes(pq.estado)) &&
+          (r.creado_por === user.id || r.a_nombre_de_id === user.id || puedeAprobar),
         asunto: r.asunto,
         asunto_otro: r.asunto_otro,
         empresas: [r.empresa],
@@ -673,6 +687,63 @@ serve(async (req) => {
           .order('numero', { ascending: true }).limit(200)
         if (t.error) throw t.error
         return json(200, { ok: true, solicitudes: (t.data || []).map((f: any) => mapFila(f, null)) })
+      }
+
+      case 'aprobadas': {
+        // Vista de aprobadores: las ya aprobadas que siguen con Mercadeo (para dejarle observaciones).
+        exigirAprobador()
+        const t = await admin.from(TABLA).select('*').eq('estado_aprobacion', 'Aprobada')
+          .order('numero', { ascending: false }).limit(200)
+        if (t.error) throw t.error
+        const filas = (t.data || []).filter((f: any) => f.pqrs_tarea_id && !f.rechazada_por_mercadeo)
+        if (!filas.length) return json(200, { ok: true, mercadeo_disponible: true, solicitudes: [] })
+
+        const porTarea = new Map<number, any>()
+        let mercadeoDisponible = true
+        try {
+          const r = await puente({ action: 'listar', request_ids: filas.map((f: any) => f.id) })
+          for (const s of r.solicitudes || []) porTarea.set(Number(s.id), s)
+        } catch (e) {
+          mercadeoDisponible = false
+          console.error('solicitud-mercadeo: no se pudo leer el Tablero:', (e as Error)?.message)
+        }
+        // Solo las que siguen abiertas en el Tablero; si no se pudo leer el Tablero se muestran todas
+        // (sin estado) y `observar` lo vuelve a comprobar.
+        const vigentes = filas
+          .map((f: any) => ({ f, pq: porTarea.get(Number(f.pqrs_tarea_id)) || null }))
+          .filter((x: any) => !mercadeoDisponible || (x.pq && ESTADOS_ABIERTOS.includes(x.pq.estado)))
+        return json(200, {
+          ok: true,
+          mercadeo_disponible: mercadeoDisponible,
+          solicitudes: vigentes.map((x: any) => mapFila(x.f, x.pq)),
+        })
+      }
+
+      case 'observar': {
+        // El solicitante, a nombre de quién se hizo o un aprobador le deja una observación a Mercadeo.
+        const id = uuid(body.id, 'id')
+        const r = await filaPorId(id)
+        if (!r) throw new Rechazo('Solicitud no encontrada', 404)
+        const esParte = r.creado_por === user.id || r.a_nombre_de_id === user.id
+        if (!esParte && !puedeAprobar) throw new Rechazo('No tienes permiso para escribirle a Mercadeo sobre esta solicitud', 403)
+        if (r.estado_aprobacion !== 'Aprobada' || !r.pqrs_tarea_id) {
+          throw new Rechazo('Solo puedes dejar observaciones en una solicitud que está con Mercadeo', 409)
+        }
+        // Se conservan los saltos de línea, pero no los espacios ni las líneas en blanco de sobra.
+        const obs = typeof body.texto === 'string'
+          ? body.texto.replace(/[ \t]+/g, ' ').replace(/ ?\r?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+          : ''
+        if (obs.length < 5) throw new Rechazo('Escribe la observación (mínimo 5 caracteres)')
+        if (obs.length > 1000) throw new Rechazo('La observación no puede superar 1000 caracteres')
+        await puente({
+          action: 'observar',
+          request_id: r.id,
+          tarea_id: r.pqrs_tarea_id,
+          como: esParte ? 'solicitante' : 'aprobador',
+          por: { id: user.id, nombre: nombreUsuario },
+          texto: obs,
+        })
+        return json(200, { ok: true })
       }
 
       case 'aprobar': {

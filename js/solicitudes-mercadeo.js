@@ -8,6 +8,9 @@
 // El solicitante puede editar su solicitud mientras Mercadeo no la haya entregado ni cancelado:
 // por aprobar -> se actualiza y sigue por aprobar; rechazada -> se corrige y se reenvía; ya
 // aprobada -> sale del Tablero y vuelve a aprobación (llega de nuevo al aprobarse).
+// Mientras la solicitud siga con Mercadeo, quien la hizo, a nombre de quién se hizo o un aprobador
+// puede dejarle una OBSERVACIÓN (aclaraciones sobre requisitos); queda en la bitácora de la tarjeta
+// del Tablero y avisa al equipo. Los aprobadores las encuentran en "Aprobadas con Mercadeo".
 //
 // Todo pasa por la Edge Function `solicitud-mercadeo` (sesión, permiso y empresas). Los
 // adjuntos suben directo al Storage de pqrs con URLs firmadas que entrega la función
@@ -72,7 +75,9 @@ var _sm = {
   enviando: false,
   lista: [],          // Mis solicitudes
   pend: [],           // por aprobar (aprobadores)
-  detalle: null,      // { origen: 'mis'|'pend', idx }
+  apr: [],            // aprobadas que siguen con Mercadeo (aprobadores)
+  detalle: null,      // { origen: 'mis'|'pend'|'apr', idx }
+  observando: false,  // candado anti doble clic al enviar una observación
   rechazando: null,   // solicitud que se está rechazando
   pqrs: null
 };
@@ -568,7 +573,7 @@ function smCambiarTab(cual) {
     smEl('sm-tab-' + k).classList.toggle('active', k === cual);
   });
   if (cual === 'mis') smCargarLista();
-  if (cual === 'aprobar') smCargarPendientes();
+  if (cual === 'aprobar') { smCargarPendientes(); smCargarAprobadas(); }
 }
 
 // ── Utilidades de pintado ──
@@ -612,7 +617,8 @@ function smRenderLista() {
       '<td>' + escHtml(comprometida) + '</td>' +
       '<td>' + smBadgesEstado(s) + '</td>' +
       '<td><button class="btn-ver" type="button" data-sm-ver="mis:' + i + '">Ver</button>' +
-      (s.puede_editar ? ' <button class="btn-ver" type="button" style="background:#b7791f" data-sm-editar="' + i + '">' + smTextoEditar(s) + '</button>' : '') +
+      (s.puede_observar ? ' <button class="btn-ver" type="button" style="background:#2c7a7b" title="Dejarle una observación a Mercadeo" data-sm-ver="mis:' + i + ':obs">💬 Observación</button>' : '') +
+      (s.puede_editar ?' <button class="btn-ver" type="button" style="background:#b7791f" data-sm-editar="' + i + '">' + smTextoEditar(s) + '</button>' : '') +
       '</td></tr>';
   }).join('');
 }
@@ -654,6 +660,43 @@ function smRenderPendientes() {
   }).join('');
 }
 
+// Aprobadas que siguen con Mercadeo: el aprobador las abre para dejarle observaciones.
+async function smCargarAprobadas() {
+  var tbody = smEl('sm-lista-apr');
+  tbody.innerHTML = '<tr><td colspan="9" class="empty">Cargando…</td></tr>';
+  try {
+    var r = await smInvocar({ action: 'aprobadas' });
+    _sm.apr = r.solicitudes || [];
+    smEl('sm-aviso-apr').style.display = r.mercadeo_disponible === false ? '' : 'none';
+    smRenderAprobadas();
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No se pudieron cargar las aprobadas: ' + escHtml(e.message) + '</td></tr>';
+  }
+}
+
+function smRenderAprobadas() {
+  var tbody = smEl('sm-lista-apr');
+  smEl('sm-row-ct-apr').textContent = '(' + _sm.apr.length + ')';
+  if (!_sm.apr.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay solicitudes aprobadas con Mercadeo en este momento.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _sm.apr.map(function (s, i) {
+    return '<tr>' +
+      '<td>' + escHtml(smRef(s)) + '</td>' +
+      '<td>' + escHtml(s.fecha_aprobacion ? smFmtFechaHora(s.fecha_aprobacion) : '—') + '</td>' +
+      '<td>' + escHtml(s.solicitante || '—') + '</td>' +
+      '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
+      '<td>' + escHtml(smAsuntoTexto(s)) + '</td>' +
+      '<td>' + smEmpresaChips(s.empresas) + '</td>' +
+      '<td>' + escHtml(s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir') + '</td>' +
+      '<td>' + (s.estado ? '<span class="badge ' + smEstadoDe(s.estado).cls + '">' + escHtml(smEstadoDe(s.estado).t) + '</span>' : '—') + '</td>' +
+      '<td><button class="btn-ver" type="button" data-sm-ver="apr:' + i + '">Ver</button> ' +
+      '<button class="btn-ver" type="button" style="background:#2c7a7b" title="Dejarle una observación a Mercadeo" data-sm-ver="apr:' + i + ':obs">💬 Observación</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
 async function smAprobar(i) {
   var s = _sm.pend[i];
   if (!s) return;
@@ -666,6 +709,7 @@ async function smAprobar(i) {
   }
   smCerrarDetalle();
   await smCargarPendientes();
+  smCargarAprobadas();
 }
 
 function smPedirRechazo(i) {
@@ -716,9 +760,12 @@ var SM_TIPOS_HIST = {
   estado:       function (h) { return 'En Mercadeo: <strong>' + escHtml(smEstadoDe(h.estado).t) + '</strong>'; }
 };
 
-function smVerDetalle(origen, i) {
-  var lista = origen === 'pend' ? _sm.pend : _sm.lista;
-  var s = lista[i];
+function smListaDe(origen) {
+  return origen === 'pend' ? _sm.pend : origen === 'apr' ? _sm.apr : _sm.lista;
+}
+
+function smVerDetalle(origen, i, enfocarObs) {
+  var s = smListaDe(origen)[i];
   if (!s) return;
   _sm.detalle = { origen: origen, idx: i };
   smEl('sm-det-titulo').textContent = 'Solicitud ' + smRef(s) + ' — ' + smAsuntoTexto(s);
@@ -729,6 +776,11 @@ function smVerDetalle(origen, i) {
     if (h.tipo === 'respuesta') {
       return '<li class="resp"><div>📣 ' + escHtml(h.texto) + '</div>' +
         '<div class="meta">' + escHtml(h.por || 'Mercadeo') + ' · ' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
+    }
+    if (h.tipo === 'observacion') {
+      return '<li class="obs"><div>💬 <strong>Observación ' + (h.como === 'aprobador' ? 'del aprobador' : 'del solicitante') + ' a Mercadeo:</strong> ' +
+        '<span style="white-space:pre-wrap">' + escHtml(h.texto) + '</span></div>' +
+        '<div class="meta">' + escHtml(h.por || '—') + ' · ' + escHtml(smFmtFechaHora(h.en)) + '</div></li>';
     }
     var f = SM_TIPOS_HIST[h.tipo];
     return '<li' + (h.tipo === 'rechazo' || h.tipo === 'rechazo_mercadeo' ? ' style="border-left-color:#c0392b"' : '') + '><div>' + (f ? f(h) : escHtml(h.tipo)) + '</div>' +
@@ -769,22 +821,77 @@ function smVerDetalle(origen, i) {
     '</div>' +
     '<h4>Descripción</h4><div style="white-space:pre-wrap;font-size:0.88rem">' + escHtml(s.descripcion) + '</div>' +
     '<h4>Archivos enviados</h4>' + (adjuntos ? '<ul style="margin:0;padding-left:18px">' + adjuntos + '</ul>' : '<div class="sm-hint">Sin archivos.</div>') +
-    '<h4>Seguimiento</h4>' + (historial ? '<ul class="sm-hist">' + historial + '</ul>' : '<div class="sm-hint">Sin novedades.</div>');
+    '<h4>Seguimiento</h4>' + (historial ? '<ul class="sm-hist">' + historial + '</ul>' : '<div class="sm-hint">Sin novedades.</div>') +
+    (s.puede_observar && origen !== 'pend' ? smObservacionHtml() : '');
 
   // Acciones según quién mira y en qué estado está
   var acc = '';
   if (origen === 'pend') {
     acc += '<button class="btn-confirm" type="button" style="background:#27ae60" data-sm-aprobar="' + i + '">✅ Aprobar</button> ' +
       '<button class="btn-confirm" type="button" style="background:#c0392b" data-sm-rechazar="' + i + '">❌ Rechazar</button>';
-  } else if (s.puede_editar) {
+  } else if (origen === 'mis' && s.puede_editar) {
     acc += '<button class="btn-confirm" type="button" style="background:#b7791f" data-sm-editar="' + i + '">' + smTextoEditar(s) + '</button>';
   }
   smEl('sm-det-acciones').innerHTML = acc;
   smEl('sm-overlay').classList.add('show');
+  if (enfocarObs && smEl('sm-obs-txt')) {
+    var box = smEl('sm-obs-box');
+    if (box && box.scrollIntoView) box.scrollIntoView({ block: 'center' });
+    smEl('sm-obs-txt').focus();
+  }
+}
+
+// Campo para dejarle una observación a Mercadeo (solicitudes que siguen con ella).
+function smObservacionHtml() {
+  return '<div id="sm-obs-box" class="sm-obs-box">' +
+    '<h4 style="margin-top:0">💬 Observación para Mercadeo</h4>' +
+    '<div class="sm-hint" style="margin:0 0 8px">Si Mercadeo actualizó la solicitud o necesitas aclarar o ajustar lo que pediste, escríbeselo aquí. ' +
+    'Queda en su Tablero y reciben un aviso. Puedes enviar varias; las anteriores no se borran.</div>' +
+    '<textarea class="ef" id="sm-obs-txt" rows="3" maxlength="1000" placeholder="Ej.: el logo debe ir en la esquina superior derecha y los colores son los del portafolio 2026…"></textarea>' +
+    '<div class="sm-counter"><span id="sm-obs-ct">0</span> / 1000</div>' +
+    '<button class="btn-confirm" id="sm-obs-enviar" type="button" style="background:#2c7a7b;margin-top:6px" data-sm-obs-enviar="1">💬 Enviar a Mercadeo</button>' +
+    '</div>';
+}
+
+// Vuelve a cargar la lista de donde se abrió el detalle y lo reabre con lo nuevo (o lo cierra si ya no existe).
+async function smRefrescarDetalle(origen, id) {
+  if (origen === 'apr') await smCargarAprobadas(); else await smCargarLista();
+  var lista = smListaDe(origen);
+  for (var k = 0; k < lista.length; k++) {
+    if (lista[k].id === id) { smVerDetalle(origen, k); return; }
+  }
+  smCerrarDetalle();
+}
+
+async function smEnviarObservacion() {
+  if (_sm.observando) return;                      // candado anti doble clic
+  var det = _sm.detalle;
+  var s = det ? smListaDe(det.origen)[det.idx] : null;
+  if (!s) return;
+  var txt = smEl('sm-obs-txt').value.trim();
+  if (txt.length < 5) { showToast('Escribe la observación (mínimo 5 caracteres)', '#e74c3c'); return; }
+  if (txt.length > 1000) { showToast('La observación no puede superar 1000 caracteres', '#e74c3c'); return; }
+  _sm.observando = true;
+  var btn = smEl('sm-obs-enviar');
+  btn.disabled = true;
+  btn.textContent = 'Enviando…';
+  var enviada = false;
+  try {
+    await smInvocar({ action: 'observar', id: s.id, texto: txt });
+    enviada = true;
+    showToast('✅ Observación enviada a Mercadeo (' + smRef(s) + ')', '#27ae60');
+  } catch (e) {
+    showToast(e.message, '#e74c3c');            // el texto escrito se conserva para reintentar
+    btn.disabled = false;
+    btn.textContent = '💬 Enviar a Mercadeo';
+  } finally {
+    _sm.observando = false;
+  }
+  if (enviada) await smRefrescarDetalle(det.origen, s.id);
 }
 
 async function smAbrirAdjunto(origen, i, k) {
-  var s = (origen === 'pend' ? _sm.pend : _sm.lista)[i];
+  var s = smListaDe(origen)[i];
   if (!s) return;
   // Se abre la pestaña de inmediato (evita el bloqueo de ventanas) y se completa con la URL firmada.
   var w = window.open('', '_blank');
@@ -820,9 +927,10 @@ document.addEventListener('click', function (e) {
   var ver = t.closest('[data-sm-ver]');
   if (ver) {
     var p = ver.getAttribute('data-sm-ver').split(':');
-    smVerDetalle(p[0], Number(p[1]));
+    smVerDetalle(p[0], Number(p[1]), p[2] === 'obs');
     return;
   }
+  if (t.closest('[data-sm-obs-enviar]')) { smEnviarObservacion(); return; }
   var adj = t.closest('[data-sm-adj]');
   if (adj) {
     var a = adj.getAttribute('data-sm-adj').split(':');
@@ -841,7 +949,11 @@ document.addEventListener('DOMContentLoaded', function () {
   smEl('sm-enviar').addEventListener('click', smEnviar);
   smEl('sm-limpiar').addEventListener('click', function () { if (!_sm.enviando) smResetForm(); });
   smEl('sm-refrescar').addEventListener('click', smCargarLista);
-  smEl('sm-refrescar-aprobar').addEventListener('click', smCargarPendientes);
+  smEl('sm-refrescar-aprobar').addEventListener('click', function () { smCargarPendientes(); smCargarAprobadas(); });
+  // El detalle se vuelve a pintar cada vez: el contador de la observación se escucha desde el documento.
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'sm-obs-txt') smEl('sm-obs-ct').textContent = e.target.value.length;
+  });
   smEl('sm-det-cerrar').addEventListener('click', smCerrarDetalle);
   smEl('sm-det-cerrar2').addEventListener('click', smCerrarDetalle);
   smEl('sm-overlay').addEventListener('click', function (e) { if (isBackdropClick(e)) smCerrarDetalle(); });
