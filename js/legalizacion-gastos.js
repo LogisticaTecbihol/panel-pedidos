@@ -95,6 +95,17 @@ var remisionProductoMap = {};
 // de la pestaña sigue con remisionProductoMap, sin cambios.
 var remisionProductoMapReparto = {};
 
+// Mapas y legalizaciones COMPLETOS, solo para la pestaña Prorrateo. Un usuario
+// restringido por empresa o rol (ej. 'mercadeo', que ni lee Pedidos) recibe los
+// mapas recortados por RLS y su prorrateo no cuadra con el del admin; la RPC
+// get_prorrateo_legalizacion_fuentes (ver LegProrrateo.cargarFuentesCompletas) trae
+// todo y la pantalla solo le muestra sus empresas. null = usar los mapas de arriba
+// (admin/cartera, o la RPC falló). Validar remisiones y "Calcular reparto" siguen
+// con los mapas de siempre.
+var prorrateoMapa = null;
+var prorrateoMapaReparto = null;
+var prorrateoGrupo = null; // { legs, items, empresas } de TODAS las legalizaciones
+
 // Remisiones externas que NO están en el sistema: las de Chia Abago (proveedor)
 // y las de materias primas de la planta de producción. Se registran desde el
 // formulario (ventana "Remisión externa") en RemisionesExternas y sus líneas
@@ -183,6 +194,19 @@ var ABAGO_CATALOGO = (function() {
 // en registros viejos, un solo código sin "|"). Mismo parseo que kardex.js.
 function _parseRemisionesField(remStr) { return LegProrrateo.parseRemisionesField(remStr); }
 
+// admin y cartera ven todas las empresas (mismo criterio de AUTH.hasCompany): con
+// ellos los datos de siempre ya están completos y no hace falta la RPC.
+function _veTodasLasEmpresas() {
+  var p = (typeof AUTH !== 'undefined' && AUTH.getProfile) ? AUTH.getProfile() : null;
+  return !!(p && (p.rol === 'admin' || p.rol === 'cartera'));
+}
+
+// ¿Esta empresa (sigla) es una de las del usuario? En las tablas de Prorrateo un
+// usuario restringido solo ve las suyas aunque el cálculo use todas las empresas.
+function _empresaDelUsuario(emp) {
+  return typeof AUTH === 'undefined' || !AUTH.hasCompany || AUTH.hasCompany(emp);
+}
+
 async function loadClientesConRemision() {
   try {
     var results = await Promise.all([
@@ -192,7 +216,9 @@ async function loadClientesConRemision() {
       apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
       apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
-      apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
+      apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; }),
+      // Fuentes sin recorte por empresa/rol, solo para el Prorrateo (null si falla).
+      _veTodasLasEmpresas() ? Promise.resolve(null) : LegProrrateo.cargarFuentesCompletas(_sb)
     ]);
     // El armado de los mapas remisión → productos vive en
     // js/legalizacion-prorrateo.js (compartido con el Dashboard).
@@ -206,6 +232,18 @@ async function loadClientesConRemision() {
     remisionClienteMap = m.remMap;
     remisionProductoMap = m.prodMap;
     remisionProductoMapReparto = m.repMap;
+    var completas = results[7];
+    if (completas) {
+      var mp = LegProrrateo.construirMapas({
+        pedidos: completas.pedidos, ingresos: completas.ingresos, muestras: completas.muestras, devoluciones: completas.devoluciones,
+        ext: results[4], extItems: results[5], cambios: completas.cambios
+      });
+      prorrateoMapa = mp.prodMap;
+      prorrateoMapaReparto = mp.repMap;
+      prorrateoGrupo = completas.grupo;
+    } else {
+      prorrateoMapa = prorrateoMapaReparto = prorrateoGrupo = null;
+    }
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
     renderRemisionesExternasTab();
   } catch (e) {
@@ -1057,18 +1095,39 @@ function totalGastosOtrosOf(legId) {
 // compartido con la pestaña "Legalización de gastos" del Dashboard para que las
 // dos pantallas muestren exactamente las mismas cifras. Aquí solo se le pasan los
 // datos cargados y los filtros propios de la pestaña (#pf-emp/#pf-desde/#pf-hasta).
+function _filtrosProrrateo() {
+  return {
+    fEmp: document.getElementById('pf-emp').value,
+    fDesde: document.getElementById('pf-desde').value,
+    fHasta: document.getElementById('pf-hasta').value
+  };
+}
+
+// Las legalizaciones que el usuario ve (RLS) con los mapas completos de remisiones
+// (prorrateoMapa; los de siempre si no hay).
 function calcularProrrateoGastos() {
   return LegProrrateo.calcular({
     legs: legs,
     items: legItems,
     empresas: legEmpresas,
-    mapa: remisionProductoMap,
-    mapaReparto: remisionProductoMapReparto
-  }, {
-    fEmp: document.getElementById('pf-emp').value,
-    fDesde: document.getElementById('pf-desde').value,
-    fHasta: document.getElementById('pf-hasta').value
-  });
+    mapa: prorrateoMapa || remisionProductoMap,
+    mapaReparto: prorrateoMapaReparto || remisionProductoMapReparto
+  }, _filtrosProrrateo());
+}
+
+// El mismo cálculo sobre TODAS las legalizaciones: el monto y el % de una empresa
+// salen iguales para cualquier usuario (el reparto de un viaje depende de las demás
+// empresas y el % del total del grupo). Sin `prorrateoGrupo` (admin/cartera, o la
+// RPC falló) es el cálculo de siempre. Va siempre con _empresaDelUsuario al mostrarlo.
+function calcularProrrateoGrupo(calc) {
+  if (!prorrateoGrupo) return calc || calcularProrrateoGastos();
+  return LegProrrateo.calcular({
+    legs: prorrateoGrupo.legs,
+    items: prorrateoGrupo.items,
+    empresas: prorrateoGrupo.empresas,
+    mapa: prorrateoMapa,
+    mapaReparto: prorrateoMapaReparto
+  }, _filtrosProrrateo());
 }
 
 // Litros/kilos con 2 decimales máx. (igual convención que _litFmt de
@@ -1132,13 +1191,14 @@ function lgProrrateoTable(rows, headerLabel) {
 function renderProrrateoGastos() {
   updateStats(); // el rango Desde/Hasta también afecta los indicadores de arriba
   var calc = calcularProrrateoGastos();
+  var grupo = calcularProrrateoGrupo(calc); // todas las legalizaciones: monto y % de cada empresa como los ve el admin
   renderResumenProrrateo(calc);
   renderCombustiblePorEmpresa(calc);
   renderMantenimientoPorEmpresa(calc);
   renderOtrosPorEmpresa(calc);
   renderSinIdentificarPorEmpresa(calc);
-  renderGastoPorProducto(calc);
-  renderGastoPorEmpresa(calc);
+  renderGastoPorProducto(grupo);
+  renderGastoPorEmpresa(grupo);
 }
 
 // Gastos que no se prorratean por producto (Combustible, Mantenimiento) se
@@ -1224,7 +1284,7 @@ function renderResumenProrrateo(calc) {
   Object.keys(calc.porEmpresaLitros).forEach(function(e) { empSet[e] = true; });
   Object.keys(calc.porEmpresaKilos).forEach(function(e) { empSet[e] = true; });
   Object.keys(calc.porEmpresaUnidades).forEach(function(e) { empSet[e] = true; });
-  var empresas = Object.keys(empSet).sort(function(a, b) {
+  var empresas = Object.keys(empSet).filter(_empresaDelUsuario).sort(function(a, b) {
     return (calc.porEmpresaLegs[b] ? Object.keys(calc.porEmpresaLegs[b]).length : 0) -
            (calc.porEmpresaLegs[a] ? Object.keys(calc.porEmpresaLegs[a]).length : 0);
   });
@@ -1290,17 +1350,20 @@ function clearProrrateoFiltros() {
 // reparto de ese concepto por empresa (más "Sin reparto asignado" si aplica).
 function exportarProrrateoExcel() {
   var calc = calcularProrrateoGastos();
-  var total = calc.totalGeneral;
-  var empresas = Object.keys(calc.porEmpresa);
+  // La hoja "Prorrateo" sale del cálculo sobre todas las legalizaciones (como la
+  // tabla en pantalla), solo con las empresas del usuario.
+  var grupo = calcularProrrateoGrupo(calc);
+  var total = grupo.totalGeneral;
+  var empresas = Object.keys(grupo.porEmpresa).filter(_empresaDelUsuario);
   if (!empresas.length && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0 && calc.otros.total <= 0) {
     showToast('No hay datos para exportar', '#e74c3c');
     return;
   }
 
   var rows = [];
-  empresas.sort(function(a, b) { return calc.porEmpresa[b] - calc.porEmpresa[a]; }).forEach(function(emp) {
-    Object.keys(calc.porEmpresaSku[emp] || {}).map(function(sku) {
-      return { sku: sku, entry: calc.porEmpresaSku[emp][sku] };
+  empresas.sort(function(a, b) { return grupo.porEmpresa[b] - grupo.porEmpresa[a]; }).forEach(function(emp) {
+    Object.keys(grupo.porEmpresaSku[emp] || {}).map(function(sku) {
+      return { sku: sku, entry: grupo.porEmpresaSku[emp][sku] };
     }).sort(function(a, b) { return b.entry.monto - a.entry.monto; }).forEach(function(x) {
       // Una fila por remisión de origen (con su tipo), para ver de cuál sale
       // cada monto del producto.
@@ -1372,32 +1435,34 @@ function exportarProrrateoExcel() {
   function sumaEmp(mapa) { return empresas.reduce(function(s, e) { return s + (mapa[e] || 0); }, 0); }
   var fEmp = document.getElementById('pf-emp').value;
   var fEmpSigla = fEmp ? getSigla(fEmp) : '';
+  // Todo de `grupo` (como la hoja "Prorrateo"): `empresas` y `total` salen de ahí,
+  // así los montos, litros y % de cada fila son del mismo cálculo.
   var rowsRes = empresas.map(function(emp) {
     return {
       'Empresa': emp,
-      'Monto': r2(calc.porEmpresa[emp]),
-      '%': total > 0 ? r2(calc.porEmpresa[emp] / total * 100) : 0,
-      'Litros movidos': r2(calc.porEmpresaLitros[emp]),
-      'Kilos movidos': r2(calc.porEmpresaKilos[emp]),
-      'Unidades movidas': r2(calc.porEmpresaUnidades[emp]),
-      '$ por litro': costoUn(calc.porEmpresaMontoLitros[emp], calc.porEmpresaLitros[emp]),
-      '$ por kilo': costoUn(calc.porEmpresaMontoKilos[emp], calc.porEmpresaKilos[emp]),
-      '$ por unidad': costoUn(calc.porEmpresaMontoUnidades[emp], calc.porEmpresaUnidades[emp]),
-      'Legalizaciones': Object.keys(calc.porEmpresaLegs[emp] || {}).length
+      'Monto': r2(grupo.porEmpresa[emp]),
+      '%': total > 0 ? r2(grupo.porEmpresa[emp] / total * 100) : 0,
+      'Litros movidos': r2(grupo.porEmpresaLitros[emp]),
+      'Kilos movidos': r2(grupo.porEmpresaKilos[emp]),
+      'Unidades movidas': r2(grupo.porEmpresaUnidades[emp]),
+      '$ por litro': costoUn(grupo.porEmpresaMontoLitros[emp], grupo.porEmpresaLitros[emp]),
+      '$ por kilo': costoUn(grupo.porEmpresaMontoKilos[emp], grupo.porEmpresaKilos[emp]),
+      '$ por unidad': costoUn(grupo.porEmpresaMontoUnidades[emp], grupo.porEmpresaUnidades[emp]),
+      'Legalizaciones': Object.keys(grupo.porEmpresaLegs[emp] || {}).length
     };
   });
-  var totLitros = sumaEmp(calc.porEmpresaLitros), totKilos = sumaEmp(calc.porEmpresaKilos), totUnid = sumaEmp(calc.porEmpresaUnidades);
+  var totLitros = sumaEmp(grupo.porEmpresaLitros), totKilos = sumaEmp(grupo.porEmpresaKilos), totUnid = sumaEmp(grupo.porEmpresaUnidades);
   rowsRes.push({
     'Empresa': 'TOTAL',
-    'Monto': r2(total),
-    '%': total > 0 ? 100 : 0,
+    'Monto': r2(empresas.reduce(function(s, e) { return s + (grupo.porEmpresa[e] || 0); }, 0)),
+    '%': total > 0 ? r2(empresas.reduce(function(s, e) { return s + (grupo.porEmpresa[e] || 0); }, 0) / total * 100) : 0,
     'Litros movidos': r2(totLitros),
     'Kilos movidos': r2(totKilos),
     'Unidades movidas': r2(totUnid),
-    '$ por litro': costoUn(sumaEmp(calc.porEmpresaMontoLitros), totLitros),
-    '$ por kilo': costoUn(sumaEmp(calc.porEmpresaMontoKilos), totKilos),
-    '$ por unidad': costoUn(sumaEmp(calc.porEmpresaMontoUnidades), totUnid),
-    'Legalizaciones': fEmpSigla ? Object.keys(calc.porEmpresaLegs[fEmpSigla] || {}).length : calc.legsPeriodoCount
+    '$ por litro': costoUn(sumaEmp(grupo.porEmpresaMontoLitros), totLitros),
+    '$ por kilo': costoUn(sumaEmp(grupo.porEmpresaMontoKilos), totKilos),
+    '$ por unidad': costoUn(sumaEmp(grupo.porEmpresaMontoUnidades), totUnid),
+    'Legalizaciones': fEmpSigla ? Object.keys(grupo.porEmpresaLegs[fEmpSigla] || {}).length : calc.legsPeriodoCount
   });
   var wsRes = XLSX.utils.json_to_sheet(rowsRes);
   wsRes['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
@@ -1434,7 +1499,12 @@ function renderGastoPorProducto(calc) {
   var box = document.getElementById('gpp-body');
   if (!box) return;
   var total = calc.totalGeneral;
-  var empresas = Object.keys(calc.porEmpresa).sort(function(a, b) { return calc.porEmpresa[b] - calc.porEmpresa[a]; });
+  // Solo las empresas del usuario (el cálculo usa todas) y, de las legalizaciones que
+  // aportan a cada producto, solo las que él puede abrir (RLS).
+  var empresas = Object.keys(calc.porEmpresa).filter(_empresaDelUsuario)
+    .sort(function(a, b) { return calc.porEmpresa[b] - calc.porEmpresa[a]; });
+  var abribles = {};
+  legs.forEach(function(l) { abribles[l.id] = true; });
 
   if (!empresas.length) {
     box.innerHTML = '<div class="empty">Sin gastos para calcular.</div>';
@@ -1446,7 +1516,7 @@ function renderGastoPorProducto(calc) {
     var pctEmp = total > 0 ? (empTotal / total * 100) : 0;
     var rows = Object.keys(calc.porEmpresaSku[emp] || {}).map(function(sku) {
       var entry = calc.porEmpresaSku[emp][sku];
-      var legs = Object.keys(entry.legs).map(function(id) {
+      var legs = Object.keys(entry.legs).filter(function(id) { return abribles[id]; }).map(function(id) {
         return { id: Number(id), consecutivo: entry.legs[id] };
       }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
       return { label: sku, value: entry.monto, legs: legs };
@@ -1476,7 +1546,8 @@ function renderGastoPorEmpresa(calc) {
 
   // "Sin identificar" no va aquí: se muestra aparte (renderSinIdentificarPorEmpresa)
   // para que no altere los % por empresa.
-  var rows = Object.keys(calc.porEmpresa).map(function(emp) {
+  // Solo las empresas del usuario; el % sigue siendo sobre el total del grupo.
+  var rows = Object.keys(calc.porEmpresa).filter(_empresaDelUsuario).map(function(emp) {
     return { label: emp, value: calc.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' };
   }).sort(function(a, b) { return b.value - a.value; });
 

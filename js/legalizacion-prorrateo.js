@@ -313,6 +313,40 @@ var LegProrrateo = (function() {
   }
 
   // ══════════════════════════════════════════════════════════════
+  // Fuentes COMPLETAS (sin recorte por empresa/rol)
+  // ──────────────────────────────────────────────────────────────
+  // Pedidos, Ingresos, Muestras, Devoluciones y Cambios tienen RLS por empresa y
+  // rol, y el prorrateo reparte el gasto de un viaje entre TODAS sus empresas:
+  // con el mapa recortado de un usuario restringido sus remisiones caen en "Sin
+  // identificar" (el rol 'mercadeo' ni lee Pedidos) o, en viajes mixtos, le
+  // toca más de lo que le corresponde. La RPC get_prorrateo_legalizacion_fuentes
+  // (SECURITY DEFINER; solo con el módulo de Legalización) entrega esas fuentes y
+  // todas las legalizaciones (concepto, valor y reparto) para calcular igual que
+  // el admin. Quien la use debe mostrar solo las empresas del usuario.
+  // `sb` = cliente Supabase. Devuelve null si falla (el llamador se queda con las
+  // fuentes recortadas de siempre); si no, objetos con la forma de apiGet() para
+  // construirMapas() más `grupo` { legs, items, empresas } (todas las legalizaciones).
+  // Los Pedidos llegan sin Cliente: sirven solo para el mapa de productos.
+  // ══════════════════════════════════════════════════════════════
+  async function cargarFuentesCompletas(sb) {
+    try {
+      var r = await sb.rpc('get_prorrateo_legalizacion_fuentes');
+      if (r.error || !r.data) return null;
+      var d = r.data;
+      return {
+        pedidos:      { ok: true, pedidos: d.pedidos || [] },
+        ingresos:     { ok: true, ingresos: d.ingresos || [] },
+        muestras:     { ok: true, muestras: d.muestras || [] },
+        devoluciones: { ok: true, devoluciones: d.devoluciones || [] },
+        cambios:      { ok: true, cambios: d.cambios || [] },
+        grupo: { legs: d.legalizaciones || [], items: d.items || [], empresas: d.empresas || [] }
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
   // Proporción de gastos por producto y por empresa (estimada)
   // ──────────────────────────────────────────────────────────────
   // Prorratea el gasto de cada viaje entre los productos de sus remisiones
@@ -655,6 +689,7 @@ var LegProrrateo = (function() {
     litKiloDeLinea: litKiloDeLinea,
     parseRemisionesField: parseRemisionesField,
     construirMapas: construirMapas,
+    cargarFuentesCompletas: cargarFuentesCompletas,
     calcular: calcular
   };
 })();
