@@ -17,6 +17,14 @@ var LegProrrateo = (function() {
   var EMPRESA_ABAGO = 'CHIA ABAGO';
   var EMPRESA_MP = 'MATERIAS PRIMAS';
 
+  // Tipo de la remisión de la que sale cada línea del Prorrateo (columna "Tipo de
+  // remisión" del Excel): las remisiones externas de materia prima y las de Chia
+  // Abago traen el suyo (`tipoRem`); todo lo que resuelve el sistema (Pedidos,
+  // Ingresos, Cambios, Muestras, Devoluciones) es producto terminado.
+  var TIPO_REM_MP = 'Materia prima';
+  var TIPO_REM_ABAGO = 'Chia Abago';
+  var TIPO_REM_PT = 'Producto terminado';
+
   // Conceptos fijos del formulario de gasto de ruta. Cualquier otro texto (lo que
   // se escribe en "Otros → Especifique…") es un gasto "Otros": no se prorratea
   // por producto ni se discrimina por empresa; va como un solo monto en su
@@ -96,7 +104,8 @@ var LegProrrateo = (function() {
     var emps = empresasDeRemisionExterna(ex);
     var cant = Number(l.Cantidad) / emps.length;
     return emps.map(function(emp) {
-      return { producto: l.Producto, presentacion: l.Presentacion, cantidad: cant, empresa: emp, unidad: l.Unidad || null, externa: true };
+      return { producto: l.Producto, presentacion: l.Presentacion, cantidad: cant, empresa: emp, unidad: l.Unidad || null, externa: true,
+               tipoRem: ex && ex.Tipo === 'MATERIA_PRIMA' ? TIPO_REM_MP : TIPO_REM_ABAGO };
     });
   }
 
@@ -391,7 +400,9 @@ var LegProrrateo = (function() {
     function esEnvio(leg) { return !!leg && leg.Tipo === 'Envio'; }
 
     var porEmpresa = {};       // empresaSigla -> monto total
-    var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo } } }
+    // rems = el mismo monto desglosado por remisión de origen:
+    // { "tipo|CODIGO" -> { codigo, tipo, monto, legs: { legId -> Consecutivo } } }
+    var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo }, rems } }
     var porEmpresaLitros = {};     // empresaSigla -> litros totales movidos (sin ponderar por monto)
     var porEmpresaKilos = {};      // empresaSigla -> kilos totales movidos (sin ponderar por monto)
     var porEmpresaUnidades = {};   // empresaSigla -> unidades totales movidas (materia prima en Unidades sin conversión)
@@ -437,9 +448,17 @@ var LegProrrateo = (function() {
         var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
         porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
         var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
-        var entry = skuMap[sku] || (skuMap[sku] = { monto: 0, legs: {} });
+        var entry = skuMap[sku] || (skuMap[sku] = { monto: 0, legs: {}, rems: {} });
         entry.monto += monto;
         entry.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+        // Misma remisión con el mismo tipo = un solo renglón (el código puede
+        // repetirse entre una remisión del sistema y una externa).
+        var tipoRem = l.tipoRem || TIPO_REM_PT;
+        var codigoRem = String(item.codigo || '').trim().toUpperCase();
+        var remKey = tipoRem + '|' + codigoRem;
+        var rem = entry.rems[remKey] || (entry.rems[remKey] = { codigo: codigoRem, tipo: tipoRem, monto: 0, legs: {} });
+        rem.monto += monto;
+        rem.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
         totalGeneral += monto;
 
         campoAcumEmp[emp] = (campoAcumEmp[emp] || 0) + l[campoUnidad];

@@ -1224,7 +1224,9 @@ function clearProrrateoFiltros() {
 
 // Exporta a Excel el mismo prorrateo que se ve en pantalla (respeta los
 // filtros de Empresa/Desde/Hasta activos): hoja "Prorrateo" con una fila por
-// producto de cada empresa (ya sin Combustible, Otros ni "Sin identificar"), y
+// producto y remisión de origen de cada empresa (con el tipo de la remisión:
+// Materia prima / Producto terminado / Chia Abago; ya sin Combustible, Otros ni
+// "Sin identificar"), y
 // hojas "Combustible", "Mantenimiento", "Otros" y "Sin identificar" con el
 // reparto de ese concepto por empresa (más "Sin reparto asignado" si aplica).
 function exportarProrrateoExcel() {
@@ -1241,14 +1243,22 @@ function exportarProrrateoExcel() {
     Object.keys(calc.porEmpresaSku[emp] || {}).map(function(sku) {
       return { sku: sku, entry: calc.porEmpresaSku[emp][sku] };
     }).sort(function(a, b) { return b.entry.monto - a.entry.monto; }).forEach(function(x) {
-      var legsTxt = Object.keys(x.entry.legs).map(function(id) { return x.entry.legs[id]; }).sort().join(', ');
-      rows.push({
-        'Empresa': emp,
-        'Producto': x.sku,
-        'Monto': Number(x.entry.monto.toFixed(2)),
-        '% del total': Number((total > 0 ? x.entry.monto / total * 100 : 0).toFixed(2)),
-        'Legalizaciones': legsTxt
-      });
+      // Una fila por remisión de origen (con su tipo), para ver de cuál sale
+      // cada monto del producto.
+      Object.keys(x.entry.rems).map(function(k) { return x.entry.rems[k]; })
+        .sort(function(a, b) { return b.monto - a.monto; })
+        .forEach(function(rem) {
+          var legsTxt = Object.keys(rem.legs).map(function(id) { return rem.legs[id]; }).sort().join(', ');
+          rows.push({
+            'Empresa': emp,
+            'Producto': x.sku,
+            'Remisión': rem.codigo,
+            'Tipo de remisión': rem.tipo,
+            'Monto': Number(rem.monto.toFixed(2)),
+            '% del total': Number((total > 0 ? rem.monto / total * 100 : 0).toFixed(2)),
+            'Legalizaciones': legsTxt
+          });
+        });
     });
   });
   // Filas de una hoja "aparte" (Combustible / Mantenimiento): una por empresa
@@ -1289,7 +1299,7 @@ function exportarProrrateoExcel() {
 
   var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+  ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Prorrateo');
   if (rowsComb.length) {
     var wsComb = XLSX.utils.json_to_sheet(rowsComb);
