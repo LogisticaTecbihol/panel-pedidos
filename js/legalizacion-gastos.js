@@ -1164,8 +1164,12 @@ function fmtHora(h) { return h ? String(h).slice(0, 5) : ''; }
 // texto plano de la primera columna (badge de sigla en "por empresa"); legs
 // (si viene) es [{id, consecutivo}] de las legalizaciones que aportaron a
 // esa fila, mostradas como enlaces a "Ver" debajo del label.
+// Usuario de una sola empresa (ver _sinCifrasProrrateo): en vez de Monto y %, columnas
+// Litros y Kilos (y Unidades si alguna fila las tiene) con r.litros / r.kilos / r.unidades.
 function lgProrrateoTable(rows, headerLabel) {
   if (!rows.length) return '<div class="empty">Sin datos.</div>';
+  var hayUnid = _sinCifrasProrrateo() && rows.some(function(r) { return r.unidades > 0; });
+  function celdaCant(v, fmt) { return '<td style="text-align:right">' + (v > 0 ? escHtml(fmt(v)) : '—') + '</td>'; }
   var body = rows.map(function(r) {
     // El km recorridos (piloto KM_PILOTO_PLACAS) se muestra como referencia
     // junto al enlace de cada legalización — no cambia el monto ni el %,
@@ -1176,15 +1180,17 @@ function lgProrrateoTable(rows, headerLabel) {
         ? ' <span style="color:#a0aec0">(' + (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km)</span>' : '';
       return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + kmTxt;
     }).join(', ') + '</div>' : '';
-    // Usuario de una sola empresa: sin las columnas Monto ni % (ver _sinCifrasProrrateo).
     return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
-      (_sinCifrasProrrateo() ? '' :
-        '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
-        '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td>') + '</tr>';
+      (_sinCifrasProrrateo()
+        ? celdaCant(r.litros, _litFmtLg) + celdaCant(r.kilos, _kiloFmtLg) + (hayUnid ? celdaCant(r.unidades, _undFmtLg) : '')
+        : '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
+          '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td>') + '</tr>';
   }).join('');
   return '<div style="overflow-x:auto"><table>' +
     '<thead><tr><th>' + escHtml(headerLabel) + '</th>' +
-      (_sinCifrasProrrateo() ? '' : '<th style="text-align:right">Monto</th><th style="text-align:right">%</th>') + '</tr></thead>' +
+      (_sinCifrasProrrateo()
+        ? '<th style="text-align:right">Litros</th><th style="text-align:right">Kilos</th>' + (hayUnid ? '<th style="text-align:right">Unidades</th>' : '')
+        : '<th style="text-align:right">Monto</th><th style="text-align:right">%</th>') + '</tr></thead>' +
     '<tbody>' + body + '</tbody></table></div>';
 }
 
@@ -1553,15 +1559,26 @@ function renderGastoPorProducto(calc) {
       var legs = Object.keys(entry.legs).filter(function(id) { return abribles[id]; }).map(function(id) {
         return { id: Number(id), consecutivo: entry.legs[id] };
       }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
-      return { label: sku, value: entry.monto, legs: legs };
-    }).sort(function(a, b) { return b.value - a.value; });
+      // Lo movido del producto: suma de lo de cada una de sus remisiones de origen.
+      var cant = { litros: 0, kilos: 0, unidades: 0 };
+      Object.keys(entry.rems || {}).forEach(function(k) {
+        cant.litros += entry.rems[k].litros; cant.kilos += entry.rems[k].kilos; cant.unidades += entry.rems[k].unidades;
+      });
+      return { label: sku, value: entry.monto, legs: legs, litros: cant.litros, kilos: cant.kilos, unidades: cant.unidades };
+    });
+    // Usuario de una sola empresa: sin montos, se ordena por lo movido (litros, luego kilos y unidades).
+    rows.sort(_sinCifrasProrrateo()
+      ? function(a, b) { return (b.litros - a.litros) || (b.kilos - a.kilos) || (b.unidades - a.unidades); }
+      : function(a, b) { return b.value - a.value; });
     rows.forEach(function(r) { r.pct = empTotal > 0 ? (r.value / empTotal * 100) : 0; });
 
     return '<div class="gpp-group">' +
       '<div class="gpp-group-head">' +
         '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' +
-        (_sinCifrasProrrateo() ? '' :
-          '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span></span>') +
+        (_sinCifrasProrrateo()
+          // Sin monto: el total de la empresa es lo que movió (litros, kilos y/o unidades).
+          ? '<span class="gpp-group-total">' + escHtml(_cantidadesTxt(calc.porEmpresaLitros[emp] || 0, calc.porEmpresaKilos[emp] || 0, calc.porEmpresaUnidades[emp] || 0)) + '</span>'
+          : '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span></span>') +
       '</div>' +
       lgProrrateoTable(rows, 'Producto') +
     '</div>';
