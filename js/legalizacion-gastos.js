@@ -28,6 +28,12 @@ var legItems = [];   // LegalizacionGastosItems (líneas de gasto)
 var legEmpresas = []; // LegalizacionGastosEmpresas (reparto)
 var vehiculos = [];  // Vehiculos (catálogo, reemplaza la vieja lista fija PLACAS_FIJAS)
 
+// Usuario limitado a UNA sola empresa (p. ej. Parcelar): { sigla, nombre }. En los
+// viajes compartidos con otras empresas solo ve su parte del reparto, no edita
+// los compartidos y no ve la pestaña Consecutivo. null = ve todo (admin, cartera
+// y usuarios con varias empresas). Se calcula en loadLegalizaciones().
+var empresaPropia = null;
+
 // Piloto de kilometraje: solo estas placas muestran los campos de
 // km/hora/galones/rendimiento en el formulario de Ruta y en Ver. Ampliar el
 // piloto después es solo agregar placas aquí — no requiere migración.
@@ -391,10 +397,12 @@ function conceptoOptionsHtml(selected) { return conceptoOptionsHtmlFor(CONCEPTO_
 // ── Carga inicial ──
 async function loadLegalizaciones() {
   await _authReady;
+  empresaPropia = detectarEmpresaPropia();
   populateEmpresaSelect('f-emp', 'Todas');
   populateEmpresaSelect('pf-emp', 'Todas');
   populateEmpresaSelect('df-emp', 'Todas');
   populateEmpresaSelect('ef-emp', 'Todas');
+  aplicarRestriccionEmpresaPropia();
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
   var loadZone = document.getElementById('load-zone');
@@ -469,7 +477,7 @@ async function loadLegalizaciones() {
 var lgSort = {};
 
 function _empresasSortTxt(leg) {
-  return empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa); }).sort().join(', ');
+  return empresasVisiblesOf(leg.id).map(function(e) { return getSigla(e.Empresa); }).sort().join(', ');
 }
 
 // Km recorridos (Ruta) u odómetro (Mantenimiento) como número, para ordenar la
@@ -978,6 +986,56 @@ function exportarConsecutivoExcel() {
 // ── Helpers de datos ──
 function itemsOf(legId) { return legItems.filter(function(it) { return it.Legalizacion_Id === legId; }); }
 function empresasOf(legId) { return legEmpresas.filter(function(e) { return e.Legalizacion_Id === legId; }); }
+
+// ── Usuario de una sola empresa ──
+// Las cifras (reparto, Prorrateo) se calculan siempre con el reparto COMPLETO de
+// cada viaje (empresasOf); lo que se recorta es lo que se muestra
+// (empresasVisiblesOf) y las acciones sobre viajes compartidos.
+function detectarEmpresaPropia() {
+  var prof = AUTH.getProfile() || {};
+  if (prof.rol === 'admin' || prof.rol === 'cartera') return null;
+  var cs = AUTH.getCompanies();
+  return cs.length === 1 ? { sigla: cs[0].sigla, nombre: cs[0].nombre } : null;
+}
+function esEmpresaPropia(empresa) {
+  if (!empresaPropia) return true;
+  var e = (empresa || '').trim();
+  return e === empresaPropia.nombre || e === empresaPropia.sigla || getSigla(e) === empresaPropia.sigla;
+}
+// Filas del reparto que el usuario puede ver: todas, o solo las de su empresa.
+function empresasVisiblesOf(legId) {
+  return empresaPropia ? empresasOf(legId).filter(function(e) { return esEmpresaPropia(e.Empresa); }) : empresasOf(legId);
+}
+// Viaje cuyo reparto incluye alguna empresa distinta a la del usuario (o un grupo
+// externo como Chia Abago / Materias primas). Solo aplica a quien tiene una empresa.
+function legEsCompartida(legId) {
+  return !!empresaPropia && empresasOf(legId).some(function(e) { return !esEmpresaPropia(e.Empresa); });
+}
+// Editar/eliminar: una legalización compartida la edita quien ve todas las empresas
+// (el formulario reescribe el reparto completo). La BD lo hace cumplir también.
+function puedeEditarLeg(leg) {
+  return !!leg && leg.Estado_Conciliacion === 'Por conciliar' && AUTH.hasModule('legalizacion_gastos') && !legEsCompartida(leg.id);
+}
+
+// Deja los filtros de Empresa fijos en la empresa del usuario (sin "Todas": el
+// Prorrateo y las listas quedan sobre su parte) y oculta la pestaña Consecutivo,
+// que lista los números de todas las empresas.
+function aplicarRestriccionEmpresaPropia() {
+  if (!empresaPropia) return;
+  var valor = empresaPropia.nombre;
+  var emp = (typeof EMPRESAS_HOLDING !== 'undefined') && EMPRESAS_HOLDING.find(function(e) { return e.sigla === empresaPropia.sigla; });
+  if (emp) valor = emp.value;
+  ['f-emp', 'pf-emp', 'df-emp', 'ef-emp'].forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="' + escHtml(valor) + '">' + escHtml(empresaPropia.sigla) + '</option>';
+    sel.value = valor;
+    sel.disabled = true;
+  });
+  var tabCons = document.getElementById('tab-consecutivo');
+  if (tabCons) tabCons.style.display = 'none';
+}
+
 function totalGastosOf(legId) { return itemsOf(legId).reduce(function(s, it) { return s + (Number(it.Valor) || 0); }, 0); }
 function totalRepartoOf(legId) { return empresasOf(legId).reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0); }
 // Suma solo las líneas de gasto de un concepto puntual (ej. 'Combustible'),
@@ -1480,6 +1538,7 @@ function estadoBadgeHtml(leg) {
 // que deja por fuera el esperado: 'Combustible', 'Otros', 'Combustible y Otros' o '').
 function repartoDescuadre(leg) {
   if (!leg || leg.Estado_Conciliacion !== 'Por conciliar') return null;
+  if (legEsCompartida(leg.id)) return null; // su reparto completo (otras empresas) no es de este usuario
   var esMant = leg.Tipo === 'Mantenimiento';
   var total = Math.round(totalGastosOf(leg.id));
   var reparto = Math.round(totalRepartoOf(leg.id));
@@ -1520,12 +1579,14 @@ function actualizarContadorDescuadre(spanId, rows) {
 }
 
 function empresasBadgesHtml(legId) {
-  var emps = empresasOf(legId);
+  var emps = empresasVisiblesOf(legId);
   var marca = marcaDescuadreHtml(legs.find(function(l) { return l.id === legId; }));
   if (!emps.length) return '<span style="color:#a0aec0">—</span>' + marca;
+  var compartida = legEsCompartida(legId)
+    ? ' <span style="font-size:0.7rem;color:#718096;cursor:help" title="Viaje compartido con otras empresas: solo ves la parte de ' + escHtml(empresaPropia.sigla) + '">+ otras</span>' : '';
   return emps.map(function(e) {
     return '<span class="sigla-badge sigla-' + escHtml(getSiglaClass(e.Empresa).replace('sigla-', '')) + '" style="font-size:0.7rem;padding:1px 7px;margin:1px" title="' + escHtml(fmtMoney(e.Monto)) + '">' + escHtml(getSigla(e.Empresa)) + '</span>';
-  }).join(' ') + marca;
+  }).join(' ') + compartida + marca;
 }
 
 // ── Vista detallada ──
@@ -1677,7 +1738,7 @@ function exportarDetalleExcel() {
         'Tipo': tipoLabel(leg),
         'Responsable': leg.Responsable || '',
         'Placa': placaDeItem(it, leg),
-        'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+        'Empresas (reparto)': empresasVisiblesOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
         'Concepto': it.Concepto || '',
         'Proveedor': it.Proveedor || '',
         'NIT': it.NIT || '',
@@ -1709,7 +1770,7 @@ function exportarDetalleExcel() {
         'Ruta': leg.Recorrido_Ruta || '',
         'Clientes': leg.Clientes || '',
         'Remisiones': leg.Remisiones_Relacionadas || '',
-        'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+        'Empresas (reparto)': empresasVisiblesOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
         'Gastos (detalle)': itemsOf(leg.id).map(function(it) { return (multiPl ? placaDeItem(it, leg) + ' · ' : '') + (it.Concepto || '') + ': ' + fmtMoney(it.Valor); }).join(', '),
         'Total gastos': totalGastosOf(leg.id),
         'Anticipo': Number(leg.Anticipo_Entregado) || 0,
@@ -1737,7 +1798,7 @@ function exportarLegalizacionesExcel() {
       'Responsable': leg.Responsable || '',
       'Tipo': tipoLabel(leg),
       'Ruta': leg.Recorrido_Ruta || '',
-      'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+      'Empresas (reparto)': empresasVisiblesOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
       'Total gastos': totalGastosOf(leg.id),
       'Anticipo': Number(leg.Anticipo_Entregado) || 0,
       'Estado': estadoLeg(leg) || ''
@@ -1791,14 +1852,13 @@ function renderLegTable() {
   document.getElementById('lg-ct').textContent = '(' + rows.length + ')';
   actualizarContadorDescuadre('lg-desc-ct', rows);
 
-  var canEditMod = AUTH.hasModule('legalizacion_gastos');
   var canDel = AUTH.canDelete();
 
   document.getElementById('lg-body').innerHTML = rows.map(function(leg) {
     var total = totalGastosOf(leg.id);
     var esMant = leg.Tipo === 'Mantenimiento';
     var acciones = '<button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button>';
-    if (leg.Estado_Conciliacion === 'Por conciliar' && canEditMod) {
+    if (puedeEditarLeg(leg)) {
       acciones += ' <button class="btn-edit" onclick="' + (esMant ? 'openFormMant' : 'openForm') + '(' + leg.id + ')">✏️</button>';
     }
     if (leg.Estado_Conciliacion === 'Por conciliar' && canDel) {
@@ -1855,7 +1915,7 @@ function exportarEnviosExcel() {
       'Proveedor': proveedoresTexto(leg.id) || '',
       'NIT': nitEnvioDe(leg) || '',
       'Remisiones': leg.Remisiones_Relacionadas || '',
-      'Empresas (reparto)': empresasOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
+      'Empresas (reparto)': empresasVisiblesOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
       'Valor': totalGastosOf(leg.id)
     };
   });
@@ -1871,7 +1931,6 @@ function renderEnviosTable() {
   var rows = _enviosListaFiltrada();
   renderSortHead('env', 'envl-head');
 
-  var canEditMod = AUTH.hasModule('legalizacion_gastos');
   var canDel = AUTH.canDelete();
   var total = rows.reduce(function(s, leg) { return s + totalGastosOf(leg.id); }, 0);
   document.getElementById('envl-ct').textContent = '(' + rows.length + ')';
@@ -1880,7 +1939,7 @@ function renderEnviosTable() {
 
   body.innerHTML = rows.map(function(leg) {
     var acciones = '<button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button>';
-    if (leg.Estado_Conciliacion === 'Por conciliar' && canEditMod) {
+    if (puedeEditarLeg(leg)) {
       acciones += ' <button class="btn-edit" onclick="openFormEnvio(' + leg.id + ')">✏️</button>';
     }
     if (leg.Estado_Conciliacion === 'Por conciliar' && canDel) {
@@ -1949,9 +2008,11 @@ function empresaRowOptionsHtml(selected) {
   });
   // Chia Abago y Materias primas no son del holding: filas propias del reparto
   // para sus remisiones externas.
-  [EMPRESA_ABAGO, EMPRESA_MP].forEach(function(ext) {
-    opts += '<option value="' + ext + '"' + (selected === ext ? ' selected' : '') + '>' + ext + '</option>';
-  });
+  if (!empresaPropia) {
+    [EMPRESA_ABAGO, EMPRESA_MP].forEach(function(ext) {
+      opts += '<option value="' + ext + '"' + (selected === ext ? ' selected' : '') + '>' + ext + '</option>';
+    });
+  }
   return opts;
 }
 
@@ -3039,6 +3100,7 @@ function openForm(id) {
   if (editingLegId) {
     var leg = legs.find(function(l) { return l.id === editingLegId; });
     if (!leg) return;
+    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast('Este viaje se reparte con otras empresas: solo un administrador puede editarlo', '#e67e22'); return; }
     document.getElementById('form-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
     document.getElementById('lg-fecha').value = (leg.Fecha || '').slice(0, 10);
     setResponsableField(leg.Responsable || '');
@@ -3619,6 +3681,7 @@ function openFormMant(id) {
   if (editingLegId) {
     var leg = legs.find(function(l) { return l.id === editingLegId; });
     if (!leg) return;
+    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast('Este mantenimiento se reparte con otras empresas: solo un administrador puede editarlo', '#e67e22'); return; }
     document.getElementById('form-mant-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
     document.getElementById('mant-fecha').value = (leg.Fecha || '').slice(0, 10);
     setResponsableFieldMant(leg.Responsable || '');
@@ -3883,6 +3946,7 @@ function openFormEnvio(id) {
   if (editingLegId) {
     leg = legs.find(function(l) { return l.id === editingLegId; });
     if (!leg) return;
+    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast('Este envío se reparte con otras empresas: solo un administrador puede editarlo', '#e67e22'); return; }
   }
   var it = leg ? (itemsOf(leg.id)[0] || {}) : {};
   var nd = splitNitDv(it.NIT);
@@ -4005,7 +4069,7 @@ function openVer(id) {
     : 'Responsable: ' + (leg.Responsable || '—') + ' · Fecha: ' + fmtDate(leg.Fecha);
 
   var editBtn = document.getElementById('ver-btn-editar');
-  editBtn.style.display = (leg.Estado_Conciliacion === 'Por conciliar' && AUTH.hasModule('legalizacion_gastos')) ? 'inline-block' : 'none';
+  editBtn.style.display = puedeEditarLeg(leg) ? 'inline-block' : 'none';
 
   renderVerBody(leg);
   document.getElementById('ver-overlay').classList.add('show');
@@ -4019,15 +4083,16 @@ function closeVer() {
 
 function renderVerBody(leg) {
   var items = itemsOf(leg.id);
-  var emps = empresasOf(leg.id);
+  var emps = empresasVisiblesOf(leg.id);
+  var compartida = legEsCompartida(leg.id); // reparto con otras empresas: se muestra solo la parte propia
   var totalGastos = totalGastosOf(leg.id);
-  var totalReparto = totalRepartoOf(leg.id);
+  var totalReparto = compartida ? emps.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0) : totalRepartoOf(leg.id);
   var esMant = leg.Tipo === 'Mantenimiento';
   var esEnv = esEnvio(leg);
   var combVer = totalCombustibleLista(items);
   var otrosVer = (esMant || esEnv) ? 0 : totalOtrosLista(items);
   var cobVer = (esMant || esEnv) ? { comb: false, otros: false } : LegProrrateo.cobertura(totalGastos, totalReparto, combVer, otrosVer);
-  var excluyeVerTxt = [cobVer.comb ? 'el Combustible (' + fmtMoney(combVer) + ')' : '', cobVer.otros ? 'Otros (' + fmtMoney(otrosVer) + ')' : ''].filter(Boolean).join(' ni ');
+  var excluyeVerTxt = compartida ? '' : [cobVer.comb ? 'el Combustible (' + fmtMoney(combVer) + ')' : '', cobVer.otros ? 'Otros (' + fmtMoney(otrosVer) + ')' : ''].filter(Boolean).join(' ni ');
   var descVer = repartoDescuadre(leg);
 
   // Mantenimiento: cada línea muestra su placa (una legalización puede cubrir
@@ -4129,7 +4194,9 @@ function renderVerBody(leg) {
     subPlacasHtml +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:14px 0 6px">Reparto entre empresas</h3>' +
     '<table><thead><tr><th>Empresa</th><th style="text-align:right">Monto</th></tr></thead><tbody>' + empsHtml + '</tbody></table>' +
-    '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos: <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · Total repartido: <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong>' +
+    (compartida ? '<div style="margin:8px 0 0;font-size:0.8rem;color:#718096">ℹ Este viaje se reparte con otras empresas: aquí solo ves la parte de ' + escHtml(empresaPropia.sigla) + '. Para editarlo, pídelo a un administrador.</div>' : '') +
+    '<div style="margin:10px 0 14px;font-size:0.84rem;color:#4a5568">Total gastos' + (compartida ? ' del viaje' : '') + ': <strong>' + escHtml(fmtMoney(totalGastos)) + '</strong> · ' +
+      (compartida ? 'Parte de ' + escHtml(empresaPropia.sigla) : 'Total repartido') + ': <strong>' + escHtml(fmtMoney(totalReparto)) + '</strong>' +
       (excluyeVerTxt ? ' · <em>El reparto no incluye ' + escHtml(excluyeVerTxt) + '</em>' : '') + '</div>' +
     // Reparto desactualizado (gastos editados después de calcularlo): aviso con la diferencia.
     (descVer ? '<div style="margin:0 0 14px;padding:8px 12px;background:#fffaf0;border:1px solid #f6ad55;border-radius:8px;font-size:0.84rem;color:#7b341e">⚠ <strong>Reparto desactualizado.</strong> ' +
@@ -4264,7 +4331,7 @@ function exportarPDF() {
   var leg = legs.find(function(l) { return l.id === verLegId; });
   if (!leg) return;
   var items = itemsOf(leg.id);
-  var emps = empresasOf(leg.id);
+  var emps = empresasVisiblesOf(leg.id);
   var totalGastos = totalGastosOf(leg.id);
   var esMant = leg.Tipo === 'Mantenimiento';
   var esEnv = esEnvio(leg);
