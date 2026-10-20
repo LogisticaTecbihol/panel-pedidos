@@ -204,7 +204,7 @@ function _veTodasLasEmpresas() {
 // ¿Esta empresa (sigla) es una de las del usuario? En las tablas de Prorrateo un
 // usuario restringido solo ve las suyas aunque el cálculo use todas las empresas.
 function _empresaDelUsuario(emp) {
-  return typeof AUTH === 'undefined' || !AUTH.hasCompany || AUTH.hasCompany(emp);
+  return LegProrrateo.empresaVisible(emp, typeof AUTH === 'undefined' ? null : AUTH);
 }
 
 async function loadClientesConRemision() {

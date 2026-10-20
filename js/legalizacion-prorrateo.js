@@ -328,6 +328,20 @@ var LegProrrateo = (function() {
   // construirMapas() más `grupo` { legs, items, empresas } (todas las legalizaciones).
   // Los Pedidos llegan sin Cliente: sirven solo para el mapa de productos.
   // ══════════════════════════════════════════════════════════════
+  // ¿Se le muestra esta empresa (sigla de un resultado del cálculo) a este usuario?
+  // El cálculo usa todas las empresas, pero un usuario restringido solo ve las suyas
+  // (AUTH.hasCompany; admin y cartera ven todo). Los grupos externos (Chia Abago /
+  // Materias primas) no son empresas del holding: los ve quien ve TODAS las del
+  // holding (p. ej. un lector con las seis), no quien tiene solo algunas.
+  // `auth` = el objeto AUTH de auth.js.
+  function empresaVisible(emp, auth) {
+    if (!auth || !auth.hasCompany) return true;
+    if (emp === EMPRESA_ABAGO || emp === EMPRESA_MP) {
+      return EMPRESAS_HOLDING.every(function(e) { return auth.hasCompany(e.value); });
+    }
+    return auth.hasCompany(emp);
+  }
+
   async function cargarFuentesCompletas(sb) {
     try {
       var r = await sb.rpc('get_prorrateo_legalizacion_fuentes');
@@ -690,6 +704,7 @@ var LegProrrateo = (function() {
     parseRemisionesField: parseRemisionesField,
     construirMapas: construirMapas,
     cargarFuentesCompletas: cargarFuentesCompletas,
+    empresaVisible: empresaVisible,
     calcular: calcular
   };
 })();

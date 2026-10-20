@@ -2808,7 +2808,10 @@ function buildMovimientosEmpresa() {
 // Informe consolidado de legalizaciones (Ruta, Mantenimiento, Envío) por rango
 // de fechas (Fecha de la legalización). Solo admin / módulo Legalización: RLS
 // devuelve 0 filas SIN error a quien no lo tiene, y a un usuario restringido por
-// empresa le recorta las legalizaciones (totales parciales).
+// empresa le recorta las legalizaciones (totales parciales). Excepción: el prorrateo
+// por empresa y la carga transportada de ese usuario usan fuentes completas (RPC
+// get_prorrateo_legalizacion_fuentes, ver dLegCargar y d.proGrupo) para dar las mismas
+// cifras que al admin; se le muestran solo sus empresas.
 //  · Excluye las Rechazadas (mismo criterio que la pestaña Prorrateo).
 //  · Concepto: Combustible / Peaje / Alimentación / Alojamiento / Envío; lo demás
 //    es "Otros". Las líneas de una legalización de Mantenimiento van a
@@ -2853,6 +2856,17 @@ function dLegAplicarPermiso() {
 
 function dLegInvalidar() { dLeg = null; dLegPromesa = null; dLegGen++; }
 
+// admin y cartera ven todas las empresas (mismo criterio de AUTH.hasCompany): con
+// ellos las fuentes de siempre ya están completas y no hace falta la RPC.
+function dLegVeTodas() {
+  var p = AUTH.getProfile();
+  return !!(p && (p.rol === 'admin' || p.rol === 'cartera'));
+}
+
+// ¿Se le muestra esta empresa (sigla) al usuario? El prorrateo calcula con todas las
+// empresas, pero un usuario restringido solo ve las suyas (ver LegProrrateo.empresaVisible).
+function dLegEmpresaDelUsuario(emp) { return LegProrrateo.empresaVisible(emp, AUTH); }
+
 function dLegCargar() {
   if (dLeg) return Promise.resolve(dLeg);
   if (dLegPromesa) return dLegPromesa;
@@ -2870,18 +2884,28 @@ function dLegCargar() {
     apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; }),
     apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
     apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
-    apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; })
+    apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; }),
+    // Fuentes SIN recorte por empresa/rol, solo para el prorrateo (null si ve todo o si falla):
+    // con las recortadas, un usuario restringido no resuelve sus remisiones (el rol
+    // mercadeo ni lee Pedidos) y en viajes mixtos le toca más de lo que le corresponde.
+    dLegVeTodas() ? Promise.resolve(null) : LegProrrateo.cargarFuentesCompletas(_sb)
   ]).then(function(r) {
     for (var i = 0; i < 3; i++) if (!r[i].ok) throw new Error(r[i].error || 'Error al cargar legalizaciones');
+    var completas = r[11];
     // Sin pedidos no hay forma de resolver remisiones: todo caería en "Sin
     // identificar" y parecería un resultado válido. Mejor avisar.
-    if (!r[4].ok) throw new Error(r[4].error || 'Error al cargar los pedidos (remisiones)');
+    if (!completas && !r[4].ok) throw new Error(r[4].error || 'Error al cargar los pedidos (remisiones)');
     // Las demás fuentes, si fallan, solo restan remisiones resolubles: se avisa en la nota.
+    // Con las fuentes completas las cinco de arriba vienen de la RPC (ya sin fallar).
     var fallidas = [];
     [[5, 'ingresos'], [6, 'muestras'], [7, 'devoluciones'], [8, 'remisiones externas'], [9, 'remisiones externas'], [10, 'cambios']].forEach(function(f) {
+      if (completas && f[0] !== 8 && f[0] !== 9) return;
       if (!r[f[0]] || !r[f[0]].ok) { if (fallidas.indexOf(f[1]) < 0) fallidas.push(f[1]); }
     });
-    var mapas = LegProrrateo.construirMapas({
+    var mapas = LegProrrateo.construirMapas(completas ? {
+      pedidos: completas.pedidos, ingresos: completas.ingresos, muestras: completas.muestras, devoluciones: completas.devoluciones,
+      ext: r[8], extItems: r[9], cambios: completas.cambios
+    } : {
       pedidos: r[4], ingresos: r[5], muestras: r[6], devoluciones: r[7],
       ext: r[8], extItems: r[9], cambios: r[10]
     });
@@ -2891,6 +2915,7 @@ function dLegCargar() {
       empresas: r[2].empresas || [],
       vehiculos: (r[3] && r[3].vehiculos) || [],
       mapas: mapas,
+      grupo: completas ? completas.grupo : null,   // TODAS las legalizaciones (concepto, valor y reparto); null = las que el usuario ve
       fallidas: fallidas
     };
     if (gen === dLegGen) dLeg = datos;
@@ -2944,6 +2969,20 @@ function dLegCalcular(datos, desde, hasta, fEmp) {
     mapa: datos.mapas.prodMap,
     mapaReparto: datos.mapas.repMap
   }, { fEmp: fEmp || '', fDesde: desde, fHasta: hasta });
+
+  // Con fuentes completas (usuario restringido): el mismo cálculo sobre TODAS las
+  // legalizaciones, para que el monto y el % de cada empresa en "Gasto por empresa" y
+  // su carga transportada salgan iguales a los del admin. Se muestra siempre filtrado
+  // a las empresas del usuario (dLegEmpresaDelUsuario). d.pro (solo las legalizaciones
+  // que el usuario ve) sigue alimentando lo demás: Combustible, Mantenimiento, Otros,
+  // Sin identificar, el cuadre y los documentos donde participa la empresa.
+  d.proGrupo = datos.grupo ? LegProrrateo.calcular({
+    legs: datos.grupo.legs,
+    items: datos.grupo.items,
+    empresas: datos.grupo.empresas,
+    mapa: datos.mapas.prodMap,
+    mapaReparto: datos.mapas.repMap
+  }, { fEmp: fEmp || '', fDesde: desde, fHasta: hasta }) : d.pro;
 
   // Documentos donde participa la empresa elegida: los que tienen productos suyos en
   // sus remisiones (prorrateo) o combustible / mantenimiento repartido a ella. Con
@@ -3037,10 +3076,12 @@ function dLegCalcular(datos, desde, hasta, fEmp) {
   // relacionadas, rutas y envíos) y costo por unidad movida: la parte del gasto
   // que cayó en cada bolsa ÷ lo movido en ella. Mismas cantidades que el
   // "Resumen del período" de la pestaña Prorrateo.
-  function suma(o) { return Object.keys(o).reduce(function(s, k) { return s + (o[k] || 0); }, 0); }
+  // Solo las empresas del usuario (el cálculo del grupo trae todas).
+  function suma(o) { return Object.keys(o).filter(dLegEmpresaDelUsuario).reduce(function(s, k) { return s + (o[k] || 0); }, 0); }
+  var pg = d.proGrupo;
   d.carga = {
-    litros: suma(d.pro.porEmpresaLitros), kilos: suma(d.pro.porEmpresaKilos), unidades: suma(d.pro.porEmpresaUnidades),
-    montoLitros: suma(d.pro.porEmpresaMontoLitros), montoKilos: suma(d.pro.porEmpresaMontoKilos), montoUnidades: suma(d.pro.porEmpresaMontoUnidades)
+    litros: suma(pg.porEmpresaLitros), kilos: suma(pg.porEmpresaKilos), unidades: suma(pg.porEmpresaUnidades),
+    montoLitros: suma(pg.porEmpresaMontoLitros), montoKilos: suma(pg.porEmpresaMontoKilos), montoUnidades: suma(pg.porEmpresaMontoUnidades)
   };
   d.carga.costoLitro = d.carga.litros > 0 ? d.carga.montoLitros / d.carga.litros : null;
   d.carga.costoKilo = d.carga.kilos > 0 ? d.carga.montoKilos / d.carga.kilos : null;
@@ -3082,7 +3123,9 @@ function dLegFilasEmpresa(porEmpresa, total, sin) {
 // extra (opcional) agrega columnas a la derecha de Monto y %:
 // { heads: ['Litros', ...], cells: function(empresa) → ['…', …] (HTML ya escapado),
 //   totals: ['…', …] }. La fila «Sin …» las deja en blanco.
-function dLegTablaEmpresa(rows, total, extra) {
+// totalPct (opcional): % que muestra la fila Total cuando no es el 100 % (usuario que ve
+// solo algunas empresas: su Total es la suma de sus filas sobre el total del grupo).
+function dLegTablaEmpresa(rows, total, extra, totalPct) {
   if (!rows.length) return '<div style="color:#a0aec0;text-align:center;padding:30px 20px">Sin datos en el período</div>';
   var nExtra = extra ? extra.heads.length : 0;
   function celdas(arr) { return arr.map(function(c) { return '<td class="num">' + c + '</td>'; }).join(''); }
@@ -3097,7 +3140,7 @@ function dLegTablaEmpresa(rows, total, extra) {
       return '<tr><td>' + etiqueta + '</td><td class="num">' + escHtml(dLegMoney2(r.value)) + '</td><td class="num">' + r.pct.toFixed(2) + '%</td>' +
         (extra ? (r.sin ? vacias : celdas(extra.cells(r.label))) : '') + '</tr>';
     }).join('') +
-    '<tr style="font-weight:700;background:#f7fafc"><td>Total</td><td class="num">' + escHtml(dLegMoney2(total)) + '</td><td class="num">' + (total > 0 ? '100.00%' : '0.00%') + '</td>' +
+    '<tr style="font-weight:700;background:#f7fafc"><td>Total</td><td class="num">' + escHtml(dLegMoney2(total)) + '</td><td class="num">' + (totalPct != null ? totalPct.toFixed(2) + '%' : (total > 0 ? '100.00%' : '0.00%')) + '</td>' +
     (extra ? celdas(extra.totals) : '') + '</tr>' +
     '</tbody></table>';
 }
@@ -3169,7 +3212,7 @@ async function buildLegalizacionDash() {
   var parti = fEmp ? ' · donde participa' : '';
   // Con empresa elegida, la parte propia del total = lo de sus tres tablas por empresa
   // (Gasto + Combustible + Mantenimiento + Otros); el resto del total es de otras empresas.
-  var parteEmp = d.pro.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total + d.pro.otros.total;
+  var parteEmp = d.proGrupo.totalGeneral + d.pro.combustibleTotalGeneral + d.pro.mantenimiento.total + d.pro.otros.total;
 
   // KPIs. Con empresa elegida, las de documentos cuentan solo aquellos donde ella
   // participa, con el monto completo de cada documento.
@@ -3199,8 +3242,17 @@ async function buildLegalizacionDash() {
   // Gasto / Combustible / Mantenimiento / Otros por empresa (prorrateo — mismas cifras
   // que la pestaña "Prorrateo de gastos" del módulo Legalización)
   var pro = d.pro;
+  // «Gasto por empresa» sale del cálculo sobre todas las legalizaciones (d.proGrupo) y
+  // muestra solo las empresas del usuario; el % es sobre el total del grupo, así que la
+  // fila Total de un usuario restringido es la suma de sus filas, no el 100 %.
+  var pg = d.proGrupo;
+  var proPorEmpresa = {}, proTodasVisibles = true, proTotalVisible = 0;
+  Object.keys(pg.porEmpresa).forEach(function(e) {
+    if (dLegEmpresaDelUsuario(e)) { proPorEmpresa[e] = pg.porEmpresa[e]; proTotalVisible += pg.porEmpresa[e]; } else { proTodasVisibles = false; }
+  });
+  if (proTodasVisibles) proTotalVisible = pg.totalGeneral;
   // «Sin identificar» va aparte (no cuenta en el 100 % por empresa).
-  var proRows = dLegFilasEmpresa(pro.porEmpresa, pro.totalGeneral, null);
+  var proRows = dLegFilasEmpresa(proPorEmpresa, pg.totalGeneral, null);
   var sinIdRows = dLegFilasEmpresa({}, pro.sinIdentificar,
     { label: 'Sin reparto asignado', value: pro.sinIdentificar, legs: dLegLegsTxt(pro.sinIdentificarLegs) });
   var combRows = dLegFilasEmpresa(pro.combustiblePorEmpresa, pro.combustibleTotalGeneral,
@@ -3209,7 +3261,8 @@ async function buildLegalizacionDash() {
     { label: 'Sin reparto asignado', value: pro.mantenimiento.sinAsignar, legs: dLegLegsTxt(pro.mantenimiento.sinAsignarLegs) });
   var otrosRows = dLegFilasEmpresa(pro.otros.porEmpresa, pro.otros.total,
     { label: 'Sin reparto asignado', value: pro.otros.sinAsignar, legs: dLegLegsTxt(pro.otros.sinAsignarLegs) });
-  document.getElementById('leg-pro-emp').innerHTML = dLegTablaEmpresa(proRows, pro.totalGeneral, dLegExtraCarga(pro, d.carga));
+  document.getElementById('leg-pro-emp').innerHTML = dLegTablaEmpresa(proRows, proTotalVisible, dLegExtraCarga(pg, d.carga),
+    proTodasVisibles ? null : (pg.totalGeneral > 0 ? proTotalVisible / pg.totalGeneral * 100 : 0));
   document.getElementById('leg-comb').innerHTML = dLegTablaEmpresa(combRows, pro.combustibleTotalGeneral);
   document.getElementById('leg-mant').innerHTML = dLegTablaEmpresa(mantRows, pro.mantenimiento.total);
   document.getElementById('leg-otros').innerHTML = dLegTablaEmpresa(otrosRows, pro.otros.total);
@@ -3269,7 +3322,7 @@ async function buildLegalizacionDash() {
     (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento + otros (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
     (datos.fallidas.length ? '<p class="leg-aviso">⚠ No se pudieron cargar: ' + escHtml(datos.fallidas.join(', ')) + '. Las remisiones que dependen de esas fuentes pueden aparecer como «Sin identificar».</p>' : '') +
     '<p>• <b>Rendimiento:</b> km de los viajes con galones registrados ÷ galones de combustible; ⚠ si queda más de 25 % por debajo del esperado. Solo hay datos de las placas del piloto de kilometraje; los envíos y el mantenimiento no suman km.</p>' +
-    ((rolP === 'admin' || rolP === 'cartera') ? '' : '<p>• Si tu usuario está limitado a ciertas empresas, solo ves las legalizaciones que las involucran: los totales pueden ser parciales.</p>');
+    ((rolP === 'admin' || rolP === 'cartera') ? '' : '<p>• Si tu usuario está limitado a ciertas empresas, solo ves las legalizaciones que las involucran: los totales pueden ser parciales. «Gasto por empresa» y la carga transportada se calculan con todas las legalizaciones (como las ve el administrador) y solo se muestran tus empresas; su % es sobre el total del grupo.</p>');
 }
 
 // Exporta a Excel lo que muestra la pestaña (8 hojas, la última con los criterios).
@@ -3298,7 +3351,9 @@ function exportLegalizacionExcel() {
   function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
   var pro = d.pro;
   // extra (opcional): { fila: function(empresa) → columnas extra, total: columnas extra del TOTAL }
-  function hojaBloque(porEmpresa, total, sinLabel, sinValor, extra) {
+  // totalVisible (opcional): { monto, pct } de la fila TOTAL cuando el usuario ve solo algunas
+  // empresas (su Total es la suma de sus filas sobre el total del grupo, no el 100 %).
+  function hojaBloque(porEmpresa, total, sinLabel, sinValor, extra, totalVisible) {
     var filas = Object.keys(porEmpresa).map(function(e) { return { e: e, v: porEmpresa[e] }; })
       .sort(function(a, b) { return b.v - a.v; })
       .map(function(r) {
@@ -3311,7 +3366,9 @@ function exportLegalizacionExcel() {
       if (extra) Object.keys(extra.total).forEach(function(k) { s[k] = ''; });
       filas.push(s);
     }
-    var t = { 'Empresa': 'TOTAL', 'Monto': r2(total), '%': total > 0 ? 100 : 0 };
+    var t = totalVisible
+      ? { 'Empresa': 'TOTAL', 'Monto': r2(totalVisible.monto), '%': r2(totalVisible.pct) }
+      : { 'Empresa': 'TOTAL', 'Monto': r2(total), '%': total > 0 ? 100 : 0 };
     if (extra) Object.keys(extra.total).forEach(function(k) { t[k] = extra.total[k]; });
     filas.push(t);
     return filas;
@@ -3320,16 +3377,23 @@ function exportLegalizacionExcel() {
   // remisiones relacionadas; el costo es la parte del gasto de esa bolsa ÷ lo movido).
   function costoUn(monto, cant) { return cant > 0 ? r2(monto / cant) : ''; }
   var carga = d.carga;
-  var hojaPro = hojaBloque(pro.porEmpresa, pro.totalGeneral, '', 0, {
+  // «Gasto por empresa»: igual que la pantalla (cálculo sobre todas las legalizaciones,
+  // solo las empresas del usuario, % sobre el total del grupo).
+  var pg = d.proGrupo;
+  var proPorEmpresa = {}, proTodasVisibles = true, proTotalVisible = 0;
+  Object.keys(pg.porEmpresa).forEach(function(e) {
+    if (dLegEmpresaDelUsuario(e)) { proPorEmpresa[e] = pg.porEmpresa[e]; proTotalVisible += pg.porEmpresa[e]; } else { proTodasVisibles = false; }
+  });
+  var hojaPro = hojaBloque(proPorEmpresa, pg.totalGeneral, '', 0, {
     fila: function(e) {
       return {
-        'Litros movidos': r2(pro.porEmpresaLitros[e]),
-        'Kilos movidos': r2(pro.porEmpresaKilos[e]),
-        'Unidades movidas': r2(pro.porEmpresaUnidades[e]),
-        '$ por litro': costoUn(pro.porEmpresaMontoLitros[e], pro.porEmpresaLitros[e]),
-        '$ por kilo': costoUn(pro.porEmpresaMontoKilos[e], pro.porEmpresaKilos[e]),
-        '$ por unidad': costoUn(pro.porEmpresaMontoUnidades[e], pro.porEmpresaUnidades[e]),
-        'Legalizaciones': Object.keys(pro.porEmpresaLegs[e] || {}).length
+        'Litros movidos': r2(pg.porEmpresaLitros[e]),
+        'Kilos movidos': r2(pg.porEmpresaKilos[e]),
+        'Unidades movidas': r2(pg.porEmpresaUnidades[e]),
+        '$ por litro': costoUn(pg.porEmpresaMontoLitros[e], pg.porEmpresaLitros[e]),
+        '$ por kilo': costoUn(pg.porEmpresaMontoKilos[e], pg.porEmpresaKilos[e]),
+        '$ por unidad': costoUn(pg.porEmpresaMontoUnidades[e], pg.porEmpresaUnidades[e]),
+        'Legalizaciones': Object.keys(pg.porEmpresaLegs[e] || {}).length
       };
     },
     total: {
@@ -3341,7 +3405,7 @@ function exportLegalizacionExcel() {
       '$ por unidad': costoUn(carga.montoUnidades, carga.unidades),
       'Legalizaciones': pro.legsPeriodoCount
     }
-  });
+  }, proTodasVisibles ? null : { monto: proTotalVisible, pct: pg.totalGeneral > 0 ? proTotalVisible / pg.totalGeneral * 100 : 0 });
   var hojaComb = hojaBloque(pro.combustiblePorEmpresa, pro.combustibleTotalGeneral, 'Sin reparto asignado', pro.combustibleSinAsignar);
   var hojaMant = hojaBloque(pro.mantenimiento.porEmpresa, pro.mantenimiento.total, 'Sin reparto asignado', pro.mantenimiento.sinAsignar);
   var hojaOtros = hojaBloque(pro.otros.porEmpresa, pro.otros.total, 'Sin reparto asignado', pro.otros.sinAsignar);
@@ -3375,7 +3439,7 @@ function exportLegalizacionExcel() {
     ['Combustible y Mantenimiento por empresa: según el reparto manual de cada legalización; sin reparto, "Sin reparto asignado". Las líneas de combustible de mantenimiento van a la hoja de Combustible. Otros: las líneas de ruta con concepto "Otros", en un solo monto "Sin reparto asignado" (no se discrimina por empresa).'],
     ['Las hojas de empresa son las mismas cifras de la pestaña "Prorrateo de gastos" del módulo Legalización (mismo rango, sin filtro de empresa).'],
     ['Vehículos: viajes de ruta con km de salida y llegada. Km/galón = km de los viajes con galones ÷ galones de combustible.'],
-    ['Si el usuario está limitado a ciertas empresas, RLS solo le entrega las legalizaciones que las involucran: los totales pueden ser parciales.']
+    ['Si el usuario está limitado a ciertas empresas, RLS solo le entrega las legalizaciones que las involucran: los totales pueden ser parciales. La hoja "Gasto por empresa" y las cifras de carga transportada se calculan con todas las legalizaciones y muestran solo sus empresas (el % es sobre el total del grupo).']
   ];
   var wsC = XLSX.utils.aoa_to_sheet(criterios);
   wsC['!cols'] = [{ wch: 130 }, { wch: 30 }];
