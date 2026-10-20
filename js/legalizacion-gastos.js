@@ -1226,7 +1226,8 @@ function clearProrrateoFiltros() {
 // filtros de Empresa/Desde/Hasta activos): hoja "Prorrateo" con una fila por
 // producto y remisión de origen de cada empresa (con el tipo de la remisión:
 // Materia prima / Producto terminado / Chia Abago; ya sin Combustible, Otros ni
-// "Sin identificar"), y
+// "Sin identificar"; con los litros, kilos y unidades de cada remisión), una hoja
+// "Resumen por empresa" con la carga movida y su costo por litro/kilo/unidad, y
 // hojas "Combustible", "Mantenimiento", "Otros" y "Sin identificar" con el
 // reparto de ese concepto por empresa (más "Sin reparto asignado" si aplica).
 function exportarProrrateoExcel() {
@@ -1256,6 +1257,9 @@ function exportarProrrateoExcel() {
             'Tipo de remisión': rem.tipo,
             'Monto': Number(rem.monto.toFixed(2)),
             '% del total': Number((total > 0 ? rem.monto / total * 100 : 0).toFixed(2)),
+            'Litros': Number(rem.litros.toFixed(2)),
+            'Kilos': Number(rem.kilos.toFixed(2)),
+            'Unidades': Number(rem.unidades.toFixed(2)),
             'Legalizaciones': legsTxt
           });
         });
@@ -1299,8 +1303,47 @@ function exportarProrrateoExcel() {
 
   var wb = XLSX.utils.book_new();
   var ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+  ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Prorrateo');
+
+  // Resumen por empresa (mismas columnas que la hoja "Prorrateo por empresa" del
+  // Dashboard): litros, kilos y unidades movidos, y el costo por cada uno (la
+  // parte del gasto de esa bolsa ÷ lo movido), con una fila TOTAL.
+  function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
+  function costoUn(monto, cant) { return cant > 0 ? r2(monto / cant) : ''; }
+  function sumaEmp(mapa) { return empresas.reduce(function(s, e) { return s + (mapa[e] || 0); }, 0); }
+  var fEmp = document.getElementById('pf-emp').value;
+  var fEmpSigla = fEmp ? getSigla(fEmp) : '';
+  var rowsRes = empresas.map(function(emp) {
+    return {
+      'Empresa': emp,
+      'Monto': r2(calc.porEmpresa[emp]),
+      '%': total > 0 ? r2(calc.porEmpresa[emp] / total * 100) : 0,
+      'Litros movidos': r2(calc.porEmpresaLitros[emp]),
+      'Kilos movidos': r2(calc.porEmpresaKilos[emp]),
+      'Unidades movidas': r2(calc.porEmpresaUnidades[emp]),
+      '$ por litro': costoUn(calc.porEmpresaMontoLitros[emp], calc.porEmpresaLitros[emp]),
+      '$ por kilo': costoUn(calc.porEmpresaMontoKilos[emp], calc.porEmpresaKilos[emp]),
+      '$ por unidad': costoUn(calc.porEmpresaMontoUnidades[emp], calc.porEmpresaUnidades[emp]),
+      'Legalizaciones': Object.keys(calc.porEmpresaLegs[emp] || {}).length
+    };
+  });
+  var totLitros = sumaEmp(calc.porEmpresaLitros), totKilos = sumaEmp(calc.porEmpresaKilos), totUnid = sumaEmp(calc.porEmpresaUnidades);
+  rowsRes.push({
+    'Empresa': 'TOTAL',
+    'Monto': r2(total),
+    '%': total > 0 ? 100 : 0,
+    'Litros movidos': r2(totLitros),
+    'Kilos movidos': r2(totKilos),
+    'Unidades movidas': r2(totUnid),
+    '$ por litro': costoUn(sumaEmp(calc.porEmpresaMontoLitros), totLitros),
+    '$ por kilo': costoUn(sumaEmp(calc.porEmpresaMontoKilos), totKilos),
+    '$ por unidad': costoUn(sumaEmp(calc.porEmpresaMontoUnidades), totUnid),
+    'Legalizaciones': fEmpSigla ? Object.keys(calc.porEmpresaLegs[fEmpSigla] || {}).length : calc.legsPeriodoCount
+  });
+  var wsRes = XLSX.utils.json_to_sheet(rowsRes);
+  wsRes['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen por empresa');
   if (rowsComb.length) {
     var wsComb = XLSX.utils.json_to_sheet(rowsComb);
     wsComb['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];

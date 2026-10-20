@@ -400,8 +400,10 @@ var LegProrrateo = (function() {
     function esEnvio(leg) { return !!leg && leg.Tipo === 'Envio'; }
 
     var porEmpresa = {};       // empresaSigla -> monto total
-    // rems = el mismo monto desglosado por remisión de origen:
-    // { "tipo|CODIGO" -> { codigo, tipo, monto, legs: { legId -> Consecutivo } } }
+    // rems = el mismo monto desglosado por remisión de origen, con los litros,
+    // kilos y unidades movidos de esa remisión (se suman cada vez que aparece en
+    // una legalización, igual que el monto y que porEmpresaLitros/Kilos/Unidades):
+    // { "tipo|CODIGO" -> { codigo, tipo, monto, litros, kilos, unidades, legs: { legId -> Consecutivo } } }
     var porEmpresaSku = {};    // empresaSigla -> { sku -> { monto, legs: { legId -> Consecutivo }, rems } }
     var porEmpresaLitros = {};     // empresaSigla -> litros totales movidos (sin ponderar por monto)
     var porEmpresaKilos = {};      // empresaSigla -> kilos totales movidos (sin ponderar por monto)
@@ -456,8 +458,9 @@ var LegProrrateo = (function() {
         var tipoRem = l.tipoRem || TIPO_REM_PT;
         var codigoRem = String(item.codigo || '').trim().toUpperCase();
         var remKey = tipoRem + '|' + codigoRem;
-        var rem = entry.rems[remKey] || (entry.rems[remKey] = { codigo: codigoRem, tipo: tipoRem, monto: 0, legs: {} });
+        var rem = entry.rems[remKey] || (entry.rems[remKey] = { codigo: codigoRem, tipo: tipoRem, monto: 0, litros: 0, kilos: 0, unidades: 0, legs: {} });
         rem.monto += monto;
+        rem[campoUnidad.slice(1)] += l[campoUnidad];   // '_litros' -> litros
         rem.legs[leg.id] = leg.Consecutivo || ('#' + leg.id);
         totalGeneral += monto;
 
