@@ -342,6 +342,17 @@ var LegProrrateo = (function() {
     return auth.hasCompany(emp);
   }
 
+  // Usuario con UNA sola empresa asignada (admin y cartera no cuentan): { sigla, nombre },
+  // o null. A ese usuario no se le muestran montos, % ni costos por unidad del prorrateo
+  // (ni en el módulo Legalización ni en el Dashboard). `auth` = el objeto AUTH de auth.js.
+  function empresaUnica(auth) {
+    if (!auth || !auth.getProfile || !auth.getCompanies) return null;
+    var prof = auth.getProfile() || {};
+    if (prof.rol === 'admin' || prof.rol === 'cartera') return null;
+    var cs = auth.getCompanies();
+    return cs.length === 1 ? { sigla: cs[0].sigla, nombre: cs[0].nombre } : null;
+  }
+
   async function cargarFuentesCompletas(sb) {
     try {
       var r = await sb.rpc('get_prorrateo_legalizacion_fuentes');
@@ -705,6 +716,7 @@ var LegProrrateo = (function() {
     construirMapas: construirMapas,
     cargarFuentesCompletas: cargarFuentesCompletas,
     empresaVisible: empresaVisible,
+    empresaUnica: empresaUnica,
     calcular: calcular
   };
 })();

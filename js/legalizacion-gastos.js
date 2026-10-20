@@ -1030,10 +1030,7 @@ function empresasOf(legId) { return legEmpresas.filter(function(e) { return e.Le
 // cada viaje (empresasOf); lo que se recorta es lo que se muestra
 // (empresasVisiblesOf) y las acciones sobre viajes compartidos.
 function detectarEmpresaPropia() {
-  var prof = AUTH.getProfile() || {};
-  if (prof.rol === 'admin' || prof.rol === 'cartera') return null;
-  var cs = AUTH.getCompanies();
-  return cs.length === 1 ? { sigla: cs[0].sigla, nombre: cs[0].nombre } : null;
+  return LegProrrateo.empresaUnica(AUTH);
 }
 function esEmpresaPropia(empresa) {
   if (!empresaPropia) return true;
@@ -1179,13 +1176,27 @@ function lgProrrateoTable(rows, headerLabel) {
         ? ' <span style="color:#a0aec0">(' + (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km)</span>' : '';
       return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + kmTxt;
     }).join(', ') + '</div>' : '';
+    // Usuario de una sola empresa: sin las columnas Monto ni % (ver _sinCifrasProrrateo).
     return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
-      '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
-      '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td></tr>';
+      (_sinCifrasProrrateo() ? '' :
+        '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
+        '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td>') + '</tr>';
   }).join('');
   return '<div style="overflow-x:auto"><table>' +
-    '<thead><tr><th>' + escHtml(headerLabel) + '</th><th style="text-align:right">Monto</th><th style="text-align:right">%</th></tr></thead>' +
+    '<thead><tr><th>' + escHtml(headerLabel) + '</th>' +
+      (_sinCifrasProrrateo() ? '' : '<th style="text-align:right">Monto</th><th style="text-align:right">%</th>') + '</tr></thead>' +
     '<tbody>' + body + '</tbody></table></div>';
+}
+
+// El usuario de una sola empresa no ve montos, % ni costos por unidad del prorrateo
+// (solo litros, kilos y unidades): las tablas que quedarían sin cifras se ocultan.
+function _sinCifrasProrrateo() { return !!empresaPropia; }
+
+// Muestra u oculta la tarjeta (card) que contiene el cuerpo con ese id.
+function _mostrarCardProrrateo(bodyId, mostrar) {
+  var body = document.getElementById(bodyId);
+  var card = body && body.closest ? body.closest('.card') : null;
+  if (card) card.style.display = mostrar ? '' : 'none';
 }
 
 function renderProrrateoGastos() {
@@ -1193,12 +1204,17 @@ function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
   var grupo = calcularProrrateoGrupo(calc); // todas las legalizaciones: monto y % de cada empresa como los ve el admin
   renderResumenProrrateo(calc);
-  renderCombustiblePorEmpresa(calc);
-  renderMantenimientoPorEmpresa(calc);
-  renderOtrosPorEmpresa(calc);
-  renderSinIdentificarPorEmpresa(calc);
+  // Usuario de una sola empresa: estas tablas solo traen montos y %, así que no se muestran.
+  var conCifras = !_sinCifrasProrrateo();
+  ['gpc-body', 'gpm-body', 'gpo-body', 'gpi-body', 'gpe-body'].forEach(function(id) { _mostrarCardProrrateo(id, conCifras); });
+  if (conCifras) {
+    renderCombustiblePorEmpresa(calc);
+    renderMantenimientoPorEmpresa(calc);
+    renderOtrosPorEmpresa(calc);
+    renderSinIdentificarPorEmpresa(calc);
+  }
   renderGastoPorProducto(grupo);
-  renderGastoPorEmpresa(grupo);
+  if (conCifras) renderGastoPorEmpresa(grupo);
 }
 
 // Gastos que no se prorratean por producto (Combustible, Mantenimiento) se
@@ -1355,7 +1371,19 @@ function exportarProrrateoExcel() {
   var grupo = calcularProrrateoGrupo(calc);
   var total = grupo.totalGeneral;
   var empresas = Object.keys(grupo.porEmpresa).filter(_empresaDelUsuario);
-  if (!empresas.length && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0 && calc.otros.total <= 0) {
+  // Usuario de una sola empresa: sin Monto, % ni costos por unidad, y sin las hojas que
+  // solo traen montos (Combustible, Mantenimiento, Otros y Sin identificar).
+  var sinCifras = _sinCifrasProrrateo();
+  var COLS_CIFRAS = ['Monto', '% del total', '%', '$ por litro', '$ por kilo', '$ por unidad'];
+  function sinCifrasFilas(filas) {
+    if (!sinCifras) return filas;
+    return filas.map(function(f) {
+      var o = {};
+      Object.keys(f).forEach(function(k) { if (COLS_CIFRAS.indexOf(k) < 0) o[k] = f[k]; });
+      return o;
+    });
+  }
+  if (!empresas.length && (sinCifras || (calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0 && calc.otros.total <= 0))) {
     showToast('No hay datos para exportar', '#e74c3c');
     return;
   }
@@ -1421,10 +1449,14 @@ function exportarProrrateoExcel() {
   var rowsMant = filasAparte(calc.mantenimiento);
   var rowsOtros = filasAparte(calc.otros);
   var rowsSinId = filasAparte(calc.sinIdentificado);
+  // Esas cuatro hojas solo traen montos: el usuario de una sola empresa no las recibe.
+  if (sinCifras) { rowsComb = []; rowsMant = []; rowsOtros = []; rowsSinId = []; }
 
   var wb = XLSX.utils.book_new();
-  var ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+  var ws = XLSX.utils.json_to_sheet(sinCifrasFilas(rows));
+  ws['!cols'] = sinCifras
+    ? [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }]
+    : [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Prorrateo');
 
   // Resumen por empresa (mismas columnas que la hoja "Prorrateo por empresa" del
@@ -1464,8 +1496,10 @@ function exportarProrrateoExcel() {
     '$ por unidad': costoUn(sumaEmp(grupo.porEmpresaMontoUnidades), totUnid),
     'Legalizaciones': fEmpSigla ? Object.keys(grupo.porEmpresaLegs[fEmpSigla] || {}).length : calc.legsPeriodoCount
   });
-  var wsRes = XLSX.utils.json_to_sheet(rowsRes);
-  wsRes['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
+  var wsRes = XLSX.utils.json_to_sheet(sinCifrasFilas(rowsRes));
+  wsRes['!cols'] = sinCifras
+    ? [{ wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 15 }]
+    : [{ wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
   XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen por empresa');
   if (rowsComb.length) {
     var wsComb = XLSX.utils.json_to_sheet(rowsComb);
@@ -1526,7 +1560,8 @@ function renderGastoPorProducto(calc) {
     return '<div class="gpp-group">' +
       '<div class="gpp-group-head">' +
         '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' +
-        '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span></span>' +
+        (_sinCifrasProrrateo() ? '' :
+          '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span></span>') +
       '</div>' +
       lgProrrateoTable(rows, 'Producto') +
     '</div>';

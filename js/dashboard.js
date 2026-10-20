@@ -3125,46 +3125,61 @@ function dLegFilasEmpresa(porEmpresa, total, sin) {
 //   totals: ['…', …] }. La fila «Sin …» las deja en blanco.
 // totalPct (opcional): % que muestra la fila Total cuando no es el 100 % (usuario que ve
 // solo algunas empresas: su Total es la suma de sus filas sobre el total del grupo).
-function dLegTablaEmpresa(rows, total, extra, totalPct) {
+// sinMonto (opcional): sin las columnas Monto ni % (usuario de una sola empresa).
+function dLegTablaEmpresa(rows, total, extra, totalPct, sinMonto) {
   if (!rows.length) return '<div style="color:#a0aec0;text-align:center;padding:30px 20px">Sin datos en el período</div>';
   var nExtra = extra ? extra.heads.length : 0;
   function celdas(arr) { return arr.map(function(c) { return '<td class="num">' + c + '</td>'; }).join(''); }
   var vacias = '';
   for (var i = 0; i < nExtra; i++) vacias += '<td class="num"></td>';
-  return '<table class="mini-table"><thead><tr><th>Empresa</th><th class="num">Monto</th><th class="num">%</th>' +
+  return '<table class="mini-table"><thead><tr><th>Empresa</th>' + (sinMonto ? '' : '<th class="num">Monto</th><th class="num">%</th>') +
     (extra ? extra.heads.map(function(h) { return '<th class="num">' + escHtml(h) + '</th>'; }).join('') : '') + '</tr></thead><tbody>' +
     rows.map(function(r) {
       var etiqueta = r.sin
         ? '<span style="color:#718096;font-weight:700"' + (r.legs ? ' title="' + escHtml(r.legs) + '"' : '') + '>' + escHtml(r.label) + '</span>'
         : '<span class="sigla-badge ' + getSiglaClass(r.label) + '">' + escHtml(r.label) + '</span>';
-      return '<tr><td>' + etiqueta + '</td><td class="num">' + escHtml(dLegMoney2(r.value)) + '</td><td class="num">' + r.pct.toFixed(2) + '%</td>' +
+      return '<tr><td>' + etiqueta + '</td>' +
+        (sinMonto ? '' : '<td class="num">' + escHtml(dLegMoney2(r.value)) + '</td><td class="num">' + r.pct.toFixed(2) + '%</td>') +
         (extra ? (r.sin ? vacias : celdas(extra.cells(r.label))) : '') + '</tr>';
     }).join('') +
-    '<tr style="font-weight:700;background:#f7fafc"><td>Total</td><td class="num">' + escHtml(dLegMoney2(total)) + '</td><td class="num">' + (totalPct != null ? totalPct.toFixed(2) + '%' : (total > 0 ? '100.00%' : '0.00%')) + '</td>' +
+    '<tr style="font-weight:700;background:#f7fafc"><td>Total</td>' +
+    (sinMonto ? '' : '<td class="num">' + escHtml(dLegMoney2(total)) + '</td><td class="num">' + (totalPct != null ? totalPct.toFixed(2) + '%' : (total > 0 ? '100.00%' : '0.00%')) + '</td>') +
     (extra ? celdas(extra.totals) : '') + '</tr>' +
     '</tbody></table>';
 }
 
 // Columnas de carga transportada de «Gasto por empresa»: litros, kilos, unidades (solo
-// si las hay) y costo por litro / por kilo / por unidad de cada empresa.
-function dLegExtraCarga(pro, carga) {
+// si las hay) y costo por litro / por kilo / por unidad de cada empresa (sinCostos: sin
+// estos últimos, para el usuario de una sola empresa).
+function dLegExtraCarga(pro, carga, sinCostos) {
   var hayUnid = carga.unidades > 0;
   function cant(v, u) { return v > 0 ? escHtml(dLegCant(v)) + ' ' + u : '—'; }
   function costo(m, c) { return c > 0 ? escHtml(dLegMoney2(m / c)) : '—'; }
-  var heads = ['Litros', 'Kilos'].concat(hayUnid ? ['Unidades'] : []).concat(['$/litro', '$/kilo']).concat(hayUnid ? ['$/unidad'] : []);
+  var heads = ['Litros', 'Kilos'].concat(hayUnid ? ['Unidades'] : []).concat(sinCostos ? [] : ['$/litro', '$/kilo']).concat(hayUnid && !sinCostos ? ['$/unidad'] : []);
   return {
     heads: heads,
     cells: function(e) {
       return [cant(pro.porEmpresaLitros[e], 'L'), cant(pro.porEmpresaKilos[e], 'Kg')]
         .concat(hayUnid ? [cant(pro.porEmpresaUnidades[e], 'und')] : [])
-        .concat([costo(pro.porEmpresaMontoLitros[e], pro.porEmpresaLitros[e]), costo(pro.porEmpresaMontoKilos[e], pro.porEmpresaKilos[e])])
-        .concat(hayUnid ? [costo(pro.porEmpresaMontoUnidades[e], pro.porEmpresaUnidades[e])] : []);
+        .concat(sinCostos ? [] : [costo(pro.porEmpresaMontoLitros[e], pro.porEmpresaLitros[e]), costo(pro.porEmpresaMontoKilos[e], pro.porEmpresaKilos[e])])
+        .concat(hayUnid && !sinCostos ? [costo(pro.porEmpresaMontoUnidades[e], pro.porEmpresaUnidades[e])] : []);
     },
     totals: [cant(carga.litros, 'L'), cant(carga.kilos, 'Kg')]
       .concat(hayUnid ? [cant(carga.unidades, 'und')] : [])
-      .concat([costo(carga.montoLitros, carga.litros), costo(carga.montoKilos, carga.kilos)])
-      .concat(hayUnid ? [costo(carga.montoUnidades, carga.unidades)] : [])
+      .concat(sinCostos ? [] : [costo(carga.montoLitros, carga.litros), costo(carga.montoKilos, carga.kilos)])
+      .concat(hayUnid && !sinCostos ? [costo(carga.montoUnidades, carga.unidades)] : [])
   };
+}
+
+// El usuario de una sola empresa no ve montos, % ni costos por unidad del prorrateo
+// (solo litros, kilos y unidades): las tablas que quedarían sin cifras se ocultan.
+function dLegSinCifras() { return !!LegProrrateo.empresaUnica(AUTH); }
+
+// Muestra u oculta la tarjeta (dash-card) que contiene el cuerpo con ese id.
+function dLegMostrarCard(bodyId, mostrar) {
+  var body = document.getElementById(bodyId);
+  var card = body && body.closest ? body.closest('.dash-card') : null;
+  if (card) card.style.display = mostrar ? '' : 'none';
 }
 
 async function buildLegalizacionDash() {
@@ -3205,6 +3220,7 @@ async function buildLegalizacionDash() {
 
   var d = dLegCalcular(datos, fDesde, fHasta, fEmp);
   dLegUltimo = { d: d, rango: rango, desde: fDesde, hasta: fHasta, fEmp: fEmp };
+  var sinCifras = dLegSinCifras();   // usuario de una sola empresa: sin montos, % ni costos por unidad
   var s = d.sel;
   var nDocs = s.nLeg + s.nEnv;
   var todas = fEmp ? ' · todas las empresas' : '';   // lo que no se divide por empresa se rotula
@@ -3224,9 +3240,11 @@ async function buildLegalizacionDash() {
     kpiCard('green', dMoneyM(nDocs ? s.total / nDocs : 0), 'Promedio por documento' + enEmp, 'LEG + ENV' + (fEmp ? ' · monto completo' : '')) +
     kpiCard('orange', dMoneyM(s.pendTotal), 'Por conciliar' + enEmp, dLegNum(s.pendN) + ' legalización(es)' + parti) +
     kpiCard('teal', dLegCant(d.carga.litros) + ' L', 'Litros transportados' + (fEmp ? ' · ' + escHtml(sigEmp) : ''),
-      d.carga.costoLitro != null ? dLegMoney2(d.carga.costoLitro) + ' por litro' : 'sin litros identificados') +
+      sinCifras ? (d.carga.litros > 0 ? 'de las remisiones relacionadas' : 'sin litros identificados')
+        : (d.carga.costoLitro != null ? dLegMoney2(d.carga.costoLitro) + ' por litro' : 'sin litros identificados')) +
     kpiCard('purple', dLegCant(d.carga.kilos) + ' Kg', 'Kilos transportados' + (fEmp ? ' · ' + escHtml(sigEmp) : ''),
-      d.carga.costoKilo != null ? dLegMoney2(d.carga.costoKilo) + ' por kilo' : 'sin kilos identificados');
+      sinCifras ? (d.carga.kilos > 0 ? 'de las remisiones relacionadas' : 'sin kilos identificados')
+        : (d.carga.costoKilo != null ? dLegMoney2(d.carga.costoKilo) + ' por kilo' : 'sin kilos identificados'));
 
   // Gasto por concepto (barras horizontales, de mayor a menor; % sobre el total)
   var conceptoRows = D_LEG_CATS.filter(function(c) { return (d.porCat[c.k] || 0) > 0; })
@@ -3261,12 +3279,22 @@ async function buildLegalizacionDash() {
     { label: 'Sin reparto asignado', value: pro.mantenimiento.sinAsignar, legs: dLegLegsTxt(pro.mantenimiento.sinAsignarLegs) });
   var otrosRows = dLegFilasEmpresa(pro.otros.porEmpresa, pro.otros.total,
     { label: 'Sin reparto asignado', value: pro.otros.sinAsignar, legs: dLegLegsTxt(pro.otros.sinAsignarLegs) });
-  document.getElementById('leg-pro-emp').innerHTML = dLegTablaEmpresa(proRows, proTotalVisible, dLegExtraCarga(pg, d.carga),
-    proTodasVisibles ? null : (pg.totalGeneral > 0 ? proTotalVisible / pg.totalGeneral * 100 : 0));
-  document.getElementById('leg-comb').innerHTML = dLegTablaEmpresa(combRows, pro.combustibleTotalGeneral);
-  document.getElementById('leg-mant').innerHTML = dLegTablaEmpresa(mantRows, pro.mantenimiento.total);
-  document.getElementById('leg-otros').innerHTML = dLegTablaEmpresa(otrosRows, pro.otros.total);
-  document.getElementById('leg-sinid').innerHTML = dLegTablaEmpresa(sinIdRows, pro.sinIdentificar);
+  document.getElementById('leg-pro-emp').innerHTML = dLegTablaEmpresa(proRows, proTotalVisible, dLegExtraCarga(pg, d.carga, sinCifras),
+    proTodasVisibles ? null : (pg.totalGeneral > 0 ? proTotalVisible / pg.totalGeneral * 100 : 0), sinCifras);
+  var proCard = document.getElementById('leg-pro-emp');
+  proCard = proCard && proCard.closest ? proCard.closest('.dash-card') : null;
+  var proSub = proCard ? proCard.querySelector('.sub') : null;
+  if (proSub) proSub.textContent = sinCifras ? 'carga transportada de las remisiones (litros y kilos)'
+    : 'prorrateo por litros / kilos de las remisiones · carga transportada y costo por unidad';
+  // Usuario de una sola empresa: Combustible, Mantenimiento, Otros y Sin identificar solo
+  // traen montos y %, así que no se muestran.
+  ['leg-comb', 'leg-mant', 'leg-otros', 'leg-sinid'].forEach(function(id) { dLegMostrarCard(id, !sinCifras); });
+  if (!sinCifras) {
+    document.getElementById('leg-comb').innerHTML = dLegTablaEmpresa(combRows, pro.combustibleTotalGeneral);
+    document.getElementById('leg-mant').innerHTML = dLegTablaEmpresa(mantRows, pro.mantenimiento.total);
+    document.getElementById('leg-otros').innerHTML = dLegTablaEmpresa(otrosRows, pro.otros.total);
+    document.getElementById('leg-sinid').innerHTML = dLegTablaEmpresa(sinIdRows, pro.sinIdentificar);
+  }
 
   // Vehículos
   var vehEl = document.getElementById('leg-veh');
@@ -3322,6 +3350,7 @@ async function buildLegalizacionDash() {
     (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento + otros (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
     (datos.fallidas.length ? '<p class="leg-aviso">⚠ No se pudieron cargar: ' + escHtml(datos.fallidas.join(', ')) + '. Las remisiones que dependen de esas fuentes pueden aparecer como «Sin identificar».</p>' : '') +
     '<p>• <b>Rendimiento:</b> km de los viajes con galones registrados ÷ galones de combustible; ⚠ si queda más de 25 % por debajo del esperado. Solo hay datos de las placas del piloto de kilometraje; los envíos y el mantenimiento no suman km.</p>' +
+    (sinCifras ? '<p>• Tu usuario tiene una sola empresa: «Gasto por empresa» muestra solo la carga transportada (litros y kilos); no se muestran montos, porcentajes ni costos por unidad del prorrateo, ni las tablas de Combustible, Mantenimiento, Otros y Sin identificar.</p>' : '') +
     ((rolP === 'admin' || rolP === 'cartera') ? '' : '<p>• Si tu usuario está limitado a ciertas empresas, solo ves las legalizaciones que las involucran: los totales pueden ser parciales. «Gasto por empresa» y la carga transportada se calculan con todas las legalizaciones (como las ve el administrador) y solo se muestran tus empresas; su % es sobre el total del grupo.</p>');
 }
 
@@ -3444,14 +3473,31 @@ function exportLegalizacionExcel() {
   var wsC = XLSX.utils.aoa_to_sheet(criterios);
   wsC['!cols'] = [{ wch: 130 }, { wch: 30 }];
 
+  // Usuario de una sola empresa: sin Monto, % ni costos por unidad en «Gasto por empresa»,
+  // y sin las hojas que solo traen montos (Combustible, Mantenimiento, Otros y Sin identificar).
+  var sinCifras = dLegSinCifras();
+  if (sinCifras) {
+    criterios.push(['Tu usuario tiene una sola empresa: la hoja "Gasto por empresa" trae solo la carga transportada (litros, kilos y unidades) y no se incluyen montos, porcentajes ni costos por unidad del prorrateo, ni las hojas de Combustible, Mantenimiento, Otros y Sin identificar.']);
+    wsC = XLSX.utils.aoa_to_sheet(criterios);
+    wsC['!cols'] = [{ wch: 130 }, { wch: 30 }];
+  }
+  var COLS_CIFRAS = ['Monto', '%', '$ por litro', '$ por kilo', '$ por unidad'];
+  var hojaProXls = !sinCifras ? hojaPro : hojaPro.map(function(f) {
+    var o = {};
+    Object.keys(f).forEach(function(k) { if (COLS_CIFRAS.indexOf(k) < 0) o[k] = f[k]; });
+    return o;
+  });
+
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaLeg), 'Legalizaciones');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMes), 'Gasto por mes');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaPro), 'Gasto por empresa');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaComb), 'Combustible por empresa');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMant), 'Mantenimiento por empresa');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaOtros), 'Otros por empresa');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaSinId), 'Sin identificar');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaProXls), 'Gasto por empresa');
+  if (!sinCifras) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaComb), 'Combustible por empresa');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaMant), 'Mantenimiento por empresa');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaOtros), 'Otros por empresa');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaSinId), 'Sin identificar');
+  }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaVeh.length ? hojaVeh : [{ 'Placa': '(sin viajes con kilometraje en el período)' }]), 'Vehículos');
   XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
   XLSX.writeFile(wb, 'legalizacion_gastos_' + (dLegUltimo.fEmp ? dGetSigla(dLegUltimo.fEmp) + '_' : '') + today() + '.xlsx');
