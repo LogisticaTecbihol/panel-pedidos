@@ -5267,11 +5267,14 @@ function _toggleBodegaField(prefix, empresa) {
 // js/bodegas-consignacion.js siga detectándolo sin cambios.
 var _nvEsTraslado = false;
 
-async function _loadBodegasConsignacionCache() {
-  if (bodegasConsignacionCache) return bodegasConsignacionCache;
+// El catálogo cambia (se agregan bodegas desde otra sesión), así que
+// populateBodegaDestinoSelect lo pide de nuevo cada vez (forzar). Si la
+// consulta falla se conserva la última lista buena en vez de vaciarla.
+async function _loadBodegasConsignacionCache(forzar) {
+  if (bodegasConsignacionCache && !forzar) return bodegasConsignacionCache;
   var res = await apiGet('getBodegasConsignacion');
-  bodegasConsignacionCache = (res.ok ? res.bodegas : []) || [];
-  return bodegasConsignacionCache;
+  if (res.ok) bodegasConsignacionCache = res.bodegas || [];
+  return bodegasConsignacionCache || [];
 }
 
 function _toggleTrasladoFields(prefix, esTraslado) {
@@ -5288,7 +5291,11 @@ function _toggleTrasladoFields(prefix, esTraslado) {
 async function populateBodegaDestinoSelect(prefix, empresa, selectedId) {
   var sel = document.getElementById(prefix + '-bodega-destino');
   if (!sel) return;
-  var bodegas = await _loadBodegasConsignacionCache();
+  // Si llega otra llamada mientras esta espera la red (ej. cambio de empresa),
+  // solo la última pinta el selector.
+  var tok = sel._bdTok = (sel._bdTok || 0) + 1;
+  var bodegas = await _loadBodegasConsignacionCache(true);
+  if (sel._bdTok !== tok) return;
   var opciones = bodegas.filter(function(b) {
     return b.Activo !== false && (b.Nombre_Empresa || '') === (empresa || '');
   });
