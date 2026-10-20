@@ -33,6 +33,11 @@ var vehiculos = [];  // Vehiculos (catálogo, reemplaza la vieja lista fija PLAC
 // los compartidos y no ve la pestaña Consecutivo. null = ve todo (admin, cartera
 // y usuarios con varias empresas). Se calcula en loadLegalizaciones().
 var empresaPropia = null;
+// Datos completos (de todas las empresas) para el Prorrateo de ese usuario: sin ellos
+// el cálculo solo ve sus pedidos/viajes y no coincide con el total de su empresa.
+// null = cargando; false = no se pudieron cargar (se usa lo que el usuario ve).
+// { legs, items, empresas, mapa, mapaReparto } cuando están listos.
+var prorrateoCompleto = null;
 
 // Piloto de kilometraje: solo estas placas muestran los campos de
 // km/hora/galones/rendimiento en el formulario de Ruta y en Ver. Ampliar el
@@ -182,6 +187,33 @@ var ABAGO_CATALOGO = (function() {
 // Pedidos.Remisiones llega como "REM-001|cant|fecha, REM-002|cant|fecha" (o,
 // en registros viejos, un solo código sin "|"). Mismo parseo que kardex.js.
 function _parseRemisionesField(remStr) { return LegProrrateo.parseRemisionesField(remStr); }
+
+// Usuario de una sola empresa: trae los datos completos del Prorrateo con la función
+// get_prorrateo_legalizacion_datos() (SECURITY DEFINER; ver prorrateo_legalizacion_datos_completos.sql)
+// y arma los mismos mapas remisión → productos que el administrador. Solo se usan
+// para calcular; en pantalla sale únicamente la parte de su empresa (filtro fijo).
+async function loadProrrateoCompleto() {
+  if (!empresaPropia) { prorrateoCompleto = null; return; }
+  try {
+    var res = await _sb.rpc('get_prorrateo_legalizacion_datos');
+    if (res.error) throw new Error(res.error.message);
+    var d = res.data || {};
+    var m = LegProrrateo.construirMapas({
+      pedidos: { ok: true, pedidos: d.pedidos || [] },
+      ingresos: { ok: true, ingresos: d.ingresos || [] },
+      muestras: { ok: true, muestras: d.muestras || [] },
+      devoluciones: { ok: true, devoluciones: d.devoluciones || [] },
+      ext: { ok: true, remisiones: d.ext || [] },
+      extItems: { ok: true, items: d.extItems || [] },
+      cambios: { ok: true, cambios: d.cambios || [] }
+    });
+    prorrateoCompleto = { legs: d.legalizaciones || [], items: d.items || [], empresas: d.empresas || [], mapa: m.prodMap, mapaReparto: m.repMap };
+  } catch (e) {
+    console.warn('Prorrateo: no se pudieron cargar los datos completos', e);
+    prorrateoCompleto = false;
+  }
+  renderProrrateoGastos();
+}
 
 async function loadClientesConRemision() {
   try {
@@ -404,6 +436,7 @@ async function loadLegalizaciones() {
   populateEmpresaSelect('ef-emp', 'Todas');
   aplicarRestriccionEmpresaPropia();
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
+  loadProrrateoCompleto();   // solo usuarios de una empresa; tampoco bloquea
 
   var loadZone = document.getElementById('load-zone');
   var mainEl = document.getElementById('main');
@@ -1058,13 +1091,16 @@ function totalGastosOtrosOf(legId) {
 // dos pantallas muestren exactamente las mismas cifras. Aquí solo se le pasan los
 // datos cargados y los filtros propios de la pestaña (#pf-emp/#pf-desde/#pf-hasta).
 function calcularProrrateoGastos() {
-  return LegProrrateo.calcular({
+  // Usuario de una empresa con los datos completos listos: mismo cálculo del
+  // administrador (solo se muestra su empresa porque el filtro Empresa es fijo).
+  var datos = (empresaPropia && prorrateoCompleto) ? prorrateoCompleto : {
     legs: legs,
     items: legItems,
     empresas: legEmpresas,
     mapa: remisionProductoMap,
     mapaReparto: remisionProductoMapReparto
-  }, {
+  };
+  return LegProrrateo.calcular(datos, {
     fEmp: document.getElementById('pf-emp').value,
     fDesde: document.getElementById('pf-desde').value,
     fHasta: document.getElementById('pf-hasta').value
@@ -1118,6 +1154,7 @@ function lgProrrateoTable(rows, headerLabel) {
       var leg = legs.find(function(x) { return x.id === l.id; });
       var kmTxt = (leg && leg.Km_Salida != null && leg.Km_Llegada != null)
         ? ' <span style="color:#a0aec0">(' + (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km)</span>' : '';
+      if (!leg) return escHtml(l.consecutivo); // viaje que este usuario no puede abrir (solo entra al cálculo)
       return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + kmTxt;
     }).join(', ') + '</div>' : '';
     return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
@@ -1129,8 +1166,34 @@ function lgProrrateoTable(rows, headerLabel) {
     '<tbody>' + body + '</tbody></table></div>';
 }
 
+function avisoProrrateoPropia() {
+  var el = document.getElementById('gpr-aviso');
+  if (!el) return;
+  if (!empresaPropia) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  if (prorrateoCompleto === null) {
+    el.style.cssText = 'display:block;margin:0 0 12px;padding:8px 12px;border-radius:8px;font-size:0.82rem;background:#ebf8ff;border:1px solid #bee3f8;color:#2c5282';
+    el.textContent = '⏳ Cargando los datos completos para calcular el Prorrateo de ' + empresaPropia.sigla + '…';
+  } else if (prorrateoCompleto === false) {
+    el.style.cssText = 'display:block;margin:0 0 12px;padding:8px 12px;border-radius:8px;font-size:0.82rem;background:#fffaf0;border:1px solid #f6ad55;color:#7b341e';
+    el.textContent = '⚠ No se pudieron cargar los datos completos: estas cifras usan solo lo que tu usuario ve y pueden no coincidir con el total de ' + empresaPropia.sigla + '. Actualiza la página para reintentar.';
+  } else {
+    el.style.cssText = 'display:block;margin:0 0 12px;padding:8px 12px;border-radius:8px;font-size:0.82rem;background:#f7fafc;border:1px solid #e2e8f0;color:#4a5568';
+    el.textContent = 'ℹ Cifras de ' + empresaPropia.sigla + ' calculadas con los datos de todas las empresas; aquí solo se muestra la parte de ' + empresaPropia.sigla + '.';
+  }
+}
+
 function renderProrrateoGastos() {
   updateStats(); // el rango Desde/Hasta también afecta los indicadores de arriba
+  avisoProrrateoPropia();
+  if (empresaPropia && prorrateoCompleto === null) {
+    // Sin los datos completos las cifras saldrían parciales: mejor esperar.
+    ['gpr-body', 'gpc-body', 'gpm-body', 'gpo-body', 'gpi-body', 'gpp-body', 'gpe-body'].forEach(function(id) {
+      var b = document.getElementById(id);
+      if (b) b.innerHTML = '<div class="empty">Cargando…</div>';
+    });
+    return;
+  }
   var calc = calcularProrrateoGastos();
   renderResumenProrrateo(calc);
   renderCombustiblePorEmpresa(calc);
