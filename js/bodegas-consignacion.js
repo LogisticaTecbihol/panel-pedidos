@@ -10,6 +10,8 @@
 //     después — mismo criterio, sin tener que agregar cada una a mano).
 //   - PARCELAR, Bodega_Facturacion = 'Bodega Villeta'.
 //   - PARCELAR, Bodega_Facturacion = 'Bodega Didimo Cubillos'.
+//   - PARCELAR, Bodega_Facturacion = 'Bodega Boyaca' (los traslados a
+//     "Bodega BOYACA - ..." del catálogo se agrupan en el mismo cubo).
 //   - PARCELAR, cliente "Carlos Andres Ramirez" (varias variantes de
 //     nombre en el dato — "CARLOS RAMIREZ" / "carlos andres ramirez
 //     bonilla" — mismo NIT 80282454; se matchea por nombre).
@@ -18,7 +20,7 @@
 // La "bodega" normalmente es el campo Sucursal del pedido (el sitio
 // del cliente donde queda la mercancía) — no existe una tabla propia
 // de bodegas, así que se deriva de los datos ya cargados. Para
-// Bodega Villeta / Bodega Didimo Cubillos la bodega real es
+// Bodega Villeta / Bodega Didimo Cubillos / Bodega Boyaca la bodega real es
 // Bodega_Facturacion, no Sucursal (que ahí es solo la ubicación del
 // cliente que compró). Para los clientes "Bodega X" de IASO y para
 // Carlos Ramirez, Sucursal y Bodega_Facturacion vienen vacíos o
@@ -43,7 +45,7 @@ var bcTab = 'listado';
 var bcFiltersAttached = false;
 var _fmtNum = new Intl.NumberFormat('es-CO');
 var BC_SIN_BODEGA = '__SIN_BODEGA__';
-var BC_BODEGAS_FACTURACION_PARCELAR = ['Bodega Villeta', 'Bodega Didimo Cubillos'];
+var BC_BODEGAS_FACTURACION_PARCELAR = ['Bodega Villeta', 'Bodega Didimo Cubillos', 'Bodega Boyaca'];
 
 function _bcEsConsignacion(v) {
   var s = (v || '').trim();
@@ -80,6 +82,10 @@ function _bcBodegaKey(r) {
     if (_bcEsClienteCarlosRamirez(r.Cliente)) return 'Carlos Ramirez';
     var bf = (r.Bodega_Facturacion || '').trim();
     if (BC_BODEGAS_FACTURACION_PARCELAR.indexOf(bf) >= 0) return bf;
+    // Traslados de "Nuevo Traslado" a la bodega del catálogo ("Bodega BOYACA -
+    // Jorge Castellanos"): traen el nombre en Sucursal y Bodega_Facturacion
+    // genérico. Se funden con el cubo de Bodega_Facturacion = 'Bodega Boyaca'.
+    if ((r.Sucursal || '').trim().toUpperCase().indexOf('BODEGA BOYAC') === 0) return 'Bodega Boyaca';
   }
   if (sigla === 'IASO' && _bcEsClienteBodegaIaso(r.Cliente)) {
     var cliUp = (r.Cliente || '').trim().toUpperCase();
