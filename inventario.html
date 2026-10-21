@@ -37,8 +37,13 @@
     <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
     <a href="cartera.html" data-modulo="cartera">💳 Cartera</a>
     <a href="legalizacion-gastos.html" data-modulo="legalizacion_gastos">🧾 Legalización de Gastos</a>
-    <a href="solicitudes-mercadeo.html" data-modulo="solicitudes_mercadeo">📣 Solicitudes a Mercadeo</a>
-    <a href="solicitudes-eventos.html" data-modulo="solicitudes_mercadeo">🎪 Solicitudes de Eventos</a>
+    <div class="nav-dropdown" data-modulo="solicitudes_mercadeo">
+      <button class="nav-dropdown-toggle">📣 Mercadeo</button>
+      <div class="nav-dropdown-menu">
+        <a href="solicitudes-mercadeo.html" data-modulo="solicitudes_mercadeo">📣 Solicitudes a Mercadeo</a>
+        <a href="solicitudes-eventos.html" data-modulo="solicitudes_mercadeo">🎪 Solicitudes de Eventos</a>
+      </div>
+    </div>
     <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
     <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
     <a href="reabastecimiento.html" data-modulo="reabastecimiento">🔄 Reabastecimiento</a>
@@ -303,7 +308,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20261006b"></script>
+<script src="js/shared.js?v=20261021"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/existencias.js?v=20261002a"></script>

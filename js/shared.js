@@ -3196,14 +3196,17 @@ window.addEventListener('scroll', _closeNotifDropdown, true);
   } catch (e) { /* silencioso */ }
 })();
 
-// ── Nav-dropdown toggle (Admin menu) ──
+// ── Nav-dropdown toggle (menús Mercadeo y Admin) ──
+// Con más de un desplegable en el navbar, abrir uno cierra el otro.
 (function() {
   document.querySelectorAll('.nav-dropdown').forEach(function(dd) {
     var toggle = dd.querySelector('.nav-dropdown-toggle');
     if (!toggle) return;
     toggle.addEventListener('click', function(e) {
       e.stopPropagation();
-      dd.classList.toggle('open');
+      var abrir = !dd.classList.contains('open');
+      document.querySelectorAll('.nav-dropdown.open').forEach(function(o) { o.classList.remove('open'); });
+      if (abrir) dd.classList.add('open');
     });
   });
   document.addEventListener('click', function() {
