@@ -401,6 +401,32 @@ function evAreaValor() {
   return v === 'Otros' ? evEl('ev-area-otra').value.trim().replace(/\s+/g, ' ') : v;
 }
 
+// Plataforma del evento virtual/híbrido: lista fija + «Otra», que abre un campo para escribirla. Igual que el área, lo que se guarda
+// es la plataforma en sí (el texto escrito reemplaza a «Otra»); al editar, un valor que no está en la lista vuelve a mostrarse como «Otra» + texto.
+var EV_PLATAFORMAS = ['Zoom', 'Microsoft Teams', 'Google Meet', 'YouTube Live', 'Facebook Live'];
+var EV_PLATAFORMAS_ALIAS = { 'teams': 'Microsoft Teams', 'meet': 'Google Meet', 'youtube': 'YouTube Live', 'facebook': 'Facebook Live' };
+
+function evActualizarPlataformaOtra() {
+  var otra = evEl('ev-plataforma').value === 'Otra';
+  evEl('ev-plataforma-otra-box').style.display = otra ? '' : 'none';
+  if (otra && document.activeElement === evEl('ev-plataforma')) evEl('ev-plataforma-otra').focus();
+}
+
+function evPonerPlataforma(plataforma) {
+  var v = String(plataforma || '').trim(), k = v.toLowerCase();
+  var oficial = EV_PLATAFORMAS.filter(function (p) { return p.toLowerCase() === k; })[0] || EV_PLATAFORMAS_ALIAS[k] || '';
+  if (!v) { evEl('ev-plataforma').value = ''; evEl('ev-plataforma-otra').value = ''; }
+  else if (oficial) { evEl('ev-plataforma').value = oficial; evEl('ev-plataforma-otra').value = ''; }
+  else { evEl('ev-plataforma').value = 'Otra'; evEl('ev-plataforma-otra').value = v === 'Otra' ? '' : v; }
+  evActualizarPlataformaOtra();
+}
+
+// Plataforma a guardar: la de la lista, o el texto escrito si se eligió «Otra».
+function evPlataformaValor() {
+  var v = evEl('ev-plataforma').value;
+  return v === 'Otra' ? evEl('ev-plataforma-otra').value.trim().replace(/\s+/g, ' ') : v;
+}
+
 // ── Lugar del evento: municipio + departamento (lista oficial, js/colombia-geo.js), distribuidor/cliente + NIT y finca ──
 // Se guardan por separado (datos.lugar_*) y la función arma `lugar`, el texto único que ve Mercadeo en panel-pqrs.
 function evLugarTexto(d) {
@@ -566,7 +592,8 @@ function evResetForm() {
   evEl('ev-empresa-otra').value = '';
   evActualizarEmpresaOtra();
   evPonerArea('');
-  ['ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-municipio', 'ev-depto', 'ev-dist', 'ev-dist-nit', 'ev-finca', 'ev-plataforma',
+  evPonerPlataforma('');
+  ['ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-municipio', 'ev-depto', 'ev-dist', 'ev-dist-nit', 'ev-finca',
     'ev-objetivos-otro', 'ev-publico', 'ev-seg-dem', 'ev-seg-prof', 'ev-nivel', 'ev-invitados', 'ev-asis-pres', 'ev-asis-virt',
     'ev-canales-otro', 'ev-materiales-otro', 'ev-logistica-otro', 'ev-presupuesto', 'ev-solicitado'].forEach(function (id) { evEl(id).value = ''; });
   _ev.distSel = null;
@@ -659,6 +686,7 @@ function evLeerFormulario() {
     a_nombre_de_id: solId && _ev.ctx && solId !== _ev.ctx.yo.id ? solId : null,
     errGastos: gastos.error,
     areaOtros: evEl('ev-area').value === 'Otros',   // no viaja al servidor: solo para validar
+    plataformaOtra: evEl('ev-plataforma').value === 'Otra',
     datos: {
       empresa: evEl('sm-empresa').value,
       empresa_otra: evEl('sm-empresa').value === 'OTROS' ? evEl('ev-empresa-otra').value.trim().replace(/\s+/g, ' ') : '',
@@ -678,7 +706,7 @@ function evLeerFormulario() {
       lugar_distribuidor: lug.lugar_distribuidor,
       lugar_distribuidor_nit: lug.lugar_distribuidor_nit,
       lugar_finca: lug.lugar_finca,
-      plataforma: evEl('ev-plataforma').value.trim(),
+      plataforma: evPlataformaValor(),
       objetivos: evMarcados('ev-objetivos'),
       objetivos_otro: evEl('ev-objetivos-otro').value.trim(),
       publico_objetivo: evEl('ev-publico').value.trim(),
@@ -737,7 +765,10 @@ function evValidarPaso(f, n) {
       if (!evGeoValido(d.lugar_municipio, d.lugar_departamento)) return 'Elige el municipio y el departamento de la lista oficial (el municipio debe pertenecer al departamento)';
       if (d.lugar_distribuidor_nit && !d.lugar_distribuidor) return 'Escribe el nombre del distribuidor o cliente del NIT';
     }
-    if ((d.modalidad === 'virtual' || d.modalidad === 'hibrido') && !d.plataforma) return 'Indica la plataforma del evento virtual';
+    if (d.modalidad === 'virtual' || d.modalidad === 'hibrido') {
+      if (f.plataformaOtra && (d.plataforma.length < 3 || d.plataforma.length > 100)) return 'Escribe el nombre de la plataforma (entre 3 y 100 caracteres)';
+      if (!d.plataforma) return 'Indica la plataforma del evento virtual';
+    }
   }
   if (n === 3) {
     var enteros = [['total_invitados', 'El total de invitados'], ['asistentes_presencial', 'Los asistentes presenciales'], ['asistentes_virtual', 'Los asistentes virtuales']];
@@ -956,7 +987,7 @@ function evEditar(s) {
   var previo = evEl('ev-lugar-previo');
   previo.style.display = d.lugar && !d.lugar_municipio ? '' : 'none';
   previo.textContent = d.lugar && !d.lugar_municipio ? 'Lugar registrado antes: «' + d.lugar + '». Completa los campos de arriba.' : '';
-  evEl('ev-plataforma').value = d.plataforma || '';
+  evPonerPlataforma(d.plataforma);
   evChecks('ev-objetivos', EV_OBJETIVOS, d.objetivos || []);
   evEl('ev-objetivos-otro').value = d.objetivos_otro || '';
   evEl('ev-publico').value = d.publico_objetivo || '';
@@ -1487,6 +1518,7 @@ document.addEventListener('DOMContentLoaded', function () {
   evEl('ev-modalidad').addEventListener('change', evActualizarModalidad);
   evEl('sm-empresa').addEventListener('change', evActualizarEmpresaOtra);
   evEl('ev-area').addEventListener('change', evActualizarAreaOtra);
+  evEl('ev-plataforma').addEventListener('change', evActualizarPlataformaOtra);
   evInitLugar();
   evEl('ev-fecha').addEventListener('change', evActualizarAnticipacion);
   evEl('ev-presupuesto').addEventListener('input', evActualizarPresupuesto);

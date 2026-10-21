@@ -285,8 +285,20 @@
           <div class="sm-hint" id="ev-lugar-previo" style="display:none"></div>
         </div>
         <div id="ev-plataforma-box">
-          <label class="ef-label" for="ev-plataforma">Plataforma (Zoom, Teams, Meet…)</label>
-          <input class="ef" type="text" id="ev-plataforma" maxlength="200" autocomplete="off">
+          <label class="ef-label" for="ev-plataforma">Plataforma *</label>
+          <select class="ef" id="ev-plataforma">
+            <option value="">— Seleccionar —</option>
+            <option value="Zoom">Zoom</option>
+            <option value="Microsoft Teams">Microsoft Teams</option>
+            <option value="Google Meet">Google Meet</option>
+            <option value="YouTube Live">YouTube Live</option>
+            <option value="Facebook Live">Facebook Live</option>
+            <option value="Otra">Otra</option>
+          </select>
+          <div id="ev-plataforma-otra-box" style="display:none;margin-top:8px">
+            <label class="ef-label" for="ev-plataforma-otra">Nombre de la plataforma *</label>
+            <input class="ef" type="text" id="ev-plataforma-otra" maxlength="100" autocomplete="off" placeholder="Escribe cuál plataforma">
+          </div>
         </div>
       </div>
 
@@ -527,6 +539,6 @@
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
-<script src="js/solicitudes-eventos.js?v=20261026"></script>
+<script src="js/solicitudes-eventos.js?v=20261027"></script>
 </body>
 </html>
