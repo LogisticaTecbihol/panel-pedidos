@@ -543,6 +543,8 @@ var NOTIF = (function() {
     } else if (mod === 'solicitudes_mercadeo') {
       // "por aprobar" -> bandeja de aprobación; aprobada/rechazada -> Mis solicitudes.
       q.tab = /por aprobar/i.test(tit) ? 'aprobar' : 'mis';
+      // Las solicitudes de EVENTOS usan el mismo módulo y su referencia es SE-<n> (las de Mercadeo, SM-<n>).
+      if (/^SE-/i.test(ref)) page = 'solicitudes-eventos.html';
     }
 
     var qs = new URLSearchParams(q).toString();

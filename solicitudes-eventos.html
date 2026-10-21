@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co https://kvfqcymeihglohkcckdp.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Solicitudes de eventos — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎪</text></svg>">
+<title>Solicitudes de Eventos – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260921d">
+<style>
+  .sm-tabs { display: flex; gap: 6px; margin-bottom: 0; }
+  .sm-form { max-width: 900px; padding: 20px 24px; }
+  .sm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .sm-grid .full { grid-column: 1 / -1; }
+  .sm-hint { font-size: 0.78rem; color: #718096; margin-top: 4px; min-height: 1em; }
+  .sm-counter { font-size: 0.74rem; color: #a0aec0; text-align: right; margin-top: 2px; }
+  .sm-estado { background: #fef3cd; color: #b7791f; border-color: #f9e79f; font-weight: 700; }
+  .sm-files { list-style: none; margin: 8px 0 0; padding: 0; }
+  .sm-files li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 6px; font-size: 0.82rem; background: #f7fafc; }
+  .sm-files li .nm { flex: 1; word-break: break-all; }
+  .sm-files li .sz { color: #718096; white-space: nowrap; }
+  .sm-files li button { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 1rem; }
+  .sm-combo { position: relative; }
+  .sm-combo input { padding-right: 28px; background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23718096' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 10px center; }
+  .sm-combo-lista { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; margin: 2px 0 0; padding: 4px 0; list-style: none;
+    max-height: 240px; overflow-y: auto; background: white; border: 1px solid #cbd5e0; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.14); }
+  .sm-combo-lista li { padding: 7px 12px; font-size: 0.86rem; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+  .sm-combo-lista li .rol { color: #718096; font-size: 0.76rem; white-space: nowrap; }
+  .sm-combo-lista li.activo, .sm-combo-lista li:hover { background: #ebf5fb; }
+  .sm-combo-lista li.sel { font-weight: 700; }
+  .sm-combo-lista li.vacio { color: #a0aec0; cursor: default; font-style: italic; }
+  .sm-box { border-radius: 8px; padding: 10px 14px; font-size: 0.86rem; margin-bottom: 12px; border: 1px solid; }
+  .sm-box-pend { background: #fef3c7; border-color: #f9e79f; color: #92400e; }
+  .sm-box-ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+  .sm-box-rech { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .sm-etapa { display: inline-block; white-space: nowrap; margin: 1px 12px 1px 0; }
+  #sm-lista .sm-etapa { display: block; margin-right: 0; }
+  .sm-etapa-t { font-size: 0.72rem; font-weight: 600; color: #718096; }
+  .sm-leyenda { margin: 10px 16px 0; padding: 8px 12px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.8rem; color: #4a5568; line-height: 1.5; }
+  .sm-leyenda strong { color: #2d3748; }
+  .sm-warn { background: #fef9e7; border: 1px solid #f9e79f; color: #b7791f; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; margin-bottom: 14px; }
+  .sm-actions { display: flex; gap: 12px; align-items: center; margin-top: 20px; flex-wrap: wrap; }
+  .sm-progreso { font-size: 0.82rem; color: #4a5568; }
+  .sm-det h4 { margin: 14px 0 6px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.3px; color: #4a5568; }
+  .sm-det .kv { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; font-size: 0.86rem; }
+  .sm-det .kv span.k { color: #718096; }
+  .sm-hist { list-style: none; margin: 0; padding: 0; }
+  .sm-hist li { padding: 8px 10px; border-left: 3px solid #cbd5e0; background: #f7fafc; margin-bottom: 6px; border-radius: 0 6px 6px 0; font-size: 0.84rem; }
+  .sm-hist li.resp { border-left-color: #1a5276; background: #ebf5fb; }
+  .sm-hist li.obs { border-left-color: #2c7a7b; background: #e6fffa; }
+  .sm-obs-box { margin-top: 18px; padding: 12px 14px; border: 1px solid #b2f5ea; border-radius: 8px; background: #f0fdfa; }
+  .sm-hist .meta { font-size: 0.74rem; color: #718096; margin-top: 2px; }
+  /* Formulario de eventos */
+  .ev-sec { font-size: 0.95rem; color: #1a5276; margin: 26px 0 12px; padding-bottom: 5px; border-bottom: 2px solid #aed6f1; }
+  .ev-sec:first-of-type { margin-top: 4px; }
+  .ev-ayuda { text-transform: none; font-weight: 400; color: #718096; letter-spacing: 0; }
+  .ev-horas { display: flex; align-items: center; gap: 8px; }
+  .ev-horas .ef { flex: 1; min-width: 0; }
+  .ev-checks { display: flex; flex-direction: column; gap: 6px; font-size: 0.86rem; }
+  .ev-checks label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .ev-radios { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.88rem; }
+  .ev-radios label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .ev-gasto { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; margin-bottom: 6px; align-items: center; }
+  .ev-gasto button { background: #e74c3c; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .ev-aviso { color: #c0392b; font-size: 0.78rem; font-weight: 600; margin-top: 4px; }
+  @media (max-width: 640px) { .sm-grid { grid-template-columns: 1fr; } .sm-det .kv { grid-template-columns: 1fr; } .ev-gasto { grid-template-columns: 1fr 110px auto; } }
+</style>
+</head>
+<body data-modulo="solicitudes_mercadeo">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="cartera.html" data-modulo="cartera">💳 Cartera</a>
+    <a href="legalizacion-gastos.html" data-modulo="legalizacion_gastos">🧾 Legalización de Gastos</a>
+    <a href="solicitudes-mercadeo.html" data-modulo="solicitudes_mercadeo">📣 Solicitudes a Mercadeo</a>
+    <a href="solicitudes-eventos.html" data-modulo="solicitudes_mercadeo" class="active">🎪 Solicitudes de Eventos</a>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="reabastecimiento.html" data-modulo="reabastecimiento">🔄 Reabastecimiento</a>
+    <a href="bodegas-consignacion.html" data-modulo="bodegas_consignacion">🏬 Bodegas en Consignación</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando el formulario de solicitudes de eventos</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="evInit()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div class="sm-tabs">
+    <button class="car-tab active" id="sm-tab-nueva" data-sm-tab="nueva">➕ Nueva solicitud</button>
+    <button class="car-tab" id="sm-tab-mis" data-sm-tab="mis">📋 Mis solicitudes <span class="car-tab-ct" id="sm-ct-mis">0</span></button>
+    <button class="car-tab" id="sm-tab-aprobar" data-sm-tab="aprobar" style="display:none">✅ Por aprobar <span class="car-tab-ct" id="sm-ct-aprobar">0</span></button>
+  </div>
+
+  <!-- NUEVA SOLICITUD (formato MC-ISO-FO01) -->
+  <div class="card" id="sm-vista-nueva" style="border-top-left-radius:0">
+    <div class="sm-form">
+      <div id="sm-edit-banner" class="sm-warn" style="display:none"></div>
+      <div id="sm-aviso-sin-empresa" class="sm-warn" style="display:none">
+        No tienes ninguna empresa asignada, así que todavía no puedes enviar solicitudes. Pide a un administrador que te asigne la empresa en Usuarios.
+      </div>
+      <div class="sm-hint" style="margin:0 0 6px">Formato de solicitud de eventos (MC-ISO-FO01). Envíala con mínimo <strong>15 días calendario</strong> de anticipación si necesitas material POP, mobiliario, diseño gráfico o presencia del equipo de Mercadeo.</div>
+
+      <h3 class="ev-sec">1. Información general del solicitante</h3>
+      <div class="sm-grid">
+        <div>
+          <label class="ef-label" for="sm-solicitante">Nombre del solicitante *</label>
+          <div class="sm-combo">
+            <input class="ef" type="text" id="sm-solicitante" role="combobox" aria-autocomplete="list" aria-expanded="false"
+                   aria-controls="sm-solicitante-lista" autocomplete="off" placeholder="Escribe para buscar por nombre…">
+            <ul class="sm-combo-lista" id="sm-solicitante-lista" role="listbox" style="display:none"></ul>
+          </div>
+          <input type="hidden" id="sm-solicitante-id">
+          <div class="sm-hint">Por defecto eres tú. Busca y elige a otra persona si haces la solicitud a su nombre.</div>
+        </div>
+        <div>
+          <label class="ef-label" for="ev-area">Departamento / Área</label>
+          <input class="ef" type="text" id="ev-area" maxlength="120" autocomplete="off" placeholder="Ej.: Comercial">
+        </div>
+        <div>
+          <label class="ef-label" for="ev-correo">Correo electrónico</label>
+          <input class="ef" type="email" id="ev-correo" maxlength="160" autocomplete="off">
+          <div class="sm-hint">Si lo dejas vacío se usa el correo del solicitante.</div>
+        </div>
+        <div>
+          <label class="ef-label" for="ev-tel">Teléfono de contacto</label>
+          <input class="ef" type="text" id="ev-tel" maxlength="40" autocomplete="off">
+        </div>
+        <div>
+          <label class="ef-label" for="ev-limite">Fecha límite de aprobación</label>
+          <input class="ef" type="date" id="ev-limite">
+          <div class="sm-hint">Fecha en la que necesitas la respuesta de Mercadeo.</div>
+        </div>
+        <div>
+          <label class="ef-label" for="sm-estado">Estado</label>
+          <input class="ef sm-estado" type="text" id="sm-estado" value="Por aprobar" readonly tabindex="-1">
+          <div class="sm-hint" id="sm-estado-hint"></div>
+        </div>
+      </div>
+
+      <h3 class="ev-sec">2. Detalles del evento</h3>
+      <div class="sm-grid">
+        <div>
+          <label class="ef-label" for="sm-empresa">Empresa *</label>
+          <select class="ef" id="sm-empresa"></select>
+        </div>
+        <div>
+          <label class="ef-label" for="ev-nombre">Nombre del evento *</label>
+          <input class="ef" type="text" id="ev-nombre" maxlength="200" autocomplete="off">
+        </div>
+        <div class="full">
+          <label class="ef-label" for="sm-desc">Descripción breve del evento * <span class="ev-ayuda">¿Qué es? ¿Por qué se realiza?</span></label>
+          <textarea class="ef" id="sm-desc" rows="4" maxlength="2000"></textarea>
+          <div class="sm-counter"><span id="sm-desc-ct">0</span> / 2000</div>
+        </div>
+        <div>
+          <label class="ef-label" for="ev-fecha">Fecha del evento *</label>
+          <input class="ef" type="date" id="ev-fecha">
+          <div class="sm-hint" id="ev-anticipacion"></div>
+        </div>
+        <div>
+          <span class="ef-label">Horario</span>
+          <div class="ev-horas"><input class="ef" type="time" id="ev-hora-ini" aria-label="Hora de inicio"> <span>a</span> <input class="ef" type="time" id="ev-hora-fin" aria-label="Hora de fin"></div>
+        </div>
+        <div class="full">
+          <span class="ef-label">Lugar / Ubicación *</span>
+          <div class="ev-radios" id="ev-modalidad" role="radiogroup" aria-label="Modalidad"></div>
+        </div>
+        <div id="ev-lugar-box">
+          <label class="ef-label" for="ev-lugar">Lugar (finca, distribuidor, municipio…)</label>
+          <input class="ef" type="text" id="ev-lugar" maxlength="300" autocomplete="off">
+        </div>
+        <div id="ev-plataforma-box">
+          <label class="ef-label" for="ev-plataforma">Plataforma (Zoom, Teams, Meet…)</label>
+          <input class="ef" type="text" id="ev-plataforma" maxlength="200" autocomplete="off">
+        </div>
+      </div>
+
+      <h3 class="ev-sec">3. Objetivos y público</h3>
+      <span class="ef-label">Objetivos del evento (selecciona y/o añade)</span>
+      <div class="ev-checks" id="ev-objetivos"></div>
+      <div style="margin:10px 0 16px">
+        <label class="ef-label" for="ev-objetivos-otro">Otros (especifica)</label>
+        <input class="ef" type="text" id="ev-objetivos-otro" maxlength="300" autocomplete="off">
+      </div>
+      <div class="sm-grid">
+        <div>
+          <label class="ef-label" for="ev-publico">Público objetivo (especificar)</label>
+          <input class="ef" type="text" id="ev-publico" maxlength="500" autocomplete="off">
+        </div>
+        <div>
+          <label class="ef-label" for="ev-seg-dem">Segmento demográfico <span class="ev-ayuda">edad, género, ubicación…</span></label>
+          <input class="ef" type="text" id="ev-seg-dem" maxlength="500" autocomplete="off">
+        </div>
+        <div>
+          <label class="ef-label" for="ev-seg-prof">Segmentación profesional <span class="ev-ayuda">cargos, industrias, tamaño de la empresa</span></label>
+          <input class="ef" type="text" id="ev-seg-prof" maxlength="500" autocomplete="off">
+        </div>
+        <div>
+          <label class="ef-label" for="ev-nivel">Nivel de conocimiento <span class="ev-ayuda">principiantes, expertos</span></label>
+          <input class="ef" type="text" id="ev-nivel" maxlength="300" autocomplete="off">
+        </div>
+        <div>
+          <label class="ef-label" for="ev-invitados">Total de invitados</label>
+          <input class="ef" type="number" id="ev-invitados" min="0" max="100000" inputmode="numeric">
+        </div>
+        <div>
+          <span class="ef-label">Asistentes esperados</span>
+          <div class="ev-horas"><input class="ef" type="number" id="ev-asis-pres" min="0" max="100000" inputmode="numeric" placeholder="Presenciales" aria-label="Asistentes presenciales"> <span>/</span> <input class="ef" type="number" id="ev-asis-virt" min="0" max="100000" inputmode="numeric" placeholder="Virtuales" aria-label="Asistentes virtuales"></div>
+        </div>
+      </div>
+
+      <h3 class="ev-sec">4. Requerimientos específicos de Mercadeo</h3>
+      <span class="ef-label">Canales de promoción solicitados (selecciona y/o añade)</span>
+      <div class="ev-checks" id="ev-canales"></div>
+      <div style="margin:10px 0 16px">
+        <label class="ef-label" for="ev-canales-otro">Otros (especifica)</label>
+        <input class="ef" type="text" id="ev-canales-otro" maxlength="300" autocomplete="off">
+      </div>
+      <span class="ef-label">Materiales gráficos y visuales (selecciona y/o añade)</span>
+      <div class="ev-checks" id="ev-materiales"></div>
+      <div style="margin:10px 0 16px">
+        <label class="ef-label" for="ev-materiales-otro">Otros (especifica)</label>
+        <input class="ef" type="text" id="ev-materiales-otro" maxlength="300" autocomplete="off">
+      </div>
+      <span class="ef-label">Logística y presencialidad</span>
+      <div class="ev-checks" id="ev-logistica"></div>
+      <div style="margin:10px 0 16px">
+        <label class="ef-label" for="ev-logistica-otro">Otros (especifica)</label>
+        <input class="ef" type="text" id="ev-logistica-otro" maxlength="300" autocomplete="off">
+      </div>
+
+      <h3 class="ev-sec">5. Presupuesto</h3>
+      <div class="sm-grid">
+        <div>
+          <label class="ef-label" for="ev-presupuesto">Presupuesto estimado del evento ($)</label>
+          <input class="ef" type="text" id="ev-presupuesto" inputmode="decimal" autocomplete="off" placeholder="0">
+        </div>
+        <div>
+          <label class="ef-label" for="ev-solicitado">Total solicitado a Mercadeo ($)</label>
+          <input class="ef" type="text" id="ev-solicitado" inputmode="decimal" autocomplete="off" placeholder="0">
+        </div>
+        <div class="full">
+          <div class="ev-aviso" id="ev-presupuesto-aviso"></div>
+          <span class="ef-label" style="margin-top:6px">Desglose de gastos</span>
+          <div id="ev-desglose"></div>
+          <div style="margin-top:6px"><button type="button" class="btn-cancel" id="ev-gasto-agregar" style="padding:5px 12px;font-size:0.8rem">➕ Agregar línea</button>
+            <span class="sm-hint" id="ev-desglose-total" style="margin-left:10px;display:inline"></span></div>
+        </div>
+      </div>
+
+      <h3 class="ev-sec">6. Aprobación</h3>
+      <div class="sm-hint" style="font-size:0.84rem">Al enviarla queda registrada a tu nombre. Un aprobador la revisa primero (si tú puedes aprobar, pasa directo) y luego el Líder de Mercadeo la evalúa en máximo 48 horas hábiles. Verás cada paso en «Mis solicitudes» y en tus notificaciones.</div>
+
+      <div class="sm-grid" style="margin-top:14px">
+        <div class="full">
+          <label class="ef-label" for="sm-files">Adjuntar documentos (opcional)</label>
+          <input type="file" id="sm-files" multiple>
+          <div class="sm-hint">Hasta 5 archivos de 25 MB cada uno: PDF, Word, Excel, PowerPoint, imágenes, AI/PSD/EPS, video o audio, ZIP.</div>
+          <ul class="sm-files" id="sm-files-lista"></ul>
+        </div>
+      </div>
+
+      <div class="sm-actions">
+        <button class="btn-confirm" id="sm-enviar" type="button">📨 Enviar solicitud</button>
+        <button class="btn-cancel" id="sm-limpiar" type="button">Limpiar</button>
+        <span class="sm-progreso" id="sm-progreso"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIS SOLICITUDES -->
+  <div class="card" id="sm-vista-mis" style="display:none;border-top-left-radius:0">
+    <div class="card-head">
+      <h3>📋 Mis solicitudes de eventos <span id="sm-row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" id="sm-refrescar" type="button">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div class="sm-leyenda">
+      <strong>Gerente comercial:</strong> aprobación previa para que tu solicitud pase a Mercadeo.
+      &nbsp;·&nbsp;
+      <strong>Mercadeo:</strong> estado de tu evento dentro del equipo de Mercadeo (Recibida, En revisión, Aprobada, En preparación, Realizada, Cerrada…).
+      <br>
+      <strong>✏️ Editar:</strong> puedes modificar tu solicitud hasta que Mercadeo la apruebe. <strong>💬 Observación:</strong> después de eso, escríbele a Mercadeo lo que necesites aclarar o ajustar.
+      <br>
+      <strong>📋 Base de datos de asistentes:</strong> tras el evento debes entregarla a Mercadeo en máximo 3 días hábiles.
+    </div>
+    <div id="sm-aviso-mercadeo" class="sm-warn" style="display:none;margin:12px 16px 0">
+      No se pudo consultar el estado en Mercadeo en este momento; las solicitudes aprobadas aparecen como “Aprobada”.
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th><th>Enviada</th><th>Evento</th><th>Empresa</th><th>A nombre de</th>
+            <th>Fecha del evento</th><th>Anticipación</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sm-lista"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- POR APROBAR (aprobadores) -->
+  <div class="card" id="sm-vista-aprobar" style="display:none;border-top-left-radius:0">
+    <div class="card-head">
+      <h3>✅ Solicitudes de eventos por aprobar <span id="sm-row-ct-aprobar" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" id="sm-refrescar-aprobar" type="button">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th><th>Enviada</th><th>Solicitante</th><th>A nombre de</th><th>Evento</th>
+            <th>Empresa</th><th>Fecha del evento</th><th>Anticipación</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sm-lista-aprobar"></tbody>
+      </table>
+    </div>
+
+    <div class="card-head" style="border-top:1px solid #e2e8f0;margin-top:14px">
+      <h3>🎪 Aprobadas con Mercadeo <span id="sm-row-ct-apr" style="font-weight:400;color:#718096"></span></h3>
+    </div>
+    <div class="sm-hint" style="margin:0 16px 8px">
+      Solicitudes ya aprobadas que siguen con Mercadeo (sin cerrar ni cancelar). Ábrelas con “💬 Observación” para dejarle a Mercadeo aclaraciones.
+    </div>
+    <div id="sm-aviso-apr" class="sm-warn" style="display:none;margin:0 16px 12px">
+      No se pudo consultar el estado en Mercadeo en este momento; se muestran todas las aprobadas, incluso las que ya pudieron cerrarse.
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th><th>Aprobada</th><th>Solicitante</th><th>A nombre de</th><th>Evento</th>
+            <th>Empresa</th><th>Fecha del evento</th><th>Estado en Mercadeo</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sm-lista-apr"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: detalle de una solicitud -->
+<div class="overlay" id="sm-overlay">
+  <div class="modal-box" style="max-width:760px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="sm-det-titulo">Solicitud</h2>
+        <div class="meta" id="sm-det-meta"></div>
+      </div>
+      <button class="btn-close" id="sm-det-cerrar" type="button">✕</button>
+    </div>
+    <div class="mbody sm-det" id="sm-det-cuerpo"></div>
+    <div class="mftr">
+      <div class="mftr-btns" id="sm-det-acciones"></div>
+      <div class="mftr-btns">
+        <button class="btn-cancel" id="sm-det-cerrar2" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: motivo del rechazo -->
+<div class="overlay" id="sm-rej-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1">
+        <h2>❌ Rechazar solicitud de evento</h2>
+        <div class="meta" id="sm-rej-detalle"></div>
+      </div>
+    </div>
+    <div class="mbody">
+      <label class="ef-label" for="sm-rej-motivo">Motivo del rechazo *</label>
+      <textarea class="ef" id="sm-rej-motivo" rows="3" maxlength="500" placeholder="Explícale al solicitante qué debe corregir…"></textarea>
+      <div class="sm-hint">El solicitante verá este motivo y podrá corregir la solicitud y reenviarla.</div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" id="sm-rej-cancelar" type="button">Cancelar</button>
+        <button class="btn-confirm" id="sm-rej-confirmar" type="button" style="background:#c0392b">❌ Rechazar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20261006b"></script>
+<script src="js/auth.js?v=20261021"></script>
+<script src="js/notificaciones.js?v=20261021"></script>
+<script src="js/solicitudes-eventos.js?v=20261021"></script>
+</body>
+</html>
