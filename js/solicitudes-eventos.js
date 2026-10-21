@@ -133,7 +133,22 @@ function evBadgesEstado(s) {
   var key = s.estado === 'aprobada' ? 'aprobada_merc' : s.estado;
   var merc = s.rechazada_por_mercadeo ? EV_ESTADOS.rechazada : (key ? evEstadoDe(key) : null);
   return etapa('Gerente comercial', s.auto_aprobada ? ayudaGerente + ' Se aprobó sola porque quien envió tiene permiso de aprobar.' : ayudaGerente, EV_ESTADOS.aprobada) +
-    (merc ? etapa('Mercadeo', ayudaMercadeo, merc) : '');
+    (merc ? etapa('Mercadeo', ayudaMercadeo, merc) : '') + evAvanceMercadeoHtml(s, true);
+}
+
+// Avance del checklist de actividades con que Mercadeo prepara el evento: «3 de 5» y una barra. Solo el avance (el detalle es de Mercadeo).
+// `compacto`: una línea para las listas; si no, la barra completa del detalle.
+function evAvanceMercadeoHtml(s, compacto) {
+  var total = Number(s.actividades_total) || 0, hechas = Number(s.actividades_hechas) || 0;
+  if (!total || s.rechazada_por_mercadeo || s.estado === 'cancelada' || s.estado === 'rechazada') return '';
+  var pct = Math.round(hechas / total * 100);
+  var barra = '<span class="sm-avance"><i style="width:' + pct + '%"></i></span>';
+  var ayuda = 'Actividades que Mercadeo ha completado para preparar tu evento';
+  if (compacto) {
+    return '<span class="sm-etapa" title="' + escHtml(ayuda) + '"><span class="sm-etapa-t">Actividades:</span> ' +
+      '<span class="badge ' + (hechas === total ? 'b-ent' : 'b-par') + '">' + hechas + ' de ' + total + '</span> ' + barra + '</span>';
+  }
+  return '<span title="' + escHtml(ayuda) + '">' + hechas + ' de ' + total + ' hechas (' + pct + '%) ' + barra + '</span>';
 }
 
 function evAnticipacionHtml(s) {
@@ -1372,6 +1387,7 @@ function evVerDetalle(origen, i, enfocarObs) {
     (enMercadeo
       ? '<h4>Seguimiento en Mercadeo</h4><div class="kv">' +
           '<span class="k">Aprobada por Mercadeo</span><span>' + escHtml(s.aprobada_mercadeo_por ? s.aprobada_mercadeo_por + ' · ' + evFmtFechaHora(s.aprobada_mercadeo_en) : 'Pendiente') + '</span>' +
+          (Number(s.actividades_total) > 0 && s.estado !== 'cancelada' ? '<span class="k">Actividades de Mercadeo</span><span>' + evAvanceMercadeoHtml(s, false) + '</span>' : '') +
           '<span class="k">Realizada</span><span>' + escHtml(s.realizada_en ? evFmtFechaHora(s.realizada_en) : '—') + '</span>' +
           '<span class="k">Base de datos de asistentes</span><span>' + escHtml(s.bd_no_aplica ? 'No aplica' : (s.bd_asistentes_fecha ? 'Recibida el ' + fmtDate(s.bd_asistentes_fecha) : 'Pendiente (plazo: 3 días hábiles tras el evento)')) + '</span>' +
         '</div>'

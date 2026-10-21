@@ -592,6 +592,9 @@ serve(async (req) => {
         bd_asistentes_fecha: pq ? pq.bd_asistentes_fecha : null,
         bd_no_aplica: pq ? pq.bd_no_aplica : false,
         cerrada_en: pq ? pq.cerrada_en : null,
+        // Avance del checklist de actividades de Mercadeo (solo cuántas van; el detalle es interno de Mercadeo).
+        actividades_total: pq ? Number(pq.actividades_total) || 0 : 0,
+        actividades_hechas: pq ? Number(pq.actividades_hechas) || 0 : 0,
         historial: hist,
       }
     }
