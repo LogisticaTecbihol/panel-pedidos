@@ -68,6 +68,8 @@ var _ev = {
   pend: [],           // por aprobar (aprobadores)
   apr: [],            // aprobadas que siguen con Mercadeo (aprobadores)
   detalle: null,      // { origen: 'mis'|'pend'|'apr', idx }
+  paso: 1,            // paso visible del formulario (1-5)
+  visitados: {},      // pasos ya vistos: solo ellos muestran ✓ / ! en la barra
   observando: false,  // candado anti doble clic al enviar una observación
   rechazando: null,   // solicitud que se está rechazando
   pqrs: null
@@ -442,6 +444,8 @@ function evResetForm() {
   evEl('sm-edit-banner').style.display = 'none';
   evEl('sm-enviar').textContent = evTextoEnviar();
   evRenderArchivos();
+  _ev.visitados = {};
+  evMostrarPaso(1);
 }
 
 // Texto del botón de envío según lo que se está haciendo.
@@ -537,31 +541,131 @@ function evLeerFormulario() {
   };
 }
 
-function evValidar(f) {
+// ── Pasos del formulario ──
+// 1 Solicitante · 2 Evento · 3 Objetivos y público · 4 Requerimientos · 5 Presupuesto y envío (secciones 5 y 6 del formato).
+// Se avanza con «Siguiente» (valida solo el paso actual); hacia atrás se vuelve sin validar. En la barra, un paso ya visitado
+// muestra ✓ si está completo o ! si le falta algo. El envío revisa todos los pasos y lleva al primero con error.
+var EV_PASOS = [
+  { n: 1, t: 'Solicitante' },
+  { n: 2, t: 'Evento' },
+  { n: 3, t: 'Objetivos y público' },
+  { n: 4, t: 'Requerimientos' },
+  { n: 5, t: 'Presupuesto y envío' }
+];
+
+// Error (texto) de un paso, o null si está completo.
+function evValidarPaso(f, n) {
   var d = f.datos;
-  if (f.errGastos) return f.errGastos;
-  if (!f.solicitante_id || !evComboOpcion(f.solicitante_id)) return 'Elige el solicitante de la lista';
-  if (!d.empresa) return 'Elige la empresa';
-  if (d.nombre.length < 3) return 'El nombre del evento debe tener al menos 3 caracteres';
-  if (d.descripcion.length < 10) return 'Describe el evento (mínimo 10 caracteres)';
-  if (d.descripcion.length > 2000) return 'La descripción no puede superar 2000 caracteres';
-  if (!d.fecha_evento) return 'Indica la fecha del evento';
-  if (d.fecha_evento < today()) return 'La fecha del evento no puede ser anterior a hoy';
-  if (d.fecha_limite_aprobacion) {
-    if (d.fecha_limite_aprobacion < today()) return 'La fecha límite de aprobación no puede ser anterior a hoy';
-    if (d.fecha_limite_aprobacion > d.fecha_evento) return 'La fecha límite de aprobación no puede ser posterior a la fecha del evento';
+  if (n === 1) {
+    if (!f.solicitante_id || !evComboOpcion(f.solicitante_id)) return 'Elige el solicitante de la lista';
+    if (d.fecha_limite_aprobacion && d.fecha_limite_aprobacion < today()) return 'La fecha límite de aprobación no puede ser anterior a hoy';
   }
-  if (d.hora_inicio && d.hora_fin && d.hora_fin <= d.hora_inicio) return 'La hora de fin debe ser posterior a la de inicio';
-  if (!d.modalidad) return 'Elige la modalidad: físico, virtual o híbrido';
-  if ((d.modalidad === 'fisico' || d.modalidad === 'hibrido') && !d.lugar) return 'Indica el lugar o ubicación del evento';
-  if ((d.modalidad === 'virtual' || d.modalidad === 'hibrido') && !d.plataforma) return 'Indica la plataforma del evento virtual';
-  if (isNaN(d.presupuesto_estimado) || isNaN(d.total_solicitado)) return 'El presupuesto y el total solicitado deben ser números';
-  var enteros = [['total_invitados', 'El total de invitados'], ['asistentes_presencial', 'Los asistentes presenciales'], ['asistentes_virtual', 'Los asistentes virtuales']];
-  for (var i = 0; i < enteros.length; i++) {
-    var v = d[enteros[i][0]];
-    if (v !== null && (!Number.isInteger(v) || v < 0 || v > 100000)) return enteros[i][1] + ' debe ser un número entero entre 0 y 100000';
+  if (n === 2) {
+    if (!d.empresa) return 'Elige la empresa';
+    if (d.nombre.length < 3) return 'El nombre del evento debe tener al menos 3 caracteres';
+    if (d.descripcion.length < 10) return 'Describe el evento (mínimo 10 caracteres)';
+    if (d.descripcion.length > 2000) return 'La descripción no puede superar 2000 caracteres';
+    if (!d.fecha_evento) return 'Indica la fecha del evento';
+    if (d.fecha_evento < today()) return 'La fecha del evento no puede ser anterior a hoy';
+    if (d.fecha_limite_aprobacion && d.fecha_limite_aprobacion > d.fecha_evento) return 'La fecha límite de aprobación no puede ser posterior a la fecha del evento';
+    if (d.hora_inicio && d.hora_fin && d.hora_fin <= d.hora_inicio) return 'La hora de fin debe ser posterior a la de inicio';
+    if (!d.modalidad) return 'Elige la modalidad: físico, virtual o híbrido';
+    if ((d.modalidad === 'fisico' || d.modalidad === 'hibrido') && !d.lugar) return 'Indica el lugar o ubicación del evento';
+    if ((d.modalidad === 'virtual' || d.modalidad === 'hibrido') && !d.plataforma) return 'Indica la plataforma del evento virtual';
+  }
+  if (n === 3) {
+    var enteros = [['total_invitados', 'El total de invitados'], ['asistentes_presencial', 'Los asistentes presenciales'], ['asistentes_virtual', 'Los asistentes virtuales']];
+    for (var i = 0; i < enteros.length; i++) {
+      var v = d[enteros[i][0]];
+      if (v !== null && (!Number.isInteger(v) || v < 0 || v > 100000)) return enteros[i][1] + ' debe ser un número entero entre 0 y 100000';
+    }
+  }
+  if (n === 5) {
+    if (f.errGastos) return f.errGastos;
+    if (isNaN(d.presupuesto_estimado) || isNaN(d.total_solicitado)) return 'El presupuesto y el total solicitado deben ser números';
   }
   return null;
+}
+
+// Primer paso con error: { paso, msg } o null.
+function evPrimerError(f) {
+  for (var n = 1; n <= EV_PASOS.length; n++) {
+    var msg = evValidarPaso(f, n);
+    if (msg) return { paso: n, msg: msg };
+  }
+  return null;
+}
+
+function evRenderPasos() {
+  var f = evLeerFormulario();
+  evEl('ev-pasos').innerHTML = EV_PASOS.map(function (p) {
+    var est = p.n === _ev.paso ? 'actual' : (_ev.visitados[p.n] ? (evValidarPaso(f, p.n) ? 'error' : 'ok') : '');
+    var marca = est === 'ok' ? '✓' : est === 'error' ? '!' : String(p.n);
+    return '<li class="' + est + '"><button type="button" data-ev-paso="' + p.n + '"' + (est === 'actual' ? ' aria-current="step"' : '') +
+      ' title="' + escHtml(p.t) + (est === 'error' ? ' — falta completar algo' : '') + '">' +
+      '<span class="num">' + marca + '</span><span class="txt">' + escHtml(p.t) + '</span></button></li>';
+  }).join('');
+}
+
+function evMostrarPaso(n, scroll) {
+  n = Math.max(1, Math.min(EV_PASOS.length, n));
+  _ev.paso = n;
+  _ev.visitados[n] = true;
+  [].slice.call(document.querySelectorAll('.ev-paso')).forEach(function (s) {
+    s.style.display = Number(s.getAttribute('data-paso')) === n ? '' : 'none';
+  });
+  var ultimo = n === EV_PASOS.length;
+  evEl('ev-anterior').style.visibility = n === 1 ? 'hidden' : 'visible';
+  evEl('ev-siguiente').style.display = ultimo ? 'none' : '';
+  evEl('ev-envio').style.display = ultimo ? '' : 'none';
+  evEl('ev-paso-txt').textContent = 'Paso ' + n + ' de ' + EV_PASOS.length + ' · ' + EV_PASOS[n - 1].t;
+  if (ultimo) evRenderResumen();
+  evRenderPasos();
+  if (scroll) evEl('ev-pasos').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Ir a un paso: hacia atrás o el mismo, sin validar; hacia adelante, validando cada paso intermedio.
+function evIrAPaso(n) {
+  if (n <= _ev.paso) { evMostrarPaso(n, true); return; }
+  var f = evLeerFormulario();
+  for (var i = _ev.paso; i < n; i++) {
+    _ev.visitados[i] = true;
+    var err = evValidarPaso(f, i);
+    if (err) { evMostrarPaso(i, true); showToast(err, '#e74c3c'); return; }
+  }
+  evMostrarPaso(n, true);
+}
+
+// Al editar, la solicitud ya está completa: todos los pasos se muestran como vistos.
+function evMarcarTodosVisitados() {
+  EV_PASOS.forEach(function (p) { _ev.visitados[p.n] = true; });
+}
+
+// Resumen del último paso, para revisar antes de enviar.
+function evRenderResumen() {
+  var f = evLeerFormulario(), d = f.datos, o = evComboOpcion(f.solicitante_id);
+  var cuantos = function (a, otro) { var c = (a || []).length + (otro ? 1 : 0); return c ? c + ' seleccionado' + (c > 1 ? 's' : '') : 'ninguno'; };
+  var base = _ev.editando && _ev.editando.estado_aprobacion !== 'Rechazada' ? _ev.editando.fecha_radicacion : today();
+  var dias = d.fecha_evento ? evDias(base, d.fecha_evento) : null;
+  var filas = [
+    ['Solicitante', o ? o.nombre : '—'],
+    ['Evento', d.nombre || '—'],
+    ['Empresa', d.empresa || '—'],
+    ['Fecha del evento', d.fecha_evento ? fmtDate(d.fecha_evento) + (d.hora_inicio ? ' · ' + d.hora_inicio : '') : '—'],
+    ['Lugar', (EV_MODALIDAD[d.modalidad] || '—') + (d.lugar ? ' · ' + d.lugar : '') + (d.plataforma ? ' · Plataforma: ' + d.plataforma : '')],
+    ['Objetivos', cuantos(d.objetivos, d.objetivos_otro)],
+    ['Canales de promoción', cuantos(d.canales, d.canales_otro)],
+    ['Materiales', cuantos(d.materiales, d.materiales_otro)],
+    ['Logística', cuantos(d.logistica, d.logistica_otro)],
+    ['Presupuesto', 'Estimado ' + evMoney(d.presupuesto_estimado) + ' · solicitado a Mercadeo ' + evMoney(d.total_solicitado)],
+    ['Archivos', (_ev.keep.length + _ev.files.length) || 'ninguno']
+  ];
+  evEl('ev-resumen').innerHTML = '<div class="sm-box" style="background:#f7fafc;border-color:#e2e8f0">' +
+    '<h4>Resumen antes de enviar</h4><div class="kv">' +
+    filas.map(function (r) { return '<span class="k">' + escHtml(r[0]) + '</span><span>' + escHtml(r[1]) + '</span>'; }).join('') + '</div></div>' +
+    (dias !== null && dias >= 0 && dias < EV_DIAS_MINIMOS
+      ? '<div class="sm-box sm-box-pend">⚠ Faltan ' + dias + ' días para el evento: la política pide mínimo ' + EV_DIAS_MINIMOS + ' días si necesitas material POP, diseño o presencia de Mercadeo. Puedes enviarla igual; Mercadeo decide.</div>'
+      : '');
 }
 
 function evClientePqrs() {
@@ -599,8 +703,8 @@ async function evSubirArchivos() {
 async function evEnviar() {
   if (_ev.enviando) return;                       // candado anti doble clic
   var f = evLeerFormulario();
-  var err = evValidar(f);
-  if (err) { showToast(err, '#e74c3c'); return; }
+  var pe = evPrimerError(f);
+  if (pe) { evMarcarTodosVisitados(); evMostrarPaso(pe.paso, true); showToast(pe.msg, '#e74c3c'); return; }
 
   var previa = _ev.editando;
   // Una ya aprobada en Pedidos sale de Mercadeo al modificarla: se pide confirmación.
@@ -718,6 +822,8 @@ function evEditar(s) {
   }
   evEl('sm-enviar').textContent = evTextoEnviar();
   evRenderArchivos();
+  evMarcarTodosVisitados();
+  evMostrarPaso(1);
   evCerrarDetalle();
   evCambiarTab('nueva');
 }
@@ -1115,6 +1221,8 @@ document.addEventListener('click', function (e) {
   if (!t || !t.closest) return;
   var tab = t.closest('[data-sm-tab]');
   if (tab) { evCambiarTab(tab.getAttribute('data-sm-tab')); return; }
+  var paso = t.closest('[data-ev-paso]');
+  if (paso) { evIrAPaso(Number(paso.getAttribute('data-ev-paso'))); return; }
   var quitar = t.closest('[data-ev-quitar]');
   if (quitar) {
     _ev.files.splice(Number(quitar.getAttribute('data-ev-quitar')), 1);
@@ -1157,6 +1265,8 @@ document.addEventListener('click', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
   evEl('sm-enviar').addEventListener('click', evEnviar);
   evEl('sm-limpiar').addEventListener('click', function () { if (!_ev.enviando) evResetForm(); });
+  evEl('ev-anterior').addEventListener('click', function () { evMostrarPaso(_ev.paso - 1, true); });
+  evEl('ev-siguiente').addEventListener('click', function () { evIrAPaso(_ev.paso + 1); });
   evEl('sm-refrescar').addEventListener('click', evCargarLista);
   evEl('sm-refrescar-aprobar').addEventListener('click', function () { evCargarPendientes(); evCargarAprobadas(); });
   // El detalle se vuelve a pintar cada vez: el contador de la observación se escucha desde el documento.

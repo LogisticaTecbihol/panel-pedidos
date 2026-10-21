@@ -65,6 +65,25 @@
   .ev-gasto { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; margin-bottom: 6px; align-items: center; }
   .ev-gasto button { background: #e74c3c; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
   .ev-aviso { color: #c0392b; font-size: 0.78rem; font-weight: 600; margin-top: 4px; }
+  /* Pasos del formulario */
+  .ev-pasos { display: flex; list-style: none; margin: 0 0 22px; padding: 0; }
+  .ev-pasos li { flex: 1; position: relative; }
+  .ev-pasos li + li::before { content: ''; position: absolute; top: 19px; left: -50%; width: 100%; height: 2px; background: #e2e8f0; }
+  .ev-pasos button { position: relative; z-index: 1; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 5px; background: none; border: none; cursor: pointer; padding: 4px; font-family: inherit; font-size: 0.76rem; font-weight: 600; color: #718096; line-height: 1.25; text-align: center; }
+  .ev-pasos .num { width: 30px; height: 30px; border-radius: 50%; background: #e2e8f0; color: #4a5568; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; }
+  .ev-pasos li.actual button { color: #1a5276; }
+  .ev-pasos li.actual .num { background: #1a5276; color: #fff; box-shadow: 0 0 0 4px #d6eaf8; }
+  .ev-pasos li.ok .num { background: #27ae60; color: #fff; }
+  .ev-pasos li.error .num { background: #e67e22; color: #fff; }
+  .ev-pasos button:focus-visible { outline: 2px solid #1a5276; outline-offset: 2px; border-radius: 6px; }
+  .ev-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 24px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
+  .ev-nav-info { font-size: 0.8rem; color: #718096; text-align: center; flex: 1; }
+  .ev-limpiar { background: none; border: none; color: #718096; text-decoration: underline; cursor: pointer; font-size: 0.8rem; padding: 0; font-family: inherit; }
+  .ev-resumen { margin-top: 18px; }
+  .ev-resumen .kv { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; font-size: 0.86rem; }
+  .ev-resumen .kv .k { color: #718096; }
+  .ev-resumen h4 { margin: 0 0 8px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.3px; color: #4a5568; }
+  @media (max-width: 640px) { .ev-pasos .txt { display: none; } .ev-pasos li.actual .txt { display: block; position: absolute; top: 40px; left: 50%; transform: translateX(-50%); white-space: nowrap; } .ev-pasos { margin-bottom: 40px; } .ev-resumen .kv { grid-template-columns: 1fr; } }
   @media (max-width: 640px) { .sm-grid { grid-template-columns: 1fr; } .sm-det .kv { grid-template-columns: 1fr; } .ev-gasto { grid-template-columns: 1fr 110px auto; } }
 </style>
 </head>
@@ -144,6 +163,9 @@
       </div>
       <div class="sm-hint" style="margin:0 0 6px">Formato de solicitud de eventos (MC-ISO-FO01). Envíala con mínimo <strong>15 días calendario</strong> de anticipación si necesitas material POP, mobiliario, diseño gráfico o presencia del equipo de Mercadeo.</div>
 
+      <ol class="ev-pasos" id="ev-pasos" aria-label="Pasos del formulario"></ol>
+
+      <section class="ev-paso" data-paso="1">
       <h3 class="ev-sec">1. Información general del solicitante</h3>
       <div class="sm-grid">
         <div>
@@ -181,6 +203,9 @@
         </div>
       </div>
 
+      </section>
+
+      <section class="ev-paso" data-paso="2" style="display:none">
       <h3 class="ev-sec">2. Detalles del evento</h3>
       <div class="sm-grid">
         <div>
@@ -219,6 +244,9 @@
         </div>
       </div>
 
+      </section>
+
+      <section class="ev-paso" data-paso="3" style="display:none">
       <h3 class="ev-sec">3. Objetivos y público</h3>
       <span class="ef-label">Objetivos del evento (selecciona y/o añade)</span>
       <div class="ev-checks" id="ev-objetivos"></div>
@@ -253,6 +281,9 @@
         </div>
       </div>
 
+      </section>
+
+      <section class="ev-paso" data-paso="4" style="display:none">
       <h3 class="ev-sec">4. Requerimientos específicos de Mercadeo</h3>
       <span class="ef-label">Canales de promoción solicitados (selecciona y/o añade)</span>
       <div class="ev-checks" id="ev-canales"></div>
@@ -273,6 +304,9 @@
         <input class="ef" type="text" id="ev-logistica-otro" maxlength="300" autocomplete="off">
       </div>
 
+      </section>
+
+      <section class="ev-paso" data-paso="5" style="display:none">
       <h3 class="ev-sec">5. Presupuesto</h3>
       <div class="sm-grid">
         <div>
@@ -304,11 +338,20 @@
         </div>
       </div>
 
-      <div class="sm-actions">
+      <div class="ev-resumen" id="ev-resumen"></div>
+      </section>
+
+      <div class="ev-nav">
+        <button class="btn-cancel" id="ev-anterior" type="button">← Anterior</button>
+        <span class="ev-nav-info" id="ev-paso-txt"></span>
+        <button class="btn-confirm" id="ev-siguiente" type="button">Siguiente →</button>
+      </div>
+
+      <div class="sm-actions" id="ev-envio" style="display:none">
         <button class="btn-confirm" id="sm-enviar" type="button">📨 Enviar solicitud</button>
-        <button class="btn-cancel" id="sm-limpiar" type="button">Limpiar</button>
         <span class="sm-progreso" id="sm-progreso"></span>
       </div>
+      <div style="margin-top:12px"><button class="ev-limpiar" id="sm-limpiar" type="button">Limpiar formulario</button></div>
     </div>
   </div>
 
@@ -437,6 +480,6 @@
 <script src="js/shared.js?v=20261021"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
-<script src="js/solicitudes-eventos.js?v=20261021"></script>
+<script src="js/solicitudes-eventos.js?v=20261022"></script>
 </body>
 </html>
