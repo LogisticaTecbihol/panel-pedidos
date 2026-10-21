@@ -374,16 +374,28 @@ function evActualizarEmpresaOtra() {
   if (otros && document.activeElement === evEl('sm-empresa')) evEl('ev-empresa-otra').focus();
 }
 
-// El área es una lista fija; si una solicitud anterior trae un texto libre que no está en ella, se agrega como opción para no perderlo al editar.
+// Departamento / Área: lista fija + «Otros», que abre un campo para escribir el área. Lo que se guarda es el área en sí
+// (el texto escrito reemplaza a «Otros»), así que al editar, un valor que no está en la lista vuelve a mostrarse como «Otros» + texto.
+var EV_AREAS = ['Comercial', 'Cartera', 'Contabilidad', 'Administrativo'];
+
+function evActualizarAreaOtra() {
+  var otros = evEl('ev-area').value === 'Otros';
+  evEl('ev-area-otra-box').style.display = otros ? '' : 'none';
+  if (otros && document.activeElement === evEl('ev-area')) evEl('ev-area-otra').focus();
+}
+
 function evPonerArea(area) {
-  var sel = evEl('ev-area'), v = String(area || '').trim();
-  [].slice.call(sel.options).forEach(function (o) { if (o.getAttribute('data-extra')) sel.removeChild(o); });
-  if (v && ![].slice.call(sel.options).some(function (o) { return o.value === v; })) {
-    var op = document.createElement('option');
-    op.value = v; op.textContent = v; op.setAttribute('data-extra', '1');
-    sel.appendChild(op);
-  }
-  sel.value = v;
+  var v = String(area || '').trim();
+  if (!v) { evEl('ev-area').value = ''; evEl('ev-area-otra').value = ''; }
+  else if (EV_AREAS.indexOf(v) >= 0) { evEl('ev-area').value = v; evEl('ev-area-otra').value = ''; }
+  else { evEl('ev-area').value = 'Otros'; evEl('ev-area-otra').value = v === 'Otros' ? '' : v; }
+  evActualizarAreaOtra();
+}
+
+// Área a guardar: la de la lista, o el texto escrito si se eligió «Otros».
+function evAreaValor() {
+  var v = evEl('ev-area').value;
+  return v === 'Otros' ? evEl('ev-area-otra').value.trim().replace(/\s+/g, ' ') : v;
 }
 
 function evActualizarModalidad() {
@@ -532,10 +544,11 @@ function evLeerFormulario() {
     // El propio usuario no es "a nombre de" nadie: se manda vacío.
     a_nombre_de_id: solId && _ev.ctx && solId !== _ev.ctx.yo.id ? solId : null,
     errGastos: gastos.error,
+    areaOtros: evEl('ev-area').value === 'Otros',   // no viaja al servidor: solo para validar
     datos: {
       empresa: evEl('sm-empresa').value,
       empresa_otra: evEl('sm-empresa').value === 'OTROS' ? evEl('ev-empresa-otra').value.trim().replace(/\s+/g, ' ') : '',
-      solicitante_area: evEl('ev-area').value.trim(),
+      solicitante_area: evAreaValor(),
       solicitante_correo: evEl('ev-correo').value.trim(),
       solicitante_telefono: evEl('ev-tel').value.trim(),
       fecha_limite_aprobacion: evEl('ev-limite').value || null,
@@ -588,6 +601,7 @@ function evValidarPaso(f, n) {
     if (!d.empresa) return 'Elige la empresa';
     if (d.empresa === 'OTROS' && (d.empresa_otra.length < 3 || d.empresa_otra.length > 100)) return 'Escribe el nombre de la empresa (entre 3 y 100 caracteres)';
     if (!f.solicitante_id || !evComboOpcion(f.solicitante_id)) return 'Elige el solicitante de la lista';
+    if (f.areaOtros && (d.solicitante_area.length < 3 || d.solicitante_area.length > 120)) return 'Escribe el departamento o área (entre 3 y 120 caracteres)';
     if (d.fecha_limite_aprobacion && d.fecha_limite_aprobacion < today()) return 'La fecha límite de aprobación no puede ser anterior a hoy';
   }
   if (n === 2) {
@@ -1341,6 +1355,7 @@ document.addEventListener('DOMContentLoaded', function () {
   evEl('sm-desc').addEventListener('input', function () { evEl('sm-desc-ct').textContent = this.value.length; });
   evEl('ev-modalidad').addEventListener('change', evActualizarModalidad);
   evEl('sm-empresa').addEventListener('change', evActualizarEmpresaOtra);
+  evEl('ev-area').addEventListener('change', evActualizarAreaOtra);
   evEl('ev-fecha').addEventListener('change', evActualizarAnticipacion);
   evEl('ev-presupuesto').addEventListener('input', evActualizarPresupuesto);
   evEl('ev-solicitado').addEventListener('input', evActualizarPresupuesto);
