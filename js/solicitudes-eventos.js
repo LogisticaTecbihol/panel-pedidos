@@ -374,6 +374,18 @@ function evActualizarEmpresaOtra() {
   if (otros && document.activeElement === evEl('sm-empresa')) evEl('ev-empresa-otra').focus();
 }
 
+// El área es una lista fija; si una solicitud anterior trae un texto libre que no está en ella, se agrega como opción para no perderlo al editar.
+function evPonerArea(area) {
+  var sel = evEl('ev-area'), v = String(area || '').trim();
+  [].slice.call(sel.options).forEach(function (o) { if (o.getAttribute('data-extra')) sel.removeChild(o); });
+  if (v && ![].slice.call(sel.options).some(function (o) { return o.value === v; })) {
+    var op = document.createElement('option');
+    op.value = v; op.textContent = v; op.setAttribute('data-extra', '1');
+    sel.appendChild(op);
+  }
+  sel.value = v;
+}
+
 function evActualizarModalidad() {
   var m = evModalidadActual();
   evEl('ev-lugar-box').style.display = m === 'fisico' || m === 'hibrido' || !m ? '' : 'none';
@@ -436,7 +448,8 @@ function evResetForm() {
   else evEl('sm-empresa').value = '';
   evEl('ev-empresa-otra').value = '';
   evActualizarEmpresaOtra();
-  ['ev-area', 'ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-lugar', 'ev-plataforma',
+  evPonerArea('');
+  ['ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-lugar', 'ev-plataforma',
     'ev-objetivos-otro', 'ev-publico', 'ev-seg-dem', 'ev-seg-prof', 'ev-nivel', 'ev-invitados', 'ev-asis-pres', 'ev-asis-virt',
     'ev-canales-otro', 'ev-materiales-otro', 'ev-logistica-otro', 'ev-presupuesto', 'ev-solicitado'].forEach(function (id) { evEl(id).value = ''; });
   evEl('ev-limite').min = today();
@@ -572,12 +585,12 @@ var EV_PASOS = [
 function evValidarPaso(f, n) {
   var d = f.datos;
   if (n === 1) {
+    if (!d.empresa) return 'Elige la empresa';
+    if (d.empresa === 'OTROS' && (d.empresa_otra.length < 3 || d.empresa_otra.length > 100)) return 'Escribe el nombre de la empresa (entre 3 y 100 caracteres)';
     if (!f.solicitante_id || !evComboOpcion(f.solicitante_id)) return 'Elige el solicitante de la lista';
     if (d.fecha_limite_aprobacion && d.fecha_limite_aprobacion < today()) return 'La fecha límite de aprobación no puede ser anterior a hoy';
   }
   if (n === 2) {
-    if (!d.empresa) return 'Elige la empresa';
-    if (d.empresa === 'OTROS' && (d.empresa_otra.length < 3 || d.empresa_otra.length > 100)) return 'Escribe el nombre de la empresa (entre 3 y 100 caracteres)';
     if (d.nombre.length < 3) return 'El nombre del evento debe tener al menos 3 caracteres';
     if (d.descripcion.length < 10) return 'Describe el evento (mínimo 10 caracteres)';
     if (d.descripcion.length > 2000) return 'La descripción no puede superar 2000 caracteres';
@@ -784,7 +797,7 @@ function evEditar(s) {
   if (evEl('sm-empresa').value !== s.empresa) evEl('sm-empresa').value = '';   // ya no está entre las empresas del usuario
   evEl('ev-empresa-otra').value = (d && d.empresa_otra) || s.empresa_otra || '';
   evActualizarEmpresaOtra();
-  evEl('ev-area').value = sol.area || '';
+  evPonerArea(sol.area);
   evEl('ev-correo').value = sol.correo || '';
   evEl('ev-tel').value = sol.telefono || '';
   evEl('ev-limite').value = d.fecha_limite_aprobacion && d.fecha_limite_aprobacion >= today() ? d.fecha_limite_aprobacion : '';

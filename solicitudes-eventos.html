@@ -172,6 +172,15 @@
       <h3 class="ev-sec">1. Información general del solicitante</h3>
       <div class="sm-grid">
         <div>
+          <label class="ef-label" for="sm-empresa">Empresa *</label>
+          <select class="ef" id="sm-empresa"></select>
+        </div>
+        <div id="ev-empresa-otra-box" style="display:none">
+          <label class="ef-label" for="ev-empresa-otra">Nombre de la empresa *</label>
+          <input class="ef" type="text" id="ev-empresa-otra" maxlength="100" autocomplete="off" placeholder="Escribe el nombre de la empresa">
+          <div class="sm-hint">Empresa que no es del holding ni está en la lista (entre 3 y 100 caracteres).</div>
+        </div>
+        <div>
           <label class="ef-label" for="sm-solicitante">Nombre del solicitante *</label>
           <div class="sm-combo">
             <input class="ef" type="text" id="sm-solicitante" role="combobox" aria-autocomplete="list" aria-expanded="false"
@@ -183,7 +192,14 @@
         </div>
         <div>
           <label class="ef-label" for="ev-area">Departamento / Área</label>
-          <input class="ef" type="text" id="ev-area" maxlength="120" autocomplete="off" placeholder="Ej.: Comercial">
+          <select class="ef" id="ev-area">
+            <option value="">— Seleccionar —</option>
+            <option value="Comercial">Comercial</option>
+            <option value="Cartera">Cartera</option>
+            <option value="Contabilidad">Contabilidad</option>
+            <option value="Administrativo">Administrativo</option>
+            <option value="Otros">Otros</option>
+          </select>
         </div>
         <div>
           <label class="ef-label" for="ev-correo">Correo electrónico</label>
@@ -211,18 +227,9 @@
       <section class="ev-paso" data-paso="2" style="display:none">
       <h3 class="ev-sec">2. Detalles del evento</h3>
       <div class="sm-grid">
-        <div>
-          <label class="ef-label" for="sm-empresa">Empresa *</label>
-          <select class="ef" id="sm-empresa"></select>
-        </div>
-        <div>
+        <div class="full">
           <label class="ef-label" for="ev-nombre">Nombre del evento *</label>
           <input class="ef" type="text" id="ev-nombre" maxlength="200" autocomplete="off">
-        </div>
-        <div class="full" id="ev-empresa-otra-box" style="display:none">
-          <label class="ef-label" for="ev-empresa-otra">Nombre de la empresa *</label>
-          <input class="ef" type="text" id="ev-empresa-otra" maxlength="100" autocomplete="off" placeholder="Escribe el nombre de la empresa">
-          <div class="sm-hint">Empresa que no es del holding ni está en la lista (entre 3 y 100 caracteres).</div>
         </div>
         <div class="full">
           <label class="ef-label" for="sm-desc">Descripción breve del evento * <span class="ev-ayuda">¿Qué es? ¿Por qué se realiza?</span></label>
@@ -488,6 +495,6 @@
 <script src="js/shared.js?v=20261021"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
-<script src="js/solicitudes-eventos.js?v=20261023"></script>
+<script src="js/solicitudes-eventos.js?v=20261024"></script>
 </body>
 </html>
