@@ -318,16 +318,20 @@
           <input class="ef" type="text" id="ev-publico" maxlength="500" autocomplete="off">
         </div>
         <div>
-          <label class="ef-label" for="ev-seg-dem">Segmento demográfico <span class="ev-ayuda">edad, género, ubicación…</span></label>
-          <input class="ef" type="text" id="ev-seg-dem" maxlength="500" autocomplete="off">
-        </div>
-        <div>
-          <label class="ef-label" for="ev-seg-prof">Segmentación profesional <span class="ev-ayuda">cargos, industrias, tamaño de la empresa</span></label>
-          <input class="ef" type="text" id="ev-seg-prof" maxlength="500" autocomplete="off">
-        </div>
-        <div>
-          <label class="ef-label" for="ev-nivel">Nivel de conocimiento <span class="ev-ayuda">principiantes, expertos</span></label>
-          <input class="ef" type="text" id="ev-nivel" maxlength="300" autocomplete="off">
+          <label class="ef-label" for="ev-seg">Segmentación</label>
+          <select class="ef" id="ev-seg">
+            <option value="">— Seleccionar —</option>
+            <option value="Agricultor">Agricultor</option>
+            <option value="Agrónomos">Agrónomos</option>
+            <option value="Dueños de almacén">Dueños de almacén</option>
+            <option value="Mostrador">Mostrador</option>
+            <option value="Distribuidor">Distribuidor</option>
+            <option value="Otros">Otros</option>
+          </select>
+          <div id="ev-seg-otra-box" style="display:none;margin-top:8px">
+            <label class="ef-label" for="ev-seg-otra">Segmentación *</label>
+            <input class="ef" type="text" id="ev-seg-otra" maxlength="100" autocomplete="off" placeholder="Escribe la segmentación">
+          </div>
         </div>
         <div>
           <label class="ef-label" for="ev-invitados">Total de invitados</label>
@@ -539,6 +543,6 @@
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
-<script src="js/solicitudes-eventos.js?v=20261027"></script>
+<script src="js/solicitudes-eventos.js?v=20261028"></script>
 </body>
 </html>

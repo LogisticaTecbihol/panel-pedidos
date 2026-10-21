@@ -401,6 +401,32 @@ function evAreaValor() {
   return v === 'Otros' ? evEl('ev-area-otra').value.trim().replace(/\s+/g, ' ') : v;
 }
 
+// Segmentación del público: una sola opción de la lista + «Otros», que abre un campo para escribirla. Reemplaza a los tres campos de texto
+// anteriores (demográfico, profesional y nivel de conocimiento) y se guarda en `segmento_profesional`, la columna que ya lee pqrs. Se guarda
+// la segmentación en sí (el texto escrito reemplaza a «Otros»); al editar, un valor que no está en la lista vuelve a mostrarse como «Otros» + texto.
+var EV_SEGMENTACIONES = ['Agricultor', 'Agrónomos', 'Dueños de almacén', 'Mostrador', 'Distribuidor'];
+
+function evActualizarSegOtra() {
+  var otros = evEl('ev-seg').value === 'Otros';
+  evEl('ev-seg-otra-box').style.display = otros ? '' : 'none';
+  if (otros && document.activeElement === evEl('ev-seg')) evEl('ev-seg-otra').focus();
+}
+
+function evPonerSegmentacion(seg) {
+  var v = String(seg || '').trim(), k = v.toLowerCase();
+  var oficial = EV_SEGMENTACIONES.filter(function (s) { return s.toLowerCase() === k; })[0] || '';
+  if (!v) { evEl('ev-seg').value = ''; evEl('ev-seg-otra').value = ''; }
+  else if (oficial) { evEl('ev-seg').value = oficial; evEl('ev-seg-otra').value = ''; }
+  else { evEl('ev-seg').value = 'Otros'; evEl('ev-seg-otra').value = v === 'Otros' ? '' : v; }
+  evActualizarSegOtra();
+}
+
+// Segmentación a guardar: la de la lista, o el texto escrito si se eligió «Otros».
+function evSegmentacionValor() {
+  var v = evEl('ev-seg').value;
+  return v === 'Otros' ? evEl('ev-seg-otra').value.trim().replace(/\s+/g, ' ') : v;
+}
+
 // Plataforma del evento virtual/híbrido: lista fija + «Otra», que abre un campo para escribirla. Igual que el área, lo que se guarda
 // es la plataforma en sí (el texto escrito reemplaza a «Otra»); al editar, un valor que no está en la lista vuelve a mostrarse como «Otra» + texto.
 var EV_PLATAFORMAS = ['Zoom', 'Microsoft Teams', 'Google Meet', 'YouTube Live', 'Facebook Live'];
@@ -593,8 +619,9 @@ function evResetForm() {
   evActualizarEmpresaOtra();
   evPonerArea('');
   evPonerPlataforma('');
+  evPonerSegmentacion('');
   ['ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-municipio', 'ev-depto', 'ev-dist', 'ev-dist-nit', 'ev-finca',
-    'ev-objetivos-otro', 'ev-publico', 'ev-seg-dem', 'ev-seg-prof', 'ev-nivel', 'ev-invitados', 'ev-asis-pres', 'ev-asis-virt',
+    'ev-objetivos-otro', 'ev-publico', 'ev-invitados', 'ev-asis-pres', 'ev-asis-virt',
     'ev-canales-otro', 'ev-materiales-otro', 'ev-logistica-otro', 'ev-presupuesto', 'ev-solicitado'].forEach(function (id) { evEl(id).value = ''; });
   _ev.distSel = null;
   evEl('ev-lugar-previo').style.display = 'none';
@@ -687,6 +714,7 @@ function evLeerFormulario() {
     errGastos: gastos.error,
     areaOtros: evEl('ev-area').value === 'Otros',   // no viaja al servidor: solo para validar
     plataformaOtra: evEl('ev-plataforma').value === 'Otra',
+    segOtros: evEl('ev-seg').value === 'Otros',
     datos: {
       empresa: evEl('sm-empresa').value,
       empresa_otra: evEl('sm-empresa').value === 'OTROS' ? evEl('ev-empresa-otra').value.trim().replace(/\s+/g, ' ') : '',
@@ -710,9 +738,7 @@ function evLeerFormulario() {
       objetivos: evMarcados('ev-objetivos'),
       objetivos_otro: evEl('ev-objetivos-otro').value.trim(),
       publico_objetivo: evEl('ev-publico').value.trim(),
-      segmento_demografico: evEl('ev-seg-dem').value.trim(),
-      segmento_profesional: evEl('ev-seg-prof').value.trim(),
-      nivel_conocimiento: evEl('ev-nivel').value.trim(),
+      segmento_profesional: evSegmentacionValor(),   // el demográfico y el nivel de conocimiento ya no se piden
       total_invitados: evEnteroOpc('ev-invitados'),
       asistentes_presencial: evEnteroOpc('ev-asis-pres'),
       asistentes_virtual: evEnteroOpc('ev-asis-virt'),
@@ -771,6 +797,7 @@ function evValidarPaso(f, n) {
     }
   }
   if (n === 3) {
+    if (f.segOtros && (d.segmento_profesional.length < 3 || d.segmento_profesional.length > 100)) return 'Escribe la segmentación (entre 3 y 100 caracteres)';
     var enteros = [['total_invitados', 'El total de invitados'], ['asistentes_presencial', 'Los asistentes presenciales'], ['asistentes_virtual', 'Los asistentes virtuales']];
     for (var i = 0; i < enteros.length; i++) {
       var v = d[enteros[i][0]];
@@ -991,9 +1018,7 @@ function evEditar(s) {
   evChecks('ev-objetivos', EV_OBJETIVOS, d.objetivos || []);
   evEl('ev-objetivos-otro').value = d.objetivos_otro || '';
   evEl('ev-publico').value = d.publico_objetivo || '';
-  evEl('ev-seg-dem').value = d.segmento_demografico || '';
-  evEl('ev-seg-prof').value = d.segmento_profesional || '';
-  evEl('ev-nivel').value = d.nivel_conocimiento || '';
+  evPonerSegmentacion(d.segmento_profesional);
   evEl('ev-invitados').value = evNum(d.total_invitados);
   evEl('ev-asis-pres').value = evNum(d.asistentes_presencial);
   evEl('ev-asis-virt').value = evNum(d.asistentes_virtual);
@@ -1328,9 +1353,10 @@ function evVerDetalle(origen, i, enfocarObs) {
     '<h4>3. Objetivos y público</h4>' + evListaTxt(EV_OBJETIVOS, d.objetivos, d.objetivos_otro) +
     '<div class="kv" style="margin-top:8px">' +
       '<span class="k">Público objetivo</span><span>' + escHtml(d.publico_objetivo || '—') + '</span>' +
-      '<span class="k">Segmento demográfico</span><span>' + escHtml(d.segmento_demografico || '—') + '</span>' +
-      '<span class="k">Segmentación profesional</span><span>' + escHtml(d.segmento_profesional || '—') + '</span>' +
-      '<span class="k">Nivel de conocimiento</span><span>' + escHtml(d.nivel_conocimiento || '—') + '</span>' +
+      '<span class="k">Segmentación</span><span>' + escHtml(d.segmento_profesional || '—') + '</span>' +
+      // Solicitudes de antes del cambio: se siguen mostrando los dos datos que ya no se piden.
+      (d.segmento_demografico ? '<span class="k">Segmento demográfico</span><span>' + escHtml(d.segmento_demografico) + '</span>' : '') +
+      (d.nivel_conocimiento ? '<span class="k">Nivel de conocimiento</span><span>' + escHtml(d.nivel_conocimiento) + '</span>' : '') +
       '<span class="k">Asistentes esperados</span><span>' + escHtml((d.total_invitados !== null && d.total_invitados !== undefined ? d.total_invitados + ' invitados' : '—') +
         (d.asistentes_presencial !== null && d.asistentes_presencial !== undefined ? ' · ' + d.asistentes_presencial + ' presenciales' : '') +
         (d.asistentes_virtual !== null && d.asistentes_virtual !== undefined ? ' · ' + d.asistentes_virtual + ' virtuales' : '')) + '</span>' +
@@ -1519,6 +1545,7 @@ document.addEventListener('DOMContentLoaded', function () {
   evEl('sm-empresa').addEventListener('change', evActualizarEmpresaOtra);
   evEl('ev-area').addEventListener('change', evActualizarAreaOtra);
   evEl('ev-plataforma').addEventListener('change', evActualizarPlataformaOtra);
+  evEl('ev-seg').addEventListener('change', evActualizarSegOtra);
   evInitLugar();
   evEl('ev-fecha').addEventListener('change', evActualizarAnticipacion);
   evEl('ev-presupuesto').addEventListener('input', evActualizarPresupuesto);
