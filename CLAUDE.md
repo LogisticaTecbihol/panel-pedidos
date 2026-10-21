@@ -78,7 +78,7 @@ Mismo patrón que «Solicitudes a Mercadeo» (`solicitudes-mercadeo.*`): aprobac
   `actividades_hechas` y que `solicitud-evento` (`mapFila`) pasa tal cual; nunca las actividades, notas ni responsables.
 - **Logística y presencialidad**: las opciones (`registros`, `coordinacion_logistica`, `plataforma_virtual`, `presencia_mercadeo` = «Se solicita presencia de Mercadeo»)
   viven en TRES sitios que hay que mantener iguales: `EV_LOGISTICA` (solicitudes-eventos.js), `LOGISTICA` en la función `solicitud-evento` y, en panel-pqrs,
-  `LOGISTICA` de `solicitud-evento-pedidos` + el CHECK `mercadeo_eventos_logistica_check` y el brief (migración 0034) + la lista de `js/panel/eventos.js`.
+  `LOGISTICA` de `solicitud-evento-pedidos` + el CHECK `mercadeo_eventos_logistica_check` y el brief (migración 0034) + la lista `CAT.LOGISTICA` de `js/panel/eventos-pdf.js` (única copia en panel-pqrs; la usan Eventos, el PDF y el Tablero).
   Una opción nueva exige aplicar primero la migración de pqrs; si no, el CHECK rechaza el evento al aprobarse.
 - **Qué se puede editar**: mientras Mercadeo no haya aprobado el evento (`radicada`/`en_revision`). Una solicitud aprobada aquí pero sin aprobar en
   Mercadeo se «retira» (el evento pasa a `cancelada` en pqrs) y vuelve a aprobación; ya aprobada por Mercadeo, se le deja una **observación**.
