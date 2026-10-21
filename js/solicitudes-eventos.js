@@ -30,6 +30,8 @@ var EV_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt',
 
 // Listas del formato (códigos = los que guarda Mercadeo).
 var EV_MODALIDAD = { fisico: 'Físico', virtual: 'Virtual', hibrido: 'Híbrido' };
+// Empresas ADICIONALES (no son del holding): las ofrece la función en ctx.empresas_extra a todo el que envía. «Otros» exige el nombre escrito.
+var EV_EMPRESAS_EXTRA = { CHIA_ABAGO: 'Chía Abagó', TECBIHOL: 'Tecbihol', OTROS: 'Otros' };
 var EV_OBJETIVOS = [['leads', 'Generar nuevos leads (oportunidades de venta)'], ['relacion_clientes', 'Fortalecer la relación con clientes existentes'], ['lanzamiento', 'Lanzamiento o promoción de un nuevo producto/servicio'], ['posicionamiento', 'Posicionamiento de la marca/empresa'], ['capacitacion', 'Capacitación o educación'], ['trafico_digital', 'Aumentar el tráfico a nuestro sitio web o redes sociales'], ['retencion', 'Retención de clientes']];
 var EV_CANALES = [['email', 'Email marketing (creación de campañas de invitación)'], ['redes', 'Redes sociales (posts, historias, anuncios)'], ['web', 'Blog o sitio web (creación de contenido, landing page)'], ['relaciones_publicas', 'Relaciones públicas (comunicados de prensa)'], ['publicidad_digital', 'Publicidad digital (Google Ads, LinkedIn Ads, etc.)'], ['video', 'Creación de videos promocionales']];
 var EV_MATERIALES = [['banners_redes', 'Banners para redes sociales'], ['diseno_email', 'Diseño de email'], ['invitaciones', 'Invitaciones digitales o impresas'], ['presentacion', 'Presentación de diapositivas'], ['flyers', 'Flyers o folletos'], ['rollups', 'Roll-ups o pendones'], ['merchandising', 'Diseño para materiales de merchandising']];
@@ -224,6 +226,9 @@ function evPoblarFormulario() {
   ctx.empresas.forEach(function (s) {
     emp += '<option value="' + escHtml(s) + '">' + escHtml(s) + (nombres[s] ? ' — ' + escHtml(nombres[s]) : '') + '</option>';
   });
+  (ctx.empresas_extra || []).forEach(function (x) {
+    emp += '<option value="' + escHtml(x.codigo) + '">' + escHtml(x.codigo === 'OTROS' ? 'Otros (escribir el nombre)' : x.nombre) + '</option>';
+  });
   evEl('sm-empresa').innerHTML = emp;
   evEl('sm-aviso-sin-empresa').style.display = ctx.empresas.length ? 'none' : '';
   evEl('sm-enviar').disabled = !ctx.empresas.length;
@@ -362,6 +367,13 @@ function evComboAlSalir() {
 // ── Formulario ──
 function evModalidadActual() { var r = document.querySelector('input[name="ev-mod"]:checked'); return r ? r.value : ''; }
 
+// Con la empresa «Otros» aparece el campo para escribir el nombre.
+function evActualizarEmpresaOtra() {
+  var otros = evEl('sm-empresa').value === 'OTROS';
+  evEl('ev-empresa-otra-box').style.display = otros ? '' : 'none';
+  if (otros && document.activeElement === evEl('sm-empresa')) evEl('ev-empresa-otra').focus();
+}
+
 function evActualizarModalidad() {
   var m = evModalidadActual();
   evEl('ev-lugar-box').style.display = m === 'fisico' || m === 'hibrido' || !m ? '' : 'none';
@@ -422,6 +434,8 @@ function evResetForm() {
   if (_ev.ctx) evComboElegir(_ev.ctx.yo.id);
   if (_ev.ctx && _ev.ctx.empresas.length === 1) evEl('sm-empresa').value = _ev.ctx.empresas[0];
   else evEl('sm-empresa').value = '';
+  evEl('ev-empresa-otra').value = '';
+  evActualizarEmpresaOtra();
   ['ev-area', 'ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-lugar', 'ev-plataforma',
     'ev-objetivos-otro', 'ev-publico', 'ev-seg-dem', 'ev-seg-prof', 'ev-nivel', 'ev-invitados', 'ev-asis-pres', 'ev-asis-virt',
     'ev-canales-otro', 'ev-materiales-otro', 'ev-logistica-otro', 'ev-presupuesto', 'ev-solicitado'].forEach(function (id) { evEl(id).value = ''; });
@@ -507,6 +521,7 @@ function evLeerFormulario() {
     errGastos: gastos.error,
     datos: {
       empresa: evEl('sm-empresa').value,
+      empresa_otra: evEl('sm-empresa').value === 'OTROS' ? evEl('ev-empresa-otra').value.trim().replace(/\s+/g, ' ') : '',
       solicitante_area: evEl('ev-area').value.trim(),
       solicitante_correo: evEl('ev-correo').value.trim(),
       solicitante_telefono: evEl('ev-tel').value.trim(),
@@ -562,6 +577,7 @@ function evValidarPaso(f, n) {
   }
   if (n === 2) {
     if (!d.empresa) return 'Elige la empresa';
+    if (d.empresa === 'OTROS' && (d.empresa_otra.length < 3 || d.empresa_otra.length > 100)) return 'Escribe el nombre de la empresa (entre 3 y 100 caracteres)';
     if (d.nombre.length < 3) return 'El nombre del evento debe tener al menos 3 caracteres';
     if (d.descripcion.length < 10) return 'Describe el evento (mínimo 10 caracteres)';
     if (d.descripcion.length > 2000) return 'La descripción no puede superar 2000 caracteres';
@@ -650,7 +666,7 @@ function evRenderResumen() {
   var filas = [
     ['Solicitante', o ? o.nombre : '—'],
     ['Evento', d.nombre || '—'],
-    ['Empresa', d.empresa || '—'],
+    ['Empresa', d.empresa ? evNombreEmpresa(d.empresa, d.empresa_otra) : '—'],
     ['Fecha del evento', d.fecha_evento ? fmtDate(d.fecha_evento) + (d.hora_inicio ? ' · ' + d.hora_inicio : '') : '—'],
     ['Lugar', (EV_MODALIDAD[d.modalidad] || '—') + (d.lugar ? ' · ' + d.lugar : '') + (d.plataforma ? ' · Plataforma: ' + d.plataforma : '')],
     ['Objetivos', cuantos(d.objetivos, d.objetivos_otro)],
@@ -764,7 +780,10 @@ function evEditar(s) {
   var para = s.a_nombre_de_id || null;
   if (para && evComboOpcion(para)) evComboElegir(para);
   else if (evComboOpcion(s.solicitante_id)) evComboElegir(s.solicitante_id);
-  if (_ev.ctx.empresas.indexOf(s.empresa) >= 0) evEl('sm-empresa').value = s.empresa;
+  evEl('sm-empresa').value = s.empresa;
+  if (evEl('sm-empresa').value !== s.empresa) evEl('sm-empresa').value = '';   // ya no está entre las empresas del usuario
+  evEl('ev-empresa-otra').value = (d && d.empresa_otra) || s.empresa_otra || '';
+  evActualizarEmpresaOtra();
   evEl('ev-area').value = sol.area || '';
   evEl('ev-correo').value = sol.correo || '';
   evEl('ev-tel').value = sol.telefono || '';
@@ -841,7 +860,20 @@ function evCambiarTab(cual) {
 
 // ── Utilidades de pintado ──
 function evEmpresaChips(arr) {
-  return (arr || []).map(function (e) { return '<span class="sigla-badge sigla-' + escHtml(e) + '">' + escHtml(e) + '</span>'; }).join(' ');
+  return (arr || []).map(function (e) {
+    return '<span class="sigla-badge sigla-' + escHtml(e) + '">' + escHtml(EV_EMPRESAS_EXTRA[e] ? EV_EMPRESAS_EXTRA[e].toUpperCase() : e) + '</span>';
+  }).join(' ');
+}
+
+// Empresa de una solicitud: el chip y, con «Otros», el nombre escrito debajo.
+function evEmpresaDe(s) {
+  return evEmpresaChips([s.empresa]) + (s.empresa === 'OTROS' && s.empresa_otra ? '<div class="sm-hint" style="margin:2px 0 0">' + escHtml(s.empresa_otra) + '</div>' : '');
+}
+
+// Nombre legible de la empresa (detalle y resumen).
+function evNombreEmpresa(codigo, otra) {
+  if (codigo === 'OTROS') return 'Otros' + (otra ? ': ' + otra : '');
+  return EV_EMPRESAS_EXTRA[codigo] || codigo || '—';
 }
 
 // ── Mis solicitudes ──
@@ -871,7 +903,7 @@ function evRenderLista() {
       '<td>' + escHtml(evRef(s)) + '</td>' +
       '<td>' + escHtml(evFmtFechaHora(s.creada_en)) + '</td>' +
       '<td>' + escHtml(s.nombre_evento) + '</td>' +
-      '<td>' + evEmpresaChips([s.empresa]) + '</td>' +
+      '<td>' + evEmpresaDe(s) + '</td>' +
       '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_evento)) + '</td>' +
       '<td>' + evAnticipacionHtml(s) + '</td>' +
@@ -911,7 +943,7 @@ function evRenderPendientes() {
       '<td>' + escHtml(s.solicitante || '—') + '</td>' +
       '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(s.nombre_evento) + '</td>' +
-      '<td>' + evEmpresaChips([s.empresa]) + '</td>' +
+      '<td>' + evEmpresaDe(s) + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_evento)) + '</td>' +
       '<td>' + evAnticipacionHtml(s) + '</td>' +
       '<td><button class="btn-ver" type="button" data-ev-ver="pend:' + i + '">Revisar</button> ' +
@@ -950,7 +982,7 @@ function evRenderAprobadas() {
       '<td>' + escHtml(s.solicitante || '—') + '</td>' +
       '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(s.nombre_evento) + '</td>' +
-      '<td>' + evEmpresaChips([s.empresa]) + '</td>' +
+      '<td>' + evEmpresaDe(s) + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_evento)) + '</td>' +
       '<td>' + (s.estado ? '<span class="badge ' + evEstadoDe(key).cls + '">' + escHtml(evEstadoDe(key).t) + '</span>' : '—') + '</td>' +
       '<td><button class="btn-ver" type="button" data-ev-ver="apr:' + i + '">Ver</button> ' +
@@ -1098,7 +1130,7 @@ function evVerDetalle(origen, i, enfocarObs) {
       '<span class="k">Fecha límite aprobación</span><span>' + escHtml(d.fecha_limite_aprobacion ? fmtDate(d.fecha_limite_aprobacion) : '—') + '</span>' +
     '</div>' +
     '<h4>2. Detalles del evento</h4><div class="kv">' +
-      '<span class="k">Empresa</span><span>' + escHtml(s.empresa || '—') + '</span>' +
+      '<span class="k">Empresa</span><span>' + escHtml(evNombreEmpresa(s.empresa, s.empresa_otra)) + '</span>' +
       '<span class="k">Fecha del evento</span><span>' + escHtml(fmtDate(s.fecha_evento)) + (horario ? ' · ' + escHtml(horario) : '') + '</span>' +
       '<span class="k">Lugar / Ubicación</span><span>' + escHtml(lugar) + '</span>' +
       '<span class="k">Radicada el</span><span>' + escHtml(fmtDate(s.fecha_radicacion)) + '</span>' +
@@ -1295,6 +1327,7 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   evEl('sm-desc').addEventListener('input', function () { evEl('sm-desc-ct').textContent = this.value.length; });
   evEl('ev-modalidad').addEventListener('change', evActualizarModalidad);
+  evEl('sm-empresa').addEventListener('change', evActualizarEmpresaOtra);
   evEl('ev-fecha').addEventListener('change', evActualizarAnticipacion);
   evEl('ev-presupuesto').addEventListener('input', evActualizarPresupuesto);
   evEl('ev-solicitado').addEventListener('input', evActualizarPresupuesto);

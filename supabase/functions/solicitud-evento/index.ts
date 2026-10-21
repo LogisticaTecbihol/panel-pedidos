@@ -59,6 +59,18 @@ const MODULO_APROBAR = 'solicitudes_mercadeo_aprobar'
 const TABLA = 'solicitudes_eventos'
 const PQRS_BRIDGE_URL_DEFECTO = 'https://kvfqcymeihglohkcckdp.supabase.co/functions/v1/solicitud-evento-pedidos'
 const EMPRESAS_HOLDING = ['PARCELAR', 'GREEN', 'RESO', 'IASO', 'IAS']
+// Empresas ADICIONALES de los eventos: no son del holding, así que no dependen de las empresas asignadas al usuario;
+// las puede elegir cualquiera que envíe solicitudes. «OTROS» exige el nombre escrito (datos.empresa_otra).
+const EMPRESAS_EXTRA: { codigo: string; nombre: string }[] = [
+  { codigo: 'CHIA_ABAGO', nombre: 'Chía Abagó' },
+  { codigo: 'TECBIHOL', nombre: 'Tecbihol' },
+  { codigo: 'OTROS', nombre: 'Otros' },
+]
+const EXTRA_CODIGOS = EMPRESAS_EXTRA.map((e) => e.codigo)
+function nombreEmpresa(codigo: string, otra?: string | null): string {
+  if (codigo === 'OTROS') return otra ? `Otros: ${otra}` : 'Otros'
+  return EMPRESAS_EXTRA.find((e) => e.codigo === codigo)?.nombre ?? codigo
+}
 const MODALIDADES = ['fisico', 'virtual', 'hibrido']
 const OBJETIVOS = ['leads', 'relacion_clientes', 'lanzamiento', 'posicionamiento', 'capacitacion', 'trafico_digital', 'retencion']
 const CANALES = ['email', 'redes', 'web', 'relaciones_publicas', 'publicidad_digital', 'video']
@@ -312,8 +324,8 @@ serve(async (req) => {
           ? `✏️ Solicitud de evento modificada, por aprobar: ${refSE(r.numero)}`
           : `🎪 Solicitud de evento por aprobar: ${refSE(r.numero)}`,
         modificada
-          ? `${r.creado_por_nombre}${para} la modificó: ${r.nombre_evento} · ${r.empresa}.`
-          : `${r.creado_por_nombre}${para} pide: ${r.nombre_evento} · ${r.empresa} (${fechaCorta(r.fecha_evento)}).`,
+          ? `${r.creado_por_nombre}${para} la modificó: ${r.nombre_evento} · ${nombreEmpresa(r.empresa, r.datos?.empresa_otra)}.`
+          : `${r.creado_por_nombre}${para} pide: ${r.nombre_evento} · ${nombreEmpresa(r.empresa, r.datos?.empresa_otra)} (${fechaCorta(r.fecha_evento)}).`,
         refSE(r.numero),
       )
     }
@@ -335,7 +347,9 @@ serve(async (req) => {
     // Valida y normaliza lo que dice el formulario (para crear, reenviar y editar). La BD de pqrs lo vuelve a validar.
     async function validarFormulario(requestId: string) {
       const d = body.datos && typeof body.datos === 'object' ? body.datos : {}
-      if (!empresas.includes(d.empresa)) throw new Rechazo('La empresa elegida no está entre las tuyas')
+      if (!empresas.includes(d.empresa) && !EXTRA_CODIGOS.includes(d.empresa)) throw new Rechazo('La empresa elegida no está entre las tuyas')
+      // Con «Otros» se escribe el nombre de la empresa (obligatorio); con cualquier otra no aplica.
+      const empresaOtra = d.empresa === 'OTROS' ? texto(d.empresa_otra, 'El nombre de la empresa', 3, 100).replace(/\s+/g, ' ') : ''
 
       // Solicitante: el propio usuario o, si hace la solicitud a nombre de otro, cualquier usuario activo del panel
       // (el nombre y el correo salen de la BD, no del navegador).
@@ -401,6 +415,7 @@ serve(async (req) => {
         },
         fecha_limite_aprobacion: fechaLimite,
         empresa: d.empresa,
+        empresa_otra: empresaOtra,
         nombre,
         descripcion,
         fecha_evento: fechaEvento,
@@ -530,6 +545,7 @@ serve(async (req) => {
           !(pq && !EST_ABIERTOS.includes(pq.estado)) &&
           (r.creado_por === user.id || r.a_nombre_de_id === user.id || puedeAprobar),
         empresa: r.empresa,
+        empresa_otra: r.datos?.empresa_otra || '',
         nombre_evento: r.nombre_evento,
         fecha_evento: r.fecha_evento,
         fecha_radicacion: r.fecha_radicacion,
@@ -604,6 +620,7 @@ serve(async (req) => {
           ok: true,
           yo: { id: user.id, nombre: nombreUsuario, rol: perfil.rol, email: perfil.email },
           empresas,
+          empresas_extra: EMPRESAS_EXTRA,
           usuarios,
           puede_enviar: puedeEnviar,
           puede_aprobar: puedeAprobar,

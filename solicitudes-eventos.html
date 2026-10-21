@@ -64,6 +64,9 @@
   .ev-radios label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
   .ev-gasto { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; margin-bottom: 6px; align-items: center; }
   .ev-gasto button { background: #e74c3c; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .sigla-CHIA_ABAGO { background: #e3f2e1; color: #276749; }
+  .sigla-TECBIHOL { background: #e2e8f0; color: #2d3748; }
+  .sigla-OTROS { background: #f5ebd2; color: #7a5c1e; }
   .ev-aviso { color: #c0392b; font-size: 0.78rem; font-weight: 600; margin-top: 4px; }
   /* Pasos del formulario */
   .ev-pasos { display: flex; list-style: none; margin: 0 0 22px; padding: 0; }
@@ -215,6 +218,11 @@
         <div>
           <label class="ef-label" for="ev-nombre">Nombre del evento *</label>
           <input class="ef" type="text" id="ev-nombre" maxlength="200" autocomplete="off">
+        </div>
+        <div class="full" id="ev-empresa-otra-box" style="display:none">
+          <label class="ef-label" for="ev-empresa-otra">Nombre de la empresa *</label>
+          <input class="ef" type="text" id="ev-empresa-otra" maxlength="100" autocomplete="off" placeholder="Escribe el nombre de la empresa">
+          <div class="sm-hint">Empresa que no es del holding ni está en la lista (entre 3 y 100 caracteres).</div>
         </div>
         <div class="full">
           <label class="ef-label" for="sm-desc">Descripción breve del evento * <span class="ev-ayuda">¿Qué es? ¿Por qué se realiza?</span></label>
@@ -480,6 +488,6 @@
 <script src="js/shared.js?v=20261021"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
-<script src="js/solicitudes-eventos.js?v=20261022"></script>
+<script src="js/solicitudes-eventos.js?v=20261023"></script>
 </body>
 </html>
