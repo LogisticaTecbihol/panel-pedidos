@@ -75,7 +75,7 @@ const MODALIDADES = ['fisico', 'virtual', 'hibrido']
 const OBJETIVOS = ['leads', 'relacion_clientes', 'lanzamiento', 'posicionamiento', 'capacitacion', 'trafico_digital', 'retencion']
 const CANALES = ['email', 'redes', 'web', 'relaciones_publicas', 'publicidad_digital', 'video']
 const MATERIALES = ['banners_redes', 'diseno_email', 'invitaciones', 'presentacion', 'flyers', 'rollups', 'merchandising']
-const LOGISTICA = ['registros', 'coordinacion_logistica', 'plataforma_virtual']
+const LOGISTICA = ['registros', 'coordinacion_logistica', 'plataforma_virtual', 'presencia_mercadeo']
 const MAX_ARCHIVOS = 5
 // Estados del evento en Mercadeo: aún sin aprobar (se puede modificar) y con Mercadeo (se puede observar).
 const EST_SIN_APROBAR = ['radicada', 'en_revision']
