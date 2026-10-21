@@ -74,6 +74,8 @@ var _ev = {
   visitados: {},      // pasos ya vistos: solo ellos muestran ✓ / ! en la barra
   observando: false,  // candado anti doble clic al enviar una observación
   rechazando: null,   // solicitud que se está rechazando
+  clientes: null,     // clientes para buscar al distribuidor/cliente del lugar [{ cliente, nit, municipio, departamento, norm, nitDig }]
+  distSel: null,      // cliente elegido de la lista (para limpiar el NIT si se cambia el nombre)
   pqrs: null
 };
 
@@ -189,6 +191,7 @@ async function evInit() {
     _ev.ctx = await evInvocar({ action: 'contexto' });
     evPoblarFormulario();
     evResetForm();
+    evCargarClientes();                           // en segundo plano: solo alimenta la búsqueda del distribuidor/cliente
     var aprobar = !!_ev.ctx.puede_aprobar;
     evEl('sm-tab-aprobar').style.display = aprobar ? '' : 'none';
     if (aprobar) evEl('sm-ct-aprobar').textContent = _ev.ctx.pendientes || 0;
@@ -398,6 +401,108 @@ function evAreaValor() {
   return v === 'Otros' ? evEl('ev-area-otra').value.trim().replace(/\s+/g, ' ') : v;
 }
 
+// ── Lugar del evento: municipio + departamento (lista oficial, js/colombia-geo.js), distribuidor/cliente + NIT y finca ──
+// Se guardan por separado (datos.lugar_*) y la función arma `lugar`, el texto único que ve Mercadeo en panel-pqrs.
+function evLugarTexto(d) {
+  var p = [];
+  if (d.lugar_municipio) p.push(d.lugar_municipio + (d.lugar_departamento ? ', ' + d.lugar_departamento : ''));
+  if (d.lugar_distribuidor) p.push('Distribuidor/cliente: ' + d.lugar_distribuidor + (d.lugar_distribuidor_nit ? ' (NIT ' + d.lugar_distribuidor_nit + ')' : ''));
+  if (d.lugar_finca) p.push('Finca: ' + d.lugar_finca);
+  return p.join(' · ');
+}
+
+// ¿El municipio pertenece a ese departamento de la lista oficial?
+function evGeoValido(muni, depto) {
+  return !!(muni && depto && COLOMBIA_DEPTOS_MUNIS[depto] && COLOMBIA_DEPTOS_MUNIS[depto].indexOf(muni) >= 0);
+}
+
+// Resuelve un municipio escrito a mano (sin tildes, en mayúsculas…) al par oficial { municipio, departamento }; null si no hay
+// un único candidato (varios departamentos comparten nombres como «La Unión»: ahí hay que elegir de la lista).
+function evGeoPar(muni, depto) {
+  var limpio = function (s) { return _normSearch(s).replace(/\s*d\.?\s*c\.?\s*$/, ''); };
+  var m = limpio(muni), dp = _normSearch(depto), hallados = [];
+  if (!m) return null;
+  Object.keys(COLOMBIA_DEPTOS_MUNIS).forEach(function (dep) {
+    COLOMBIA_DEPTOS_MUNIS[dep].forEach(function (nom) {
+      if (limpio(nom) === m) hallados.push({ municipio: nom, departamento: dep });
+    });
+  });
+  if (dp) {
+    var enDep = hallados.filter(function (h) { return _normSearch(h.departamento) === dp; });
+    if (enDep.length === 1) return enDep[0];
+  }
+  return hallados.length === 1 ? hallados[0] : null;
+}
+
+// Al salir de los campos: si lo escrito corresponde a un único municipio/departamento oficial, se deja con su ortografía oficial.
+function evCanonizarGeo() {
+  var mEl = evEl('ev-municipio'), dEl = evEl('ev-depto');
+  if (dEl.value.trim()) dEl.value = normalizarDepartamento(dEl.value.trim());
+  var m = mEl.value.trim(), d = dEl.value.trim();
+  if (!m || evGeoValido(m, d)) return;
+  var p = evGeoPar(m, d);
+  if (p) { mEl.value = p.municipio; dEl.value = p.departamento; }
+}
+
+function evCargarClientes() {
+  if (_ev.clientes) return;
+  apiGet('getClientesUnicos').then(function (r) {
+    if (!r || !r.ok) return;
+    var vistos = {}, out = [];
+    (r.clientes || []).forEach(function (c) {
+      var nombre = String(c.cliente || '').trim();
+      if (!nombre) return;
+      var clave = (c.nit || nombre).toString().toUpperCase() + '|' + _normSearch(c.municipio);   // un NIT puede tener varias sucursales
+      if (vistos[clave]) return;
+      vistos[clave] = true;
+      out.push({ cliente: nombre, nit: String(c.nit || '').trim(), municipio: c.municipio || '', departamento: c.departamento || '',
+        norm: _normSearch(nombre), nitDig: String(c.nit || '').replace(/\D/g, '') });
+    });
+    out.sort(function (a, b) { return a.cliente.localeCompare(b.cliente, 'es'); });
+    _ev.clientes = out;
+  }).catch(function () { /* sin lista se puede escribir el nombre a mano */ });
+}
+
+// Al elegir un cliente: nombre + NIT, y su municipio/departamento solo si el lugar aún está vacío.
+function evElegirCliente(c) {
+  evEl('ev-dist').value = c.cliente;
+  evEl('ev-dist-nit').value = c.nit;
+  _ev.distSel = c;
+  if (!evEl('ev-municipio').value.trim() && !evEl('ev-depto').value.trim()) {
+    var p = evGeoPar(c.municipio, c.departamento);
+    if (p) { evEl('ev-municipio').value = p.municipio; evEl('ev-depto').value = p.departamento; }
+  }
+}
+
+// Si se cambia el nombre elegido de la lista, el NIT que se había traído de ese cliente ya no corresponde.
+function evDistAlEscribir() {
+  var s = _ev.distSel;
+  if (s && evEl('ev-dist').value.trim() !== s.cliente) {
+    if (evEl('ev-dist-nit').value.trim() === s.nit) evEl('ev-dist-nit').value = '';
+    _ev.distSel = null;
+  }
+}
+
+function evInitLugar() {
+  setupGeoAutocomplete(evEl('ev-depto'), evEl('ev-municipio'));
+  evEl('ev-municipio').addEventListener('change', evCanonizarGeo);
+  evEl('ev-depto').addEventListener('change', evCanonizarGeo);
+  evEl('ev-dist').addEventListener('input', evDistAlEscribir);
+  initAutocomplete(evEl('ev-dist'), {
+    minChars: 2,
+    items: function () { return _ev.clientes || []; },
+    display: function (c) {
+      return '<strong>' + escHtml(c.cliente) + '</strong>' +
+        '<div class="ac-sub">' + escHtml([c.nit, c.municipio].filter(Boolean).join(' · ')) + '</div>';
+    },
+    match: function (c, val) {
+      var q = _normSearch(val), dig = q.replace(/\D/g, '');
+      return c.norm.indexOf(q) >= 0 || (dig.length >= 3 && c.nitDig.indexOf(dig) >= 0);
+    },
+    onSelect: evElegirCliente
+  });
+}
+
 function evActualizarModalidad() {
   var m = evModalidadActual();
   evEl('ev-lugar-box').style.display = m === 'fisico' || m === 'hibrido' || !m ? '' : 'none';
@@ -461,9 +566,11 @@ function evResetForm() {
   evEl('ev-empresa-otra').value = '';
   evActualizarEmpresaOtra();
   evPonerArea('');
-  ['ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-lugar', 'ev-plataforma',
+  ['ev-correo', 'ev-tel', 'ev-limite', 'ev-nombre', 'ev-fecha', 'ev-hora-ini', 'ev-hora-fin', 'ev-municipio', 'ev-depto', 'ev-dist', 'ev-dist-nit', 'ev-finca', 'ev-plataforma',
     'ev-objetivos-otro', 'ev-publico', 'ev-seg-dem', 'ev-seg-prof', 'ev-nivel', 'ev-invitados', 'ev-asis-pres', 'ev-asis-virt',
     'ev-canales-otro', 'ev-materiales-otro', 'ev-logistica-otro', 'ev-presupuesto', 'ev-solicitado'].forEach(function (id) { evEl(id).value = ''; });
+  _ev.distSel = null;
+  evEl('ev-lugar-previo').style.display = 'none';
   evEl('ev-limite').min = today();
   evEl('ev-fecha').min = today();
   evEl('sm-desc').value = '';
@@ -539,6 +646,13 @@ function evLeerFormulario() {
   var solId = evSolicitanteId();
   var gastos = evLeerDesglose();
   var est = evParseMonto(evEl('ev-presupuesto').value), sol = evParseMonto(evEl('ev-solicitado').value);
+  // El lugar solo cuenta si el evento es presencial (físico o híbrido); en uno virtual se descarta aunque haya texto en los campos.
+  var mod = evModalidadActual(), presencial = mod === 'fisico' || mod === 'hibrido';
+  var campo = function (id) { return presencial ? evEl(id).value.trim().replace(/\s+/g, ' ') : ''; };
+  var lug = {
+    lugar_municipio: campo('ev-municipio'), lugar_departamento: campo('ev-depto'),
+    lugar_distribuidor: campo('ev-dist'), lugar_distribuidor_nit: campo('ev-dist-nit'), lugar_finca: campo('ev-finca')
+  };
   return {
     solicitante_id: solId,
     // El propio usuario no es "a nombre de" nadie: se manda vacío.
@@ -558,7 +672,12 @@ function evLeerFormulario() {
       hora_inicio: evEl('ev-hora-ini').value || null,
       hora_fin: evEl('ev-hora-fin').value || null,
       modalidad: evModalidadActual(),
-      lugar: evEl('ev-lugar').value.trim(),
+      lugar: evLugarTexto(lug),   // la función lo vuelve a armar; se manda también por compatibilidad
+      lugar_municipio: lug.lugar_municipio,
+      lugar_departamento: lug.lugar_departamento,
+      lugar_distribuidor: lug.lugar_distribuidor,
+      lugar_distribuidor_nit: lug.lugar_distribuidor_nit,
+      lugar_finca: lug.lugar_finca,
       plataforma: evEl('ev-plataforma').value.trim(),
       objetivos: evMarcados('ev-objetivos'),
       objetivos_otro: evEl('ev-objetivos-otro').value.trim(),
@@ -613,7 +732,11 @@ function evValidarPaso(f, n) {
     if (d.fecha_limite_aprobacion && d.fecha_limite_aprobacion > d.fecha_evento) return 'La fecha límite de aprobación no puede ser posterior a la fecha del evento';
     if (d.hora_inicio && d.hora_fin && d.hora_fin <= d.hora_inicio) return 'La hora de fin debe ser posterior a la de inicio';
     if (!d.modalidad) return 'Elige la modalidad: físico, virtual o híbrido';
-    if ((d.modalidad === 'fisico' || d.modalidad === 'hibrido') && !d.lugar) return 'Indica el lugar o ubicación del evento';
+    if (d.modalidad === 'fisico' || d.modalidad === 'hibrido') {
+      if (!d.lugar_municipio || !d.lugar_departamento) return 'Indica el municipio y el departamento del evento';
+      if (!evGeoValido(d.lugar_municipio, d.lugar_departamento)) return 'Elige el municipio y el departamento de la lista oficial (el municipio debe pertenecer al departamento)';
+      if (d.lugar_distribuidor_nit && !d.lugar_distribuidor) return 'Escribe el nombre del distribuidor o cliente del NIT';
+    }
     if ((d.modalidad === 'virtual' || d.modalidad === 'hibrido') && !d.plataforma) return 'Indica la plataforma del evento virtual';
   }
   if (n === 3) {
@@ -824,7 +947,15 @@ function evEditar(s) {
   evEl('ev-hora-fin').value = d.hora_fin ? String(d.hora_fin).slice(0, 5) : '';
   var m = document.querySelector('input[name="ev-mod"][value="' + (d.modalidad || 'fisico') + '"]');
   if (m) m.checked = true;
-  evEl('ev-lugar').value = d.lugar || '';
+  evEl('ev-municipio').value = d.lugar_municipio || '';
+  evEl('ev-depto').value = d.lugar_departamento || '';
+  evEl('ev-dist').value = d.lugar_distribuidor || '';
+  evEl('ev-dist-nit').value = d.lugar_distribuidor_nit || '';
+  evEl('ev-finca').value = d.lugar_finca || '';
+  // Solicitudes de antes del cambio traen un lugar en texto libre: se muestra para que se complete municipio y departamento.
+  var previo = evEl('ev-lugar-previo');
+  previo.style.display = d.lugar && !d.lugar_municipio ? '' : 'none';
+  previo.textContent = d.lugar && !d.lugar_municipio ? 'Lugar registrado antes: «' + d.lugar + '». Completa los campos de arriba.' : '';
   evEl('ev-plataforma').value = d.plataforma || '';
   evChecks('ev-objetivos', EV_OBJETIVOS, d.objetivos || []);
   evEl('ev-objetivos-otro').value = d.objetivos_otro || '';
@@ -1356,6 +1487,7 @@ document.addEventListener('DOMContentLoaded', function () {
   evEl('ev-modalidad').addEventListener('change', evActualizarModalidad);
   evEl('sm-empresa').addEventListener('change', evActualizarEmpresaOtra);
   evEl('ev-area').addEventListener('change', evActualizarAreaOtra);
+  evInitLugar();
   evEl('ev-fecha').addEventListener('change', evActualizarAnticipacion);
   evEl('ev-presupuesto').addEventListener('input', evActualizarPresupuesto);
   evEl('ev-solicitado').addEventListener('input', evActualizarPresupuesto);

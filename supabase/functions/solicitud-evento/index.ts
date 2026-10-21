@@ -176,6 +176,16 @@ function lista(v: unknown, validos: string[], campo: string): string[] {
 
 const refSE = (n: number | string) => `SE-${n}`
 
+// Texto único del lugar (igual al que arma el navegador): «Municipio, Departamento · Distribuidor/cliente: X (NIT n) · Finca: Y».
+// El municipio va primero para que, si algo se recortara a los 300 de pqrs, se pierda lo opcional y no lo obligatorio.
+function armarLugar(municipio: string, departamento: string, distribuidor: string, nit: string, finca: string): string {
+  const p: string[] = []
+  if (municipio) p.push(municipio + (departamento ? `, ${departamento}` : ''))
+  if (distribuidor) p.push(`Distribuidor/cliente: ${distribuidor}${nit ? ` (NIT ${nit})` : ''}`)
+  if (finca) p.push(`Finca: ${finca}`)
+  return p.join(' · ').slice(0, 300)
+}
+
 // Llama a la función de pqrs. Los 4xx de validación se reenvían con su mensaje;
 // un 401 (secreto mal configurado) o un fallo de red se traducen a mensajes neutros.
 async function puente(payload: Record<string, unknown>) {
@@ -382,12 +392,20 @@ serve(async (req) => {
 
       const modalidad = d.modalidad
       if (!MODALIDADES.includes(modalidad)) throw new Rechazo('Elige la modalidad: físico, virtual o híbrido')
-      let lugar = textoOpc(d.lugar, 'El lugar', 300)
+      // Lugar presencial: municipio + departamento obligatorios; distribuidor/cliente (con su NIT) y finca opcionales.
+      // `lugar` (texto único, ≤ 300) lo arma esta función: es lo que recibe Mercadeo en panel-pqrs.
+      const presencial = modalidad === 'fisico' || modalidad === 'hibrido'
+      const lugarMunicipio = presencial ? textoOpc(d.lugar_municipio, 'El municipio', 60) : ''
+      const lugarDepartamento = presencial ? textoOpc(d.lugar_departamento, 'El departamento', 40) : ''
+      const lugarDistribuidor = presencial ? textoOpc(d.lugar_distribuidor, 'El distribuidor o cliente', 120) : ''
+      const lugarNit = presencial ? textoOpc(d.lugar_distribuidor_nit, 'El NIT del distribuidor o cliente', 25) : ''
+      const lugarFinca = presencial ? textoOpc(d.lugar_finca, 'La finca', 100) : ''
+      if (presencial && (!lugarMunicipio || !lugarDepartamento)) throw new Rechazo('Indica el municipio y el departamento del evento')
+      if (lugarNit && !lugarDistribuidor) throw new Rechazo('Indica el nombre del distribuidor o cliente del NIT')
+      const lugar = armarLugar(lugarMunicipio, lugarDepartamento, lugarDistribuidor, lugarNit, lugarFinca)
       let plataforma = textoOpc(d.plataforma, 'La plataforma', 200)
-      if ((modalidad === 'fisico' || modalidad === 'hibrido') && !lugar) throw new Rechazo('Indica el lugar o ubicación del evento')
       if ((modalidad === 'virtual' || modalidad === 'hibrido') && !plataforma) throw new Rechazo('Indica la plataforma del evento virtual')
       if (modalidad === 'fisico') plataforma = ''
-      if (modalidad === 'virtual') lugar = ''
 
       const correo = textoOpc(d.solicitante_correo, 'El correo', 160) || (solicitante.email || '').slice(0, 160)
       if (correo && !CORREO_RE.test(correo)) throw new Rechazo('El correo electrónico no es válido')
@@ -423,6 +441,11 @@ serve(async (req) => {
         hora_fin: horaFin,
         modalidad,
         lugar,
+        lugar_municipio: lugarMunicipio,
+        lugar_departamento: lugarDepartamento,
+        lugar_distribuidor: lugarDistribuidor,
+        lugar_distribuidor_nit: lugarNit,
+        lugar_finca: lugarFinca,
         plataforma,
         objetivos: lista(d.objetivos, OBJETIVOS, 'Objetivos'),
         objetivos_otro: textoOpc(d.objetivos_otro, 'Otros objetivos', 300),
