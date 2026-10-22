@@ -2,6 +2,7 @@
 var dPedidos = [];
 var dPedidosConsig = [];  // pedidos en consignación: salen de dPedidos (no son ventas) pero se cuentan aparte
 var dConsigIds = {};      // id de Pedidos → 1, para marcar los despachos de EntregasPedido que son de consignación
+var dPedidosHist = [];    // cargas históricas (Historico = true): fuera del dashboard, igual que la vista por defecto del módulo Pedidos
 var dDevoluciones = [];
 var dIngresos = [];
 var dOrdenes = [];
@@ -278,6 +279,9 @@ function dBuildOrders(ped) {
         fechaPedido: p.Fecha_Pedido || '',
         fechaUltEntrega: p.Fecha_Ult_Entrega || '',
         fechaCompromiso: p.Fecha_Compromiso || '',
+        // "Total Orden" tal como lo guarda el pedido (primera línea, igual que el
+        // módulo Pedidos): sólo para conciliar, no para calcular valores.
+        totalOrden: Number(p.Total_Orden) || 0,
         lines: []
       };
     }
@@ -309,11 +313,15 @@ function dBuildOrders(ped) {
     // por proveedor}. Por eso Pendiente ≠ Pedido − Entregado: los pedidos ya
     // cerrados siguen sumando a Pedido pero no a Pendiente.
     o.valorPedido = 0; o.valorEntregado = 0; o.valorPendiente = 0;
+    o.valorAnulado = 0;   // líneas anuladas: no suman a Pedido, pero sí al Total Orden de Pedidos
     o.lineasSinPrecio = 0;
     o.lines.forEach(function(l) {
-      if ((l.Estado_2 || 'Abierto').trim() === 'Anulado') return;
       var vu = Number(l.Valor_Unitario) || 0;
       var cant = Number(l.Cantidad) || 0;
+      if ((l.Estado_2 || 'Abierto').trim() === 'Anulado') {
+        o.valorAnulado += Number(l.Valor_Total) || (vu * cant);
+        return;
+      }
       o.valorPedido += Number(l.Valor_Total) || (vu * cant);
       o.valorEntregado += vu * (Number(l.Cant_Entregada) || 0);
       if (dLineaPendiente(l)) o.valorPendiente += vu * (Number(l.Cant_Pendiente) || 0);
@@ -339,7 +347,7 @@ function dBuildOrders(ped) {
 // de apiGet, clave del arreglo en la respuesta, columnas del dashboard].
 var D_COMPARTIDAS = [
   ['pedidos', 'getPedidos', 'pedidos',
-   'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Bodega_Consignacion_Id,Consignacion'],
+   'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Total_Orden,Historico,Bodega_Consignacion_Id,Consignacion'],
   ['devoluciones', 'getDevoluciones', 'devoluciones',
    'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total,Cliente,Vendedor'],
   ['ingresos', 'getIngresos', 'ingresos',
@@ -444,13 +452,21 @@ async function loadDashboard() {
       return p;
     });
 
+    // Cargas históricas (Historico = true): el módulo Pedidos las oculta por
+    // defecto (casilla "Mostrar cargas históricas"), así que el dashboard
+    // tampoco las suma — de lo contrario el valor por comercial/empresa no
+    // cuadra con lo que se ve en Pedidos (Activos + Histórico). Se guardan en
+    // dPedidosHist para mostrarlas en la conciliación del Top comerciales.
+    dPedidosHist = pedidosValidos.filter(function(p) { return p.Historico === true; });
+    var pedidosVivos = pedidosValidos.filter(function(p) { return p.Historico !== true; });
+
     // Los pedidos en consignación no son ventas a cliente final, así que no
     // deben inflar KPIs, Top clientes/comerciales, OTD, etc. (ver
     // dEsConsignacion). Se apartan en dPedidosConsig para contarlos aparte:
     // los despachos de EntregasPedido sí los incluyen, y sin este conteo el
     // total de órdenes no cuadra con el de entregas.
-    dPedidos = pedidosValidos.filter(function(p) { return !dEsConsignacion(p); });
-    dPedidosConsig = pedidosValidos.filter(dEsConsignacion);
+    dPedidos = pedidosVivos.filter(function(p) { return !dEsConsignacion(p); });
+    dPedidosConsig = pedidosVivos.filter(dEsConsignacion);
     dConsigIds = {};
     dPedidosConsig.forEach(function(p) { if (p.id != null) dConsigIds[p.id] = 1; });
 
@@ -604,11 +620,13 @@ function dSlice(fEmp, desde, hasta) {
   function r(f) { return _fechaEnRango(f, desde, hasta); }
   var ped = dPedidos.filter(function(p) { return (!fEmp || p.Nombre_Empresa === fEmp) && r(p.Fecha_Pedido); });
   var cons = dPedidosConsig.filter(function(p) { return (!fEmp || p.Nombre_Empresa === fEmp) && r(p.Fecha_Pedido); });
+  var hist = dPedidosHist.filter(function(p) { return (!fEmp || p.Nombre_Empresa === fEmp) && r(p.Fecha_Pedido); });
   return {
     ped: ped,
     orders: dBuildOrders(ped),
     cons: cons,
     consOrders: dBuildOrders(cons),
+    histOrders: dBuildOrders(hist),
     dev: dDevoluciones.filter(function(d) { return (!fEmp || d.Empresa === fEmp) && r(d.Fecha); }),
     oc: dOrdenes.filter(function(o) { return (!fEmp || o.Empresa_Destino === fEmp || o.Empresa_Origen === fEmp) && r(o.Fecha); }),
     mue: dMuestras.filter(function(m) { return (m.Tipo_Solicitud || 'Despacho') !== 'Produccion' && (!fEmp || m.Empresa === fEmp) && r(m.Fecha_Solicitud); }),
@@ -656,7 +674,7 @@ function buildDashboard() {
   buildTopProductos(cur.ped);
   buildTopClientes(cur.orders, fEmp);
   buildDevoluciones(cur.dev, cur.orders, fEmp);
-  buildTopComerciales(cur.orders, fEmp);
+  buildTopComerciales(cur.orders, fEmp, cur.consOrders, cur.histOrders);
   buildInventario(cur.ped, fEmp);
   buildResumenModulos(cur.orders, cur.dev, cur.ing, cur.oc, cur.mue, cur.ree, cur.cam, fEmp);
   buildExactitudInventario(fEmp);
@@ -1392,15 +1410,15 @@ function buildDevoluciones(dev, orders, fEmp) {
 }
 
 // ── 7. Top Comerciales (pedidos y valor por comercial) ──
-function buildTopComerciales(orders, fEmp) {
+function buildTopComerciales(orders, fEmp, consOrders, histOrders) {
   var map = {};
-  var sinComercial = 0, sinPrecio = 0;
+  var sinComercial = 0, sinPrecio = 0, sinComercialVal = 0;
   var totPed = 0, totPen = 0, totCer = 0, totBloq = 0;
 
   orders.forEach(function(o) {
     sinPrecio += o.lineasSinPrecio;
     var com = o.comercial;
-    if (!com) { sinComercial++; return; }
+    if (!com) { sinComercial++; sinComercialVal += o.valorPedido; return; }
     if (!map[com]) map[com] = { comercial: com, ordenes: 0, vPed: 0, vEnt: 0, vPen: 0, vCer: 0, vBloq: 0 };
     var m = map[com];
     // Recibido + Cerrado = se cerró sin entregarse (Entregado ya queda en 0
@@ -1440,6 +1458,36 @@ function buildTopComerciales(orders, fEmp) {
     notaEl.style.display = notas.length ? 'block' : 'none';
   }
 
+  // Conciliación con el módulo Pedidos (columna "Total Orden", Activos +
+  // Histórico, mismas fechas y empresa, sin "Mostrar cargas históricas"):
+  // Total Pedidos = comerciales + sin comercial + consignación + anuladas + ajuste.
+  // El ajuste es el residuo: órdenes cuyo Total Orden guardado no coincide con la
+  // suma de sus líneas. Para un comercial puntual, filtra Pedidos por ese comercial.
+  var conciliaEl = document.getElementById('com-concilia');
+  if (conciliaEl) {
+    var sumar = function(list, f) { return list.reduce(function(s, o) { return s + f(o); }, 0); };
+    var cons = consOrders || [], hist = histOrders || [];
+    var todas = orders.concat(cons);
+    var totalPedidos = sumar(todas, function(o) { return o.totalOrden; });
+    var consVal = sumar(cons, function(o) { return o.valorPedido; });
+    var anulVal = sumar(todas, function(o) { return o.valorAnulado; });
+    var ajuste = totalPedidos - (totPed + sinComercialVal + consVal + anulVal);
+    var nCom = orders.length - sinComercial;
+    var partes = ['comerciales ' + dMoneyFull(totPed) + ' (' + nCom + ' ord.)'];
+    if (sinComercial > 0) partes.push('sin comercial ' + dMoneyFull(sinComercialVal) + ' (' + sinComercial + ' ord.)');
+    if (cons.length > 0) partes.push('consignación excluida ' + dMoneyFull(consVal) + ' (' + cons.length + ' ord.)');
+    if (anulVal !== 0) partes.push('líneas anuladas ' + dMoneyFull(anulVal));
+    if (Math.abs(ajuste) >= 1) partes.push('ajuste por Total Orden ≠ suma de líneas ' + dMoneyFull(Math.round(ajuste)));
+    var txt = 'Conciliación con Pedidos (Total Orden, Activos + Histórico): ' + dMoneyFull(totalPedidos) +
+      ' · ' + todas.length + ' ord. = ' + partes.join(' + ') + '.';
+    if (hist.length > 0) {
+      txt += ' Cargas históricas excluidas (Pedidos las oculta salvo "Mostrar cargas históricas"): ' +
+        dMoneyFull(sumar(hist, function(o) { return o.totalOrden; })) + ' (' + hist.length + ' ord.).';
+    }
+    conciliaEl.textContent = txt;
+    conciliaEl.style.display = 'block';
+  }
+
   var tbody = document.getElementById('tb-comerciales');
   if (!arr.length) {
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:20px">Sin datos</td></tr>';
@@ -1467,7 +1515,7 @@ function buildTopComerciales(orders, fEmp) {
       '<td>' + dSparklineCell(trend.meses, serieValor, '#1a5276', dMoneyM, 64, 20) + '</td>' +
       '<td>' + dSparklineCell(trend.meses, serieUds, '#27ae60', function(v) { return v.toLocaleString('es-CO') + ' uds'; }, 64, 20) + '</td>' +
       '<td class="money">' + r.ordenes + '</td>' +
-      '<td class="money" style="font-weight:700;color:#2980b9">' + dMoneyM(r.vPed) + '</td>' +
+      '<td class="money" style="font-weight:700;color:#2980b9" title="' + escHtml(dMoneyFull(r.vPed)) + '">' + dMoneyM(r.vPed) + '</td>' +
       '<td class="money" style="color:#27ae60">' + dMoneyM(r.vEnt) + '</td>' +
       '<td class="money" style="font-weight:700;color:' + penColor + '">' + dMoneyM(r.vPen) + '</td>' +
       '<td class="money" style="color:#718096">' + dMoneyM(r.vCer) + '</td>' +
