@@ -64,6 +64,13 @@ var SM_ROLES = {
   cartera: 'Cartera', produccion: 'Producción', mercadeo: 'Mercadeo'
 };
 
+// Empresas ADICIONALES (las mismas de la solicitud de eventos): no son del holding; la función las ofrece en
+// ctx.empresas_extra a todo el que envía. «Otros» exige el nombre escrito.
+var SM_EMPRESAS_EXTRA = { CHIA_ABAGO: 'Chía Abagó', TECBIHOL: 'Tecbihol', OTROS: 'Otros' };
+
+// Departamento / Área (misma lista de la solicitud de eventos); «Otros» pide escribir el área.
+var SM_AREAS = ['Comercial', 'Cartera', 'Contabilidad', 'Administrativo'];
+
 var _sm = {
   combo: { opciones: [], visibles: [], activo: -1, ultimo: '' },   // combo de "Solicitante"
   ctx: null,          // { yo, empresas, usuarios, puede_aprobar, pendientes }
@@ -194,6 +201,9 @@ function smPoblarFormulario() {
   if (ctx.empresas.length !== 1) emp += '<option value="">— Seleccionar —</option>';
   ctx.empresas.forEach(function (s) {
     emp += '<option value="' + escHtml(s) + '">' + escHtml(s) + (nombres[s] ? ' — ' + escHtml(nombres[s]) : '') + '</option>';
+  });
+  (ctx.empresas_extra || []).forEach(function (x) {
+    emp += '<option value="' + escHtml(x.codigo) + '">' + escHtml(x.codigo === 'OTROS' ? 'Otros (escribir el nombre)' : x.nombre) + '</option>';
   });
   smEl('sm-empresa').innerHTML = emp;
   smEl('sm-aviso-sin-empresa').style.display = ctx.empresas.length ? 'none' : '';
@@ -336,6 +346,35 @@ function smMostrarAsuntoOtro(visible) {
   smEl('sm-asunto-otro-box').style.display = visible ? '' : 'none';
 }
 
+// Con la empresa «Otros» aparece el campo para escribir el nombre.
+function smActualizarEmpresaOtra() {
+  var otros = smEl('sm-empresa').value === 'OTROS';
+  smEl('sm-empresa-otra-box').style.display = otros ? '' : 'none';
+  if (otros && document.activeElement === smEl('sm-empresa')) smEl('sm-empresa-otra').focus();
+}
+
+// Departamento / Área: lista con «Otros» (aparece el campo para escribirla).
+function smActualizarAreaOtra() {
+  var otros = smEl('sm-area').value === 'Otros';
+  smEl('sm-area-otra-box').style.display = otros ? '' : 'none';
+  if (otros && document.activeElement === smEl('sm-area')) smEl('sm-area-otra').focus();
+}
+
+// Pone el área guardada: si está en la lista la elige; si no, es «Otros» con ese texto.
+function smPonerArea(area) {
+  var v = String(area || '').trim();
+  if (!v) { smEl('sm-area').value = ''; smEl('sm-area-otra').value = ''; }
+  else if (SM_AREAS.indexOf(v) >= 0) { smEl('sm-area').value = v; smEl('sm-area-otra').value = ''; }
+  else { smEl('sm-area').value = 'Otros'; smEl('sm-area-otra').value = v === 'Otros' ? '' : v; }
+  smActualizarAreaOtra();
+}
+
+// Valor del área que viaja al servidor (vacío si no se eligió).
+function smAreaValor() {
+  var v = smEl('sm-area').value;
+  return v === 'Otros' ? smEl('sm-area-otra').value.trim().replace(/\s+/g, ' ') : v;
+}
+
 // ── Formulario ──
 function smResetForm() {
   _sm.requestId = smNuevoRequestId();
@@ -349,6 +388,9 @@ function smResetForm() {
   if (_sm.ctx) smComboElegir(_sm.ctx.yo.id);
   if (_sm.ctx && _sm.ctx.empresas.length === 1) smEl('sm-empresa').value = _sm.ctx.empresas[0];
   else smEl('sm-empresa').value = '';
+  smEl('sm-empresa-otra').value = '';
+  smActualizarEmpresaOtra();
+  smPonerArea('');
   smEl('sm-asunto').value = '';
   smEl('sm-asunto-otro').value = '';
   smMostrarAsuntoOtro(false);
@@ -413,6 +455,10 @@ function smLeerFormulario() {
     // El propio usuario no es "a nombre de" nadie: se manda vacío.
     a_nombre_de_id: solId && _sm.ctx && solId !== _sm.ctx.yo.id ? solId : null,
     empresa: smEl('sm-empresa').value,
+    // Solo cuenta con la empresa «Otros».
+    empresa_otra: smEl('sm-empresa').value === 'OTROS' ? smEl('sm-empresa-otra').value.trim().replace(/\s+/g, ' ') : null,
+    departamento_area: smAreaValor() || null,
+    areaOtros: smEl('sm-area').value === 'Otros',   // no viaja al servidor: solo para validar
     asunto: smEl('sm-asunto').value,
     // Solo cuenta con asunto "Otros".
     asunto_otro: smEl('sm-asunto').value === 'otros' ? smEl('sm-asunto-otro').value.trim().replace(/\s+/g, ' ') : null,
@@ -424,6 +470,8 @@ function smLeerFormulario() {
 function smValidar(d) {
   if (!d.solicitante_id || !smComboOpcion(d.solicitante_id)) return 'Elige el solicitante de la lista';
   if (!d.empresa) return 'Elige la empresa';
+  if (d.empresa === 'OTROS' && (!d.empresa_otra || d.empresa_otra.length < 3 || d.empresa_otra.length > 100)) return 'Escribe el nombre de la empresa (entre 3 y 100 caracteres)';
+  if (d.areaOtros && (!d.departamento_area || d.departamento_area.length < 3 || d.departamento_area.length > 120)) return 'Escribe el departamento o área (entre 3 y 120 caracteres)';
   if (!d.asunto) return 'Elige el asunto';
   if (d.asunto === 'otros') {
     if (!d.asunto_otro || d.asunto_otro.length < 3) return 'Escribe el asunto (mínimo 3 caracteres)';
@@ -495,6 +543,8 @@ async function smEnviar() {
       request_id: reenvio ? previa.id : _sm.requestId,
       a_nombre_de_id: d.a_nombre_de_id,
       empresa: d.empresa,
+      empresa_otra: d.empresa_otra,
+      departamento_area: d.departamento_area,
       asunto: d.asunto,
       asunto_otro: d.asunto_otro,
       fecha_tentativa: d.fecha_tentativa,
@@ -533,7 +583,12 @@ function smEditar(s) {
   _sm.requestId = s.id;                           // mismo id: los archivos nuevos van a su carpeta
   _sm.keep = (s.archivos || []).slice();
   if (s.a_nombre_de_id && smComboOpcion(s.a_nombre_de_id)) smComboElegir(s.a_nombre_de_id);
-  if (_sm.ctx.empresas.indexOf((s.empresas || [])[0]) >= 0) smEl('sm-empresa').value = s.empresas[0];
+  var emp = s.empresa || (s.empresas || [])[0];
+  smEl('sm-empresa').value = emp;
+  if (smEl('sm-empresa').value !== emp) smEl('sm-empresa').value = '';   // ya no está entre las empresas del usuario
+  smEl('sm-empresa-otra').value = s.empresa_otra || '';
+  smActualizarEmpresaOtra();
+  smPonerArea(s.departamento_area);
   smEl('sm-asunto').value = s.asunto;
   smEl('sm-asunto-otro').value = s.asunto_otro || '';
   smMostrarAsuntoOtro(s.asunto === 'otros');
@@ -578,7 +633,24 @@ function smCambiarTab(cual) {
 
 // ── Utilidades de pintado ──
 function smEmpresaChips(arr) {
-  return (arr || []).map(function (e) { return '<span class="sigla-badge sigla-' + escHtml(e) + '">' + escHtml(e) + '</span>'; }).join(' ');
+  return (arr || []).map(function (e) {
+    // Las adicionales no tienen color propio: usan el gris de siempre y su nombre en mayúsculas.
+    var extra = SM_EMPRESAS_EXTRA[e];
+    return '<span class="sigla-badge sigla-' + (extra ? 'DEFAULT' : escHtml(e)) + '">' + escHtml(extra ? extra.toUpperCase() : e) + '</span>';
+  }).join(' ');
+}
+
+// Empresa de una solicitud: el chip y, con «Otros», el nombre escrito debajo.
+function smEmpresaDe(s) {
+  var e = s.empresa || (s.empresas || [])[0];
+  return smEmpresaChips([e]) + (e === 'OTROS' && s.empresa_otra ? '<div class="sm-hint" style="margin:2px 0 0">' + escHtml(s.empresa_otra) + '</div>' : '');
+}
+
+// Nombre legible de la empresa (detalle).
+function smNombreEmpresa(s) {
+  var e = s.empresa || (s.empresas || [])[0];
+  if (e === 'OTROS') return 'Otros' + (s.empresa_otra ? ': ' + s.empresa_otra : '');
+  return SM_EMPRESAS_EXTRA[e] || e || '—';
 }
 
 // ── Mis solicitudes ──
@@ -611,7 +683,7 @@ function smRenderLista() {
       '<td>' + escHtml(smRef(s)) + '</td>' +
       '<td>' + escHtml(smFmtFechaHora(s.creada_en)) + '</td>' +
       '<td>' + escHtml(smAsuntoTexto(s)) + '</td>' +
-      '<td>' + smEmpresaChips(s.empresas) + '</td>' +
+      '<td>' + smEmpresaDe(s) + '</td>' +
       '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_tentativa)) + '</td>' +
       '<td>' + escHtml(comprometida) + '</td>' +
@@ -651,7 +723,7 @@ function smRenderPendientes() {
       '<td>' + escHtml(s.solicitante || '—') + '</td>' +
       '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(smAsuntoTexto(s)) + '</td>' +
-      '<td>' + smEmpresaChips(s.empresas) + '</td>' +
+      '<td>' + smEmpresaDe(s) + '</td>' +
       '<td>' + escHtml(fmtDate(s.fecha_tentativa)) + '</td>' +
       '<td><button class="btn-ver" type="button" data-sm-ver="pend:' + i + '">Revisar</button> ' +
       '<button class="btn-ver" type="button" style="background:#27ae60" data-sm-aprobar="' + i + '">✅ Aprobar</button> ' +
@@ -688,7 +760,7 @@ function smRenderAprobadas() {
       '<td>' + escHtml(s.solicitante || '—') + '</td>' +
       '<td>' + escHtml(s.a_nombre_de || '—') + '</td>' +
       '<td>' + escHtml(smAsuntoTexto(s)) + '</td>' +
-      '<td>' + smEmpresaChips(s.empresas) + '</td>' +
+      '<td>' + smEmpresaDe(s) + '</td>' +
       '<td>' + escHtml(s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir') + '</td>' +
       '<td>' + (s.estado ? '<span class="badge ' + smEstadoDe(s.estado).cls + '">' + escHtml(smEstadoDe(s.estado).t) + '</span>' : '—') + '</td>' +
       '<td><button class="btn-ver" type="button" data-sm-ver="apr:' + i + '">Ver</button> ' +
@@ -809,7 +881,8 @@ function smVerDetalle(origen, i, enfocarObs) {
   var enMercadeo = s.estado_aprobacion === 'Aprobada';
   smEl('sm-det-cuerpo').innerHTML = aprobacion +
     '<div class="kv">' +
-      '<span class="k">Empresa</span><span>' + escHtml((s.empresas || []).join(', ') || '—') + '</span>' +
+      '<span class="k">Empresa</span><span>' + escHtml(smNombreEmpresa(s)) + '</span>' +
+      '<span class="k">Departamento / Área</span><span>' + escHtml(s.departamento_area || '—') + '</span>' +
       '<span class="k">Solicitante</span><span>' + escHtml(s.solicitante || '—') + '</span>' +
       '<span class="k">A nombre de</span><span>' + escHtml(s.a_nombre_de || '—') + '</span>' +
       '<span class="k">Fecha tentativa</span><span>' + escHtml(fmtDate(s.fecha_tentativa)) + '</span>' +
@@ -975,6 +1048,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (li) smComboElegir(li.getAttribute('data-id'));
   });
   smEl('sm-desc').addEventListener('input', function () { smEl('sm-desc-ct').textContent = this.value.length; });
+  smEl('sm-empresa').addEventListener('change', smActualizarEmpresaOtra);
+  smEl('sm-area').addEventListener('change', smActualizarAreaOtra);
   smEl('sm-asunto').addEventListener('change', function () {
     var otros = this.value === 'otros';
     smMostrarAsuntoOtro(otros);

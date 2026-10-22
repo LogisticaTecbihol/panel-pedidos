@@ -144,6 +144,27 @@
         <div>
           <label class="ef-label" for="sm-empresa">Empresa *</label>
           <select class="ef" id="sm-empresa"></select>
+          <div id="sm-empresa-otra-box" style="display:none;margin-top:10px">
+            <label class="ef-label" for="sm-empresa-otra">Nombre de la empresa *</label>
+            <input class="ef" type="text" id="sm-empresa-otra" maxlength="100" autocomplete="off" placeholder="Escribe el nombre de la empresa">
+            <div class="sm-hint">Empresa que no es del holding ni está en la lista (entre 3 y 100 caracteres).</div>
+          </div>
+        </div>
+
+        <div class="full">
+          <label class="ef-label" for="sm-area">Departamento / Área</label>
+          <select class="ef" id="sm-area">
+            <option value="">— Seleccionar —</option>
+            <option value="Comercial">Comercial</option>
+            <option value="Cartera">Cartera</option>
+            <option value="Contabilidad">Contabilidad</option>
+            <option value="Administrativo">Administrativo</option>
+            <option value="Otros">Otros</option>
+          </select>
+          <div id="sm-area-otra-box" style="display:none;margin-top:10px">
+            <label class="ef-label" for="sm-area-otra">Área *</label>
+            <input class="ef" type="text" id="sm-area-otra" maxlength="120" autocomplete="off" placeholder="Escribe el departamento o área">
+          </div>
         </div>
 
         <div class="full">
@@ -312,6 +333,6 @@
 <script src="js/shared.js?v=20261021"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
-<script src="js/solicitudes-mercadeo.js?v=20261019b"></script>
+<script src="js/solicitudes-mercadeo.js?v=20261022a"></script>
 </body>
 </html>

@@ -20,7 +20,7 @@
 // El navegador nunca habla con la función de pqrs ni con la tabla: todo pasa por aquí.
 //
 // Acciones (campo `action`):
-//   contexto     -> empresas del usuario, usuarios activos del panel y si puede aprobar
+//   contexto     -> empresas del usuario (+ las adicionales), usuarios activos del panel y si puede aprobar
 //   preparar     -> URLs firmadas para subir adjuntos directo al Storage de pqrs
 //   crear        -> envía una solicitud nueva
 //   reenviar     -> corrige y reenvía una solicitud RECHAZADA propia
@@ -55,6 +55,19 @@ const MODULO = 'solicitudes_mercadeo'
 const MODULO_APROBAR = 'solicitudes_mercadeo_aprobar'
 const TABLA = 'solicitudes_mercadeo'
 const EMPRESAS_HOLDING = ['PARCELAR', 'GREEN', 'RESO', 'IASO', 'IAS']
+// Empresas ADICIONALES (las mismas de la solicitud de eventos): no son del holding, así que no dependen de las
+// empresas asignadas al usuario; las puede elegir cualquiera que envíe solicitudes. «OTROS» exige el nombre
+// escrito (empresa_otra). El navegador las recibe en `contexto.empresas_extra`.
+const EMPRESAS_EXTRA: { codigo: string; nombre: string }[] = [
+  { codigo: 'CHIA_ABAGO', nombre: 'Chía Abagó' },
+  { codigo: 'TECBIHOL', nombre: 'Tecbihol' },
+  { codigo: 'OTROS', nombre: 'Otros' },
+]
+const EXTRA_CODIGOS = EMPRESAS_EXTRA.map((e) => e.codigo)
+function nombreEmpresa(codigo: string, otra?: string | null): string {
+  if (codigo === 'OTROS') return otra ? `Otros: ${otra}` : 'Otros'
+  return EMPRESAS_EXTRA.find((e) => e.codigo === codigo)?.nombre ?? codigo
+}
 const ASUNTOS = [
   'material_pop', 'material_impreso', 'piezas_graficas', 'piezas_audiovisuales',
   'diseno_nuevo_producto', 'diseno_ajuste_portafolios', 'diseno_ajuste_institucional',
@@ -254,8 +267,8 @@ serve(async (req) => {
           ? `✏️ Solicitud a Mercadeo modificada, por aprobar: ${refSM(r.numero)}`
           : `📣 Solicitud a Mercadeo por aprobar: ${refSM(r.numero)}`,
         modificada
-          ? `${r.creado_por_nombre}${para} la modificó: ${textoAsunto(r)} · ${r.empresa}.`
-          : `${r.creado_por_nombre}${para} pide: ${textoAsunto(r)} · ${r.empresa}.`,
+          ? `${r.creado_por_nombre}${para} la modificó: ${textoAsunto(r)} · ${nombreEmpresa(r.empresa, r.empresa_otra)}.`
+          : `${r.creado_por_nombre}${para} pide: ${textoAsunto(r)} · ${nombreEmpresa(r.empresa, r.empresa_otra)}.`,
         refSM(r.numero),
       )
     }
@@ -276,7 +289,20 @@ serve(async (req) => {
 
     // Valida y normaliza lo que dice el formulario (para crear y reenviar).
     async function validarFormulario(requestId: string) {
-      if (!empresas.includes(body.empresa)) throw new Rechazo('La empresa elegida no está entre las tuyas')
+      if (!empresas.includes(body.empresa) && !EXTRA_CODIGOS.includes(body.empresa)) throw new Rechazo('La empresa elegida no está entre las tuyas')
+      // Con «Otros» se escribe el nombre de la empresa (obligatorio); con cualquier otra no aplica.
+      let empresaOtra: string | null = null
+      if (body.empresa === 'OTROS') {
+        empresaOtra = typeof body.empresa_otra === 'string' ? body.empresa_otra.trim().replace(/\s+/g, ' ') : ''
+        if (empresaOtra.length < 3 || empresaOtra.length > 100) throw new Rechazo('Escribe el nombre de la empresa (entre 3 y 100 caracteres)')
+      }
+      // Departamento / Área del solicitante: opcional.
+      let departamentoArea: string | null = null
+      if (body.departamento_area !== null && body.departamento_area !== undefined && body.departamento_area !== '') {
+        if (typeof body.departamento_area !== 'string') throw new Rechazo('El departamento/área no es válido')
+        departamentoArea = body.departamento_area.trim().replace(/\s+/g, ' ') || null
+        if (departamentoArea && departamentoArea.length > 120) throw new Rechazo('El departamento/área no puede superar 120 caracteres')
+      }
       if (!ASUNTOS.includes(body.asunto)) throw new Rechazo('Elige un asunto de la lista')
 
       // Con asunto "Otros" el solicitante escribe el asunto (obligatorio); con cualquier otro no aplica.
@@ -332,7 +358,7 @@ serve(async (req) => {
         if (faltan.length) throw new Rechazo('Un archivo no llegó completo; vuelve a intentarlo')
       }
 
-      return { empresa: body.empresa, asunto: body.asunto, asuntoOtro, fecha, descripcion, aNombre, archivos }
+      return { empresa: body.empresa, empresaOtra, departamentoArea, asunto: body.asunto, asuntoOtro, fecha, descripcion, aNombre, archivos }
     }
 
     // Manda una solicitud YA aprobada al Tablero de Mercadeo (idempotente por origen_ref = id).
@@ -348,6 +374,8 @@ serve(async (req) => {
         solicitante: { id: r.creado_por, nombre: r.creado_por_nombre, email: c.data?.email ?? null, rol: c.data?.rol ?? null },
         a_nombre_de: r.a_nombre_de_id ? { id: r.a_nombre_de_id, nombre: r.a_nombre_de_nombre } : null,
         empresa: r.empresa,
+        empresa_otra: r.empresa_otra ?? null,
+        departamento_area: r.departamento_area ?? null,
         asunto: r.asunto,
         asunto_otro: r.asunto_otro,
         fecha_tentativa: r.fecha_tentativa,
@@ -419,6 +447,9 @@ serve(async (req) => {
         asunto: r.asunto,
         asunto_otro: r.asunto_otro,
         empresas: [r.empresa],
+        empresa: r.empresa,
+        empresa_otra: r.empresa_otra ?? null,
+        departamento_area: r.departamento_area ?? null,
         descripcion: r.descripcion,
         fecha_tentativa: r.fecha_tentativa,
         solicitante: r.creado_por_nombre,
@@ -471,6 +502,7 @@ serve(async (req) => {
           ok: true,
           yo: { id: user.id, nombre: nombreUsuario, rol: perfil.rol },
           empresas,
+          empresas_extra: EMPRESAS_EXTRA,
           usuarios,
           puede_enviar: puedeEnviar,
           puede_aprobar: puedeAprobar,
@@ -528,6 +560,8 @@ serve(async (req) => {
           a_nombre_de_id: v.aNombre ? v.aNombre.id : null,
           a_nombre_de_nombre: v.aNombre ? v.aNombre.nombre : null,
           empresa: v.empresa,
+          empresa_otra: v.empresaOtra,
+          departamento_area: v.departamentoArea,
           asunto: v.asunto,
           asunto_otro: v.asuntoOtro,
           fecha_tentativa: v.fecha,
@@ -560,6 +594,8 @@ serve(async (req) => {
           a_nombre_de_id: v.aNombre ? v.aNombre.id : null,
           a_nombre_de_nombre: v.aNombre ? v.aNombre.nombre : null,
           empresa: v.empresa,
+          empresa_otra: v.empresaOtra,
+          departamento_area: v.departamentoArea,
           asunto: v.asunto,
           asunto_otro: v.asuntoOtro,
           fecha_tentativa: v.fecha,
@@ -617,6 +653,8 @@ serve(async (req) => {
           a_nombre_de_id: v.aNombre ? v.aNombre.id : null,
           a_nombre_de_nombre: v.aNombre ? v.aNombre.nombre : null,
           empresa: v.empresa,
+          empresa_otra: v.empresaOtra,
+          departamento_area: v.departamentoArea,
           asunto: v.asunto,
           asunto_otro: v.asuntoOtro,
           fecha_tentativa: v.fecha,
