@@ -20,6 +20,54 @@ var devDetSort = [{ col: 'fecha', dir: 'desc' }];
 var devViewingKey = null;
 // Sub-pestaña activa de la lista: 'pendientes' o 'tramitadas' (esta última solo lectura)
 var devScope = 'pendientes';
+// Remisiones ADICIONALES («↩ Reabrir»): filas de Devoluciones con Tipo_Adicional
+// ('Ingreso' | 'Salida') y Linea_Origen_Id = id de la línea original. No son líneas
+// de la devolución: no cuentan en «# Prod.», cantidades ni valores del grupo.
+var devRemAnuladas = {};   // { 'REM-001': true } — remisiones anuladas (Reportes)
+var reabrirDevKey = null;
+var reabrirDevLines = [];
+
+function devEsAdicional(r) { return !!(r && r.Tipo_Adicional); }
+
+// Líneas ORIGINALES del grupo (sin las filas de remisión adicional).
+// Si por alguna razón solo quedan filas adicionales (la original se borró), se
+// devuelven esas para que el grupo no desaparezca.
+function devLineasBase(key) {
+  var all = devoluciones.filter(function(r) { return devGroupKey(r) === key; });
+  var base = all.filter(function(r) { return !devEsAdicional(r); });
+  return base.length ? base : all;
+}
+
+function devLineasAdicionales(key) {
+  return devoluciones.filter(function(r) { return devGroupKey(r) === key && devEsAdicional(r); });
+}
+
+// N° de la remisión de una fila adicional (RE para 'Ingreso', RS para 'Salida').
+function devRemDeAdicional(r) {
+  return String(r.Tipo_Adicional === 'Ingreso' ? (r.Remision_Ingreso || r.Remision || '') : (r.Remision_Salida || '')).trim();
+}
+
+// Agrupa las filas adicionales por remisión: [{ tipo, remision, bodega, fecha, anulada, rows }]
+// (una remisión puede cubrir varias líneas de producto), en el orden en que se emitieron.
+function devRemisionesAdicionales(extras) {
+  var map = {}, order = [];
+  extras.forEach(function(e) {
+    var rem = devRemDeAdicional(e);
+    var k = e.Tipo_Adicional + '||' + rem;
+    if (!map[k]) {
+      var ing = e.Tipo_Adicional === 'Ingreso';
+      map[k] = {
+        tipo: e.Tipo_Adicional, remision: rem,
+        bodega: ing ? (e.Bodega_Ingreso || '') : (e.Bodega_Salida || ''),
+        fecha: ing ? (e.Fecha_Ingreso || e.Fecha_Devolucion || '') : (e.Fecha_Salida || ''),
+        anulada: !!(rem && devRemAnuladas[rem]), rows: []
+      };
+      order.push(k);
+    }
+    map[k].rows.push(e);
+  });
+  return order.map(function(k) { return map[k]; });
+}
 
 // ── Constants ──
 function getSiglaDev(n) { return getSigla(n); }
@@ -103,6 +151,10 @@ async function loadDevoluciones() {
       return r;
     });
 
+    // Remisiones anuladas (para marcarlas en el detalle y descontarlas del tope
+    // de «↩ Reabrir»). Si falla, el resto de la pantalla sigue funcionando.
+    await devCargarAnuladas();
+
     populateDevFilters();
     renderDevTable();
 
@@ -121,6 +173,20 @@ async function loadDevoluciones() {
       retryBtn.style.display = 'inline-block';
     }
   }
+}
+
+async function devCargarAnuladas() {
+  try {
+    var ra = await apiGet('getRemisionesAnuladas', { columns: 'Remision' });
+    if (ra && ra.ok) {
+      devRemAnuladas = {};
+      (ra.remisionesAnuladas || []).forEach(function(x) {
+        var n = String(x.Remision || '').trim();
+        if (n) devRemAnuladas[n] = true;
+      });
+    }
+  } catch (e) {}
+  return devRemAnuladas;
 }
 
 async function loadCatalogoDev() {
@@ -290,17 +356,22 @@ function groupDevoluciones(rows) {
   rows.forEach(function(r) {
     var key = devGroupKey(r);
     if (!map[key]) {
-      map[key] = { head: Object.assign({}, r), lines: [], key: key };
+      map[key] = { head: null, lines: [], extras: [], key: key };
       order.push(key);
     }
-    map[key].lines.push(r);
+    (devEsAdicional(r) ? map[key].extras : map[key].lines).push(r);
   });
   return order.map(function(k) {
     var g = map[k];
+    // Una búsqueda por el N° de una remisión adicional deja pasar solo esa fila:
+    // las líneas originales del grupo se toman de la lista completa.
+    if (!g.lines.length) g.lines = devLineasBase(k);
+    g.head = Object.assign({}, g.lines[0]);
     var consecSet = {};
     g.lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSet[l.Consecutivo] = 1; });
     var consecs = Object.keys(consecSet).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
     g.head._key = k;
+    g.head._extras = devLineasAdicionales(k);
     g.head._nProds = g.lines.length;
     g.head._lines = g.lines;
     g.head._totalValor = g.lines.reduce(function(s, l) { return s + (Number(l.Valor_Total)||0); }, 0);
@@ -460,6 +531,16 @@ function renderDevTable() {
         ? '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Ver/editar trámite" style="background:#6c757d;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Editar</button>'
         : '<button class="btn-edit" onclick="openTramitarDev(\'' + keyEsc + '\')" title="Tramitar devolución" style="background:#27ae60;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">📝 Tramitar</button>';
     }
+    // «↩ Reabrir»: emitir una remisión de ingreso/salida ADICIONAL sobre una
+    // devolución ya tramitada (solo admin / remisionador). No aplica a cargas
+    // históricas ni a devoluciones de muestras.
+    if (devScope === 'tramitadas' && esTramitada && AUTH.canReabrirDevolucion() && !r.Historico && r.Muestra_Id == null) {
+      tramitarBtn += '<button class="btn-edit" onclick="openReabrirDev(\'' + keyEsc + '\')" title="Emitir una remisión de ingreso o salida adicional" style="background:#6b46c1;font-size:0.72rem;padding:4px 8px;border-radius:5px;color:white;border:none;cursor:pointer;font-weight:700">↩ Reabrir</button>';
+    }
+    var nExtras = devRemisionesAdicionales(r._extras || []).length;
+    if (nExtras) {
+      estadoBadge += '<div style="font-size:0.68rem;color:#6b46c1;font-weight:700;margin-top:3px" title="Remisiones de ingreso/salida adicionales emitidas con «Reabrir»">+' + nExtras + ' rem. adicional' + (nExtras > 1 ? 'es' : '') + '</div>';
+    }
     var checkboxTd = !AUTH.canEdit()
       ? '<td></td>'
       : esTramitada
@@ -493,10 +574,9 @@ function renderDevTable() {
 
 // ── Detail view modal ──
 function viewDevDetail(key) {
-  var lines = devoluciones.filter(function(r) {
-    return devGroupKey(r) === key;
-  });
+  var lines = devLineasBase(key);
   if (!lines.length) return;
+  var extrasRems = devRemisionesAdicionales(devLineasAdicionales(key));
   var r = lines[0];
 
   var consecSet = {}; lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSet[l.Consecutivo] = 1; });
@@ -537,15 +617,17 @@ function viewDevDetail(key) {
       var hasSalida = r.Remision_Salida;
       if (!hasIngreso && !hasSalida) return '';
       var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">';
+      var _reBase = r.Remision_Ingreso || r.Remision || '';
+      var _rsBase = r.Remision_Salida || '';
       html += '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px 14px">' +
         '<div style="font-weight:700;font-size:0.82rem;color:#e65100;margin-bottom:8px">📥 Remisión de Ingreso</div>' +
-        devField('N° Remisión', r.Remision_Ingreso || r.Remision || '') +
+        devField('N° Remisión', _reBase + (_reBase && devRemAnuladas[String(_reBase).trim()] ? ' (ANULADA)' : '')) +
         devField('Bodega', r.Bodega_Ingreso || '') +
         devField('Fecha', (r.Fecha_Ingreso || r.Fecha_Devolucion) ? fmtDate(r.Fecha_Ingreso || r.Fecha_Devolucion) : '—') +
         '</div>';
       html += '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:12px 14px">' +
         '<div style="font-weight:700;font-size:0.82rem;color:#2e7d32;margin-bottom:8px">📤 Remisión de Salida</div>' +
-        devField('N° Remisión', r.Remision_Salida || '') +
+        devField('N° Remisión', _rsBase + (_rsBase && devRemAnuladas[String(_rsBase).trim()] ? ' (ANULADA)' : '')) +
         devField('Bodega', r.Bodega_Salida || '') +
         devField('Fecha', r.Fecha_Salida ? fmtDate(r.Fecha_Salida) : '—') +
         '</div>';
@@ -591,6 +673,31 @@ function viewDevDetail(key) {
     '<td style="text-align:right">' + fmtMoney(totalValor) + '</td><td></td></tr>';
   html += '</tbody></table></div>';
 
+  // Remisiones adicionales emitidas con «↩ Reabrir» (una tarjeta por remisión)
+  devExtrasVista = extrasRems;
+  if (extrasRems.length) {
+    html += '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin:16px 0 10px;font-weight:700;font-size:0.84rem;color:#6b46c1">↩ Remisiones adicionales (' + extrasRems.length + ')</div>';
+    extrasRems.forEach(function(er, ei) {
+      var ing = er.tipo === 'Ingreso';
+      var f0 = er.rows[0];
+      var quien = f0.creado_por_nombre ? ' · Emitida por ' + escHtml(f0.creado_por_nombre) : '';
+      html += '<div style="background:' + (ing ? '#fff8e1' : '#e8f5e9') + ';border:1px solid ' + (ing ? '#ffe082' : '#a5d6a7') + ';border-radius:8px;padding:10px 14px;margin-bottom:10px' + (er.anulada ? ';opacity:0.65' : '') + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
+          '<div style="font-weight:700;font-size:0.82rem;color:' + (ing ? '#e65100' : '#2e7d32') + '">' + (ing ? '📥 Remisión de Ingreso' : '📤 Remisión de Salida') + ' · ' + escHtml(er.remision || '—') +
+            (er.anulada ? ' <span style="background:#fed7d7;color:#9b2c2c;padding:1px 8px;border-radius:8px;font-size:0.7rem">ANULADA</span>' : '') + '</div>' +
+          '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:0.76rem;color:#4a5568">' + escHtml(er.bodega || '—') + ' · ' + (er.fecha ? fmtDate(er.fecha) : '—') + quien + '</span>' +
+          '<button class="btn-cancel" onclick="exportarDevRemisionAdicionalPDF(' + ei + ')" style="font-size:0.72rem;padding:3px 10px">📄 PDF</button></div>' +
+        '</div>' +
+        '<table style="font-size:0.8rem;width:100%"><thead><tr><th style="text-align:left">Producto</th><th style="text-align:left">Presentación</th><th style="text-align:right">' + (ing ? 'Cant. Devuelta' : 'Cant. Repuesta') + '</th></tr></thead><tbody>' +
+        er.rows.map(function(x) {
+          return '<tr><td style="font-weight:600">' + escHtml(x.Producto || '—') + '</td><td>' + escHtml(x.Presentacion || '—') + '</td><td style="text-align:right;font-weight:700">' + (Number(x.Cant_Entregada) || 0) + '</td></tr>';
+        }).join('') +
+        '</tbody></table>' +
+        (f0.Observaciones ? '<div style="font-size:0.78rem;color:#4a5568;margin-top:6px">📝 ' + escHtml(f0.Observaciones) + '</div>' : '') +
+      '</div>';
+    });
+  }
+
   html += _auditoriaHtml(lines, false);
 
   document.getElementById('view-dev-meta').innerHTML =
@@ -617,6 +724,12 @@ function viewDevDetail(key) {
   var btnCompletarDev = document.getElementById('btn-dev-completar');
   if (btnCompletarDev) {
     btnCompletarDev.style.display = (AUTH.canEdit() && allTramitada && (!hasIn || !hasOut) && r.Muestra_Id == null)
+      ? 'inline-block' : 'none';
+  }
+  // Botón «↩ Reabrir»: remisión de ingreso/salida adicional (admin / remisionador)
+  var btnReabrirDev = document.getElementById('btn-dev-reabrir');
+  if (btnReabrirDev) {
+    btnReabrirDev.style.display = (AUTH.canReabrirDevolucion() && allTramitada && !r.Historico && r.Muestra_Id == null)
       ? 'inline-block' : 'none';
   }
 
@@ -648,6 +761,16 @@ function closeViewDev() {
   devViewingKey = null;
 }
 
+var devExtrasVista = [];
+
+// Abre «↩ Reabrir» desde la vista de detalle
+function openReabrirDesdeDetalle() {
+  var key = devViewingKey;
+  if (!key) return;
+  closeViewDev();
+  openReabrirDev(key);
+}
+
 // Abre el modal de tramitar en modo "completar" desde la vista de detalle
 function openCompletarDesdeDetalle() {
   var key = devViewingKey;
@@ -667,11 +790,42 @@ function _devViewContext() {
     showToast('Módulo de remisión no cargado.', '#e74c3c');
     return null;
   }
-  var lines = devoluciones.filter(function(r) {
-    return devGroupKey(r) === devViewingKey;
-  });
+  var lines = devLineasBase(devViewingKey);
   if (!lines.length) { showToast('Devolución no encontrada.', '#e74c3c'); return null; }
   return { head: lines[0], lines: lines };
+}
+
+// PDF de una remisión ADICIONAL (índice dentro de devExtrasVista, armado en viewDevDetail)
+function exportarDevRemisionAdicionalPDF(idx) {
+  var ctx = _devViewContext();
+  if (!ctx) return;
+  var er = devExtrasVista[idx];
+  if (!er) { showToast('Remisión adicional no encontrada.', '#e74c3c'); return; }
+  var head = ctx.head;
+  var esIngreso = er.tipo === 'Ingreso';
+  var entregas = _devEntregas(er.rows, true);
+  if (!entregas.length) { showToast('No hay productos para incluir en la remisión.', '#e67e22'); return; }
+  generarRemisionPDF({
+    empresa: head.Empresa || '',
+    consecutivo: head.Consecutivo || '',
+    doc_title: esIngreso ? 'REMISION DE INGRESO' : 'REMISION DE SALIDA',
+    ref_label: 'Devolucion',
+    date_label: 'Fecha remision',
+    fecha_entrega: er.fecha || '',
+    remision: er.remision,
+    cliente: head.Cliente || '',
+    nit: head.NIT || '',
+    telefono: head.Telefono || '',
+    comercial: head.Vendedor || '',
+    municipio: head.Municipio || '',
+    departamento: head.Departamento || '',
+    direccion: head.Direccion || '',
+    left_fields: [['Cliente', head.Cliente || ''], ['NIT', head.NIT || ''], ['Vendedor', head.Vendedor || ''], ['Telefono', head.Telefono || '']],
+    right_fields: [['Direccion', head.Direccion || ''], ['Municipio', head.Municipio || ''], ['Departamento', head.Departamento || ''], ['Bodega', er.bodega || '']],
+    entregas: entregas,
+    qty_header: esIngreso ? 'Cant. Devuelta' : 'Cant. Repuesta',
+    file_prefix: esIngreso ? 'Remision_Ingreso_Devolucion' : 'Remision_Salida_Devolucion'
+  });
 }
 
 function _devEntregas(lines, useEntregada) {
@@ -839,6 +993,10 @@ function openDeleteDevGroup(key) {
     return devGroupKey(r) === key;
   });
   if (!lines.length) return;
+  if (lines.some(devEsAdicional)) {
+    showToast('Esta devolución tiene remisiones adicionales y no se puede eliminar completa.', '#e67e22');
+    return;
+  }
   var r = lines[0];
   var consecSetD = {}; lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSetD[l.Consecutivo] = 1; });
   var consecListD = Object.keys(consecSetD).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
@@ -1328,6 +1486,11 @@ function openDeleteDev(idx, row) {
     if (devoluciones[i].__row === row) { r = devoluciones[i]; break; }
   }
   if (!r) r = {};
+  if (r.id != null && devoluciones.some(function(e) { return e.Linea_Origen_Id === r.id; })) {
+    deleteDevRow = null;
+    showToast('Esta línea tiene remisiones adicionales y no se puede eliminar. Anula esas remisiones en Reportes si hay que corregirlas.', '#e67e22');
+    return;
+  }
   document.getElementById('del-dev-msg').textContent = '¿Eliminar esta línea de producto?';
   document.getElementById('del-dev-detail').innerHTML =
     'Cliente: <strong>' + escHtml(r.Cliente||'—') + '</strong> · Producto: <strong>' + escHtml(r.Producto||'—') + '</strong><br>' +
@@ -1588,9 +1751,7 @@ function prefillDevForm(data) {
 
 // ── Tramitar Devolución ──
 function openTramitarDev(key) {
-  var lines = devoluciones.filter(function(r) {
-    return devGroupKey(r) === key;
-  });
+  var lines = devLineasBase(key);
   if (!lines.length) return;
   tramitarDevKey = key;
   tramitarDevLines = lines.map(function(l) {
@@ -1776,7 +1937,7 @@ function buildTramitarProductSearch(lineIdx) {
     var q = this.value.toLowerCase().trim();
     var empSel = '';
     if (tramitarDevKey) {
-      var devLinesRef = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
+      var devLinesRef = devLineasBase(tramitarDevKey);
       if (devLinesRef.length) empSel = devLinesRef[0].Empresa || '';
     }
     closeAllAutocompleteDev();
@@ -1857,7 +2018,7 @@ document.getElementById('tramitar-dev-overlay').addEventListener('click', functi
 
 var _pendingContabDev = null;
 async function tramitarYEnviarDev() {
-  var devLines = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
+  var devLines = devLineasBase(tramitarDevKey);
   var empresaDev = devLines.length ? (devLines[0].Empresa || '') : '';
 
   // Solo se emite remisión nueva (y por tanto envío a contabilidad) si se
@@ -1908,7 +2069,7 @@ async function saveTramitarDev() {
   readTramitarNewLines();
   var validNewLines = tramitarNewLines.filter(function(l) { return l.Producto; });
 
-  var devLines = devoluciones.filter(function(r) { return devGroupKey(r) === tramitarDevKey; });
+  var devLines = devLineasBase(tramitarDevKey);
   var empresaDev = devLines.length ? (devLines[0].Empresa || '') : '';
 
   var btn = document.getElementById('btn-tramitar-dev');
@@ -1991,6 +2152,218 @@ async function saveTramitarDev() {
   }
 }
 
+// ══════════════════════════════════════════
+// ── REABRIR: remisión de ingreso / salida ADICIONAL ──
+// ══════════════════════════════════════════
+// La devolución sigue Tramitada y sus remisiones/stock no se tocan: cada remisión
+// adicional se guarda como filas NUEVAS (Tipo_Adicional + Linea_Origen_Id) con su
+// propia cantidad. El tope por línea (vigente + nuevo ≤ Cant. Solicitada, sin
+// contar remisiones anuladas) lo hace cumplir la acción del servidor.
+async function openReabrirDev(key) {
+  if (!AUTH.canReabrirDevolucion()) { showToast('No tienes permiso para reabrir devoluciones.', '#e74c3c'); return; }
+  var lines = devLineasBase(key);
+  if (!lines.length) return;
+  var head = lines[0];
+  if (!lines.every(function(l) { return l.Estado === 'Tramitada'; })) {
+    showToast('Primero hay que tramitar la devolución.', '#e67e22'); return;
+  }
+  if (lines.some(function(l) { return l.Historico; })) {
+    showToast('Las cargas históricas no admiten remisiones adicionales.', '#e67e22'); return;
+  }
+  if (lines.some(function(l) { return l.Muestra_Id != null; })) {
+    showToast('Las devoluciones de muestras no admiten remisiones adicionales.', '#e67e22'); return;
+  }
+  await devCargarAnuladas();   // el saldo de cada línea descuenta las remisiones anuladas
+  reabrirDevKey = key;
+  var extras = devLineasAdicionales(key);
+  reabrirDevLines = lines.map(function(l) {
+    var ext = extras.filter(function(e) { return e.Linea_Origen_Id === l.id; });
+    return {
+      id: l.id, Consecutivo: l.Consecutivo || '', Producto: l.Producto || '', Presentacion: l.Presentacion || '',
+      Cantidad: Number(l.Cantidad) || 0,
+      vigIng: devCantVigente(l, ext, 'Ingreso', devRemAnuladas),
+      vigSal: devCantVigente(l, ext, 'Salida', devRemAnuladas),
+      cant_ingreso: 0, cant_salida: 0
+    };
+  });
+
+  var consecSet = {};
+  lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') consecSet[l.Consecutivo] = 1; });
+  var consecList = Object.keys(consecSet).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
+  document.getElementById('reabrir-dev-meta').innerHTML =
+    '<span>📋 Consec: ' + escHtml(consecList.length ? consecList.join(', ') : '—') + '</span>' +
+    '<span>👤 ' + escHtml(head.Cliente || '—') + '</span>' +
+    '<span>' + escHtml(getSiglaDev(head.Empresa)) + '</span>';
+
+  document.getElementById('reabrir-ingreso-enabled').checked = true;
+  document.getElementById('reabrir-salida-enabled').checked = false;
+  document.getElementById('reabrir-bodega-ingreso').value = 'Productos Buenos';
+  document.getElementById('reabrir-bodega-salida').value = 'Productos Buenos';
+  document.getElementById('reabrir-fecha-ingreso').value = today();
+  document.getElementById('reabrir-fecha-salida').value = today();
+  document.getElementById('reabrir-nota').value = '';
+  toggleReabrirSeccion('ingreso', true);
+  toggleReabrirSeccion('salida', false);
+  renderReabrirTable();
+
+  var btn = document.getElementById('btn-reabrir-dev');
+  btn.disabled = false;
+  btn.textContent = '✓ Emitir remisión adicional';
+  document.getElementById('reabrir-dev-overlay').classList.add('show');
+}
+
+function closeReabrirDev() {
+  document.getElementById('reabrir-dev-overlay').classList.remove('show');
+  reabrirDevKey = null;
+  reabrirDevLines = [];
+}
+
+document.getElementById('reabrir-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeReabrirDev(); });
+
+function toggleReabrirSeccion(tipo, enabled) {
+  var fields = document.getElementById('reabrir-' + tipo + '-fields');
+  var seccion = document.getElementById('reabrir-seccion-' + tipo);
+  if (fields) fields.style.display = enabled ? 'grid' : 'none';
+  if (seccion) seccion.style.opacity = enabled ? '1' : '0.5';
+  document.querySelectorAll('.reabrir-cant-' + tipo).forEach(function(inp) { inp.disabled = !enabled; });
+  var th = document.getElementById('reabrir-th-' + tipo);
+  if (th) th.style.opacity = enabled ? '1' : '0.4';
+}
+
+function renderReabrirTable() {
+  var ingOn = document.getElementById('reabrir-ingreso-enabled').checked;
+  var salOn = document.getElementById('reabrir-salida-enabled').checked;
+  var tbody = document.getElementById('reabrir-lines');
+  tbody.innerHTML = reabrirDevLines.map(function(l, i) {
+    var maxIng = Math.max(0, l.Cantidad - l.vigIng);
+    var maxSal = Math.max(0, l.Cantidad - l.vigSal);
+    return '<tr>' +
+      '<td style="color:#a0aec0;font-size:0.74rem">' + (i+1) + '</td>' +
+      '<td style="text-align:center;font-weight:600;font-size:0.78rem">' + escHtml(l.Consecutivo || '—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(l.Producto || '—') + '</td>' +
+      '<td>' + escHtml(l.Presentacion || '—') + '</td>' +
+      '<td style="text-align:right">' + l.Cantidad + '</td>' +
+      '<td style="text-align:right;color:#e65100;font-weight:600">' + l.vigIng + '</td>' +
+      '<td style="text-align:right;color:#2e7d32;font-weight:600">' + l.vigSal + '</td>' +
+      '<td><input class="ef reabrir-cant-ingreso" data-line="' + i + '" data-max="' + maxIng + '" type="number" min="0" max="' + maxIng + '" value="' + (l.cant_ingreso || '') + '" placeholder="máx. ' + maxIng + '"' + (ingOn ? '' : ' disabled') + ' style="width:100px;text-align:right"></td>' +
+      '<td><input class="ef reabrir-cant-salida" data-line="' + i + '" data-max="' + maxSal + '" type="number" min="0" max="' + maxSal + '" value="' + (l.cant_salida || '') + '" placeholder="máx. ' + maxSal + '"' + (salOn ? '' : ' disabled') + ' style="width:100px;text-align:right"></td>' +
+    '</tr>';
+  }).join('');
+
+  // Nunca se puede superar lo que aún falta por devolver/reponer de la línea.
+  ['ingreso', 'salida'].forEach(function(tipo) {
+    document.querySelectorAll('.reabrir-cant-' + tipo).forEach(function(inp) {
+      inp.addEventListener('input', function() {
+        var i = Number(this.dataset.line);
+        var maxV = Number(this.dataset.max) || 0;
+        var v = Number(this.value) || 0;
+        if (v < 0) { v = 0; this.value = '0'; }
+        if (v > maxV) { v = maxV; this.value = String(maxV); }
+        reabrirDevLines[i]['cant_' + tipo] = v;
+      });
+    });
+  });
+}
+
+async function guardarReabrirDev() {
+  var ingOn = document.getElementById('reabrir-ingreso-enabled').checked;
+  var salOn = document.getElementById('reabrir-salida-enabled').checked;
+  if (!ingOn && !salOn) { showToast('Marca al menos una remisión (ingreso o salida)', '#e74c3c'); return; }
+  var fechaIng = document.getElementById('reabrir-fecha-ingreso').value;
+  var fechaSal = document.getElementById('reabrir-fecha-salida').value;
+  if (ingOn && !fechaIng) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
+  if (salOn && !fechaSal) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
+
+  document.querySelectorAll('.reabrir-cant-ingreso').forEach(function(inp) { reabrirDevLines[Number(inp.dataset.line)].cant_ingreso = Number(inp.value) || 0; });
+  document.querySelectorAll('.reabrir-cant-salida').forEach(function(inp) { reabrirDevLines[Number(inp.dataset.line)].cant_salida = Number(inp.value) || 0; });
+  if (ingOn && !reabrirDevLines.some(function(l) { return l.cant_ingreso > 0; })) {
+    showToast('Indica la cantidad de ingreso en al menos una línea (o desmarca el ingreso)', '#e74c3c'); return;
+  }
+  if (salOn && !reabrirDevLines.some(function(l) { return l.cant_salida > 0; })) {
+    showToast('Indica la cantidad de salida en al menos una línea (o desmarca la salida)', '#e74c3c'); return;
+  }
+
+  var devLines = devLineasBase(reabrirDevKey);
+  var head = devLines.length ? devLines[0] : {};
+  var empresaDev = head.Empresa || '';
+
+  // Siempre se emite al menos una remisión nueva → se pregunta el envío a
+  // contabilidad (mismo flujo que al tramitar).
+  _pendingContabDev = null;
+  if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var conf = await NOTIF.confirmarEnvioContabilidad(empresaDev, 'devoluciones');
+    if (!conf.confirmed) return;
+    _pendingContabDev = conf;
+  }
+
+  var btn = document.getElementById('btn-reabrir-dev');
+  btn.disabled = true;
+  btn.textContent = '⏳ Guardando...';
+
+  try {
+    var bodegaIng = document.getElementById('reabrir-bodega-ingreso').value;
+    var bodegaSal = document.getElementById('reabrir-bodega-salida').value;
+    var result = await apiPost({
+      action: 'agregarRemisionAdicionalDevolucion',
+      ingreso: ingOn ? { Bodega: bodegaIng, Fecha: fechaIng } : null,
+      salida: salOn ? { Bodega: bodegaSal, Fecha: fechaSal } : null,
+      Observaciones: document.getElementById('reabrir-nota').value.trim(),
+      lineas: reabrirDevLines.map(function(l) { return { id: l.id, cant_ingreso: l.cant_ingreso, cant_salida: l.cant_salida }; })
+    });
+    if (!result.ok) throw new Error(result.error || 'Error al emitir la remisión adicional');
+    var remIng = result.remision_ingreso || '';
+    var remSal = result.remision_salida || '';
+
+    if (_pendingContabDev && _pendingContabDev.contabIds && _pendingContabDev.contabIds.length && (remIng || remSal) && typeof NOTIF !== 'undefined') {
+      try {
+        var left = [['Cliente', head.Cliente||''], ['NIT', head.NIT||''], ['Vendedor', head.Vendedor||''], ['Telefono', head.Telefono||'']];
+        var right = [['Direccion', head.Direccion||''], ['Municipio', head.Municipio||''], ['Departamento', head.Departamento||''], ['Bodega', '']];
+        function _entregasAd(campo) {
+          return reabrirDevLines.map(function(l) {
+            return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l[campo])||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+          }).filter(function(p) { return p.cantidad > 0; });
+        }
+        var jsPDFDoc = null;
+        if (remIng) {
+          right[3] = ['Bodega', bodegaIng||''];
+          var rI = generarRemisionPDF({ empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaIng, remision: remIng, left_fields: left, right_fields: right, entregas: _entregasAd('cant_ingreso'), qty_header:'Cant. Devuelta', file_prefix:'Remision_Ingreso_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] });
+          if (rI) jsPDFDoc = rI.doc;
+        }
+        if (remSal) {
+          right[3] = ['Bodega', bodegaSal||''];
+          var optsS = { empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaSal, remision: remSal, left_fields: left, right_fields: right, entregas: _entregasAd('cant_salida'), qty_header:'Cant. Repuesta', file_prefix:'Remision_Salida_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] };
+          if (jsPDFDoc) optsS._doc = jsPDFDoc;
+          var rS = generarRemisionPDF(optsS);
+          if (rS) jsPDFDoc = rS.doc;
+        }
+        if (jsPDFDoc) {
+          var refP = [(head.Consecutivo||'')];
+          if (remIng) refP.push('RE ' + remIng);
+          if (remSal) refP.push('RS ' + remSal);
+          await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
+            modulo: 'devoluciones', referencia: refP.join(' · '),
+            titulo: 'Remisión adicional devolución — ' + (head.Cliente||''),
+            docLabel: 'Remisión',
+            contabIds: _pendingContabDev.contabIds, contabNames: _pendingContabDev.contabNames
+          });
+        }
+      } catch (e) { console.error('Auto-send contabilidad error', e); }
+    }
+    _pendingContabDev = null;
+    closeReabrirDev();
+    var toastR = ['✅ Remisión adicional emitida'];
+    if (remIng) toastR.push('RE: ' + remIng);
+    if (remSal) toastR.push('RS: ' + remSal);
+    showToast(toastR.join(' · '));
+    await loadDevoluciones();
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+    btn.disabled = false;
+    btn.textContent = '✓ Emitir remisión adicional';
+    _pendingContabDev = null;
+  }
+}
+
 // ── Tab switching ──
 // Cambios se carga una sola vez, la primera vez que alguna pestaña lo necesita
 // (Cambios, Detalle por Producto o Despachos). Devuelve la promesa de esa carga.
@@ -2067,6 +2440,8 @@ function calcularPorProducto() {
   devoluciones.forEach(function(r) {
     var prod = r.Producto || '';
     if (!prod) return;
+    // Remisión de SALIDA adicional = reposición, no una devolución del cliente.
+    if (r.Tipo_Adicional === 'Salida') return;
     var emp = r.Empresa || '';
     var fEmp = document.getElementById('fp-empresa').value;
     if (fEmp && emp !== fEmp) return;
@@ -2076,7 +2451,8 @@ function calcularPorProducto() {
     var valor = Number(r.Valor_Total) || 0;
     map[prod].devCant += cantEnt || cant;
     map[prod].devValor += valor;
-    map[prod].devCount++;
+    // Un ingreso adicional suma unidades devueltas pero no es otra devolución.
+    if (!r.Tipo_Adicional) map[prod].devCount++;
     if (emp) map[prod].empresas[getSiglaDev(emp)] = true;
     if (r.Cliente) map[prod].clientes[r.Cliente] = true;
     if (r.Motivo) map[prod].motivos[r.Motivo] = (map[prod].motivos[r.Motivo] || 0) + 1;
@@ -2745,13 +3121,16 @@ function renderDevDetalle() {
     var estadoBadge = estado === 'Tramitada'
       ? '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Tramitada</span>'
       : '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>';
+    var adicionalTag = r.Tipo_Adicional
+      ? ' <span style="background:#e9d8fd;color:#553c9a;padding:1px 7px;border-radius:8px;font-size:0.68rem;font-weight:700" title="Remisión adicional emitida con «Reabrir»">↩ ' + (r.Tipo_Adicional === 'Ingreso' ? 'RE' : 'RS') + ' adicional</span>'
+      : '';
     return '<tr>' +
       '<td><span class="sigla-badge ' + getSiglaClassDev(r.Empresa) + '">' + escHtml(getSiglaDev(r.Empresa)) + '</span></td>' +
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(r.Cliente||'') + '">' + escHtml(r.Cliente||'—') + '</td>' +
       '<td style="text-align:center;font-weight:700">' + escHtml(r.Consecutivo||'') + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(r.Num_Factura||'—') + '</td>' +
-      '<td style="font-weight:600">' + escHtml(r.Producto||'—') + '</td>' +
+      '<td style="font-weight:600">' + escHtml(r.Producto||'—') + adicionalTag + '</td>' +
       '<td>' + escHtml(r.Presentacion||'—') + '</td>' +
       '<td class="money">' + (Number(r.Cantidad)||0).toLocaleString('es-CO') + '</td>' +
       '<td class="money" style="color:#e67e22;font-weight:600">' + (Number(r.Cant_Entregada)||0).toLocaleString('es-CO') + '</td>' +

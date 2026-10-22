@@ -321,6 +321,14 @@ var AUTH = (function() {
     return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'remisionador';
   }
 
+  // Quién puede "Reabrir" una devolución ya tramitada para emitir remisiones de
+  // ingreso / salida ADICIONALES (devoluciones.html). Solo quien emite las
+  // remisiones; RLS de Devoluciones ya deja insertar a estos roles.
+  function canReabrirDevolucion() {
+    if (!_profile) return false;
+    return _profile.rol === 'admin' || _profile.rol === 'remisionador';
+  }
+
   // Quién puede clasificar un despacho (Ruta / Envío / Comercial) en la pestaña
   // Despachos de Pedidos. Coincide con las políticas de la tabla TipoDespacho.
   function canSetTipoDespacho() {
@@ -462,6 +470,7 @@ var AUTH = (function() {
     canApproveNuevoCliente: canApproveNuevoCliente,
     canDescomprometer: canDescomprometer,
     canReabrirEntrega: canReabrirEntrega,
+    canReabrirDevolucion: canReabrirDevolucion,
     canUploadAdjuntos: canUploadAdjuntos,
     canSetTipoDespacho: canSetTipoDespacho,
     hasCompany: hasCompany,

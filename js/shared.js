@@ -519,6 +519,33 @@ function _uid() {
   return (typeof AUTH !== 'undefined' && AUTH.getUser()) ? AUTH.getUser().id : null;
 }
 
+// Cantidad VIGENTE ya devuelta (tipo 'Ingreso') o ya repuesta (tipo 'Salida') de
+// una línea de devolución: la de la línea original más la de sus remisiones
+// adicionales (filas con Tipo_Adicional y Linea_Origen_Id = id de la original),
+// sin contar las remisiones anuladas. La usan el modal «↩ Reabrir» (para mostrar
+// el saldo) y la acción agregarRemisionAdicionalDevolucion (para hacer cumplir el
+// tope: vigente + nuevo ≤ Cant. Solicitada). anuladas = { 'REM-001': true }.
+function devCantVigente(orig, extras, tipo, anuladas) {
+  anuladas = anuladas || {};
+  var tot = 0;
+  var cantO = Number(orig.Cant_Entregada) || 0;
+  if (tipo === 'Ingreso') {
+    // Una tramitada sin RE sigue contando como devuelta (la cantidad es de la línea).
+    var reO = String(orig.Remision_Ingreso || orig.Remision || '').trim();
+    if (!(reO && anuladas[reO])) tot += cantO;
+  } else {
+    var rsO = String(orig.Remision_Salida || '').trim();
+    if (rsO && !anuladas[rsO]) tot += cantO;
+  }
+  (extras || []).forEach(function(e) {
+    if (e.Tipo_Adicional !== tipo) return;
+    var rem = String(tipo === 'Ingreso' ? (e.Remision_Ingreso || e.Remision || '') : (e.Remision_Salida || '')).trim();
+    if (rem && anuladas[rem]) return;
+    tot += Number(e.Cant_Entregada) || 0;
+  });
+  return tot;
+}
+
 // ── Capa de compatibilidad: apiPost ──
 // Envoltorio: ejecuta la operación y, si termina en error, libera los
 // consecutivos de remisión que se generaron y no llegaron a ningún registro.
@@ -1098,6 +1125,119 @@ async function _apiPostCore(body) {
         if (res.error) return { ok: false, error: res.error.message };
       }
       return { ok: true, updated: lineas.length, nuevas_added: nuevasAdded, remision_ingreso: remIngDev, remision_salida: remSalDev };
+    }
+
+    // Remisión ADICIONAL de ingreso y/o salida sobre una devolución ya tramitada
+    // («↩ Reabrir»). Cada remisión es una fila NUEVA con un solo lado y su propia
+    // cantidad (Tipo_Adicional + Linea_Origen_Id); Kardex/Existencias/_kx_movs
+    // descartan todo movimiento sin número de remisión, así que la fila de RS no
+    // suma entrada y la de RE no resta salida. Las líneas originales no se tocan.
+    // Tope por línea (releído del servidor): vigente + nuevo ≤ Cant. Solicitada,
+    // sin contar remisiones anuladas.
+    if (action === 'agregarRemisionAdicionalDevolucion') {
+      var adIng = body.ingreso || null;
+      var adSal = body.salida || null;
+      if (!adIng && !adSal) return { ok: false, error: 'Elige al menos una remisión (ingreso o salida)' };
+      if (adIng && !adIng.Fecha) return { ok: false, error: 'Falta la fecha de ingreso' };
+      if (adSal && !adSal.Fecha) return { ok: false, error: 'Falta la fecha de salida' };
+      var adLineas = (body.lineas || []).filter(function(l) { return l && l.id != null; });
+      if (!adLineas.length) return { ok: false, error: 'No hay líneas para la remisión adicional' };
+      var adIds = adLineas.map(function(l) { return l.id; });
+
+      var adOrigRes = await _sb.from('Devoluciones').select('*').in('id', adIds);
+      if (adOrigRes.error) return { ok: false, error: adOrigRes.error.message };
+      var adExtrasRes = await _sb.from('Devoluciones').select('*').in('Linea_Origen_Id', adIds);
+      if (adExtrasRes.error) return { ok: false, error: adExtrasRes.error.message };
+      var adOrig = {};
+      (adOrigRes.data || []).forEach(function(r) { adOrig[r.id] = r; });
+      var adExtrasPorLinea = {};
+      var adRems = {};
+      (adOrigRes.data || []).forEach(function(r) {
+        [r.Remision, r.Remision_Ingreso, r.Remision_Salida].forEach(function(x) { x = String(x || '').trim(); if (x) adRems[x] = true; });
+      });
+      (adExtrasRes.data || []).forEach(function(e) {
+        (adExtrasPorLinea[e.Linea_Origen_Id] = adExtrasPorLinea[e.Linea_Origen_Id] || []).push(e);
+        [e.Remision, e.Remision_Ingreso, e.Remision_Salida].forEach(function(x) { x = String(x || '').trim(); if (x) adRems[x] = true; });
+      });
+      var adAnul = {};
+      var adRemList = Object.keys(adRems);
+      if (adRemList.length) {
+        var adAnulRes = await _sb.from('RemisionesAnuladas').select('Remision').in('Remision', adRemList);
+        if (adAnulRes.error) return { ok: false, error: adAnulRes.error.message };
+        (adAnulRes.data || []).forEach(function(a) { var x = String(a.Remision || '').trim(); if (x) adAnul[x] = true; });
+      }
+
+      var adEmp = '';
+      var adPlan = [];   // { o, ci, cs }
+      for (var ai = 0; ai < adLineas.length; ai++) {
+        var adO = adOrig[adLineas[ai].id];
+        if (!adO) return { ok: false, error: 'No se encontró una de las líneas de la devolución' };
+        if (adO.Tipo_Adicional) return { ok: false, error: 'No se puede agregar una remisión adicional sobre otra remisión adicional' };
+        if (String(adO.Estado || '') !== 'Tramitada') return { ok: false, error: 'La devolución no está tramitada' };
+        if (adO.Historico === true) return { ok: false, error: 'Las cargas históricas no admiten remisiones adicionales' };
+        if (adO.Muestra_Id != null) return { ok: false, error: 'Las devoluciones de muestras no admiten remisiones adicionales' };
+        if (!adEmp) adEmp = String(adO.Empresa || '').trim();
+        else if (String(adO.Empresa || '').trim() !== adEmp) return { ok: false, error: 'Las líneas son de empresas distintas' };
+
+        var ciN = adIng ? Number(adLineas[ai].cant_ingreso) : 0;
+        var csN = adSal ? Number(adLineas[ai].cant_salida) : 0;
+        var ci = (isFinite(ciN) && ciN > 0) ? ciN : 0;
+        var cs = (isFinite(csN) && csN > 0) ? csN : 0;
+        var adSolic = Number(adO.Cantidad) || 0;
+        var adExt = adExtrasPorLinea[adO.id] || [];
+        if (ci > 0 && devCantVigente(adO, adExt, 'Ingreso', adAnul) + ci > adSolic + 1e-9) {
+          return { ok: false, error: 'Ingreso de ' + (adO.Producto || 'la línea') + ': lo devuelto no puede superar lo solicitado (' + adSolic + ')' };
+        }
+        if (cs > 0 && devCantVigente(adO, adExt, 'Salida', adAnul) + cs > adSolic + 1e-9) {
+          return { ok: false, error: 'Salida de ' + (adO.Producto || 'la línea') + ': lo repuesto no puede superar lo solicitado (' + adSolic + ')' };
+        }
+        adPlan.push({ o: adO, ci: ci, cs: cs });
+      }
+      var adHayIng = adPlan.some(function(p) { return p.ci > 0; });
+      var adHaySal = adPlan.some(function(p) { return p.cs > 0; });
+      if (adIng && !adHayIng) return { ok: false, error: 'Indica la cantidad de ingreso en al menos una línea (o desmarca el ingreso)' };
+      if (adSal && !adHaySal) return { ok: false, error: 'Indica la cantidad de salida en al menos una línea (o desmarca la salida)' };
+      if (!adEmp) return { ok: false, error: 'Falta la empresa de la devolución' };
+
+      var adRemIng = '', adRemSal = '';
+      if (adHayIng) adRemIng = await _genRem(adEmp, 'ENTRADA');
+      if (adHaySal) adRemSal = await _genRem(adEmp, 'SALIDA');
+
+      var adNow = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      var adNota = String(body.Observaciones || '').trim();
+      function adFila(o, tipo, cant) {
+        var f = {
+          Fecha: o.Fecha || '', Empresa: o.Empresa || '', Consecutivo: o.Consecutivo || '',
+          Vendedor: o.Vendedor || '', Cliente: o.Cliente || '', NIT: o.NIT || '',
+          Direccion: o.Direccion || '', Municipio: o.Municipio || '',
+          Departamento: o.Departamento || '', Telefono: o.Telefono || '',
+          Num_Factura: o.Num_Factura || '', Producto: o.Producto || '',
+          Presentacion: o.Presentacion || '', Cantidad: cant, Cant_Entregada: cant,
+          Valor_Unitario: 0, Valor_Total: 0,
+          Motivo: o.Motivo || '', Observaciones: adNota,
+          Estado: 'Tramitada', Fecha_Registro: adNow,
+          Tipo_Adicional: tipo, Linea_Origen_Id: o.id,
+          creado_por: _uid(), modificado_por: _uid()
+        };
+        if (tipo === 'Ingreso') {
+          f.Remision = adRemIng; f.Remision_Ingreso = adRemIng;
+          f.Bodega_Ingreso = adIng.Bodega || 'Productos Buenos';
+          f.Fecha_Ingreso = adIng.Fecha; f.Fecha_Devolucion = adIng.Fecha;
+        } else {
+          f.Remision_Salida = adRemSal;
+          f.Bodega_Salida = adSal.Bodega || 'Productos Buenos';
+          f.Fecha_Salida = adSal.Fecha;
+        }
+        return f;
+      }
+      var adFilas = [];
+      adPlan.forEach(function(p) {
+        if (p.ci > 0) adFilas.push(adFila(p.o, 'Ingreso', p.ci));
+        if (p.cs > 0) adFilas.push(adFila(p.o, 'Salida', p.cs));
+      });
+      var adIns = await _sb.from('Devoluciones').insert(adFilas);
+      if (adIns.error) return { ok: false, error: adIns.error.message };
+      return { ok: true, added: adFilas.length, remision_ingreso: adRemIng, remision_salida: adRemSal };
     }
 
     // Devolución de muestras NO utilizadas: vuelven a "Productos Buenos" de la

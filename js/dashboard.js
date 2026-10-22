@@ -349,7 +349,7 @@ var D_COMPARTIDAS = [
   ['pedidos', 'getPedidos', 'pedidos',
    'id,Nombre_Empresa,Cliente,NIT,Departamento,Cant_Entregada,Cantidad,Estado_2,Estado_Entrega,Consecutivo,Fecha_Ult_Entrega,Fecha_Pedido,Fecha_Compromiso,Producto,Comercial,Valor_Unitario,Valor_Total,Total_Orden,Historico,Bodega_Consignacion_Id,Consignacion'],
   ['devoluciones', 'getDevoluciones', 'devoluciones',
-   'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total,Cliente,Vendedor'],
+   'Empresa,Estado,Motivo,Fecha,Cantidad,Valor_Total,Cliente,Vendedor,Tipo_Adicional'],
   ['ingresos', 'getIngresos', 'ingresos',
    'Empresa_Origen,Empresa_Destino,Cantidad,Fecha,Origen,Responsable,Remision_Origen,Remision_Destino,Reenvase_Ref'],
   ['ordenes', 'getOrdenesCompra', 'ordenes',
@@ -470,7 +470,9 @@ async function loadDashboard() {
     dConsigIds = {};
     dPedidosConsig.forEach(function(p) { if (p.id != null) dConsigIds[p.id] = 1; });
 
-    dDevoluciones = results[1].devoluciones || [];
+    // Las remisiones adicionales de «Reabrir» (Tipo_Adicional) no son devoluciones
+    // nuevas: no se cuentan como tales (su stock sí entra por el Kardex).
+    dDevoluciones = (results[1].devoluciones || []).filter(function(d) { return !d.Tipo_Adicional; });
     dIngresos = results[2].ingresos || [];
     dOrdenes = results[3].ordenes || [];
     dMuestras = results[4].muestras || [];

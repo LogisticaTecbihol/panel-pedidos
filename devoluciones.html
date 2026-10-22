@@ -627,6 +627,7 @@
         <button class="btn-cancel" onclick="exportarDevSolicitudPDF()" style="background:#e67e22;color:white;border-color:#e67e22">📄 Exportar Solicitud PDF</button>
         <button class="btn-cancel" onclick="exportarDevSolicitudPDF({share:true, triggerBtn:this})" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar la solicitud a otro usuario del panel">📨 Enviar Solicitud</button>
         <button class="btn-cancel" id="btn-dev-completar" onclick="openCompletarDesdeDetalle()" style="background:#e67e22;color:white;border-color:#e67e22;display:none" title="Registrar la remisión que aún falta">📝 Completar remisión</button>
+        <button class="btn-cancel" id="btn-dev-reabrir" onclick="openReabrirDesdeDetalle()" style="background:#6b46c1;color:white;border-color:#6b46c1;display:none" title="Emitir una remisión de ingreso o salida adicional">↩ Reabrir</button>
         <button class="btn-cancel" id="btn-dev-rem-ingreso" onclick="exportarDevRemisionPDF('ingreso')" style="background:#e65100;color:white;border-color:#e65100;display:none">📥 Remisión Ingreso PDF</button>
         <button class="btn-cancel" id="btn-dev-send-ingreso" onclick="exportarDevRemisionPDF('ingreso',{share:true, triggerBtn:this})" style="background:#7d3c98;color:white;border-color:#7d3c98;display:none!important" title="Enviar remisión de ingreso">📨 Enviar Ingreso</button>
         <button class="btn-cancel" id="btn-dev-rem-salida" onclick="exportarDevRemisionPDF('salida')" style="background:#2e7d32;color:white;border-color:#2e7d32;display:none">📤 Remisión Salida PDF</button>
@@ -748,6 +749,104 @@
       <div class="mftr-btns">
         <button class="btn-cancel" onclick="closeTramitarDev()">Cancelar</button>
         <button class="btn-confirm" id="btn-tramitar-dev" onclick="tramitarYEnviarDev()" style="background:#27ae60">✓ Tramitar y enviar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- REABRIR DEVOLUCION: remisión de ingreso / salida ADICIONAL -->
+<div class="overlay" id="reabrir-dev-overlay">
+  <div class="modal-box" style="max-width:900px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#6b46c1,#805ad5)">
+      <div style="flex:1">
+        <h2>↩ Reabrir devolución — remisión adicional</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px;display:flex;gap:16px" id="reabrir-dev-meta"></div>
+      </div>
+      <button class="btn-close" onclick="closeReabrirDev()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="font-size:0.78rem;color:#553c9a;background:#faf5ff;border:1px solid #d6bcfa;border-radius:8px;padding:10px 14px;margin-bottom:14px;line-height:1.5">
+        La devolución sigue <strong>Tramitada</strong>: se emite una remisión <strong>nueva</strong> (número automático) por las cantidades adicionales y las remisiones anteriores no se tocan.
+        El total devuelto (y el repuesto) de cada línea no puede superar la <strong>Cant. Solicitada</strong>.
+        Para corregir una remisión mal hecha, anúlala en <em>Reportes → Remisiones Anuladas</em> y emite aquí la correcta.
+      </div>
+      <!-- Remisión de Ingreso adicional -->
+      <div id="reabrir-seccion-ingreso" style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-weight:700;font-size:0.86rem;color:#e65100">📥 Remisión de Ingreso adicional <span style="font-weight:400;font-size:0.76rem;color:#718096">(producto devuelto que ingresa a bodega)</span></div>
+          <label style="font-size:0.78rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;color:#4a5568"><input type="checkbox" id="reabrir-ingreso-enabled" checked onchange="toggleReabrirSeccion('ingreso',this.checked)"> Emitir</label>
+        </div>
+        <div id="reabrir-ingreso-fields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+          <div>
+            <label class="ef-label">N° Remisión Ingreso</label>
+            <input class="ef" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+          </div>
+          <div>
+            <label class="ef-label">Bodega de Ingreso</label>
+            <select class="ef" id="reabrir-bodega-ingreso">
+              <option value="Productos Buenos">📦 Productos Buenos</option>
+              <option value="Producto No Conforme">⚠️ Producto No Conforme</option>
+            </select>
+          </div>
+          <div>
+            <label class="ef-label">Fecha de Ingreso</label>
+            <input class="ef" id="reabrir-fecha-ingreso" type="date">
+          </div>
+        </div>
+      </div>
+      <!-- Remisión de Salida adicional -->
+      <div id="reabrir-seccion-salida" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-weight:700;font-size:0.86rem;color:#2e7d32">📤 Remisión de Salida adicional <span style="font-weight:400;font-size:0.76rem;color:#718096">(producto de reposición que sale de bodega)</span></div>
+          <label style="font-size:0.78rem;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;color:#4a5568"><input type="checkbox" id="reabrir-salida-enabled" onchange="toggleReabrirSeccion('salida',this.checked)"> Emitir</label>
+        </div>
+        <div id="reabrir-salida-fields" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:12px">
+          <div>
+            <label class="ef-label">N° Remisión Salida</label>
+            <input class="ef" type="text" placeholder="(Auto al guardar)" readonly style="background:#f0f4f8">
+          </div>
+          <div>
+            <label class="ef-label">Bodega de Salida</label>
+            <select class="ef" id="reabrir-bodega-salida">
+              <option value="Productos Buenos">📦 Productos Buenos</option>
+              <option value="Producto No Conforme">⚠️ Producto No Conforme</option>
+            </select>
+          </div>
+          <div>
+            <label class="ef-label">Fecha de Salida</label>
+            <input class="ef" id="reabrir-fecha-salida" type="date">
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label class="ef-label">Nota (opcional)</label>
+        <input class="ef" id="reabrir-nota" type="text" maxlength="200" placeholder="Ej.: el cliente devolvió el resto del pedido" style="width:100%">
+      </div>
+      <div style="font-weight:700;font-size:0.88rem;color:#2d3748;border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px">📦 Productos — cantidades de las remisiones adicionales</div>
+      <div style="overflow-x:auto">
+        <table style="font-size:0.82rem;width:100%">
+          <thead>
+            <tr style="background:#f7fafc">
+              <th style="width:26px">#</th>
+              <th style="width:70px;text-align:center">Consec.</th>
+              <th style="min-width:200px">Producto</th>
+              <th>Presentación</th>
+              <th style="text-align:right">Cant. Solicitada</th>
+              <th style="text-align:right" title="Lo ya devuelto con remisiones vigentes (sin anuladas)">Ya devuelto</th>
+              <th style="text-align:right" title="Lo ya repuesto con remisiones vigentes (sin anuladas)">Ya repuesto</th>
+              <th id="reabrir-th-ingreso" style="text-align:right;width:120px">+ Ingreso</th>
+              <th id="reabrir-th-salida" style="text-align:right;width:120px;opacity:0.4">+ Salida</th>
+            </tr>
+          </thead>
+          <tbody id="reabrir-lines"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mftr">
+      <div style="font-size:0.8rem;color:#718096">Se emitirá una remisión nueva por cada lado marcado</div>
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="closeReabrirDev()">Cancelar</button>
+        <button class="btn-confirm" id="btn-reabrir-dev" onclick="guardarReabrirDev()" style="background:#6b46c1">✓ Emitir remisión adicional</button>
       </div>
     </div>
   </div>
@@ -1171,13 +1270,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20261021"></script>
-<script src="js/auth.js?v=20261021"></script>
+<script src="js/shared.js?v=20261022a"></script>
+<script src="js/auth.js?v=20261022a"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
 <script src="js/existencias.js?v=20261002a"></script>
 <script src="js/asignacion-inventario.js?v=20260909g"></script>
-<script src="js/devoluciones.js?v=20261007a"></script>
+<script src="js/devoluciones.js?v=20261022a"></script>
 <script src="js/cambios.js?v=20261002a"></script>
 <script src="js/despachos-devcam.js?v=20261007a"></script>
 </body>
