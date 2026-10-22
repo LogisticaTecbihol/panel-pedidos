@@ -2925,7 +2925,8 @@ function dLegCargar() {
     apiGet('getLegalizacionGastosEmpresas', { columns: 'id,Legalizacion_Id,Empresa,Monto' }),
     apiGet('getVehiculos', { columns: 'id,Placa,Descripcion,Rendimiento_Esperado' }).catch(function() { return { ok: true, vehiculos: [] }; }),
     // Fuentes de remisiones del prorrateo: mismas consultas y columnas que
-    // loadClientesConRemision() de legalizacion-gastos.js.
+    // loadClientesConRemision() de legalizacion-gastos.js (sin Cliente, que el
+    // cálculo no usa).
     apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' }),
     apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; }),
     apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),

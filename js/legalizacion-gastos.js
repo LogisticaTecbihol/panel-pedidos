@@ -75,24 +75,24 @@ var ENVIO_CONCEPTO = 'Envío';
 var legAdjuntosCache = [];
 
 // Clientes con al menos una remisión real generada (Pedidos.Remisiones no
-// vacío, Estado_2 != 'Anulado'), para sugerir en el campo Cliente(s) y para
-// auto-completar el cliente cuando se agrega una remisión que le pertenece.
+// vacío, Estado_2 != 'Anulado', o remisión de ingreso/salida en Cambios y
+// Devoluciones), para sugerir en el campo Cliente(s) y para auto-completar el
+// cliente cuando se agrega una remisión que le pertenece.
 var clientesConRemisionCache = null;
 var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 
 // "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad, empresa}, ...]
 // — la cantidad es la de ESA remisión puntual (una fila de Pedidos puede
 // tener varias entregas parciales bajo remisiones distintas). Cubre entregas
-// de Pedidos, Ingresos (traslados planta↔empresa), Cambios de mercancía y
-// remisiones externas; Órdenes de Compra, muestras y reenvases todavía no se
-// resuelven aquí. Usado por calcularProrrateoGastos().
+// de Pedidos, Ingresos (traslados planta↔empresa), Cambios de mercancía,
+// Devoluciones y remisiones externas; Órdenes de Compra, muestras y reenvases
+// todavía no se resuelven aquí. Usado por calcularProrrateoGastos().
 var remisionProductoMap = {};
 
-// Igual que remisionProductoMap, más las remisiones de Muestras y de
-// Devoluciones. Lo usan el botón "Calcular reparto" del formulario
-// (calcularRepartoSugerido) y, en la pestaña Prorrateo, solo las
-// legalizaciones de tipo Envío (los envíos suelen llevar muestras); el resto
-// de la pestaña sigue con remisionProductoMap, sin cambios.
+// Igual que remisionProductoMap, más las remisiones de Muestras. Lo usan el
+// botón "Calcular reparto" del formulario (calcularRepartoSugerido) y, en la
+// pestaña Prorrateo, solo las legalizaciones de tipo Envío (los envíos suelen
+// llevar muestras); el resto de la pestaña sigue con remisionProductoMap.
 var remisionProductoMapReparto = {};
 
 // Mapas y legalizaciones COMPLETOS, solo para la pestaña Prorrateo. Un usuario
@@ -213,10 +213,10 @@ async function loadClientesConRemision() {
       apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' }),
       apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; }),
       apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
-      apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; }),
+      apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado,Cliente' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
       apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
-      apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto,Cliente' }).catch(function() { return { ok: true, cambios: [] }; }),
       // Fuentes sin recorte por empresa/rol, solo para el Prorrateo (null si falla).
       _veTodasLasEmpresas() ? Promise.resolve(null) : LegProrrateo.cargarFuentesCompletas(_sb)
     ]);

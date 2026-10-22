@@ -145,23 +145,26 @@ var LegProrrateo = (function() {
   //   pedidos      Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa
   //   ingresos     Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen
   //   muestras     Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud
-  //   devoluciones Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado
+  //   devoluciones Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado[,Cliente]
   //   ext          id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en
   //   extItems     Remision_Id,Producto,Presentacion,Cantidad,Unidad
-  //   cambios      id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto
+  //   cambios      id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto[,Cliente]
+  //   (Cliente solo se pide donde se quiere sugerir el cliente de la remisión: el
+  //   formulario de Legalización; el cálculo del prorrateo no lo usa.)
   //
   // Devuelve:
   //  · prodMap  "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad, empresa}, ...]
   //    — la cantidad es la de ESA remisión puntual (una fila de Pedidos puede
   //    tener varias entregas parciales bajo remisiones distintas). Cubre entregas
-  //    de Pedidos, Ingresos (traslados planta↔empresa), Cambios de mercancía y
-  //    remisiones externas; Órdenes de Compra, muestras y reenvases todavía no se
-  //    resuelven aquí.
-  //  · repMap   igual que prodMap, más las remisiones de Muestras y de
-  //    Devoluciones. Lo usan el botón "Calcular reparto" del formulario y, en
-  //    Prorrateo, solo las legalizaciones de tipo Envío (los envíos suelen llevar
-  //    muestras).
-  //  · remMap / clientes  remisión → cliente, y clientes con al menos una remisión.
+  //    de Pedidos, Ingresos (traslados planta↔empresa), Cambios de mercancía,
+  //    Devoluciones y remisiones externas; Órdenes de Compra, muestras y reenvases
+  //    todavía no se resuelven aquí.
+  //  · repMap   igual que prodMap, más las remisiones de Muestras. Lo usan el botón
+  //    "Calcular reparto" del formulario y, en Prorrateo, solo las legalizaciones
+  //    de tipo Envío (los envíos suelen llevar muestras).
+  //  · remMap / clientes  remisión → cliente, y clientes con al menos una remisión
+  //    (Pedidos, Cambios y Devoluciones; si un código aparece en Pedidos, manda su
+  //    cliente).
   //  · remisionesExternas / externasCargadas  las remisiones externas por código
   //    {id, Remision, Fecha, Tipo, Proveedor, Planta, lineas:[{Producto,Presentacion,Cantidad,Unidad}]}
   //    y si se pudieron cargar (los dos fetch ok).
@@ -202,6 +205,23 @@ var LegProrrateo = (function() {
           (prodMap[key] = prodMap[key] || []).push({ producto: p.Producto, presentacion: p.Presentacion, cantidad: cant, empresa: p.Nombre_Empresa });
         });
       });
+    }
+    // Cambios y Devoluciones: sus remisiones también ligan a un cliente (para
+    // sugerirlo al relacionar la remisión y en el buscador de Cliente(s)). Se
+    // procesan después de Pedidos y no pisan su cliente.
+    function _ligarCliente(cli, rems) {
+      cli = String(cli || '').trim();
+      if (!cli) return;
+      var cods = rems.map(function(r) { return String(r || '').trim().toUpperCase(); }).filter(function(k) { return k; });
+      if (!cods.length) return;
+      set[cli] = true;
+      cods.forEach(function(k) { if (!remMap[k]) remMap[k] = cli; });
+    }
+    if (resCam && resCam.ok) {
+      (resCam.cambios || []).forEach(function(c) { _ligarCliente(c.Cliente, [c.Remision_Ingreso, c.Remision_Salida]); });
+    }
+    if (resDev && resDev.ok) {
+      (resDev.devoluciones || []).forEach(function(d) { _ligarCliente(d.Cliente, [d.Remision, d.Remision_Ingreso, d.Remision_Salida]); });
     }
     // Ingresos — traslados planta↔empresa u otro origen. Remision_Destino
     // pertenece a Empresa_Destino (quien recibe) y Remision_Origen a
@@ -269,10 +289,29 @@ var LegProrrateo = (function() {
       });
     }
 
-    // Mapa ampliado para el reparto: copia de prodMap + Muestras + Devoluciones
-    // (misma convención de cantidad que kardex.js: Cant_Entregada, o Cantidad
-    // si no hay). Las órdenes de producción de muestras no despachan; las
-    // devoluciones anuladas/pendientes no movieron producto.
+    // Devoluciones: lo devuelto viaja bajo la remisión de ingreso, la de salida o
+    // la `Remision` antigua (misma convención de cantidad que kardex.js:
+    // Cant_Entregada, o Cantidad si no hay). Las anuladas/pendientes no movieron
+    // producto.
+    function _cantDe(r) { return Number(r.Cant_Entregada != null && r.Cant_Entregada !== '' ? r.Cant_Entregada : r.Cantidad) || 0; }
+    if (resDev && resDev.ok) {
+      (resDev.devoluciones || []).forEach(function(d) {
+        var est = (d.Estado || '').toLowerCase();
+        if (est === 'anulado' || est === 'pendiente') return;
+        var cant = _cantDe(d);
+        if (cant <= 0) return;
+        var vistas = {};
+        [d.Remision, d.Remision_Ingreso, d.Remision_Salida].forEach(function(r) {
+          var key = String(r || '').trim().toUpperCase();
+          if (!key || vistas[key]) return;
+          vistas[key] = true;
+          (prodMap[key] = prodMap[key] || []).push({ producto: d.Producto, presentacion: d.Presentacion, cantidad: cant, empresa: d.Empresa });
+        });
+      });
+    }
+
+    // Mapa ampliado para el reparto: copia de prodMap + Muestras (misma
+    // convención de cantidad). Las órdenes de producción de muestras no despachan.
     var repMap = {};
     Object.keys(prodMap).forEach(function(k) { repMap[k] = prodMap[k].slice(); });
     function _addRep(rem, emp, prod, pres, cant) {
@@ -280,25 +319,10 @@ var LegProrrateo = (function() {
       if (!key || cant <= 0) return;
       (repMap[key] = repMap[key] || []).push({ producto: prod, presentacion: pres, cantidad: cant, empresa: emp });
     }
-    function _cantDe(r) { return Number(r.Cant_Entregada != null && r.Cant_Entregada !== '' ? r.Cant_Entregada : r.Cantidad) || 0; }
     if (resMue && resMue.ok) {
       (resMue.muestras || []).forEach(function(m) {
         if ((m.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
         _addRep(m.Remision, m.Empresa, m.Producto, m.Presentacion, _cantDe(m));
-      });
-    }
-    if (resDev && resDev.ok) {
-      (resDev.devoluciones || []).forEach(function(d) {
-        var est = (d.Estado || '').toLowerCase();
-        if (est === 'anulado' || est === 'pendiente') return;
-        var cant = _cantDe(d);
-        var vistas = {};
-        [d.Remision, d.Remision_Ingreso, d.Remision_Salida].forEach(function(r) {
-          var key = String(r || '').trim().toUpperCase();
-          if (!key || vistas[key]) return;
-          vistas[key] = true;
-          _addRep(key, d.Empresa, d.Producto, d.Presentacion, cant);
-        });
       });
     }
 
@@ -378,8 +402,8 @@ var LegProrrateo = (function() {
   // relacionadas, según los litros movidos de cada uno, y agrega ese mismo
   // prorrateo por SKU y por empresa (la Nombre_Empresa del pedido dueño de
   // cada línea). Es una aproximación: Remisiones_Relacionadas es texto libre y
-  // el mapa de remisiones solo resuelve entregas de Pedidos, Ingresos, Cambios y
-  // remisiones externas (ver construirMapas). Lo que no se puede vincular a un
+  // el mapa de remisiones solo resuelve entregas de Pedidos, Ingresos, Cambios,
+  // Devoluciones y remisiones externas (ver construirMapas). Lo que no se puede vincular a un
   // producto, o cuyo producto no es convertible a litros, cae en el bucket
   // "Sin identificar" — el mismo bucket y monto para ambos desgloses.
   //
@@ -621,7 +645,7 @@ var LegProrrateo = (function() {
       var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
       var lineas = [];
       // Un envío suele despachar muestras: sus remisiones se resuelven también
-      // contra Muestras y Devoluciones; para Ruta se mantiene el mapa de siempre.
+      // contra Muestras; para Ruta se usa el mapa sin ellas.
       var mapaRem = esEnvio(leg) ? remisionProductoMapReparto : remisionProductoMap;
       codigos.forEach(function(c) {
         var matches = mapaRem[c.trim().toUpperCase()];
