@@ -32,6 +32,35 @@ Suite de skills instalada en `~/.claude/skills/gstack` (requiere `bun` + `./setu
 - **Navegación web**: usa la habilidad `/browse` de gstack cuando esté disponible. Si `/browse` falla o el binario no está instalado, recurre a las herramientas de navegador integradas.
 - Skills disponibles: `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`
 
+## Cambios de mercancía: trámite parcial (`devoluciones.html` → pestaña «Cambios de Mercancía»)
+
+«Gestionar» ya no registra cada lado de una sola vez: cada pasada guarda lo que **realmente** ingresó y/o salió (cantidad por línea) con su propia remisión,
+y lo que falta queda pendiente para otra pasada. Una línea puede tener varias remisiones de ingreso y varias de salida.
+
+- **Modelo** (`supabase/migrations/add_tramite_parcial_cambios.sql`, migración remota `add_tramite_parcial_cambios`): cada línea de `CambiosMercancia` trae
+  `Movs_Ingreso` / `Movs_Salida` (jsonb `[{rem, cant, fecha, bodega}]`, un elemento por pasada). Ingreso = líneas CAMBIAR; salida = líneas ENTREGAR, o CAMBIAR si el
+  cambio no tiene ENTREGAR (mismo producto). **Las filas anteriores** tienen los arreglos vacíos: su `Remision_*` cubre TODA la `Cantidad`, como siempre; no hubo backfill.
+  Las columnas `Remision_*`/`Bodega_*`/`Fecha_*` se siguen llenando en las filas con movimientos (remisiones separadas por coma, bodega y fecha de la última pasada)
+  solo para búsquedas y exportes: **el stock sale de los arreglos**. `Cierre_Con_Faltante` marca el cierre con cantidades sin tramitar.
+- **Estados**: `Parcial` mientras quede algo pendiente en cualquier lado, `Cerrado` al completar ambos. «Cerrar con faltante» (observación ≥ 10 car.; exige algún
+  movimiento previo) y «Cerrar sin recibir producto» (solo si no ha entrado nada) cierran dejando lo pendiente sin mover inventario; ninguno se reabre.
+- **Un solo lugar escribe**: el RPC `tramitar_cambio(jsonb)` (SECURITY INVOKER → aplican las RLS de la tabla). Atómico y con las filas del cambio bloqueadas; valida que
+  las líneas sean exactamente el cambio, que cada cantidad sea entera y ≤ lo pendiente, y calcula el estado. Si falla no escribe nada y `apiPost` libera las
+  remisiones generadas (`_genRem`). El candado `trg_cambios_movs_guard` impide arreglos mal formados o por encima de la `Cantidad`. Desde JS: `apiPost({action:'tramitarCambio', …})`
+  (shared.js). La acción antigua `gestionarCambio` queda solo por pestañas abiertas con código viejo y se niega a tocar un cambio con movimientos.
+- **Lectura única de movimientos**: `camEventosLinea` / `camLadoAplica` / `camResumenGrupo` / `camCantPendiente` (shared.js) devuelven los movimientos de una línea (los del
+  arreglo, o —en filas anteriores— uno por toda la `Cantidad`). **Todo lector del inventario debe usarlos**, y su equivalente SQL es `_kx_cam_eventos` / `_cam_cant_hecha`.
+  Hoy los usan: `_kx_movs` (SQL; la usan `get_saldos_holding` y `get_movs_holding_otras`), `existencias.js` (`buildKxMovimientos` y `_computeMovimientos_Inv`), `kardex.js`
+  (Buenos y Bodega NC), `legalizacion-prorrateo.js`, `reportes.js` (Remisiones), `despachos-devcam.js` (una fila por remisión de salida) y el detalle/PDF de `cambios.js`.
+  Si agregas un lector nuevo de `CambiosMercancia`, pide `Movs_Ingreso,Movs_Salida` en las columnas y reutiliza esos helpers. `get_prorrateo_legalizacion_*` ya devuelven los arreglos.
+- **Pantalla «Gestionar»** (`cambios.js`): tablas con solicitada / ya tramitada / pendiente / «ahora» por línea (por defecto lo pendiente; «Todo lo pendiente» / «Ninguna»). El motor de
+  asignación de inventario (`asignacion-inventario.js`) sigue en la salida de los cambios con líneas ENTREGAR; lo asignado a una línea no puede superar lo que se entrega ahora.
+  Con «Ingreso y salida», un lado sin cantidades simplemente no se registra (no genera remisión). Cada remisión sale a contabilidad con SOLO las cantidades de su pasada.
+- **Detalle**: una tarjeta por remisión (con su botón PDF) y columnas «Ingresada/Entregada» y «Falta» por línea. **Editar y eliminar** un cambio con movimientos están bloqueados
+  (editar borra y recrea las líneas, y se perderían las remisiones).
+- Probado contra producción con transacciones revertidas (parcial, exceso, grupo incompleto, cierre con faltante, solo CAMBIAR, dato anterior) y con arneses de navegador
+  (paridad SQL↔JS de `_kx_movs`/`buildKxMovimientos`/kardex Buenos y NC/prorrateo/reportes, y el modal con Supabase simulado). El flujo completo con usuarios reales no se probó.
+
 ## Solicitudes de Eventos (formato MC-ISO-FO01)
 
 `solicitudes-eventos.html` + `js/solicitudes-eventos.js`: el comercial diligencia el formato de solicitud de eventos (6 secciones).

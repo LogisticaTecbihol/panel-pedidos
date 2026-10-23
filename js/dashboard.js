@@ -2935,7 +2935,7 @@ function dLegCargar() {
     apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado' }).catch(function() { return { ok: true, devoluciones: [] }; }),
     apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
     apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
-    apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; }),
+    apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Movs_Ingreso,Movs_Salida,Consecutivo,Empresa,Producto' }).catch(function() { return { ok: true, cambios: [] }; }),
     // Fuentes SIN recorte por empresa/rol, solo para el prorrateo (null si ve todo o si falla):
     // con las recortadas, un usuario restringido no resuelve sus remisiones (el rol
     // mercadeo ni lee Pedidos) y en viajes mixtos le toca más de lo que le corresponde.

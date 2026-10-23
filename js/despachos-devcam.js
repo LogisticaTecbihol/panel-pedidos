@@ -85,8 +85,9 @@ function renderDDHeader() {
 function _ddConstruir(mostrarHistoricos) {
   var map = {};
   var order = [];
-  function agregar(origen, r) {
-    var rem = String(r.Remision_Salida || '').trim();
+  // `rem` y `fechaSalida` de UNA remisión de salida; un cambio tramitado por partes tiene varias
+  function agregar(origen, r, rem, fechaSalida) {
+    rem = String(rem || '').trim();
     if (!rem) return;
     if (!mostrarHistoricos && r.Historico) return;
     var key = [origen, (r.Empresa || '').trim(), rem].join('||');
@@ -102,10 +103,20 @@ function _ddConstruir(mostrarHistoricos) {
     var g = map[key];
     if (r.Consecutivo != null && r.Consecutivo !== '') g.consecutivos[String(r.Consecutivo)] = 1;
     if (r.Cliente) g.clientes[r.Cliente] = 1;
-    if (!g.fecha && r.Fecha_Salida) g.fecha = String(r.Fecha_Salida).slice(0, 10);
+    if (!g.fecha && fechaSalida) g.fecha = String(fechaSalida).slice(0, 10);
   }
-  (devoluciones || []).forEach(function(r) { agregar('Devolucion', r); });
-  (cambios || []).forEach(function(r) { agregar('Cambio', r); });
+  (devoluciones || []).forEach(function(r) { agregar('Devolucion', r, r.Remision_Salida, r.Fecha_Salida); });
+  // Cambios: una fila por cada remisión de salida (camEventosLinea, shared.js)
+  var camPorGrupo = {};
+  (cambios || []).forEach(function(r) { (camPorGrupo[camGrupoKey(r)] = camPorGrupo[camGrupoKey(r)] || []).push(r); });
+  Object.keys(camPorGrupo).forEach(function(k) {
+    var lineas = camPorGrupo[k];
+    var te = camGrupoTieneEntregar(lineas);
+    lineas.forEach(function(r) {
+      if (!camLadoAplica(r, 'salida', te)) return;
+      camEventosLinea(r, 'salida').forEach(function(e) { agregar('Cambio', r, e.rem, e.fecha); });
+    });
+  });
   return order.map(function(k) {
     var g = map[k];
     g.consecutivo = Object.keys(g.consecutivos).sort(_ddCmp).join(', ');

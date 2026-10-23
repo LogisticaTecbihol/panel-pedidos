@@ -8,10 +8,11 @@ var gestionarCamIds = null;
 var gestionarCamEmpresa = '';
 var gestionarCamWorkingLines = [];
 var camAsig = null;
-// Gestionar Cambio: qué lado(s) se van a registrar en esta pasada
-var gestionarCamLados = 'ambos';       // 'ambos' | 'ingreso' | 'salida'
-var gestionarCamYaIngreso = false;     // la remisión de ingreso ya estaba registrada al abrir
-var gestionarCamYaSalida = false;      // la remisión de salida ya estaba registrada al abrir
+// Gestionar Cambio: qué se va a registrar en esta pasada
+var gestionarCamLados = 'ambos';       // 'ambos' | 'ingreso' | 'salida' | 'faltante' | 'sinrecepcion'
+var gestionarCamResumen = null;        // camResumenGrupo() del cambio al abrir (pendientes y remisiones previas)
+var gestionarCamIngLines = [];         // líneas que admiten ingreso: [{id, Producto, Lote, Cantidad, hecha, pend}]
+var gestionarCamSalLines = [];         // líneas que admiten salida (mismo formato)
 var catalogoProductosCam = [];
 var catalogoClientesCam = [];
 var camViewingKey = null;
@@ -283,6 +284,7 @@ function groupCambios(rows) {
     g.head._nEntregar = g.lines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; }).length;
     g.head._estado = g.lines[0].Estado || 'Pendiente';
     g.head._lineIds = g.lines.map(function(l) { return l.__row || l.id; });
+    g.head._res = camResumenGrupo(g.lines);
     return g.head;
   });
 }
@@ -331,12 +333,17 @@ function renderCamTable() {
     var esPend = r._estado === 'Pendiente';
     var esCerrado = r._estado === 'Cerrado';
     var esParcial = r._estado === 'Parcial';
+    var res = r._res || camResumenGrupo(r._lines);
+    var faltaTxt = 'Falta: ' + [res.pendIng > 0 ? 'ingreso ' + res.pendIng + ' ud' : '', res.pendSal > 0 ? 'salida ' + res.pendSal + ' ud' : ''].filter(Boolean).join(' · ');
     var estadoBadge = (esCerrado && r.Cierre_Sin_Recepcion)
       ? '<span style="background:#ffe8d1;color:#a04000;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700" title="'+escHtml('Cerrado sin recibir el producto: '+(r.Observacion_Cierre||''))+'">Cerrado sin recepción</span>'
+      : (esCerrado && r.Cierre_Con_Faltante)
+      ? '<span style="background:#ffe8d1;color:#a04000;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700" title="'+escHtml('Cerrado con faltante: '+(r.Observacion_Cierre||''))+'">Cerrado con faltante</span>'
       : esCerrado
       ? '<span style="background:#d1ecf1;color:#0c5460;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Cerrado</span>'
       : esParcial
-        ? '<span style="background:#ffe8cc;color:#b45309;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700" title="Falta registrar un lado de la remisión">Parcial</span>'
+        ? '<span style="background:#ffe8cc;color:#b45309;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700" title="'+escHtml(faltaTxt)+'">Parcial</span>' +
+          '<div style="font-size:0.68rem;color:#b45309;margin-top:2px;white-space:nowrap">'+escHtml(faltaTxt)+'</div>'
         : esPend
           ? '<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Pendiente</span>'
           : '<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:10px;font-size:0.74rem;font-weight:700">Completado</span>';
@@ -388,8 +395,11 @@ function viewCamDetail(key) {
   function cfHtml(label, htmlVal) {
     return '<div><span style="font-weight:700;color:#4a5568;font-size:0.76rem;text-transform:uppercase">'+label+'</span><br>'+htmlVal+'</div>';
   }
+  var res = camResumenGrupo(lines);
   var estadoLabel = (r.Estado === 'Cerrado' && r.Cierre_Sin_Recepcion)
     ? '<span style="background:#ffe8d1;color:#a04000;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Cerrado sin recepción</span>'
+    : (r.Estado === 'Cerrado' && r.Cierre_Con_Faltante)
+    ? '<span style="background:#ffe8d1;color:#a04000;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Cerrado con faltante</span>'
     : r.Estado === 'Cerrado'
     ? '<span style="background:#d1ecf1;color:#0c5460;padding:2px 8px;border-radius:8px;font-size:0.82rem;font-weight:700">Cerrado</span>'
     : r.Estado === 'Parcial'
@@ -417,40 +427,63 @@ function viewCamDetail(key) {
           '<div style="font-size:0.85rem;color:#2d3748;white-space:pre-wrap">'+escHtml(r.Observacion_Cierre||'—')+'</div>' +
         '</div>'
       : '') +
+    (r.Cierre_Con_Faltante
+      ? '<div style="background:#fff3e6;border:1px solid #f5b87a;border-radius:8px;padding:12px 14px;margin-bottom:18px">' +
+          '<div style="font-weight:700;font-size:0.82rem;color:#a04000;margin-bottom:6px">⚠️ Cerrado con faltante — lo pendiente no movió inventario</div>' +
+          '<div style="font-size:0.85rem;color:#2d3748;white-space:pre-wrap">'+escHtml(r.Observacion_Cierre||'—')+'</div>' +
+        '</div>'
+      : '') +
     (function() {
-      var hasIngreso = r.Remision_Ingreso;
-      var hasSalida = r.Remision_Salida;
-      if (!hasIngreso && !hasSalida) {
+      if (!res.ingresos.length && !res.salidas.length) {
         var m = (r.Observaciones||'').match(/\[Remisión:\s*(.+?)\s*\|\s*Fecha:\s*(.+?)\]/);
         if (m) return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 24px;margin-bottom:18px;font-size:0.85rem">' + cf('N° Remisión (legado)', m[1]) + cf('Fecha Remisión', fmtDate(m[2])) + '</div>';
         return '';
       }
-      var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">';
-      html += '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px 14px">' +
-        '<div style="font-weight:700;font-size:0.82rem;color:#e65100;margin-bottom:8px">📥 Remisión de Ingreso</div>' +
-        cf('N° Remisión', r.Remision_Ingreso || '') +
-        cf('Bodega', r.Bodega_Ingreso || '') +
-        cf('Fecha', r.Fecha_Ingreso ? fmtDate(r.Fecha_Ingreso) : '—') +
-        '</div>';
-      html += '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:12px 14px">' +
-        '<div style="font-weight:700;font-size:0.82rem;color:#2e7d32;margin-bottom:8px">📤 Remisión de Salida</div>' +
-        cf('N° Remisión', r.Remision_Salida || '') +
-        cf('Bodega', r.Bodega_Salida || '') +
-        cf('Fecha', r.Fecha_Salida ? fmtDate(r.Fecha_Salida) : '—') +
-        '</div>';
-      html += '</div>';
-      return html;
+      // Una tarjeta por remisión: un cambio tramitado por partes puede tener varias de ingreso y de salida.
+      function tarjeta(tipo, g) {
+        var esIng = tipo === 'ingreso';
+        var color = esIng ? '#e65100' : '#2e7d32';
+        var items = g.items.map(function(it) {
+          return '<div style="display:flex;justify-content:space-between;gap:10px;font-size:0.78rem;color:#4a5568"><span>' + escHtml(it.producto || '—') + (it.lote ? ' <span style="color:#a0aec0">(' + escHtml(it.lote) + ')</span>' : '') + '</span><strong>' + it.cant + '</strong></div>';
+        }).join('');
+        return '<div style="background:' + (esIng ? '#fff8e1' : '#e8f5e9') + ';border:1px solid ' + (esIng ? '#ffe082' : '#a5d6a7') + ';border-radius:8px;padding:12px 14px;margin-bottom:10px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">' +
+            '<div style="font-weight:700;font-size:0.82rem;color:' + color + '">' + (esIng ? '📥 Remisión de Ingreso' : '📤 Remisión de Salida') + ' · ' + escHtml(g.rem) + '</div>' +
+            '<button onclick="exportarCamRemisionPDF(\'' + tipo + '\',{rem:this.dataset.rem})" data-rem="' + escHtml(g.rem) + '" title="Exportar esta remisión a PDF" style="background:' + color + ';color:#fff;border:none;border-radius:5px;padding:3px 9px;font-size:0.72rem;font-weight:700;cursor:pointer">📄 PDF</button>' +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 16px;margin-bottom:8px">' +
+            cf('Bodega', g.bodega || '') + cf('Fecha', g.fecha ? fmtDate(g.fecha) : '—') + cf('Unidades', String(g.total)) +
+          '</div>' + items + '</div>';
+      }
+      var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;align-items:start;margin-bottom:8px">';
+      h += '<div>' + (res.ingresos.length ? res.ingresos.map(function(g) { return tarjeta('ingreso', g); }).join('') : '<div style="font-size:0.8rem;color:#a0aec0;padding:10px 4px">📥 Sin ingresos registrados</div>') + '</div>';
+      h += '<div>' + (res.salidas.length ? res.salidas.map(function(g) { return tarjeta('salida', g); }).join('') : '<div style="font-size:0.8rem;color:#a0aec0;padding:10px 4px">📤 Sin salidas registradas</div>') + '</div>';
+      h += '</div>';
+      return h;
     })();
 
   var linesCambiar = lines.filter(function(l) { return l.Tipo_Linea === 'CAMBIAR'; });
   var linesEntregar = lines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+  var hayAvance = res.hayIng || res.haySal;   // con avance se muestran las columnas de lo tramitado y lo pendiente
+  function celdasAvance(l, lado) {
+    if (!camLadoAplica(l, lado, res.te)) return '<td></td><td></td>';
+    var hecha = camCantHecha(l, lado), pend = camCantPendiente(l, lado);
+    var cerrado = r.Estado === 'Cerrado';
+    return '<td style="text-align:right">' + hecha + '</td><td style="text-align:right;font-weight:700;color:' + (pend > 0 ? (cerrado ? '#a04000' : '#e67e22') : '#27ae60') + '">' + (pend > 0 ? pend : '✓') + '</td>';
+  }
 
   if (linesCambiar.length) {
+    // Sin líneas ENTREGAR el mismo producto sale en la misma línea: también muestra lo entregado
+    var camSalida = !res.te;
     html += '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-bottom:10px;font-weight:700;font-size:0.84rem;color:#c0392b">📦 Mercancía a cambiar ('+linesCambiar.length+')</div>';
     html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#fdf2f2">' +
-      '<th>Producto</th><th style="text-align:right">Cantidad</th><th>Lote / Vencimiento</th><th>Razón</th></tr></thead><tbody>';
+      '<th>Producto</th><th style="text-align:right">Cantidad</th>' +
+      (hayAvance ? '<th style="text-align:right">Ingresada</th><th style="text-align:right">Falta</th>' + (camSalida ? '<th style="text-align:right">Entregada</th><th style="text-align:right">Falta</th>' : '') : '') +
+      '<th>Lote / Vencimiento</th><th>Razón</th></tr></thead><tbody>';
     linesCambiar.forEach(function(x) {
-      html += '<tr><td style="font-weight:600">'+escHtml(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td><td>'+escHtml(x.Lote_Vencimiento||'—')+'</td><td>'+escHtml(x.Razon_Cambio||'—')+'</td></tr>';
+      html += '<tr><td style="font-weight:600">'+escHtml(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td>' +
+        (hayAvance ? celdasAvance(x, 'ingreso') + (camSalida ? celdasAvance(x, 'salida') : '') : '') +
+        '<td>'+escHtml(x.Lote_Vencimiento||'—')+'</td><td>'+escHtml(x.Razon_Cambio||'—')+'</td></tr>';
     });
     html += '</tbody></table></div>';
   }
@@ -458,9 +491,13 @@ function viewCamDetail(key) {
   if (linesEntregar.length) {
     html += '<div style="border-top:1px solid #e2e8f0;padding-top:14px;margin-top:14px;margin-bottom:10px;font-weight:700;font-size:0.84rem;color:#27ae60">📦 Mercancía a entregar ('+linesEntregar.length+')</div>';
     html += '<div style="overflow-x:auto"><table style="font-size:0.82rem;width:100%"><thead><tr style="background:#f0faf4">' +
-      '<th>Producto</th><th style="text-align:right">Cantidad</th><th>Lote / Vencimiento</th><th>Fecha Cambio</th></tr></thead><tbody>';
+      '<th>Producto</th><th style="text-align:right">Cantidad</th>' +
+      (hayAvance ? '<th style="text-align:right">Entregada</th><th style="text-align:right">Falta</th>' : '') +
+      '<th>Lote / Vencimiento</th><th>Fecha Cambio</th></tr></thead><tbody>';
     linesEntregar.forEach(function(x) {
-      html += '<tr><td style="font-weight:600">'+escHtml(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td><td>'+escHtml(x.Lote_Vencimiento||'—')+'</td><td>'+(x.Fecha_Cambio ? fmtDate(x.Fecha_Cambio) : '—')+'</td></tr>';
+      html += '<tr><td style="font-weight:600">'+escHtml(x.Producto||'—')+'</td><td style="text-align:right">'+(x.Cantidad||0)+'</td>' +
+        (hayAvance ? celdasAvance(x, 'salida') : '') +
+        '<td>'+escHtml(x.Lote_Vencimiento||'—')+'</td><td>'+(x.Fecha_Cambio ? fmtDate(x.Fecha_Cambio) : '—')+'</td></tr>';
     });
     html += '</tbody></table></div>';
   }
@@ -508,8 +545,9 @@ function viewCamDetail(key) {
   var btnOut = document.getElementById('btn-cam-rem-salida');
   var sendIn = document.getElementById('btn-cam-send-ingreso');
   var sendOut = document.getElementById('btn-cam-send-salida');
-  if (btnIn) btnIn.style.display = r.Remision_Ingreso ? 'inline-block' : 'none';
-  if (btnOut) btnOut.style.display = r.Remision_Salida ? 'inline-block' : 'none';
+  // El PDF de cada remisión sale de su tarjeta (un cambio puede tener varias de ingreso y de salida)
+  if (btnIn) btnIn.style.display = 'none';
+  if (btnOut) btnOut.style.display = 'none';
   if (sendIn) sendIn.style.display = 'none';
   if (sendOut) sendOut.style.display = 'none';
 
@@ -713,6 +751,8 @@ function openEditCamGroup(key) {
     return ((r.Empresa||'') + '||' + (r.Consecutivo || r.id)) === key;
   });
   if (!lines.length) return;
+  // Editar borra y vuelve a crear las líneas: se perderían las remisiones ya tramitadas por partes
+  if (camTieneMovimientos(lines)) { showToast('Este cambio ya tiene ingresos o salidas registrados: no se puede editar. Usa «Gestionar» para tramitar lo pendiente.', '#e67e22'); return; }
   editCam = { key: key, lineIds: lines.map(function(l) { return l.__row || l.id; }) };
   var r = lines[0];
   document.getElementById('cam-modal-title').textContent = '✏️ Editar Cambio de Mercancía';
@@ -841,6 +881,8 @@ function openDeleteCamGroup(key) {
     return ((r.Empresa||'') + '||' + (r.Consecutivo || r.id)) === key;
   });
   if (!lines.length) return;
+  // Eliminar borraría también los movimientos de inventario que esas remisiones ya generaron
+  if (camTieneMovimientos(lines)) { showToast('Este cambio ya tiene ingresos o salidas registrados: no se puede eliminar.', '#e67e22'); return; }
   var r = lines[0];
   deleteCamGroupIds = lines.map(function(l) { return l.__row || l.id; });
   document.getElementById('del-cam-msg').textContent = '¿Eliminar este cambio completo?';
@@ -879,59 +921,53 @@ async function confirmDeleteCam() {
   }
 }
 
-// ── Gestionar Cambio ──
+// ── Gestionar Cambio (trámite por partes) ──
+// Cada pasada registra lo que realmente ingresó y/o salió (cantidad por línea), con su propia remisión; lo que
+// falta queda pendiente para otra pasada. El cambio queda «Parcial» mientras haya pendientes y «Cerrado» al
+// completar ambos lados, o al cerrarlo con faltante / sin recepción. Todo se guarda con el RPC tramitar_cambio
+// (action 'tramitarCambio' de shared.js), que valida las cantidades contra lo pendiente.
+function _gcLineaGestion(l, lado) {
+  return {
+    id: l.__row || l.id, Producto: l.Producto || '', Lote: l.Lote_Vencimiento || '',
+    Cantidad: Number(l.Cantidad) || 0, hecha: camCantHecha(l, lado), pend: camCantPendiente(l, lado)
+  };
+}
+
 async function openGestionarCam(key) {
-  var lines = cambios.filter(function(r) {
-    return ((r.Empresa||'') + '||' + (r.Consecutivo || r.id)) === key;
-  });
+  var lines = cambios.filter(function(r) { return camGrupoKey(r) === key; });
   if (!lines.length) return;
   var r = lines[0];
+  var res = camResumenGrupo(lines);
+  if (res.pendIng <= 0 && res.pendSal <= 0) { showToast('Este cambio no tiene cantidades pendientes por tramitar', '#e67e22'); return; }
   gestionarCamIds = lines.map(function(l) { return l.__row || l.id; });
   gestionarCamEmpresa = r.Empresa || '';
-
-  // ¿Qué lados quedan por registrar? (permite tramitar solo ingreso o solo salida)
-  gestionarCamYaIngreso = !!String(r.Remision_Ingreso || '').trim();
-  gestionarCamYaSalida = !!String(r.Remision_Salida || '').trim();
-  gestionarCamLados = (gestionarCamYaIngreso && !gestionarCamYaSalida) ? 'salida'
-                    : (gestionarCamYaSalida && !gestionarCamYaIngreso) ? 'ingreso'
-                    : 'ambos';
+  gestionarCamResumen = res;
+  gestionarCamIngLines = lines.filter(function(l) { return camLadoAplica(l, 'ingreso', res.te); }).map(function(l) { return _gcLineaGestion(l, 'ingreso'); });
+  gestionarCamSalLines = lines.filter(function(l) { return camLadoAplica(l, 'salida', res.te); }).map(function(l) { return _gcLineaGestion(l, 'salida'); });
+  // Solo se ofrece lo que aún tiene pendiente
+  gestionarCamLados = (res.pendIng > 0 && res.pendSal > 0) ? 'ambos' : res.pendIng > 0 ? 'ingreso' : 'salida';
 
   document.getElementById('gestionar-cam-meta').innerHTML =
     '<span>📋 Consec: '+escHtml(r.Consecutivo||'—')+'</span>' +
     '<span>👤 '+escHtml(r.Cliente||'—')+'</span>' +
     '<span>'+escHtml(getSiglaCam(r.Empresa))+'</span>';
 
-  document.getElementById('gestionar-cam-remision-ingreso').value = r.Remision_Ingreso || '';
-  document.getElementById('gestionar-cam-bodega-ingreso').value = r.Bodega_Ingreso || 'Productos Buenos';
-  document.getElementById('gestionar-cam-fecha-ingreso').value = r.Fecha_Ingreso ? toDateInput(r.Fecha_Ingreso) : today();
-  document.getElementById('gestionar-cam-remision-salida').value = r.Remision_Salida || '';
-  document.getElementById('gestionar-cam-bodega-salida').value = r.Bodega_Salida || 'Productos Buenos';
-  document.getElementById('gestionar-cam-fecha-salida').value = r.Fecha_Salida ? toDateInput(r.Fecha_Salida) : today();
-  var _elGCRI = document.getElementById('gestionar-cam-remision-ingreso');
-  _elGCRI.readOnly = true; _elGCRI.style.background = '#f0f4f8'; _elGCRI.placeholder = '(Auto al guardar)';
-  var _chkGCRI = document.getElementById('gestionar-cam-remision-ingreso-auto'); if (_chkGCRI) _chkGCRI.checked = true;
-  var _elGCRS = document.getElementById('gestionar-cam-remision-salida');
-  _elGCRS.readOnly = true; _elGCRS.style.background = '#f0f4f8'; _elGCRS.placeholder = '(Auto al guardar)';
-  var _chkGCRS = document.getElementById('gestionar-cam-remision-salida-auto'); if (_chkGCRS) _chkGCRS.checked = true;
+  // Cada pasada es una remisión nueva: no se rellenan los datos de la anterior
+  ['ingreso', 'salida'].forEach(function(lado) {
+    var elRem = document.getElementById('gestionar-cam-remision-' + lado);
+    elRem.value = ''; elRem.readOnly = true; elRem.style.background = '#f0f4f8'; elRem.placeholder = '(Auto al guardar)';
+    var chk = document.getElementById('gestionar-cam-remision-' + lado + '-auto'); if (chk) chk.checked = true;
+    document.getElementById('gestionar-cam-bodega-' + lado).value = 'Productos Buenos';
+    document.getElementById('gestionar-cam-fecha-' + lado).value = today();
+  });
   document.getElementById('btn-gestionar-cam').disabled = false;
-  document.getElementById('btn-gestionar-cam').textContent = '✓ Cerrar cambio y enviar';
   document.getElementById('gestionar-cam-obs-cierre').value = '';
-  // "Cerrar sin recibir producto" solo aplica si el ingreso aún no se registró
-  var _btnSinRecep = document.getElementById('gestionar-cam-btn-sinrecep');
-  if (_btnSinRecep) _btnSinRecep.style.display = gestionarCamYaIngreso ? 'none' : '';
 
-  var entregaLines = lines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
-  var section = document.getElementById('gestionar-cam-lineas-section');
-  if (entregaLines.length && typeof createAsignacionEngine === 'function') {
-    gestionarCamWorkingLines = entregaLines.map(function(l) {
-      return {
-        Producto: l.Producto || '',
-        Presentacion: l.Presentacion || '',
-        Cantidad: Number(l.Cantidad) || 0,
-        Cant_Entregada: Number(l.Cant_Entregada) || 0,
-        _asignaciones: [],
-        __row: l.__row || l.id
-      };
+  // Motor de asignación de inventario: solo si hay líneas ENTREGAR (lo que sale es distinto de lo que entra)
+  if (res.te && gestionarCamSalLines.length && typeof createAsignacionEngine === 'function') {
+    // Cant_Entregada del motor = lo ya entregado en pasadas anteriores (tope de lo asignable)
+    gestionarCamWorkingLines = gestionarCamSalLines.map(function(s) {
+      return { Producto: s.Producto, Presentacion: '', Cantidad: s.Cantidad, Cant_Entregada: s.hecha, _asignaciones: [], __row: s.id };
     });
     camAsig = createAsignacionEngine({
       getLines: function() { return gestionarCamWorkingLines; },
@@ -940,56 +976,125 @@ async function openGestionarCam(key) {
       prefix: 'cam'
     });
     await camAsig.loadSnapshot();
-
-    var tblHTML = '<div style="margin-top:12px">' +
-      '<h4 style="margin:0 0 8px;font-size:0.85rem;color:#2d3748">Productos a entregar — Asignación de inventario</h4>' +
-      '<div style="overflow-x:auto"><table class="detail-table" style="width:100%;font-size:0.78rem"><thead><tr>' +
-      '<th style="text-align:left">Producto</th>' +
-      '<th style="text-align:left">Presentación</th>' +
-      '<th style="text-align:center;width:60px">Cantidad</th>' +
-      '<th style="text-align:center;width:70px">Entregada</th>' +
-      '<th style="text-align:left;min-width:220px">Asignar entrega</th>' +
-      '</tr></thead><tbody>';
-    for (var i = 0; i < gestionarCamWorkingLines.length; i++) {
-      var wl = gestionarCamWorkingLines[i];
-      tblHTML += '<tr>' +
-        '<td>' + escHtml(wl.Producto || '') + '</td>' +
-        '<td>' + escHtml(wl.Presentacion || '') + '</td>' +
-        '<td style="text-align:center">' + escHtml(wl.Cantidad) + '</td>' +
-        '<td style="text-align:center">' + escHtml(wl.Cant_Entregada) + '</td>' +
-        '<td class="cam-asig-td" data-i="' + i + '">' + camAsig.renderCell(i, wl) + '</td>' +
-        '</tr>';
-    }
-    tblHTML += '</tbody></table></div></div>';
-    section.innerHTML = tblHTML;
-    section.style.display = '';
   } else {
-    section.innerHTML = '';
-    section.style.display = 'none';
     gestionarCamWorkingLines = [];
     camAsig = null;
   }
 
+  _renderGestionarCamTablas();
   _applyGestionarCamLados();
   document.getElementById('gestionar-cam-overlay').classList.add('show');
 }
 
-// Selector "¿Qué vas a registrar?" — ingreso y salida / solo ingreso / solo salida
+// Tabla de un lado: lo solicitado, lo ya tramitado, lo pendiente y la cantidad de ESTA pasada.
+function _gcTablaHtml(lado, lines, conMotor) {
+  var esIng = lado === 'ingreso';
+  var titulo = esIng ? 'Productos que ingresan — cantidad recibida en este trámite' : 'Productos a entregar — cantidad entregada en este trámite';
+  var color = esIng ? '#e65100' : '#2e7d32';
+  var h = '<div style="margin-top:12px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 8px;flex-wrap:wrap">' +
+      '<h4 style="margin:0;font-size:0.85rem;color:#2d3748">' + titulo + '</h4>' +
+      '<span style="font-size:0.74rem"><a href="#" onclick="setGestionarCamCants(\'' + lado + '\',\'todo\');return false" style="color:' + color + ';font-weight:700">Todo lo pendiente</a>' +
+      ' · <a href="#" onclick="setGestionarCamCants(\'' + lado + '\',\'nada\');return false" style="color:#718096;font-weight:700">Ninguna</a></span>' +
+    '</div>' +
+    '<div style="overflow-x:auto"><table class="detail-table" style="width:100%;font-size:0.78rem"><thead><tr>' +
+    '<th style="text-align:left">Producto</th>' +
+    '<th style="text-align:left">Lote / Venc.</th>' +
+    '<th style="text-align:center;width:62px">Solicitada</th>' +
+    '<th style="text-align:center;width:62px">' + (esIng ? 'Ya ingresada' : 'Ya entregada') + '</th>' +
+    '<th style="text-align:center;width:62px">Pendiente</th>' +
+    '<th style="text-align:center;width:92px">' + (esIng ? 'Ingresa ahora' : 'Entrega ahora') + '</th>' +
+    (conMotor ? '<th style="text-align:left;min-width:220px">Asignar entrega</th>' : '') +
+    '</tr></thead><tbody>';
+  lines.forEach(function(s, i) {
+    var celdaCant = s.pend > 0
+      ? '<input class="ef gc-cant" data-lado="' + lado + '" data-i="' + i + '" type="number" min="0" max="' + s.pend + '" step="1" value="' + s.pend + '" oninput="onGestionarCamCant(this)" style="width:72px;text-align:right">'
+      : '<span style="color:#27ae60;font-weight:700">✓ completa</span>';
+    h += '<tr>' +
+      '<td>' + escHtml(s.Producto) + '</td>' +
+      '<td>' + escHtml(s.Lote || '—') + '</td>' +
+      '<td style="text-align:center">' + s.Cantidad + '</td>' +
+      '<td style="text-align:center">' + s.hecha + '</td>' +
+      '<td style="text-align:center;font-weight:700;color:' + (s.pend > 0 ? '#e67e22' : '#27ae60') + '">' + s.pend + '</td>' +
+      '<td style="text-align:center">' + celdaCant + '</td>' +
+      (conMotor ? '<td class="cam-asig-td" data-i="' + i + '">' + camAsig.renderCell(i, gestionarCamWorkingLines[i]) + '</td>' : '') +
+      '</tr>';
+  });
+  return h + '</tbody></table></div></div>';
+}
+
+function _renderGestionarCamTablas() {
+  var secIng = document.getElementById('gestionar-cam-ing-section');
+  var secSal = document.getElementById('gestionar-cam-lineas-section');
+  secIng.innerHTML = gestionarCamIngLines.length ? _gcTablaHtml('ingreso', gestionarCamIngLines, false) : '';
+  secSal.innerHTML = gestionarCamSalLines.length ? _gcTablaHtml('salida', gestionarCamSalLines, !!camAsig) : '';
+}
+
+// Cantidades de esta pasada por línea (ya acotadas a [0, pendiente], enteras)
+function _gcCants(lado) {
+  var arr = lado === 'ingreso' ? gestionarCamIngLines : gestionarCamSalLines;
+  return arr.map(function(s, i) {
+    var inp = document.querySelector('.gc-cant[data-lado="' + lado + '"][data-i="' + i + '"]');
+    var v = inp ? Math.floor(Number(inp.value) || 0) : 0;
+    return Math.max(0, Math.min(v, s.pend));
+  });
+}
+function _gcSuma(arr) { return arr.reduce(function(s, v) { return s + v; }, 0); }
+
+function onGestionarCamCant(inp) {
+  var arr = inp.dataset.lado === 'ingreso' ? gestionarCamIngLines : gestionarCamSalLines;
+  var s = arr[Number(inp.dataset.i)];
+  if (!s || inp.value === '') { _applyGestionarCamLados(); return; }
+  var v = Number(inp.value);
+  if (isNaN(v) || v < 0) inp.value = 0;
+  else if (v > s.pend) inp.value = s.pend;
+  else if (v !== Math.floor(v)) inp.value = Math.floor(v);
+  _applyGestionarCamLados();
+}
+
+function setGestionarCamCants(lado, modo) {
+  var arr = lado === 'ingreso' ? gestionarCamIngLines : gestionarCamSalLines;
+  document.querySelectorAll('.gc-cant[data-lado="' + lado + '"]').forEach(function(inp) {
+    var s = arr[Number(inp.dataset.i)];
+    inp.value = modo === 'todo' && s ? s.pend : 0;
+  });
+  _applyGestionarCamLados();
+}
+
+// Selector «¿Qué vas a registrar?»
 function setGestionarCamLados(lados) {
   gestionarCamLados = lados;
   _applyGestionarCamLados();
 }
 
 function _applyGestionarCamLados() {
+  var res = gestionarCamResumen;
+  if (!res) return;
   var lados = gestionarCamLados;
   var sinRecep = lados === 'sinrecepcion';
+  var faltante = lados === 'faltante';
+  var cierre = sinRecep || faltante;
   var doIng = lados === 'ambos' || lados === 'ingreso';
   var doSal = lados === 'ambos' || lados === 'salida';
 
+  // Botones del selector: solo los que aplican a lo que queda pendiente
+  var disponibles = {
+    ambos: res.pendIng > 0 && res.pendSal > 0,
+    ingreso: res.pendIng > 0,
+    salida: res.pendSal > 0,
+    faltante: res.hayIng || res.haySal,      // hay algo ya tramitado y algo pendiente (siempre lo hay aquí)
+    sinrecepcion: !res.hayIng                // «sin recibir» solo si no ha entrado nada
+  };
   var selector = document.getElementById('gestionar-cam-lados-selector');
   if (selector) {
     selector.querySelectorAll('.gc-lado-btn').forEach(function(b) {
+      var ok = !!disponibles[b.dataset.lado];
       b.classList.toggle('active', b.dataset.lado === lados);
+      if (b.dataset.lado === 'ambos' || b.dataset.lado === 'ingreso' || b.dataset.lado === 'salida') {
+        b.disabled = !ok;
+      } else {
+        b.style.display = ok ? '' : 'none';
+      }
     });
   }
 
@@ -997,44 +1102,68 @@ function _applyGestionarCamLados() {
   var bs = document.getElementById('gestionar-cam-bloque-salida');
   if (bi) bi.style.display = doIng ? '' : 'none';
   if (bs) bs.style.display = doSal ? '' : 'none';
-  var bsr = document.getElementById('gestionar-cam-bloque-sinrecep');
-  if (bsr) bsr.style.display = sinRecep ? '' : 'none';
+  var secIng = document.getElementById('gestionar-cam-ing-section');
+  var secSal = document.getElementById('gestionar-cam-lineas-section');
+  if (secIng) secIng.style.display = doIng ? '' : 'none';
+  if (secSal) secSal.style.display = doSal ? '' : 'none';
 
-  // La asignación de inventario solo aplica si la salida está en alcance y aún no se registró
-  var section = document.getElementById('gestionar-cam-lineas-section');
-  if (section) section.style.display = (doSal && camAsig && !gestionarCamYaSalida) ? '' : 'none';
+  var bsr = document.getElementById('gestionar-cam-bloque-sinrecep');
+  if (bsr) {
+    bsr.style.display = cierre ? '' : 'none';
+    var tit = document.getElementById('gestionar-cam-cierre-titulo');
+    var desc = document.getElementById('gestionar-cam-cierre-desc');
+    var obs = document.getElementById('gestionar-cam-obs-cierre');
+    var lbl = document.getElementById('gestionar-cam-obs-label');
+    if (faltante) {
+      if (tit) tit.textContent = '⚠️ Cerrar con faltante';
+      if (desc) desc.innerHTML = 'El cambio se cierra dejando sin tramitar lo que falta (ingreso: <strong>' + res.pendIng + '</strong> uds. · salida: <strong>' + res.pendSal + '</strong> uds.). Esas cantidades no mueven inventario; lo ya registrado se respeta. Queda en Tramitadas como <strong>Cerrado con faltante</strong> y ya no se puede reabrir.';
+      if (lbl) lbl.textContent = 'justifica por qué no se recibirá / entregará el resto';
+      if (obs) obs.placeholder = 'Ej.: El cliente solo devolvió 6 de las 10 unidades y acordamos no reponer el resto.';
+    } else {
+      if (tit) tit.textContent = '🚫 Cerrar sin recibir el producto';
+      if (desc) desc.innerHTML = 'El cambio se cierra sin remisión de ingreso y sin mover inventario. Queda en Tramitadas como <strong>Cerrado sin recepción</strong> y ya no se puede reabrir.';
+      if (lbl) lbl.textContent = 'justifica por qué se cierra sin haber recibido el producto';
+      if (obs) obs.placeholder = 'Ej.: El cliente no devolvió el producto en el plazo acordado; se confirmó por WhatsApp el 02/10.';
+    }
+  }
 
   // Estado resultante tras guardar
-  var finalIng = gestionarCamYaIngreso || doIng;
-  var finalSal = gestionarCamYaSalida || doSal;
-  var cerrado = sinRecep || (finalIng && finalSal);
+  var cIng = doIng ? _gcSuma(_gcCants('ingreso')) : 0;
+  var cSal = doSal ? _gcSuma(_gcCants('salida')) : 0;
+  var restIng = res.pendIng - cIng;
+  var restSal = res.pendSal - cSal;
+  var cerrado = cierre || (restIng <= 0 && restSal <= 0);
   var hint = document.getElementById('gestionar-cam-estado-hint');
   if (hint) {
-    hint.textContent = sinRecep ? 'Cerrado (sin recepción)' : cerrado ? 'Cerrado' : 'Parcial';
-    hint.style.color = sinRecep ? '#d35400' : cerrado ? '#27ae60' : '#e67e22';
+    hint.textContent = sinRecep ? 'Cerrado (sin recepción)' : faltante ? 'Cerrado (con faltante)' : cerrado ? 'Cerrado' : 'Parcial';
+    hint.style.color = cierre ? '#d35400' : cerrado ? '#27ae60' : '#e67e22';
   }
   var btn = document.getElementById('btn-gestionar-cam');
   if (btn) {
-    btn.style.background = sinRecep ? '#d35400' : '#27ae60';
-    if (!btn.disabled) btn.textContent = sinRecep ? '🚫 Cerrar sin recibir producto' : cerrado ? '✓ Cerrar cambio y enviar' : '✓ Registrar y enviar';
+    btn.style.background = cierre ? '#d35400' : '#27ae60';
+    if (!btn.disabled) btn.textContent = sinRecep ? '🚫 Cerrar sin recibir producto' : faltante ? '⚠️ Cerrar con faltante' : cerrado ? '✓ Cerrar cambio y enviar' : '✓ Registrar trámite y enviar';
   }
 
+  // Lo ya registrado y lo que quedaría pendiente
   var aviso = document.getElementById('gestionar-cam-parcial-aviso');
   if (aviso) {
+    var totIng = gestionarCamIngLines.reduce(function(s, l) { return s + l.Cantidad; }, 0);
+    var totSal = gestionarCamSalLines.reduce(function(s, l) { return s + l.Cantidad; }, 0);
     var msgs = [];
-    if (gestionarCamYaIngreso) msgs.push('El ingreso ya está registrado.');
-    if (gestionarCamYaSalida) msgs.push('La salida ya está registrada.');
-    if (sinRecep) {
-      aviso.textContent = gestionarCamYaSalida
-        ? 'La salida ya registrada se respeta tal cual; solo se cierra el cambio sin ingreso.'
-        : 'No se registrará ningún movimiento de inventario (ni ingreso ni salida).';
-      aviso.style.display = '';
-    } else if (msgs.length) {
-      aviso.textContent = msgs.join(' ') + ' Solo se guardará el lado seleccionado arriba.';
-      aviso.style.display = '';
-    } else {
-      aviso.style.display = 'none';
+    if (res.hayIng || res.haySal) {
+      msgs.push('Ya registrado — ingreso: ' + (totIng - res.pendIng) + ' de ' + totIng + ' uds. · salida: ' + (totSal - res.pendSal) + ' de ' + totSal + ' uds.');
     }
+    if (sinRecep) {
+      msgs.push(res.haySal
+        ? 'La salida ya registrada se respeta tal cual; solo se cierra el cambio sin ingreso.'
+        : 'No se registrará ningún movimiento de inventario (ni ingreso ni salida).');
+    } else if (!faltante) {
+      if (restIng > 0 || restSal > 0) {
+        msgs.push('Después de este trámite quedará pendiente — ingreso: ' + restIng + ' uds. · salida: ' + restSal + ' uds. (se tramita luego con otra remisión).');
+      }
+    }
+    aviso.textContent = msgs.join(' ');
+    aviso.style.display = msgs.length ? '' : 'none';
   }
 }
 
@@ -1045,26 +1174,78 @@ function closeGestionarCam() {
   gestionarCamEmpresa = '';
   camAsig = null;
   gestionarCamLados = 'ambos';
-  gestionarCamYaIngreso = false;
-  gestionarCamYaSalida = false;
+  gestionarCamResumen = null;
+  gestionarCamIngLines = [];
+  gestionarCamSalLines = [];
   var obsCierre = document.getElementById('gestionar-cam-obs-cierre');
   if (obsCierre) obsCierre.value = '';
-  var section = document.getElementById('gestionar-cam-lineas-section');
-  if (section) { section.innerHTML = ''; section.style.display = 'none'; }
+  var secSal = document.getElementById('gestionar-cam-lineas-section');
+  if (secSal) { secSal.innerHTML = ''; secSal.style.display = 'none'; }
+  var secIng = document.getElementById('gestionar-cam-ing-section');
+  if (secIng) { secIng.innerHTML = ''; secIng.style.display = 'none'; }
 }
 document.getElementById('gestionar-cam-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeGestionarCam(); });
 
+// Lo que realmente se registra en esta pasada. Con «Ingreso y salida», un lado sin ninguna cantidad
+// simplemente no se registra (no genera remisión): p. ej. se entrega hoy pero aún no ha llegado lo devuelto.
+function _gcLadosEfectivos() {
+  var lados = gestionarCamLados;
+  if (lados !== 'ambos') return lados;
+  var hayIng = _gcSuma(_gcCants('ingreso')) > 0;
+  var haySal = _gcSuma(_gcCants('salida')) > 0;
+  return (hayIng && !haySal) ? 'ingreso' : (!hayIng && haySal) ? 'salida' : 'ambos';
+}
+
+// Revisa la pasada antes de enviarla; muestra el aviso y devuelve false si algo no cuadra.
+function _gcValidarTramite() {
+  var lados = _gcLadosEfectivos();
+  var doIng = lados === 'ambos' || lados === 'ingreso';
+  var doSal = lados === 'ambos' || lados === 'salida';
+  if (!gestionarCamIds || !gestionarCamIds.length) return false;
+  if (gestionarCamLados === 'ambos' && _gcSuma(_gcCants('ingreso')) + _gcSuma(_gcCants('salida')) <= 0) {
+    showToast('Indica al menos una cantidad recibida o entregada en este trámite', '#e74c3c'); return false;
+  }
+  if (doIng) {
+    if (!document.getElementById('gestionar-cam-fecha-ingreso').value) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return false; }
+    if (_gcSuma(_gcCants('ingreso')) <= 0) { showToast('Indica al menos una cantidad recibida (o elige «Solo salida»)', '#e74c3c'); return false; }
+  }
+  if (doSal) {
+    if (!document.getElementById('gestionar-cam-fecha-salida').value) { showToast('Selecciona la fecha de salida', '#e74c3c'); return false; }
+    var cants = _gcCants('salida');
+    if (_gcSuma(cants) <= 0) { showToast('Indica al menos una cantidad entregada (o elige «Solo ingreso»)', '#e74c3c'); return false; }
+    // Lo asignado a una línea (de este stock o por solicitud de compra) no puede superar lo que se entrega ahora
+    if (camAsig) {
+      var asig = camAsig.splitAsignaciones();
+      var tot = {};
+      asig.entregas.concat(asig.solicitudesCompra).forEach(function(a) { tot[a._idx] = (tot[a._idx] || 0) + a.cantidad; });
+      for (var i = 0; i < cants.length; i++) {
+        if ((tot[i] || 0) > cants[i]) {
+          showToast('«' + gestionarCamSalLines[i].Producto + '»: asignaste ' + tot[i] + ' uds. pero entregas ' + cants[i] + ' en este trámite. Ajusta la cantidad o quita asignaciones.', '#e74c3c');
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 var _pendingContabCam = null;
 async function gestionarYEnviarCam() {
-  if (gestionarCamLados === 'sinrecepcion') {
+  var lados = gestionarCamLados;
+  if (lados === 'sinrecepcion' || lados === 'faltante') {
     // Sin remisiones no hay PDF que enviar a contabilidad: se valida y se guarda directo
     var obs = (document.getElementById('gestionar-cam-obs-cierre').value || '').trim();
-    if (obs.length < 10) { showToast('Escribe la observación que justifica cerrar sin recibir el producto (mínimo 10 caracteres)', '#e74c3c'); return; }
-    if (!window.confirm('¿Cerrar este cambio SIN haber recibido el producto?\n\nQuedará en Tramitadas y no se podrá reabrir.')) return;
+    var res = gestionarCamResumen || { pendIng: 0, pendSal: 0 };
+    if (obs.length < 10) { showToast('Escribe la observación que justifica ' + (lados === 'faltante' ? 'cerrar con faltante' : 'cerrar sin recibir el producto') + ' (mínimo 10 caracteres)', '#e74c3c'); return; }
+    var pregunta = lados === 'faltante'
+      ? '¿Cerrar este cambio CON FALTANTE?\n\nLo pendiente (ingreso: ' + res.pendIng + ' uds. · salida: ' + res.pendSal + ' uds.) no se tramitará y el cambio no se podrá reabrir.'
+      : '¿Cerrar este cambio SIN haber recibido el producto?\n\nQuedará en Tramitadas y no se podrá reabrir.';
+    if (!window.confirm(pregunta)) return;
     _pendingContabCam = null;
     await saveGestionarCam();
     return;
   }
+  if (!_gcValidarTramite()) return;
   if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
     var r = await NOTIF.confirmarEnvioContabilidad(gestionarCamEmpresa, 'cambios');
     if (!r.confirmed) return;
@@ -1074,37 +1255,35 @@ async function gestionarYEnviarCam() {
 }
 
 async function saveGestionarCam() {
-  var lados = gestionarCamLados;
+  var lados = _gcLadosEfectivos();
+  var cierre = lados === 'sinrecepcion' || lados === 'faltante';
   var doIng = lados === 'ambos' || lados === 'ingreso';
   var doSal = lados === 'ambos' || lados === 'salida';
-
-  var remIngreso = document.getElementById('gestionar-cam-remision-ingreso').value.trim();
-  var bodegaIngreso = document.getElementById('gestionar-cam-bodega-ingreso').value;
-  var fechaIngreso = document.getElementById('gestionar-cam-fecha-ingreso').value;
-  var remSalida = document.getElementById('gestionar-cam-remision-salida').value.trim();
-  var bodegaSalida = document.getElementById('gestionar-cam-bodega-salida').value;
-  var fechaSalida = document.getElementById('gestionar-cam-fecha-salida').value;
-  if (doIng && !fechaIngreso) { showToast('Selecciona la fecha de ingreso', '#e74c3c'); return; }
-  if (doSal && !fechaSalida) { showToast('Selecciona la fecha de salida', '#e74c3c'); return; }
   if (!gestionarCamIds || !gestionarCamIds.length) return;
 
-  var entregas = [];
-  var solicitudesCompra = [];
-  var usarAsig = doSal && camAsig && !gestionarCamYaSalida;
-  if (usarAsig) {
-    var split = camAsig.splitAsignaciones();
-    entregas = split.entregas;
-    solicitudesCompra = split.solicitudesCompra;
-  }
+  var fechaIngreso = document.getElementById('gestionar-cam-fecha-ingreso').value;
+  var fechaSalida = document.getElementById('gestionar-cam-fecha-salida').value;
+  var bodegaIngreso = document.getElementById('gestionar-cam-bodega-ingreso').value;
+  var bodegaSalida = document.getElementById('gestionar-cam-bodega-salida').value;
 
-  var entregasUpdate = {};
-  if (entregas.length) {
-    entregas.forEach(function(e) {
-      var wl = gestionarCamWorkingLines[e._idx];
-      if (!wl) return;
-      var rowId = wl.__row;
-      if (!entregasUpdate[rowId]) entregasUpdate[rowId] = { cantDirecta: 0 };
-      entregasUpdate[rowId].cantDirecta += e.cantidad;
+  // Líneas de esta pasada (solo las que tienen cantidad)
+  var lineasIng = [], lineasSal = [];
+  var solicitudesCompra = [];
+  var entregasDirectas = 0;
+  if (doIng) {
+    var cIng = _gcCants('ingreso');
+    gestionarCamIngLines.forEach(function(s, i) { if (cIng[i] > 0) lineasIng.push({ id: s.id, cant: cIng[i], _s: s }); });
+  }
+  if (doSal) {
+    var cSal = _gcCants('salida');
+    var directaPorIdx = {};
+    if (camAsig) {
+      var split = camAsig.splitAsignaciones();
+      solicitudesCompra = split.solicitudesCompra;
+      split.entregas.forEach(function(e) { directaPorIdx[e._idx] = (directaPorIdx[e._idx] || 0) + e.cantidad; entregasDirectas++; });
+    }
+    gestionarCamSalLines.forEach(function(s, i) {
+      if (cSal[i] > 0) lineasSal.push({ id: s.id, cant: cSal[i], directa: Math.min(directaPorIdx[i] || 0, cSal[i]), _s: s });
     });
   }
 
@@ -1114,52 +1293,53 @@ async function saveGestionarCam() {
 
   try {
     var result = await apiPost({
-      action: 'gestionarCambio',
+      action: 'tramitarCambio',
       Empresa: gestionarCamEmpresa,
       lados: lados,
-      Observacion_Cierre: lados === 'sinrecepcion' ? document.getElementById('gestionar-cam-obs-cierre').value.trim() : '',
-      Remision_Ingreso: remIngreso,
-      Bodega_Ingreso: bodegaIngreso,
-      Fecha_Ingreso: fechaIngreso,
-      Remision_Salida: remSalida,
-      Bodega_Salida: bodegaSalida,
-      Fecha_Salida: fechaSalida,
       ids: gestionarCamIds,
-      entregasUpdate: entregasUpdate
+      Observacion: cierre ? document.getElementById('gestionar-cam-obs-cierre').value.trim() : '',
+      ingreso: doIng ? {
+        Remision: document.getElementById('gestionar-cam-remision-ingreso').value.trim(),
+        Bodega: bodegaIngreso, Fecha: fechaIngreso,
+        lineas: lineasIng.map(function(l) { return { id: l.id, cant: l.cant }; })
+      } : null,
+      salida: doSal ? {
+        Remision: document.getElementById('gestionar-cam-remision-salida').value.trim(),
+        Bodega: bodegaSalida, Fecha: fechaSalida,
+        lineas: lineasSal.map(function(l) { return { id: l.id, cant: l.cant, directa: l.directa }; })
+      } : null
     });
     if (!result.ok) throw new Error(result.error || 'Error al gestionar');
 
     if (solicitudesCompra.length && camAsig) {
       var consec = '';
-      var camLines = cambios.filter(function(r) {
+      var camLines0 = cambios.filter(function(r) {
         return gestionarCamIds.indexOf(r.__row || r.id) >= 0;
       });
-      if (camLines.length) consec = camLines[0].Consecutivo || '';
+      if (camLines0.length) consec = camLines0[0].Consecutivo || '';
       await camAsig.persistirOCSolicitudes(solicitudesCompra, {
         fecha: fechaSalida,
         refLabel: getSiglaCam(gestionarCamEmpresa) + ' Cambio #' + consec
       });
     }
 
-    var _finalRemIngC = doIng ? (result.remision_ingreso || remIngreso) : '';
-    var _finalRemSalC = doSal ? (result.remision_salida || remSalida) : '';
+    // Remisiones PDF de ESTA pasada (con sus cantidades) a contabilidad
+    var _finalRemIngC = doIng ? (result.remision_ingreso || '') : '';
+    var _finalRemSalC = doSal ? (result.remision_salida || '') : '';
     if (_pendingContabCam && _pendingContabCam.contabIds && _pendingContabCam.contabIds.length && (_finalRemIngC || _finalRemSalC) && typeof NOTIF !== 'undefined') {
       try {
         var camLines = cambios.filter(function(r) { return gestionarCamIds.indexOf(r.__row || r.id) >= 0; });
         var head = camLines.length ? camLines[0] : {};
-        var cambiarLines = camLines.filter(function(l) { return l.Tipo_Linea === 'CAMBIAR'; });
-        var entregarLines = camLines.filter(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+        var _eItems = function(arr) {
+          return arr.map(function(l) { return { producto: l._s.Producto || '', presentacion: l._s.Lote || '', cantidad: l.cant, valor_unitario: 0, valor_total: 0, bonificado: 'No' }; }).filter(function(p) { return p.cantidad > 0; });
+        };
         var jsPDFDoc = null;
         if (_finalRemIngC) {
-          var srcIng = cambiarLines.length ? cambiarLines : camLines;
-          var _eIng = srcIng.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0 || p.producto; });
-          var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',head.Estado||'Pendiente']], entregas:_eIng, qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
+          var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']], entregas:_eItems(lineasIng), qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
           if (rI) jsPDFDoc = rI.doc;
         }
         if (_finalRemSalC) {
-          var srcSal = entregarLines.length ? entregarLines : cambiarLines;
-          var _eSal = srcSal.map(function(l) { return { producto:l.Producto||'', presentacion:l.Lote_Vencimiento||'', cantidad:Number(l.Cantidad)||0, valor_unitario:0, valor_total:0, bonificado:'No' }; }).filter(function(p) { return p.cantidad>0 || p.producto; });
-          var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',head.Estado||'Pendiente']], entregas:_eSal, qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
+          var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']], entregas:_eItems(lineasSal), qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
           if (jsPDFDoc) optsS._doc = jsPDFDoc;
           var rS = generarRemisionPDF(optsS);
           if (rS) jsPDFDoc = rS.doc;
@@ -1180,10 +1360,14 @@ async function saveGestionarCam() {
     _pendingContabCam = null;
     var _estadoFinal = result.estado || 'Cerrado';
     closeGestionarCam();
-    var toastParts = [result.sin_recepcion ? '✅ Cambio cerrado sin recepción' : _estadoFinal === 'Cerrado' ? '✅ Cambio cerrado' : '✅ Cambio registrado (Parcial)'];
+    var toastParts = [result.sin_recepcion ? '✅ Cambio cerrado sin recepción'
+      : result.con_faltante ? '✅ Cambio cerrado con faltante'
+      : _estadoFinal === 'Cerrado' ? '✅ Cambio cerrado'
+      : '✅ Trámite registrado (Parcial)'];
     if (result.remision_ingreso) toastParts.push('RE: ' + result.remision_ingreso);
     if (result.remision_salida) toastParts.push('RS: ' + result.remision_salida);
-    if (entregas.length) toastParts.push(entregas.length + ' entrega(s) directa(s)');
+    if (_estadoFinal === 'Parcial') toastParts.push('Pendiente — ingreso: ' + result.pend_ing + ' · salida: ' + result.pend_sal);
+    if (entregasDirectas) toastParts.push(entregasDirectas + ' entrega(s) directa(s)');
     if (solicitudesCompra.length) toastParts.push(solicitudesCompra.length + ' solicitud(es) de compra');
     showToast(toastParts.join(' · '));
     await loadCambios();
@@ -1473,31 +1657,35 @@ function exportarCamRemisionPDF(tipo, opts) {
   if (!ctx) return;
   var head = ctx.head;
   var esIngreso = tipo === 'ingreso';
-  var remision = esIngreso ? (head.Remision_Ingreso || '') : (head.Remision_Salida || '');
-  var bodega = esIngreso ? (head.Bodega_Ingreso || '') : (head.Bodega_Salida || '');
-  var fechaRem = esIngreso ? (head.Fecha_Ingreso || '') : (head.Fecha_Salida || '');
-  if (!remision) {
+
+  // Un cambio tramitado por partes tiene una remisión por cada pasada: opts.rem elige cuál; cada una
+  // lleva solo los productos y cantidades de su pasada.
+  //   Ingreso = producto que devuelve el cliente (CAMBIAR)
+  //   Salida  = producto nuevo para el cliente (ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
+  var resCam = camResumenGrupo(ctx.lines);
+  var remisiones = (esIngreso ? resCam.ingresos : resCam.salidas).filter(function(g) { return !opts.rem || g.rem === opts.rem; });
+  if (!remisiones.length) {
     showToast('Este cambio no tiene remisión de ' + tipo + ' registrada.', '#e67e22');
     return;
   }
-
-  // Ingreso = producto que devuelve el cliente (CAMBIAR)
-  // Salida  = producto nuevo para el cliente (ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
-  var srcLines = esIngreso ? ctx.cambiar : (ctx.entregar.length ? ctx.entregar : ctx.cambiar);
-  if (!srcLines.length) {
-    showToast('No hay productos para incluir en la remisión.', '#e67e22');
-    return;
-  }
-  var entregas = srcLines.map(function(l) {
+  var gRem = remisiones[remisiones.length - 1];
+  var remision = gRem.rem;
+  var bodega = gRem.bodega || '';
+  var fechaRem = gRem.fecha || '';
+  var entregas = gRem.items.map(function(it) {
     return {
-      producto: l.Producto || '',
-      presentacion: l.Lote_Vencimiento || '',
-      cantidad: Number(l.Cantidad) || 0,
+      producto: it.producto || '',
+      presentacion: it.lote || '',
+      cantidad: Number(it.cant) || 0,
       valor_unitario: 0,
       valor_total: 0,
       bonificado: 'No'
     };
   }).filter(function(p) { return (p.cantidad || 0) > 0 || p.producto; });
+  if (!entregas.length) {
+    showToast('No hay productos para incluir en la remisión.', '#e67e22');
+    return;
+  }
 
   var left = [
     ['Cliente', head.Cliente || ''],

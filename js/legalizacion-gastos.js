@@ -216,7 +216,7 @@ async function loadClientesConRemision() {
       apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado,Cliente' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
       apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
-      apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto,Cliente' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getCambios', { columns: 'id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Movs_Ingreso,Movs_Salida,Consecutivo,Empresa,Producto,Cliente' }).catch(function() { return { ok: true, cambios: [] }; }),
       // Fuentes sin recorte por empresa/rol, solo para el Prorrateo (null si falla).
       _veTodasLasEmpresas() ? Promise.resolve(null) : LegProrrateo.cargarFuentesCompletas(_sb)
     ]);

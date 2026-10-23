@@ -98,7 +98,7 @@ async function loadKardex() {
       apiGet('getDevoluciones', { columns: 'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Consecutivo,Motivo,Empresa,Producto,Presentacion,Historico' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getKardexAjustes', { columns: 'id,Cantidad,Tipo,Fecha,Observaciones,Empresa,Producto,Presentacion' }).catch(function() { return { ok: true, ajustes: [] }; }),
       apiGet('getMaestroProductos').catch(function() { return { ok: true, productos: [] }; }),
-      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio,Historico' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getCambios', { columns: 'Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Fecha_Salida,Fecha_Ingreso,Fecha_Solicitud,Consecutivo,Cliente,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Razon_Cambio,Historico,Movs_Ingreso,Movs_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'Remision' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
       apiGet('getApartadosPedido', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; }),
       apiGet('getApartadosMuestra', { columns: 'producto,empresa_stock,cantidad,estado' }).catch(function() { return { ok: true, apartados: [] }; })
@@ -332,7 +332,8 @@ function buildMovimientos() {
   });
 
   // Cambios de Mercancía — ENTRADA + SALIDA en un solo pase.
-  // 'parcial' = solo un lado registrado; cada lado se emite igualmente según su remisión.
+  // 'parcial' = falta algo por tramitar; cada remisión registrada se emite con SU cantidad (camEventosLinea,
+  // shared.js): un cambio tramitado por partes tiene varios movimientos por línea.
   kxCambios.forEach(function(c) {
     if (c.Historico === true) return; // carga histórica: no afecta stock
     var cant = Number(c.Cantidad) || 0;
@@ -344,48 +345,25 @@ function buildMovimientos() {
     var gk = empresa + '||' + (c.Consecutivo || c.id);
     var tieneEntregar = _camTieneEntregar[gk];
 
-    if (c.Tipo_Linea === 'CAMBIAR') {
-      var bodegaIng = (c.Bodega_Ingreso || 'Productos Buenos').trim();
-      if (bodegaIng === 'Productos Buenos' || bodegaIng === 'Producto Terminado') {
-        var remIng = String(c.Remision_Ingreso || '').trim();
-        if (remIng) {
-          kxMovimientos.push({
-            fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '',
-            tipo: 'Entrada',
-            modulo: 'Cambios',
-            remision: remIng,
-            referencia: ref,
-            empresa: empresa,
-            producto: c.Producto,
-            presentacion: c.Presentacion || '',
-            cantidad: cant,
-            _ajusteId: null
-          });
-        }
-      }
-      if (tieneEntregar) return;
-    }
-
-    if ((tieneEntregar && c.Tipo_Linea === 'ENTREGAR') || (!tieneEntregar && c.Tipo_Linea === 'CAMBIAR')) {
-      var bodegaSal = (c.Bodega_Salida || 'Productos Buenos').trim();
-      if (bodegaSal === 'Productos Buenos' || bodegaSal === 'Producto Terminado') {
-        var remSal = String(c.Remision_Salida || '').trim();
-        if (remSal) {
-          kxMovimientos.push({
-            fecha: c.Fecha_Salida || c.Fecha_Solicitud || '',
-            tipo: 'Salida',
-            modulo: 'Cambios',
-            remision: remSal,
-            referencia: ref,
-            empresa: empresa,
-            producto: c.Producto,
-            presentacion: c.Presentacion || '',
-            cantidad: cant,
-            _ajusteId: null
-          });
-        }
-      }
-    }
+    [['ingreso', 'Entrada'], ['salida', 'Salida']].forEach(function(par) {
+      if (!camLadoAplica(c, par[0], tieneEntregar)) return;
+      camEventosLinea(c, par[0]).forEach(function(e) {
+        if (e.cant <= 0) return;
+        if (e.bodega !== 'Productos Buenos' && e.bodega !== 'Producto Terminado') return;
+        kxMovimientos.push({
+          fecha: e.fecha || c.Fecha_Solicitud || '',
+          tipo: par[1],
+          modulo: 'Cambios',
+          remision: e.rem,
+          referencia: ref,
+          empresa: empresa,
+          producto: c.Producto,
+          presentacion: c.Presentacion || '',
+          cantidad: e.cant,
+          _ajusteId: null
+        });
+      });
+    });
   });
 
   // Órdenes de Compra — ENTRADA destino + SALIDA origen
@@ -1876,7 +1854,8 @@ function buildNCMovimientos() {
   });
 
   // Cambios de Mercancía — CAMBIAR con Bodega_Ingreso NC = ENTRADA;
-  // ENTREGAR con Bodega_Salida NC = SALIDA
+  // ENTREGAR con Bodega_Salida NC = SALIDA. Una remisión por pasada (camEventosLinea, shared.js): un mismo
+  // cambio puede recibir parte en Buenos y parte en No Conforme.
   kxCambios.forEach(function(c) {
     if (c.Historico === true) return; // carga histórica: no afecta stock
     var estado = (c.Estado || '').toLowerCase();
@@ -1884,41 +1863,23 @@ function buildNCMovimientos() {
     var cant = Number(c.Cantidad) || 0;
     if (cant <= 0) return;
 
-    if (c.Tipo_Linea === 'CAMBIAR') {
-      var bodegaIng = (c.Bodega_Ingreso || '').trim();
-      if (bodegaIng !== 'Producto No Conforme') return;
-      var remIng = String(c.Remision_Ingreso || '').trim();
-      if (!remIng) return;
+    var lado = c.Tipo_Linea === 'CAMBIAR' ? 'ingreso' : c.Tipo_Linea === 'ENTREGAR' ? 'salida' : '';
+    if (!lado) return;
+    camEventosLinea(c, lado).forEach(function(e) {
+      if (e.cant <= 0 || e.bodega !== 'Producto No Conforme') return;
       ncMovimientos.push({
-        fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '',
-        tipo: 'Entrada',
+        fecha: e.fecha || c.Fecha_Solicitud || '',
+        tipo: lado === 'ingreso' ? 'Entrada' : 'Salida',
         motivo: 'Cambio_NC',
-        remision: remIng,
-        referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '') + (c.Razon_Cambio ? ' — ' + c.Razon_Cambio : ''),
+        remision: e.rem,
+        referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : '') + (lado === 'ingreso' && c.Razon_Cambio ? ' — ' + c.Razon_Cambio : ''),
         empresa: c.Empresa || '',
         producto: c.Producto,
         presentacion: '',
-        cantidad: cant,
+        cantidad: e.cant,
         _ajusteId: null
       });
-    } else if (c.Tipo_Linea === 'ENTREGAR') {
-      var bodegaSal = (c.Bodega_Salida || '').trim();
-      if (bodegaSal !== 'Producto No Conforme') return;
-      var remSal = String(c.Remision_Salida || '').trim();
-      if (!remSal) return;
-      ncMovimientos.push({
-        fecha: c.Fecha_Salida || c.Fecha_Solicitud || '',
-        tipo: 'Salida',
-        motivo: 'Cambio_NC',
-        remision: remSal,
-        referencia: 'Cambio ' + (c.Consecutivo || '') + (c.Cliente ? ' — ' + c.Cliente : ''),
-        empresa: c.Empresa || '',
-        producto: c.Producto,
-        presentacion: '',
-        cantidad: cant,
-        _ajusteId: null
-      });
-    }
+    });
   });
 
   // Devoluciones a Bodega No Conforme

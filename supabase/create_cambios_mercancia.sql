@@ -10,6 +10,9 @@
 --   add_remisionador_to_all_rls.sql.
 -- Columna Cant_Entregada: migrations/add_cant_entregada_to_cambios_mercancia.sql.
 -- Auditoría: audit_trail.sql + migrations/add_auditoria_nombre_transaccionales.sql.
+-- Cierre_Sin_Recepcion / Observacion_Cierre: migrations/add_cierre_sin_recepcion_cambios.sql.
+-- Trámite parcial (Movs_Ingreso, Movs_Salida, Cierre_Con_Faltante, RPC tramitar_cambio):
+--   migrations/add_tramite_parcial_cambios.sql.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public."CambiosMercancia" (

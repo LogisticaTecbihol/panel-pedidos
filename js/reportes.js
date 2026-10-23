@@ -77,7 +77,7 @@ async function loadReportes() {
       apiGet('getReenvases', { columns: 'id,Remision,Remision_Destino,Empresa,Empresa_Destino,Producto,Presentacion,Cantidad,Fecha,Bodega,Estado' }).catch(function() { return { ok: true, reenvases: [] }; }),
       apiGet('getDevoluciones', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision,Remision_Salida,Bodega_Ingreso,Bodega_Salida,Producto,Presentacion,Cantidad,Cant_Entregada,Fecha_Ingreso,Fecha_Devolucion,Fecha,Fecha_Salida' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesAnuladas', { columns: 'id,Remision,Empresa,Producto,Presentacion,Cantidad,Fecha,Observaciones' }).catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
-      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision_Salida,Bodega_Ingreso,Bodega_Salida,Observaciones,Producto,Tipo_Linea,Cantidad,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud' }).catch(function() { return { ok: true, cambios: [] }; }),
+      apiGet('getCambios', { columns: 'id,Empresa,Consecutivo,Estado,Remision_Ingreso,Remision_Salida,Bodega_Ingreso,Bodega_Salida,Observaciones,Producto,Tipo_Linea,Cantidad,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Movs_Ingreso,Movs_Salida' }).catch(function() { return { ok: true, cambios: [] }; }),
       apiGet('getKardexNC', { columns: 'id,Remision,Empresa,Tipo,Producto,Presentacion,Cantidad,Fecha,Motivo' }).catch(function() { return { ok: true, ajustesNC: [] }; }),
       apiGet('getListaPrecios').catch(function() { return { ok: true, precios: [] }; })
     ]);
@@ -1676,6 +1676,24 @@ function _buildRemisionesInner() {
     if (r.Estado !== 'Cerrado' && r.Estado !== 'Parcial') return;
     var empNombre = r.Empresa || '';
     if (fEmp && empNombre !== fEmp) return;
+    // Cambio tramitado por partes: una remisión por pasada, cada una con los productos y cantidades
+    // de ESA pasada (camEventosLinea, shared.js).
+    if (camTieneMovimientos(lines)) {
+      var teCam = camGrupoTieneEntregar(lines);
+      [['ingreso', 'Cambio Ingreso', 'Cambio (Ingreso)'], ['salida', 'Cambio Salida', 'Cambio (Salida)']].forEach(function(par) {
+        lines.forEach(function(l) {
+          if (!camLadoAplica(l, par[0], teCam)) return;
+          camEventosLinea(l, par[0]).forEach(function(e) {
+            if (e.cant <= 0) return;
+            if (fTxt && e.rem.toLowerCase().indexOf(fTxt) < 0 && getSigla(empNombre).toLowerCase().indexOf(fTxt) < 0) return;
+            _addRemision(map, empNombre + '||' + e.rem + '||' + par[2], empNombre, e.rem, par[1], 'Cambio ' + (r.Consecutivo || ''), (l.Producto || '') + ' (' + (l.Tipo_Linea || '') + ')', e.cant, e.fecha);
+            totalLineas++;
+            empresasSet[getSigla(empNombre)] = true;
+          });
+        });
+      });
+      return;
+    }
     var remIngreso = String(r.Remision_Ingreso || '').trim();
     var remSalida = String(r.Remision_Salida || '').trim();
     if (remIngreso || remSalida) {

@@ -258,6 +258,79 @@ function applyDeepLinkFilters() {
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
 }
 
+// ── Cambios de mercancía: movimientos por línea (trámite parcial) ──
+// Cada línea de CambiosMercancia trae Movs_Ingreso / Movs_Salida (jsonb): [{rem, cant, fecha, bodega}],
+// un elemento por pasada (una remisión). Las filas anteriores los tienen vacíos: su Remision_Ingreso /
+// Remision_Salida cubre TODA la Cantidad (un solo movimiento). Lo usan Kardex, existencias, reportes,
+// prorrateo y despachos. ESPEJO de _cam_cant_hecha / _kx_cam_eventos (supabase/migrations/add_tramite_parcial_cambios.sql).
+// lado: 'ingreso' | 'salida'.
+function camGrupoKey(c) { return (c.Empresa || '') + '||' + (c.Consecutivo || c.id); }
+function camGrupoTieneEntregar(lines) {
+  return (lines || []).some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
+}
+// Ingreso = líneas CAMBIAR (lo que devuelve el cliente). Salida = líneas ENTREGAR, o CAMBIAR si el grupo
+// no tiene ENTREGAR (mismo producto).
+function camLadoAplica(l, lado, tieneEntregar) {
+  if (lado === 'ingreso') return l.Tipo_Linea === 'CAMBIAR';
+  return tieneEntregar ? l.Tipo_Linea === 'ENTREGAR' : l.Tipo_Linea === 'CAMBIAR';
+}
+function _camMovsArr(v) {
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } }
+  return Array.isArray(v) ? v : [];
+}
+// Movimientos de un lado de una línea: [{rem, cant, fecha, bodega, legado}] (sin filtrar por bodega ni estado).
+function camEventosLinea(l, lado) {
+  var movs = _camMovsArr(lado === 'ingreso' ? l.Movs_Ingreso : l.Movs_Salida);
+  if (movs.length) {
+    return movs.map(function(m) {
+      return { rem: String(m.rem || '').trim(), cant: Number(m.cant) || 0, fecha: m.fecha || '',
+               bodega: String(m.bodega || '').trim() || 'Productos Buenos', legado: false };
+    }).filter(function(e) { return e.cant > 0 && e.rem; });
+  }
+  var rem = String((lado === 'ingreso' ? l.Remision_Ingreso : l.Remision_Salida) || '').trim();
+  if (!rem) return [];
+  return [{ rem: rem, cant: Number(l.Cantidad) || 0,
+            fecha: (lado === 'ingreso' ? l.Fecha_Ingreso : l.Fecha_Salida) || '',
+            bodega: String((lado === 'ingreso' ? l.Bodega_Ingreso : l.Bodega_Salida) || '').trim() || 'Productos Buenos',
+            legado: true }];
+}
+function camCantHecha(l, lado) {
+  return camEventosLinea(l, lado).reduce(function(s, e) { return s + e.cant; }, 0);
+}
+function camCantPendiente(l, lado) {
+  return Math.max(0, (Number(l.Cantidad) || 0) - camCantHecha(l, lado));
+}
+// Resumen de un cambio (todas sus líneas): lo pendiente de cada lado y las remisiones registradas, agrupadas
+// por número: { te, pendIng, pendSal, hayIng, haySal, ingresos:[{rem, fecha, bodega, total, items:[{producto, lote, cant}]}], salidas:[...] }
+function camResumenGrupo(lines) {
+  var te = camGrupoTieneEntregar(lines);
+  var res = { te: te, pendIng: 0, pendSal: 0, hayIng: false, haySal: false, ingresos: [], salidas: [] };
+  var mapas = { ingreso: {}, salida: {} };
+  (lines || []).forEach(function(l) {
+    ['ingreso', 'salida'].forEach(function(lado) {
+      if (!camLadoAplica(l, lado, te)) return;
+      var pend = camCantPendiente(l, lado);
+      if (lado === 'ingreso') res.pendIng += pend; else res.pendSal += pend;
+      camEventosLinea(l, lado).forEach(function(e) {
+        if (lado === 'ingreso') res.hayIng = true; else res.haySal = true;
+        var arr = lado === 'ingreso' ? res.ingresos : res.salidas;
+        var g = mapas[lado][e.rem];
+        if (!g) { g = mapas[lado][e.rem] = { rem: e.rem, fecha: e.fecha, bodega: e.bodega, total: 0, items: [] }; arr.push(g); }
+        g.total += e.cant;
+        g.items.push({ producto: l.Producto || '', lote: l.Lote_Vencimiento || '', cant: e.cant });
+      });
+    });
+  });
+  var porFecha = function(a, b) { return String(a.fecha || '').localeCompare(String(b.fecha || '')); };
+  res.ingresos.sort(porFecha);
+  res.salidas.sort(porFecha);
+  return res;
+}
+// ¿El cambio ya se tramitó por partes (alguna línea con movimientos propios)? Esos no se editan ni se eliminan.
+function camTieneMovimientos(lines) {
+  return (lines || []).some(function(l) { return _camMovsArr(l.Movs_Ingreso).length || _camMovsArr(l.Movs_Salida).length; });
+}
+
 // ── Capa de compatibilidad: apiGet ──
 // opts.columns: string de columnas para select (default '*')
 async function apiGet(action, opts) {
@@ -1345,8 +1418,50 @@ async function _apiPostCore(body) {
       return { ok: true, added: allLines.length };
     }
 
+    // Trámite parcial: una pasada de ingreso y/o salida con las cantidades reales de cada línea (cada
+    // lado con su propia remisión), o el cierre con faltante / sin recepción. Todo ocurre en el RPC
+    // tramitar_cambio (atómico y con las filas bloqueadas): si falla, no se escribe nada y apiPost()
+    // libera las remisiones que se alcanzaron a generar.
+    //   body: { Empresa, ids, lados: 'ambos'|'ingreso'|'salida'|'faltante'|'sinrecepcion', Observacion,
+    //           ingreso: {Remision?, Bodega, Fecha, lineas:[{id,cant}]},
+    //           salida:  {Remision?, Bodega, Fecha, lineas:[{id,cant,directa}]} }
+    if (action === 'tramitarCambio') {
+      var ladosT = body.lados || 'ambos';
+      var empT = (body.Empresa || '').trim();
+      var payloadT = { ids: body.ids || [], lados: ladosT, observacion: String(body.Observacion || '').trim() };
+      if (ladosT === 'ambos' || ladosT === 'ingreso') {
+        var ingT = body.ingreso || {};
+        var remIngT = String(ingT.Remision || '').trim();
+        if (!remIngT && empT) remIngT = await _genRem(empT, 'ENTRADA');
+        payloadT.ingreso = { rem: remIngT, bodega: ingT.Bodega || 'Productos Buenos', fecha: ingT.Fecha || '', lineas: ingT.lineas || [] };
+      }
+      if (ladosT === 'ambos' || ladosT === 'salida') {
+        var salT = body.salida || {};
+        var remSalT = String(salT.Remision || '').trim();
+        if (!remSalT && empT) remSalT = await _genRem(empT, 'SALIDA');
+        payloadT.salida = { rem: remSalT, bodega: salT.Bodega || 'Productos Buenos', fecha: salT.Fecha || '', lineas: salT.lineas || [] };
+      }
+      var resT = await _sb.rpc('tramitar_cambio', { p_payload: payloadT });
+      if (resT.error) return { ok: false, error: resT.error.message };
+      var dT = resT.data || {};
+      return {
+        ok: true, estado: dT.estado,
+        remision_ingreso: dT.remision_ingreso || '', remision_salida: dT.remision_salida || '',
+        pend_ing: dT.pend_ing || 0, pend_sal: dT.pend_sal || 0,
+        sin_recepcion: ladosT === 'sinrecepcion', con_faltante: ladosT === 'faltante'
+      };
+    }
+
     if (action === 'gestionarCambio') {
       var ids = body.ids || [];
+      // Versión anterior de «Gestionar» (una remisión por lado, cantidad completa): si el cambio ya se
+      // tramitó por partes no se debe pisar con ella (pestaña abierta con el código viejo).
+      if (ids.length) {
+        var peekMovs = await _sb.from('CambiosMercancia').select('Movs_Ingreso,Movs_Salida').in('id', ids);
+        if ((peekMovs.data || []).some(function(rw) { return camTieneMovimientos([rw]); })) {
+          return { ok: false, error: 'Este cambio se tramita por partes: recarga la página (Ctrl+F5) para usar la versión actual.' };
+        }
+      }
       // 'ambos' (default) | 'ingreso' | 'salida' — permite cerrar el cambio en dos pasos
       // 'sinrecepcion' = cerrar sin haber recibido el producto: no crea remisiones,
       // no mueve inventario y exige una observación que justifique el cierre.

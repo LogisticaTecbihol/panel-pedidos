@@ -148,7 +148,7 @@ var LegProrrateo = (function() {
   //   devoluciones Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado[,Cliente]
   //   ext          id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en
   //   extItems     Remision_Id,Producto,Presentacion,Cantidad,Unidad
-  //   cambios      id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Consecutivo,Empresa,Producto[,Cliente]
+  //   cambios      id,Tipo_Linea,Cantidad,Estado,Remision_Salida,Remision_Ingreso,Movs_Ingreso,Movs_Salida,Consecutivo,Empresa,Producto[,Cliente]
   //   (Cliente solo se pide donde se quiere sugerir el cliente de la remisión: el
   //   formulario de Legalización; el cálculo del prorrateo no lo usa.)
   //
@@ -218,7 +218,10 @@ var LegProrrateo = (function() {
       cods.forEach(function(k) { if (!remMap[k]) remMap[k] = cli; });
     }
     if (resCam && resCam.ok) {
-      (resCam.cambios || []).forEach(function(c) { _ligarCliente(c.Cliente, [c.Remision_Ingreso, c.Remision_Salida]); });
+      // En un cambio tramitado por partes estas columnas traen TODAS sus remisiones separadas por coma
+      (resCam.cambios || []).forEach(function(c) {
+        _ligarCliente(c.Cliente, String(c.Remision_Ingreso || '').split(',').concat(String(c.Remision_Salida || '').split(',')));
+      });
     }
     if (resDev && resDev.ok) {
       (resDev.devoluciones || []).forEach(function(d) { _ligarCliente(d.Cliente, [d.Remision, d.Remision_Ingreso, d.Remision_Salida]); });
@@ -246,22 +249,25 @@ var LegProrrateo = (function() {
     // remisión de ingreso es de las líneas CAMBIAR (lo que devuelve el cliente);
     // la de salida es de las líneas ENTREGAR (lo que se le despacha), o de las
     // CAMBIAR si el cambio no tiene líneas ENTREGAR. Cuentan los cambios Cerrado
-    // y Parcial (cada lado solo si ya tiene su remisión); la cantidad es Cantidad.
+    // y Parcial (cada lado solo por sus remisiones registradas); la cantidad es la de cada
+    // remisión (camEventosLinea, shared.js): un cambio tramitado por partes tiene varias.
     if (resCam && resCam.ok) {
-      var camGrupo = function(c) { return (c.Empresa || '') + '||' + (c.Consecutivo || c.id); };
-      var camEntregar = {};
-      (resCam.cambios || []).forEach(function(c) { if (c.Tipo_Linea === 'ENTREGAR') camEntregar[camGrupo(c)] = true; });
-      (resCam.cambios || []).forEach(function(c) {
-        var cant = Number(c.Cantidad) || 0;
-        var est = (c.Estado || '').toLowerCase();
-        if (cant <= 0 || (est !== 'cerrado' && est !== 'cerrada' && est !== 'parcial')) return;
-        var tieneEntregar = !!camEntregar[camGrupo(c)];
-        var remIng = c.Tipo_Linea === 'CAMBIAR' ? String(c.Remision_Ingreso || '').trim().toUpperCase() : '';
-        var remSal = ((tieneEntregar && c.Tipo_Linea === 'ENTREGAR') || (!tieneEntregar && c.Tipo_Linea === 'CAMBIAR'))
-          ? String(c.Remision_Salida || '').trim().toUpperCase() : '';
-        [remIng, remSal].forEach(function(key) {
-          if (!key) return;
-          (prodMap[key] = prodMap[key] || []).push({ producto: c.Producto, presentacion: '', cantidad: cant, empresa: c.Empresa });
+      var camGrupos = {};
+      (resCam.cambios || []).forEach(function(c) { (camGrupos[camGrupoKey(c)] = camGrupos[camGrupoKey(c)] || []).push(c); });
+      Object.keys(camGrupos).forEach(function(gk) {
+        var lineasCam = camGrupos[gk];
+        var tieneEntregar = camGrupoTieneEntregar(lineasCam);
+        lineasCam.forEach(function(c) {
+          var est = (c.Estado || '').toLowerCase();
+          if ((Number(c.Cantidad) || 0) <= 0 || (est !== 'cerrado' && est !== 'cerrada' && est !== 'parcial')) return;
+          ['ingreso', 'salida'].forEach(function(lado) {
+            if (!camLadoAplica(c, lado, tieneEntregar)) return;
+            camEventosLinea(c, lado).forEach(function(e) {
+              if (e.cant <= 0) return;
+              var key = e.rem.toUpperCase();
+              (prodMap[key] = prodMap[key] || []).push({ producto: c.Producto, presentacion: '', cantidad: e.cant, empresa: c.Empresa });
+            });
+          });
         });
       });
     }

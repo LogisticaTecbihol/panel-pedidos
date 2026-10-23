@@ -193,46 +193,27 @@
       _cTE[gk] = _cGrp[gk].some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
     });
 
-    // Cambios de Mercancía — ENTRADA (CAMBIAR a bodega buena; cerrado o parcial)
+    // Cambios de Mercancía (cerrado o parcial) — un movimiento por cada remisión registrada de cada línea
+    // (camEventosLinea, shared.js): ENTRADA = línea CAMBIAR a bodega buena; SALIDA = línea ENTREGAR, o
+    // CAMBIAR si el cambio no tiene ENTREGAR (mismo producto). Un trámite parcial aporta solo su cantidad.
     (src.cambios || []).forEach(function(c) {
       if (c.Historico === true) return; // carga histórica: no afecta stock
-      if (c.Tipo_Linea !== 'CAMBIAR') return;
-      var cant = Number(c.Cantidad) || 0;
-      if (cant <= 0) return;
+      if ((Number(c.Cantidad) || 0) <= 0) return;
       var estado = (c.Estado || '').toLowerCase();
       if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
-      var bodegaIng = (c.Bodega_Ingreso || 'Productos Buenos').trim();
-      if (bodegaIng !== 'Productos Buenos' && bodegaIng !== 'Producto Terminado') return;
-      var rem = String(c.Remision_Ingreso || '').trim();
-      if (!rem) return;
-      movs.push({
-        fecha: c.Fecha_Ingreso || c.Fecha_Solicitud || '', tipo: 'Entrada',
-        modulo: 'Cambios', remision: rem,
-        empresa: c.Empresa || '', producto: _normProd(c.Producto),
-        presentacion: c.Presentacion || '', cantidad: cant
-      });
-    });
-
-    // Cambios de Mercancía — SALIDA (ENTREGAR, o CAMBIAR si no hay ENTREGAR — mismo producto)
-    (src.cambios || []).forEach(function(c) {
-      if (c.Historico === true) return; // carga histórica: no afecta stock
-      var gk = (c.Empresa || '') + '||' + (c.Consecutivo || c.id);
-      var tieneEntregar = _cTE[gk];
-      if (tieneEntregar && c.Tipo_Linea !== 'ENTREGAR') return;
-      if (!tieneEntregar && c.Tipo_Linea !== 'CAMBIAR') return;
-      var cant = Number(c.Cantidad) || 0;
-      if (cant <= 0) return;
-      var estado = (c.Estado || '').toLowerCase();
-      if (estado !== 'cerrado' && estado !== 'cerrada' && estado !== 'parcial') return;
-      var bodegaSal = (c.Bodega_Salida || 'Productos Buenos').trim();
-      if (bodegaSal !== 'Productos Buenos' && bodegaSal !== 'Producto Terminado') return;
-      var rem = String(c.Remision_Salida || '').trim();
-      if (!rem) return;
-      movs.push({
-        fecha: c.Fecha_Salida || c.Fecha_Solicitud || '', tipo: 'Salida',
-        modulo: 'Cambios', remision: rem,
-        empresa: c.Empresa || '', producto: _normProd(c.Producto),
-        presentacion: c.Presentacion || '', cantidad: cant
+      var tieneEntregar = _cTE[(c.Empresa || '') + '||' + (c.Consecutivo || c.id)];
+      [['ingreso', 'Entrada'], ['salida', 'Salida']].forEach(function(par) {
+        if (!camLadoAplica(c, par[0], tieneEntregar)) return;
+        camEventosLinea(c, par[0]).forEach(function(e) {
+          if (e.cant <= 0) return;
+          if (e.bodega !== 'Productos Buenos' && e.bodega !== 'Producto Terminado') return;
+          movs.push({
+            fecha: e.fecha || c.Fecha_Solicitud || '', tipo: par[1],
+            modulo: 'Cambios', remision: e.rem,
+            empresa: c.Empresa || '', producto: _normProd(c.Producto),
+            presentacion: c.Presentacion || '', cantidad: e.cant
+          });
+        });
       });
     });
 
@@ -407,7 +388,7 @@
     devoluciones:     'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Historico',
     ajustes:          'id,Cantidad,Tipo,Fecha,Empresa,Producto,Presentacion',
     ajustesNC:        'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion,Historico',
-    cambios:          'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico,Cierre_Sin_Recepcion',
+    cambios:          'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico,Cierre_Sin_Recepcion,Cierre_Con_Faltante,Movs_Ingreso,Movs_Salida',
     remAnuladas:      'Remision',
     apartadosPedido:  'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado',
     apartadosMuestra: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_despacho,fecha_aplicacion'
@@ -747,23 +728,33 @@
       var hdr = lines[0];
       var estCam = (hdr.Estado || '').toLowerCase();
       if (estCam !== 'cerrado' && estCam !== 'parcial') return;
-      var tieneEntregar = lines.some(function(l) { return l.Tipo_Linea === 'ENTREGAR'; });
-      // Cada lado cuenta solo si su remisión está registrada.
-      var hayRemIng = String(hdr.Remision_Ingreso || '').trim() !== '';
-      var hayRemSal = String(hdr.Remision_Salida || '').trim() !== '';
-      // Compat.: cambios cerrados antiguos sin remisiones guardadas → contar ambos lados.
-      // Excepción: "cerrado sin recepción" (sin ingreso ni salida) no mueve inventario.
-      if (estCam === 'cerrado' && !hayRemIng && !hayRemSal && hdr.Cierre_Sin_Recepcion !== true) { hayRemIng = true; hayRemSal = true; }
+      var tieneEntregar = camGrupoTieneEntregar(lines);
+      // Cada lado cuenta solo por las remisiones registradas, con la cantidad de cada una
+      // (camEventosLinea, shared.js): un trámite parcial aporta solo lo que realmente entró o salió.
+      var hayRemIng = false, hayRemSal = false;
       lines.forEach(function(l) {
-        var cant = Number(l.Cantidad) || 0;
-        if (cant <= 0) return;
-        if (hayRemIng && l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Ingreso)) {
-          add(hdr.Empresa, l.Producto, cant);
+        if (camLadoAplica(l, 'ingreso', tieneEntregar) && camEventosLinea(l, 'ingreso').length) hayRemIng = true;
+        if (camLadoAplica(l, 'salida', tieneEntregar) && camEventosLinea(l, 'salida').length) hayRemSal = true;
+      });
+      // Compat.: cambios cerrados antiguos sin remisiones guardadas → contar ambos lados completos.
+      // Excepción: "cerrado sin recepción" (sin ingreso ni salida) no mueve inventario.
+      if (estCam === 'cerrado' && !hayRemIng && !hayRemSal && hdr.Cierre_Sin_Recepcion !== true && hdr.Cierre_Con_Faltante !== true) {
+        lines.forEach(function(l) {
+          var cant = Number(l.Cantidad) || 0;
+          if (cant <= 0) return;
+          if (l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Ingreso)) add(hdr.Empresa, l.Producto, cant);
+          if (((tieneEntregar && l.Tipo_Linea === 'ENTREGAR') || (!tieneEntregar && l.Tipo_Linea === 'CAMBIAR')) && _esBueno(hdr.Bodega_Salida)) {
+            add(hdr.Empresa, l.Producto, -cant);
+          }
+        });
+        return;
+      }
+      lines.forEach(function(l) {
+        if (camLadoAplica(l, 'ingreso', tieneEntregar)) {
+          camEventosLinea(l, 'ingreso').forEach(function(e) { if (e.cant > 0 && _esBueno(e.bodega)) add(hdr.Empresa, l.Producto, e.cant); });
         }
-        if (hayRemSal && l.Tipo_Linea === 'ENTREGAR' && _esBueno(hdr.Bodega_Salida)) {
-          add(hdr.Empresa, l.Producto, -cant);
-        } else if (hayRemSal && !tieneEntregar && l.Tipo_Linea === 'CAMBIAR' && _esBueno(hdr.Bodega_Salida)) {
-          add(hdr.Empresa, l.Producto, -cant);
+        if (camLadoAplica(l, 'salida', tieneEntregar)) {
+          camEventosLinea(l, 'salida').forEach(function(e) { if (e.cant > 0 && _esBueno(e.bodega)) add(hdr.Empresa, l.Producto, -e.cant); });
         }
       });
     });
