@@ -372,6 +372,40 @@ function _drawRemisionCopy(doc, data, palette) {
 
   var pageTopY = drawPageTop();
 
+  // Observaciones (recuadro destacado): opcional con data.observaciones. Va
+  // entre los datos del encabezado y la tabla, solo en la primera página de
+  // cada copia (las páginas siguientes repiten el encabezado sin el recuadro).
+  var tableStartY = pageTopY;
+  var obsTxt = String(data.observaciones || '').trim();
+  if (obsTxt) {
+    var obsFs = 8;
+    var obsLineH = 3.6;
+    var obsMaxLines = 8;
+    var obsLabel = 'Observaciones:';
+    doc.setFontSize(obsFs);
+    doc.setFont(undefined, 'bold');
+    var obsX = 18 + doc.getTextWidth(obsLabel) + 3;
+    doc.setFont(undefined, 'normal');
+    var obsLines = doc.splitTextToSize(obsTxt, pw - 18 - obsX);
+    if (obsLines.length > obsMaxLines) {
+      obsLines = obsLines.slice(0, obsMaxLines);
+      obsLines[obsMaxLines - 1] = String(obsLines[obsMaxLines - 1]).replace(/\s*\S{0,3}$/, '') + '...';
+    }
+    var obsH = Math.max(9, obsLines.length * obsLineH + 4.5);
+    var obsTop = pageTopY - 3;
+    doc.setFillColor(254, 249, 231);
+    doc.setDrawColor(214, 168, 54);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(14, obsTop, pw - 28, obsH, 2, 2, 'FD');
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(125, 102, 8);
+    doc.text(obsLabel, 18, obsTop + 5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+    doc.text(obsLines, obsX, obsTop + 5, { lineHeightFactor: obsLineH / (obsFs * 0.3528) });
+    tableStartY = obsTop + obsH + 3;
+  }
+
   var lastColHeader = data.last_col_header || 'Bonif.';
   // last_col_texto: la última columna es texto libre (p. ej. "Placa" en la
   // legalización de mantenimiento), no el Sí/No de Bonif.
@@ -435,7 +469,7 @@ function _drawRemisionCopy(doc, data, palette) {
   var bottomReserve = data.hide_signatures ? 11 : 28;
 
   doc.autoTable({
-    startY: pageTopY,
+    startY: tableStartY,
     head: [tableHead],
     body: tableBody,
     theme: 'grid',

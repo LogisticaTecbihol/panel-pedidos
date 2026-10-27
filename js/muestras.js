@@ -1555,6 +1555,7 @@ async function saveEntregas() {
           remision: remision, cliente: (muHeadRow && muHeadRow.Solicitante) || '',
           comercial: (muHeadRow && muHeadRow.Responsable) || '',
           municipio: (muHeadRow && muHeadRow.Municipio) || '', departamento: (muHeadRow && muHeadRow.Departamento) || '',
+          observaciones: (muHeadRow && muHeadRow.Observaciones) || '',
           entregas: entregasPdf, return_doc: true, copies: ['COPIA - CONTABILIDAD']
         });
         if (_crEnt && _crEnt.doc) {
@@ -2053,6 +2054,7 @@ function exportarMuestraRemisionPDF(opts) {
     comercial: head.Responsable || '',
     municipio: head.Municipio || '',
     departamento: head.Departamento || '',
+    observaciones: head.Observaciones || '',
     entregas: entregas
   };
   if (opts.share) {
@@ -2127,6 +2129,7 @@ function _dataMuestraSolicitud(ctx, head) {
     remision: '',
     left_fields: left,
     right_fields: right,
+    observaciones: head.Observaciones || '',
     entregas: entregas,
     qty_header: 'Cantidad',
     copies: [''],
@@ -2547,7 +2550,7 @@ async function saveMuestra() {
           var _empMu = document.getElementById('mu-empresa').value || '';
           var _consecMuEdit = document.getElementById('mu-consecutivo').value.trim();
           var _entMu = [{ producto: producto, presentacion: presentacion, cantidad: cantEntregada || cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' }];
-          var _cr = generarRemisionPDF({ empresa: _empMu, consecutivo: _consecMuEdit, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: document.getElementById('mu-responsable').value.trim(), municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), entregas: _entMu, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+          var _cr = generarRemisionPDF({ empresa: _empMu, consecutivo: _consecMuEdit, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: document.getElementById('mu-responsable').value.trim(), municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), observaciones: document.getElementById('mu-observaciones').value.trim(), entregas: _entMu, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
           if (_cr && _cr.doc) {
             // Paquete completo: además de la remisión, se agrega la página
             // de la Solicitud (todas las líneas de este consecutivo) para
@@ -2562,6 +2565,7 @@ async function saveMuestra() {
               Fecha_Aplicacion: document.getElementById('mu-fecha-aplicacion').value,
               Fecha_Seguimiento: document.getElementById('mu-fecha-seguimiento').value,
               Objetivo: document.getElementById('mu-objetivo').value.trim(),
+              Observaciones: document.getElementById('mu-observaciones').value.trim(),
               Fecha_Solicitud: document.getElementById('mu-fecha-solicitud').value
             };
             var _rowsMuEdit = (allMuestras || []).filter(function(x) {
@@ -2671,7 +2675,7 @@ async function saveMuestra() {
         var _entMuN = productosValidos.map(function(p) {
           return { producto: p.producto, presentacion: p.presentacion, cantidad: p.cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
         });
-        var _crN = generarRemisionPDF({ empresa: empresa, consecutivo: consecutivo, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: responsable, municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), entregas: _entMuN, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+        var _crN = generarRemisionPDF({ empresa: empresa, consecutivo: consecutivo, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: responsable, municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), observaciones: document.getElementById('mu-observaciones').value.trim(), entregas: _entMuN, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
         if (_crN && _crN.doc) {
           // Paquete completo: se agrega la página de la Solicitud con
           // todas las líneas recién creadas, igual que hace el botón
@@ -2685,6 +2689,7 @@ async function saveMuestra() {
             Fecha_Aplicacion: document.getElementById('mu-fecha-aplicacion').value,
             Fecha_Seguimiento: document.getElementById('mu-fecha-seguimiento').value,
             Objetivo: document.getElementById('mu-objetivo').value.trim(),
+            Observaciones: document.getElementById('mu-observaciones').value.trim(),
             Fecha_Solicitud: fechaSol
           };
           var _rowsMuNew = productosValidos.map(function(p) {
