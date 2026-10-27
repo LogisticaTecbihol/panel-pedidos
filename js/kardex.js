@@ -2765,6 +2765,7 @@ var PARCELAR_CARVAL_SIGLA = 'PARCELAR (CARVAL)';
 
 var CARVAL_PRODUCTS = (function() {
   var list = [
+    'AMETRINA 80WG X KILO',
     'CERTUS 70 WS X 100 GR CV',
     'CERTUS 70 WS X 50 GR',
     'CERTUS 70 WS 50 GM',
