@@ -2106,7 +2106,7 @@ async function saveTramitarDev() {
           return { Producto: l.Producto, Presentacion: l.Presentacion, Cantidad: l.Cantidad, Cant_Entregada: l.Cant_Entregada };
         }));
         var _entregas = _allLines.map(function(l) {
-          return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l.Cant_Entregada||l.Cantidad)||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+          return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l.Cant_Entregada)||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
         }).filter(function(p) { return p.cantidad > 0; });
         var _left = [['Cliente', head.Cliente||''], ['NIT', head.NIT||''], ['Vendedor', head.Vendedor||''], ['Telefono', head.Telefono||'']];
         var _right = [['Direccion', head.Direccion||''], ['Municipio', head.Municipio||''], ['Departamento', head.Departamento||''], ['Bodega', '']];
