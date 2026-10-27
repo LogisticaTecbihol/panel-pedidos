@@ -123,6 +123,10 @@ var remisionProductoMapReparto = {};
 // con los mapas de siempre.
 var prorrateoMapa = null;
 var prorrateoMapaReparto = null;
+// remisión → cliente, solo de las empresas del usuario (la RPC no manda el cliente de las
+// demás). Completa a remisionClienteMap en el Detalle de productos de Envíos: un rol que
+// no lee Pedidos (ej. 'mercadeo') no recibe de ahí el cliente de sus propias remisiones.
+var prorrateoClienteMap = null;
 var prorrateoGrupo = null; // { legs, items, empresas } de TODAS las legalizaciones
 
 // Remisiones externas que NO están en el sistema: las de Chia Abago (proveedor)
@@ -260,9 +264,10 @@ async function loadClientesConRemision() {
       });
       prorrateoMapa = mp.prodMap;
       prorrateoMapaReparto = mp.repMap;
+      prorrateoClienteMap = mp.remMap;
       prorrateoGrupo = completas.grupo;
     } else {
-      prorrateoMapa = prorrateoMapaReparto = prorrateoGrupo = null;
+      prorrateoMapa = prorrateoMapaReparto = prorrateoClienteMap = prorrateoGrupo = null;
     }
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
     renderRemisionesExternasTab();
@@ -2129,7 +2134,9 @@ function renderEnviosTable() {
 // Segunda mirada sobre los mismos envíos y los mismos filtros ef-*: una fila por
 // producto de cada remisión relacionada, con la cantidad de ESA remisión. Los
 // productos salen de remisionProductoMapReparto (incluye Muestras, que los envíos
-// suelen llevar, y las remisiones externas). Si no hay productos que mostrar
+// suelen llevar, y las remisiones externas); para un usuario restringido, del mapa
+// completo del Prorrateo (prorrateoMapaReparto), porque el suyo, recortado por RLS,
+// no trae las remisiones de Pedidos que su rol no lee. Si no hay productos que mostrar
 // (sin remisiones, remisión que no se resuelve o productos de otra empresa) queda
 // una fila con la nota, para que el envío no desaparezca de la vista.
 var enviosSub = 'lista'; // 'lista' | 'detalle'
@@ -2158,6 +2165,7 @@ function _cantidadLineaTxt(m) {
 function _enviosDetalleFilas() {
   var fTxt = (document.getElementById('ef-txt').value || '').toLowerCase().trim();
   var filas = [];
+  var mapaProductos = prorrateoMapaReparto || remisionProductoMapReparto;
   _enviosPorEmpresaFecha().forEach(function(leg) {
     var prov = proveedoresTexto(leg.id);
     var nit = nitEnvioDe(leg);
@@ -2168,13 +2176,13 @@ function _enviosDetalleFilas() {
     }
     codigos.forEach(function(rem) {
       var key = rem.toUpperCase();
-      var cli = remisionClienteMap[key] || '';
+      var cli = remisionClienteMap[key] || (prorrateoClienteMap && prorrateoClienteMap[key]) || '';
       // Una remisión de muestras no tiene cliente: en su lugar va el responsable de
       // la solicitud, y la fila queda marcada como muestra.
       var mue = cli ? null : remisionMuestraMap[key];
       if (mue) cli = mue.responsable;
       var muestra = !!mue;
-      var todas = remisionProductoMapReparto[key] || [];
+      var todas = mapaProductos[key] || [];
       // Un usuario restringido por empresa solo ve los productos de la suya.
       var lineas = todas.filter(function(m) { return _empresaDelUsuario(m.empresa); });
       if (!lineas.length) {
