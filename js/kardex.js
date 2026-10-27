@@ -2833,6 +2833,13 @@ function _allParcelarKeys() {
   return [PARCELAR_EMPRESA_VAL, PARCELAR_CARVAL_VAL, PARCELAR_GERMI_VAL];
 }
 
+// Rol con acceso a UNA sola empresa (p. ej. PARCELAR): en Existencias por Empresa
+// solo ve los productos con existencia ≠ 0 (positiva o negativa). Admin, gerente
+// IASO y los roles con varias empresas ven todo, como antes.
+function _existSoloUnaEmpresa() {
+  return _empresasExistView().length === 1;
+}
+
 var existData = [];
 var existFiltered = [];
 var existFiltersAttached = false;
@@ -2976,6 +2983,10 @@ function calcularExistencias() {
     (prevEmp === 'GRANEL' && !!granelOpt);
   selEmp.value = stillExists ? prevEmp : '';
 
+  // «Solo sin existencia» no aplica a quien solo ve existencias ≠ 0 (saldría siempre vacío).
+  var optSinStock = document.querySelector('#ex-f-mostrar option[value="sin_stock"]');
+  if (optSinStock) optSinStock.hidden = optSinStock.disabled = _existSoloUnaEmpresa();
+
   var selProd = document.getElementById('ex-f-buscar');
   var prevProd = selProd.value;
   var prodNames = existData.map(function(row) { return row.producto; });
@@ -3033,6 +3044,7 @@ function renderExistencias() {
   // columna cuando el filtro de Empresa está puesto en GRANEL. Siempre exige acceso.
   existShowGranel = (soloGranel || !empresaSel) && _granelVisibleKx();
 
+  var soloUnaEmpresa = _existSoloUnaEmpresa();
   existFiltered = existData.filter(function(row) {
     if (buscar && row.producto !== buscar) return false;
     if (soloGranel) {
@@ -3045,6 +3057,7 @@ function renderExistencias() {
     empresasView.forEach(function(e) { totalView += _existEmpVal(row, e.value); });
     row._totalView = totalView;
     var g = existShowGranel ? _existGranelVal(row) : 0;
+    if (soloUnaEmpresa && totalView === 0 && g === 0) return false;
     if (mostrar === 'con_stock' && totalView <= 0 && g <= 0) return false;
     if (mostrar === 'sin_stock' && (totalView !== 0 || g !== 0)) return false;
     if (mostrar === 'negativo' && totalView >= 0 && g >= 0) return false;
