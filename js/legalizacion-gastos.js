@@ -81,6 +81,25 @@ var legAdjuntosCache = [];
 var clientesConRemisionCache = null;
 var remisionClienteMap = {}; // "REM-001" (mayúsculas) -> Cliente
 
+// "MUE-001" (mayúsculas) -> Responsable de la solicitud de muestras que la generó.
+// Las remisiones de muestras no tienen cliente (no salen en remisionClienteMap):
+// el Detalle de productos de Envíos muestra en su lugar al responsable.
+var remisionMuestraMap = {};
+// Mismo criterio que el mapa de productos del reparto: las órdenes de producción de
+// muestras (Tipo_Solicitud = 'Produccion') no despachan, así que no cuentan.
+function _remisionesDeMuestras(resMue) {
+  var mapa = {};
+  if (!resMue || !resMue.ok) return mapa;
+  (resMue.muestras || []).forEach(function(r) {
+    if ((r.Tipo_Solicitud || 'Despacho') === 'Produccion') return;
+    var key = String(r.Remision || '').trim().toUpperCase();
+    if (!key) return;
+    var resp = String(r.Responsable || '').trim();
+    if (!mapa[key] || (!mapa[key].responsable && resp)) mapa[key] = { responsable: resp };
+  });
+  return mapa;
+}
+
 // "REM-001" (mayúsculas) -> [{producto, presentacion, cantidad, empresa}, ...]
 // — la cantidad es la de ESA remisión puntual (una fila de Pedidos puede
 // tener varias entregas parciales bajo remisiones distintas). Cubre entregas
@@ -212,7 +231,7 @@ async function loadClientesConRemision() {
     var results = await Promise.all([
       apiGet('getPedidos', { columns: 'Cliente,Remisiones,Estado_2,Producto,Presentacion,Nombre_Empresa' }),
       apiGet('getIngresos', { columns: 'Producto,Presentacion,Cantidad,Remision_Destino,Remision_Origen,Empresa_Destino,Empresa_Origen' }).catch(function() { return { ok: true, ingresos: [] }; }),
-      apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud' }).catch(function() { return { ok: true, muestras: [] }; }),
+      apiGet('getMuestras', { columns: 'Remision,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Tipo_Solicitud,Responsable' }).catch(function() { return { ok: true, muestras: [] }; }),
       apiGet('getDevoluciones', { columns: 'Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Cantidad,Cant_Entregada,Estado,Cliente' }).catch(function() { return { ok: true, devoluciones: [] }; }),
       apiGet('getRemisionesExternas', { columns: 'id,Remision,Fecha,Tipo,Proveedor,Planta,creado_por_nombre,creado_en,modificado_en' }).catch(function() { return { ok: false }; }),
       apiGet('getRemisionesExternasItems', { columns: 'Remision_Id,Producto,Presentacion,Cantidad,Unidad' }).catch(function() { return { ok: false }; }),
@@ -232,6 +251,7 @@ async function loadClientesConRemision() {
     remisionClienteMap = m.remMap;
     remisionProductoMap = m.prodMap;
     remisionProductoMapReparto = m.repMap;
+    remisionMuestraMap = _remisionesDeMuestras(results[2]);
     var completas = results[7];
     if (completas) {
       var mp = LegProrrateo.construirMapas({
@@ -2143,26 +2163,31 @@ function _enviosDetalleFilas() {
     var nit = nitEnvioDe(leg);
     var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
     if (!codigos.length) {
-      filas.push({ leg: leg, prov: prov, nit: nit, rem: '', cli: '', m: null, nota: 'Sin remisiones relacionadas' });
+      filas.push({ leg: leg, prov: prov, nit: nit, rem: '', cli: '', muestra: false, m: null, nota: 'Sin remisiones relacionadas' });
       return;
     }
     codigos.forEach(function(rem) {
       var key = rem.toUpperCase();
       var cli = remisionClienteMap[key] || '';
+      // Una remisión de muestras no tiene cliente: en su lugar va el responsable de
+      // la solicitud, y la fila queda marcada como muestra.
+      var mue = cli ? null : remisionMuestraMap[key];
+      if (mue) cli = mue.responsable;
+      var muestra = !!mue;
       var todas = remisionProductoMapReparto[key] || [];
       // Un usuario restringido por empresa solo ve los productos de la suya.
       var lineas = todas.filter(function(m) { return _empresaDelUsuario(m.empresa); });
       if (!lineas.length) {
-        filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, m: null,
+        filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, muestra: muestra, m: null,
           nota: todas.length ? 'Sin productos de tu empresa' : 'Sin productos en el sistema' });
         return;
       }
-      lineas.forEach(function(m) { filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, m: m, nota: '' }); });
+      lineas.forEach(function(m) { filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, muestra: muestra, m: m, nota: '' }); });
     });
   });
   if (fTxt) {
     filas = filas.filter(function(r) {
-      var hay = [r.leg.Consecutivo, r.prov, r.nit, r.rem, r.cli, r.nota]
+      var hay = [r.leg.Consecutivo, r.prov, r.nit, r.rem, r.cli, r.nota, r.muestra ? 'muestra' : '']
         .concat(r.m ? [r.m.producto, r.m.presentacion, getSigla(r.m.empresa)] : [])
         .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
       return hay.indexOf(fTxt) >= 0;
@@ -2190,7 +2215,9 @@ function renderEnviosDetalle() {
       '<td>' + escHtml(fmtDate(r.leg.Fecha)) + '</td>' +
       '<td>' + escHtml(r.prov || '—') + '</td>' +
       '<td style="white-space:nowrap">' + (r.rem ? escHtml(r.rem) : vacio) + '</td>' +
-      '<td>' + (r.cli ? escHtml(r.cli) : vacio) + '</td>' +
+      '<td' + (r.muestra ? ' style="min-width:150px"' : '') + '>' + (r.muestra
+        ? escHtml(r.cli || '—') + '<div class="ac-sub" style="white-space:nowrap" title="Remisión de una solicitud de muestras: no tiene cliente, se muestra el responsable de la solicitud">🧪 Muestra · responsable</div>'
+        : (r.cli ? escHtml(r.cli) : vacio)) + '</td>' +
       (m
         ? '<td style="white-space:normal;min-width:180px">' + escHtml(m.producto || '—') + '</td>' +
           '<td>' + (m.presentacion ? escHtml(m.presentacion) : vacio) + '</td>' +
@@ -2215,6 +2242,7 @@ function exportarEnviosDetalleExcel() {
       'Proveedor': r.prov || '',
       'Remisión': r.rem,
       'Cliente': r.cli,
+      'Tipo de remisión': r.muestra ? 'Muestra (el nombre es el del responsable)' : '',
       'Producto': m ? (m.producto || '') : '',
       'Presentación': m ? (m.presentacion || '') : '',
       'Cantidad': m ? (Number(m.cantidad) || 0) : '',
