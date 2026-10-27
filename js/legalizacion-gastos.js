@@ -246,6 +246,7 @@ async function loadClientesConRemision() {
     }
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
     renderRemisionesExternasTab();
+    renderEnviosDetalle(); // los productos de cada remisión llegan con este fetch
   } catch (e) {
     clientesConRemisionCache = clientesConRemisionCache || [];
   }
@@ -556,6 +557,20 @@ var LG_SORT_COLS = {
     { id: 'valor', label: 'Valor', right: true, fn: function(l) { return totalGastosOf(l.id); } },
     { id: 'acciones', label: 'Acciones' }
   ],
+  // Detalle de productos de Envíos: cada fila es { leg, prov, rem, cli, m, nota }
+  // (m = línea de producto de la remisión, o null si no hay productos que mostrar).
+  envd: [
+    { id: 'n', label: 'N° envío', fn: function(r) { return r.leg.Consecutivo || ''; } },
+    { id: 'fecha', label: 'Fecha', fn: function(r) { return r.leg.Fecha || ''; } },
+    { id: 'proveedor', label: 'Proveedor', fn: function(r) { return r.prov; } },
+    { id: 'remision', label: 'Remisión', fn: function(r) { return r.rem; } },
+    { id: 'cliente', label: 'Cliente', fn: function(r) { return r.cli; } },
+    { id: 'producto', label: 'Producto', fn: function(r) { return r.m ? (r.m.producto || '') : ''; } },
+    { id: 'presentacion', label: 'Presentación', fn: function(r) { return r.m ? (r.m.presentacion || '') : ''; } },
+    { id: 'cantidad', label: 'Cantidad', right: true, fn: function(r) { return r.m ? (Number(r.m.cantidad) || 0) : null; } },
+    { id: 'empresa', label: 'Empresa', fn: function(r) { return r.m ? getSigla(r.m.empresa) : ''; } },
+    { id: 'acciones', label: 'Acciones' }
+  ],
   detleg: [
     { id: 'n', label: 'N°', fn: function(l) { return l.Consecutivo || ''; } },
     { id: 'fecha', label: 'Fecha', fn: function(l) { return l.Fecha || ''; } },
@@ -625,6 +640,7 @@ var LG_SORT_COLS = {
 var LG_SORT_RENDER = {
   leg: function() { renderLegTable(); },
   env: function() { renderEnviosTable(); },
+  envd: function() { renderEnviosDetalle(); },
   detleg: function() { renderDetalleTable(); },
   detlin: function() { renderDetalleTable(); },
   veh: function() { renderVehiculosTab(); },
@@ -2005,24 +2021,31 @@ function renderLegTable() {
 // ── Pestaña Envíos (Tipo='Envio'): vista aparte de las legalizaciones ──
 // Filas de la lista de Envíos según los filtros ef-* y el orden de columnas
 // elegido (la tabla y el Excel comparten esta misma lista).
-function _enviosListaFiltrada() {
+// Envíos que pasan Empresa/Desde/Hasta (sin Buscar), el más reciente primero:
+// base común de la lista y del Detalle de productos.
+function _enviosPorEmpresaFecha() {
   var fEmp = document.getElementById('ef-emp').value;
   var fDesde = document.getElementById('ef-desde').value;
   var fHasta = document.getElementById('ef-hasta').value;
-  var fTxt = (document.getElementById('ef-txt').value || '').toLowerCase().trim();
 
-  var rows = legs.filter(function(leg) {
+  return legs.filter(function(leg) {
     if (!esEnvio(leg)) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fDesde && (leg.Fecha || '') < fDesde) return false;
     if (fHasta && (leg.Fecha || '') > fHasta) return false;
-    if (fTxt) {
-      var hay = [leg.Consecutivo, proveedoresTexto(leg.id), nitEnvioDe(leg), leg.Remisiones_Relacionadas]
-        .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
-      if (hay.indexOf(fTxt) < 0) return false;
-    }
     return true;
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
+}
+
+function _enviosListaFiltrada() {
+  var fTxt = (document.getElementById('ef-txt').value || '').toLowerCase().trim();
+
+  var rows = _enviosPorEmpresaFecha().filter(function(leg) {
+    if (!fTxt) return true;
+    var hay = [leg.Consecutivo, proveedoresTexto(leg.id), nitEnvioDe(leg), leg.Remisiones_Relacionadas]
+      .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
+    return hay.indexOf(fTxt) >= 0;
+  });
   return applySortLg('env', rows);
 }
 
@@ -2079,6 +2102,131 @@ function renderEnviosTable() {
       '<td>' + acciones + '</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="8"><div class="empty">Sin envíos para este filtro.</div></td></tr>';
+  renderEnviosDetalle();
+}
+
+// ── Detalle de productos de los envíos ──
+// Segunda mirada sobre los mismos envíos y los mismos filtros ef-*: una fila por
+// producto de cada remisión relacionada, con la cantidad de ESA remisión. Los
+// productos salen de remisionProductoMapReparto (incluye Muestras, que los envíos
+// suelen llevar, y las remisiones externas). Si no hay productos que mostrar
+// (sin remisiones, remisión que no se resuelve o productos de otra empresa) queda
+// una fila con la nota, para que el envío no desaparezca de la vista.
+var enviosSub = 'lista'; // 'lista' | 'detalle'
+
+function setEnviosSub(sub) {
+  enviosSub = sub;
+  document.getElementById('envl-sub-lista').style.display = sub === 'lista' ? 'block' : 'none';
+  document.getElementById('envl-sub-detalle').style.display = sub === 'detalle' ? 'block' : 'none';
+  document.getElementById('envl-sub-lista-btn').style.background = sub === 'lista' ? '#1a5276' : '#718096';
+  document.getElementById('envl-sub-detalle-btn').style.background = sub === 'detalle' ? '#1a5276' : '#718096';
+  document.getElementById('ef-txt').placeholder = sub === 'detalle' ? 'producto, remisión, cliente, N°…' : 'proveedor, NIT, remisión, N°…';
+  renderEnviosDetalle();
+}
+
+// Unidad de una línea de remisión: kilos o litros directos (materia prima externa)
+// y, para el resto, unidades de la presentación.
+function _unidadLineaTxt(m) { return m.unidad === 'KG' ? 'Kg' : (m.unidad === 'L' ? 'L' : 'und'); }
+
+function _cantidadLineaTxt(m) {
+  return (Number(m.cantidad) || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + ' ' + _unidadLineaTxt(m);
+}
+
+// Filas según los filtros ef-* y el orden elegido (la tabla y el Excel comparten
+// esta lista). Sin orden: el envío más reciente primero, y dentro de él las
+// remisiones en el orden en que se relacionaron.
+function _enviosDetalleFilas() {
+  var fTxt = (document.getElementById('ef-txt').value || '').toLowerCase().trim();
+  var filas = [];
+  _enviosPorEmpresaFecha().forEach(function(leg) {
+    var prov = proveedoresTexto(leg.id);
+    var nit = nitEnvioDe(leg);
+    var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+    if (!codigos.length) {
+      filas.push({ leg: leg, prov: prov, nit: nit, rem: '', cli: '', m: null, nota: 'Sin remisiones relacionadas' });
+      return;
+    }
+    codigos.forEach(function(rem) {
+      var key = rem.toUpperCase();
+      var cli = remisionClienteMap[key] || '';
+      var todas = remisionProductoMapReparto[key] || [];
+      // Un usuario restringido por empresa solo ve los productos de la suya.
+      var lineas = todas.filter(function(m) { return _empresaDelUsuario(m.empresa); });
+      if (!lineas.length) {
+        filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, m: null,
+          nota: todas.length ? 'Sin productos de tu empresa' : 'Sin productos en el sistema' });
+        return;
+      }
+      lineas.forEach(function(m) { filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, m: m, nota: '' }); });
+    });
+  });
+  if (fTxt) {
+    filas = filas.filter(function(r) {
+      var hay = [r.leg.Consecutivo, r.prov, r.nit, r.rem, r.cli, r.nota]
+        .concat(r.m ? [r.m.producto, r.m.presentacion, getSigla(r.m.empresa)] : [])
+        .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
+      return hay.indexOf(fTxt) >= 0;
+    });
+  }
+  return applySortLg('envd', filas);
+}
+
+function renderEnviosDetalle() {
+  var body = document.getElementById('envd-body');
+  if (!body || enviosSub !== 'detalle') return; // se dibuja al abrir la subpestaña
+  var rows = _enviosDetalleFilas();
+  renderSortHead('envd', 'envd-head');
+
+  var envios = {};
+  rows.forEach(function(r) { envios[r.leg.id] = true; });
+  var nEnvios = Object.keys(envios).length;
+  document.getElementById('envd-ct').textContent = '(' + rows.length + ' fila' + (rows.length === 1 ? '' : 's') + ' · ' + nEnvios + ' envío' + (nEnvios === 1 ? '' : 's') + ')';
+
+  var vacio = '<span style="color:#a0aec0">—</span>';
+  body.innerHTML = rows.map(function(r) {
+    var m = r.m;
+    return '<tr>' +
+      '<td>' + escHtml(r.leg.Consecutivo || '') + '</td>' +
+      '<td>' + escHtml(fmtDate(r.leg.Fecha)) + '</td>' +
+      '<td>' + escHtml(r.prov || '—') + '</td>' +
+      '<td style="white-space:nowrap">' + (r.rem ? escHtml(r.rem) : vacio) + '</td>' +
+      '<td>' + (r.cli ? escHtml(r.cli) : vacio) + '</td>' +
+      (m
+        ? '<td style="white-space:normal;min-width:180px">' + escHtml(m.producto || '—') + '</td>' +
+          '<td>' + (m.presentacion ? escHtml(m.presentacion) : vacio) + '</td>' +
+          '<td style="text-align:right;white-space:nowrap">' + escHtml(_cantidadLineaTxt(m)) + '</td>' +
+          '<td><span class="sigla-badge ' + getSiglaClass(m.empresa) + '">' + escHtml(getSigla(m.empresa)) + '</span></td>'
+        : '<td colspan="4" style="color:#a0aec0;font-style:italic">' + escHtml(r.nota) + '</td>') +
+      '<td><button class="btn-ver" onclick="openVer(' + r.leg.id + ')">👁 Ver</button></td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="10"><div class="empty">Sin envíos para este filtro.</div></td></tr>';
+}
+
+// Exporta el detalle tal como se ve: mismas filas (filtros Empresa/Desde/Hasta/
+// Buscar), mismo orden y una columna más con la nota de las filas sin productos.
+function exportarEnviosDetalleExcel() {
+  var rows = _enviosDetalleFilas();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(r) {
+    var m = r.m;
+    return {
+      'N° envío': r.leg.Consecutivo || '',
+      'Fecha': fmtDate(r.leg.Fecha),
+      'Proveedor': r.prov || '',
+      'Remisión': r.rem,
+      'Cliente': r.cli,
+      'Producto': m ? (m.producto || '') : '',
+      'Presentación': m ? (m.presentacion || '') : '',
+      'Cantidad': m ? (Number(m.cantidad) || 0) : '',
+      'Unidad': m ? _unidadLineaTxt(m) : '',
+      'Empresa': m ? getSigla(m.empresa) : '',
+      'Observación': r.nota
+    };
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Productos por envío');
+  XLSX.writeFile(wb, 'envios_productos_' + today() + '.xlsx');
+  showToast('Excel exportado');
 }
 
 // Período de los indicadores: mientras la pestaña Prorrateo está abierta, el
