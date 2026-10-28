@@ -4670,6 +4670,31 @@ function closeVer() {
   verLegId = null;
 }
 
+// Auditoría del detalle. Creado = el de la cabecera. Última modificación = lo más
+// reciente entre la cabecera y la reescritura de líneas/reparto: editar solo eso no
+// marca la cabecera (el trigger ignora UPDATE sin cambios y el editor borra y
+// recrea las líneas), pero las filas nuevas sí traen creado_en / creado_por_nombre.
+var LEG_ALTA_MS = 60000; // las líneas del alta se insertan segundos después de la cabecera
+function legAuditoria(leg) {
+  var aud = {
+    creado_por_nombre: leg.creado_por_nombre, creado_en: leg.creado_en,
+    modificado_por_nombre: leg.modificado_por_nombre, modificado_en: leg.modificado_en
+  };
+  var alta = leg.creado_en ? new Date(leg.creado_en).getTime() : 0;
+  itemsOf(leg.id).concat(empresasOf(leg.id)).forEach(function(r) {
+    if (!r.creado_en) return;
+    var t = new Date(r.creado_en).getTime();
+    if (isNaN(t) || t - alta <= LEG_ALTA_MS) return;
+    if (!aud.modificado_en || t > new Date(aud.modificado_en).getTime()) {
+      aud.modificado_en = r.creado_en;
+      aud.modificado_por_nombre = r.creado_por_nombre;
+    }
+  });
+  // Marcas anteriores a la auditoría por nombre: hay fecha pero no se sabe quién.
+  if (aud.modificado_en && !aud.modificado_por_nombre) aud.modificado_por_nombre = '—';
+  return aud;
+}
+
 function renderVerBody(leg) {
   var items = itemsOf(leg.id);
   var emps = empresasVisiblesOf(leg.id);
@@ -4795,7 +4820,8 @@ function renderVerBody(leg) {
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:16px 0 6px">Soportes adjuntos <span id="lg-adj-count"></span></h3>' +
     (AUTH.hasModule('legalizacion_gastos') && leg.Estado_Conciliacion === 'Por conciliar' ?
       '<input type="file" id="lg-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleAdjuntoUploadLG(this)" style="margin-bottom:8px">' : '') +
-    '<div id="lg-adjuntos-list"></div>';
+    '<div id="lg-adjuntos-list"></div>' +
+    _auditoriaHtml(legAuditoria(leg), false);
 }
 
 async function doConciliarLG(aprobar) {
