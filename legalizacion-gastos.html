@@ -43,6 +43,19 @@
 .hist-despues{color:#276749;background:#f0fff4;border-radius:4px;padding:0 4px}
 .hist-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
 .hist-chip{background:#edf2f7;border-radius:12px;padding:1px 10px;font-size:.78rem;color:#4a5568}
+/* ── Cambios desde una fecha ── */
+.cam-leg{border:1px solid #e2e8f0;border-radius:10px;background:#fff;margin-bottom:8px}
+.cam-leg>summary{cursor:pointer;padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:.88rem;list-style:none}
+.cam-leg>summary::-webkit-details-marker{display:none}
+.cam-leg>summary::before{content:"▸";color:#718096}
+.cam-leg[open]>summary::before{content:"▾"}
+.cam-leg[open]>summary{border-bottom:1px solid #edf2f7}
+.cam-leg .hist-linea-tiempo{padding-top:12px}
+.cam-chip{display:inline-block;padding:1px 10px;border-radius:12px;font-size:.76rem;font-weight:600}
+.cam-nueva{background:#e6f4ea;color:#276749}.cam-eliminada{background:#fde8e8;color:#c0392b}
+.cam-cabecera,.cam-gastos,.cam-reparto{background:#e3f0fa;color:#1a5276}
+.cam-remision{background:#f1e5f7;color:#6c3483}.cam-otros{background:#edf2f7;color:#4a5568}
+.cam-resumen{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0 0 12px;font-size:.86rem;color:#4a5568}
 
 /* ── Proporción de gastos por producto / por empresa (tabla) ── */
 .lg-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
@@ -473,17 +486,58 @@
   <!-- Historial: quién creó y modificó una legalización (js/legalizacion-historial.js) -->
   <div id="panel-historial" style="display:none">
     <div class="filters">
-      <div class="fg"><label>Consecutivo</label>
-        <input type="text" id="hf-cons" list="hf-cons-list" placeholder="LEG-00044, ENV-00012…" autocomplete="off" style="width:220px" onkeydown="if(event.key==='Enter')cargarHistorial()">
-        <datalist id="hf-cons-list"></datalist>
-      </div>
-      <div class="fg"><button class="btn-dl" onclick="cargarHistorial()">🔎 Consultar</button></div>
-      <div class="fg"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="hf-rem" checked onchange="renderHistorialTab()"> Incluir remisiones externas relacionadas</label></div>
-      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-        <button class="btn-dl" onclick="exportarHistorialExcel()">📥 Exportar Excel</button>
+      <div class="fg"><label>Consultar</label>
+        <select id="hm-modo" onchange="cambiarModoHistorial()">
+          <option value="consecutivo">Una legalización (por consecutivo)</option>
+          <option value="cambios">Cambios desde una fecha</option>
+        </select>
       </div>
     </div>
-    <div id="hist-body"></div>
+
+    <!-- Modo 1: el historial de una legalización -->
+    <div id="hm-cons">
+      <div class="filters">
+        <div class="fg"><label>Consecutivo</label>
+          <input type="text" id="hf-cons" list="hf-cons-list" placeholder="LEG-00044, ENV-00012…" autocomplete="off" style="width:220px" onkeydown="if(event.key==='Enter')cargarHistorial()">
+          <datalist id="hf-cons-list"></datalist>
+        </div>
+        <div class="fg"><button class="btn-dl" onclick="cargarHistorial()">🔎 Consultar</button></div>
+        <div class="fg"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="hf-rem" checked onchange="renderHistorialTab()"> Incluir remisiones externas relacionadas</label></div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="exportarHistorialExcel()">📥 Exportar Excel</button>
+        </div>
+      </div>
+      <div id="hist-body"></div>
+    </div>
+
+    <!-- Modo 2: todo lo que cambió desde un momento (js/legalizacion-historial.js) -->
+    <div id="hm-cambios" style="display:none">
+      <div class="filters">
+        <div class="fg"><label>Cambios desde</label>
+          <input type="datetime-local" id="cm-desde">
+        </div>
+        <div class="fg"><label>Hasta (vacío = ahora)</label>
+          <input type="datetime-local" id="cm-hasta">
+        </div>
+        <div class="fg"><label>Fecha de la legalización: desde</label>
+          <input type="date" id="cm-fdesde">
+        </div>
+        <div class="fg"><label>hasta</label>
+          <input type="date" id="cm-fhasta">
+        </div>
+        <div class="fg"><button class="btn-dl" onclick="cargarCambios()">🔎 Buscar cambios</button></div>
+      </div>
+      <div class="filters" style="padding-top:0">
+        <div class="fg"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="cm-solo" checked onchange="renderCambios()"> Solo lo que puede mover el Prorrateo</label></div>
+        <div class="fg"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="cm-rem" checked onchange="renderCambios()"> Incluir remisiones externas (MP-…, Chia Abago)</label></div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button class="btn-dl" onclick="camAbrirTodas(true)">Expandir todo</button>
+          <button class="btn-dl" onclick="camAbrirTodas(false)">Contraer todo</button>
+          <button class="btn-dl" onclick="exportarCambiosExcel()">📥 Exportar Excel</button>
+        </div>
+      </div>
+      <div id="cam-body"></div>
+    </div>
   </div>
 
   <!-- Remisiones externas: Chia Abago y materia prima registradas fuera del sistema -->
@@ -877,12 +931,12 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261028a"></script>
+<script src="js/shared.js?v=20261028b"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261028b"></script>
-<script src="js/legalizacion-historial.js?v=20261028b"></script>
+<script src="js/legalizacion-historial.js?v=20261028c"></script>
 <script src="js/legalizacion-gastos.js?v=20261028g"></script>
 </body>
 </html>

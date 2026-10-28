@@ -1,4 +1,9 @@
 // ── Historial de una legalización (pestaña "Historial") ──
+// Dos modos (selector «Consultar»): «Una legalización» y «Cambios desde una fecha»
+// (al final de este archivo: qué legalizaciones/envíos se crearon, cambiaron o
+// eliminaron desde un momento, para explicar por qué el Prorrateo de un mes ya
+// no da lo mismo que cuando se calculó).
+//
 // Para un consecutivo (LEG-00044, ENV-00012…) muestra todo lo que quedó en el
 // registro de auditoría: quién la creó, qué cambió y cuándo, en la cabecera, en
 // las líneas de gasto y en el reparto entre empresas. Los eventos crudos los
@@ -409,7 +414,14 @@ function abrirHistorialDesdeVer() {
   if (!leg) return;
   closeVer();
   switchTab('historial');
-  cargarHistorial(leg.Consecutivo);
+  histIrAConsecutivo(leg.Consecutivo);
+}
+
+// Pasa al modo «Una legalización» y consulta ese consecutivo.
+function histIrAConsecutivo(cons) {
+  document.getElementById('hm-modo').value = 'consecutivo';
+  cambiarModoHistorial();
+  cargarHistorial(cons);
 }
 
 function histBloqueHtml(bloque) {
@@ -549,4 +561,294 @@ function exportarHistorialExcel() {
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Historial');
   XLSX.writeFile(wb, 'historial_' + histData.consecutivo + '_' + today() + '.xlsx');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Cambios desde una fecha
+// ──────────────────────────────────────────────────────────────
+// Todas las legalizaciones/envíos que se crearon, cambiaron o eliminaron entre dos
+// momentos (get_cambios_legalizacion_gastos). Sirve para explicar por qué el
+// Prorrateo de un mes cerrado ya no da lo mismo que cuando se calculó: cada una se
+// marca con lo que cambió y si puede mover el Prorrateo (nueva, eliminada, fecha /
+// tipo / remisiones de la cabecera, gastos, reparto o una remisión externa). Lo que
+// solo cambia datos como el responsable, la placa o las observaciones queda aparte.
+// El servidor entrega el historial completo de cada una y aquí se recorta a la
+// ventana: lo anterior hace falta para nombrar líneas y empresas en un UPDATE.
+// ══════════════════════════════════════════════════════════════
+
+var camData = null;  // respuesta de get_cambios_legalizacion_gastos
+var camDesdeMs = 0;  // ventana consultada (ms)
+var camHastaMs = 0;
+
+// Campos de la cabecera que cambian a qué mes, tipo o remisiones se asigna el gasto.
+var CAM_CLAVES_CABECERA = ['Fecha', 'Tipo', 'Remisiones_Relacionadas'];
+var CAM_AREAS = {
+  nueva:     { txt: '✨ Nueva',                     plano: 'Nueva' },
+  eliminada: { txt: '🗑️ Eliminada',                 plano: 'Eliminada' },
+  cabecera:  { txt: 'Fecha / tipo / remisiones',    plano: 'Fecha / tipo / remisiones' },
+  gastos:    { txt: 'Gastos',                       plano: 'Gastos' },
+  reparto:   { txt: 'Reparto',                      plano: 'Reparto' },
+  remision:  { txt: '📦 Remisión externa',          plano: 'Remisión externa' },
+  otros:     { txt: 'Otros datos (no mueven el Prorrateo)', plano: 'Otros datos' }
+};
+var CAM_ORDEN = ['nueva', 'eliminada', 'cabecera', 'gastos', 'reparto', 'remision', 'otros'];
+var CAM_IMPACTO = ['nueva', 'eliminada', 'cabecera', 'gastos', 'reparto', 'remision'];
+
+function cambiarModoHistorial() {
+  var cambios = document.getElementById('hm-modo').value === 'cambios';
+  document.getElementById('hm-cons').style.display = cambios ? 'none' : '';
+  document.getElementById('hm-cambios').style.display = cambios ? '' : 'none';
+  if (cambios) camPrepararFiltros();
+}
+
+function camPad(n) { return String(n).padStart(2, '0'); }
+function camFechaLocal(d) { return d.getFullYear() + '-' + camPad(d.getMonth() + 1) + '-' + camPad(d.getDate()); }
+
+// Primera vez: «desde» = el 1.º del mes en curso (lo que pasó tras el cierre) y las
+// legalizaciones del mes anterior, que es lo habitual al revisar un corte.
+function camPrepararFiltros() {
+  var d = document.getElementById('cm-desde');
+  if (!d || d.value) return;
+  var hoy = new Date();
+  d.value = camFechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1)) + 'T00:00';
+  document.getElementById('cm-fdesde').value = camFechaLocal(new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1));
+  document.getElementById('cm-fhasta').value = camFechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 0));
+}
+
+// Lo que se escribe en «Cambios desde» es hora de Colombia (sin horario de verano).
+function camIsoBogota(v) {
+  v = String(v || '').trim();
+  if (!v) return null;
+  if (v.length === 16) v += ':00';
+  return v + '-05:00';
+}
+
+function camVerRem() { var c = document.getElementById('cm-rem'); return !c || c.checked; }
+function camSoloImpacto() { var c = document.getElementById('cm-solo'); return !c || c.checked; }
+
+async function cargarCambios() {
+  var desde = camIsoBogota(document.getElementById('cm-desde').value);
+  if (!desde) { showToast('Indica desde qué fecha y hora buscar los cambios', '#e67e22'); return; }
+  var hasta = camIsoBogota(document.getElementById('cm-hasta').value);
+  var fd = document.getElementById('cm-fdesde').value || null;
+  var fh = document.getElementById('cm-fhasta').value || null;
+  if (hasta && new Date(hasta) < new Date(desde)) { showToast('El «hasta» es anterior al «desde»', '#e67e22'); return; }
+  if (fd && fh && fd > fh) { showToast('La fecha de legalización «desde» es posterior a «hasta»', '#e67e22'); return; }
+
+  var box = document.getElementById('cam-body');
+  box.innerHTML = '<div class="empty">Buscando cambios…</div>';
+  var res = await apiGet('getCambiosLegalizacion', { desde: desde, hasta: hasta, fechaDesde: fd, fechaHasta: fh });
+  if (!res.ok) {
+    camData = null;
+    box.innerHTML = '<div class="empty" style="color:#c0392b">' + escHtml(res.error || 'No se pudieron cargar los cambios.') + '</div>';
+    return;
+  }
+  camData = res.cambios;
+  camDesdeMs = new Date(camData.desde).getTime();
+  camHastaMs = new Date(camData.hasta).getTime();
+  renderCambios();
+}
+
+function camEnVentana(bloque) {
+  var t = new Date(bloque.inicio).getTime();
+  return t >= camDesdeMs && t <= camHastaMs;
+}
+
+// Fecha y tipo de una legalización (si ya no existe, lo último que dejó el audit_log).
+function camDatosLeg(reg) {
+  if (reg.actual) return { fecha: reg.actual.fecha, tipo: reg.actual.tipo };
+  var d = {};
+  (reg.eventos || []).forEach(function(e) {
+    if (e.tabla === 'LegalizacionGastos') Object.assign(d, e.antes || {}, e.despues || {});
+  });
+  return { fecha: d.Fecha, tipo: d.Tipo };
+}
+
+// Qué tocó un guardado: { nueva, eliminada, cabecera, gastos, reparto, remision, otros }.
+function camFlagsBloque(b, d) {
+  var f = {};
+  if (b.rem) {
+    if (d.tipo !== 'modificacion' || d.lineas.some(function(l) { return l.signo !== '·'; }) || d.cabecera.length) f.remision = true;
+    return f;
+  }
+  if (d.tipo === 'creacion') { f.nueva = true; return f; }
+  if (d.tipo === 'eliminacion') { f.eliminada = true; return f; }
+  b.eventos.forEach(function(e) {
+    if (e.tabla !== 'LegalizacionGastos' || e.accion !== 'UPDATE') return;
+    Object.keys(e.despues || {}).forEach(function(k) {
+      var antes = (e.antes || {})[k];
+      if (CAM_CLAVES_CABECERA.indexOf(k) >= 0) f.cabecera = true;
+      // Pasar a/desde «Rechazada» saca o mete la legalización del Prorrateo.
+      else if (k === 'Estado_Conciliacion' && (e.despues[k] === 'Rechazada' || antes === 'Rechazada')) f.cabecera = true;
+      else f.otros = true;
+    });
+  });
+  if (d.gastos.some(function(l) { return l.signo !== '·'; })) f.gastos = true;
+  if (d.reparto.some(function(l) { return l.signo !== '·'; })) f.reparto = true;
+  return f;
+}
+
+// Guardados de una legalización (y de sus remisiones externas) dentro de la ventana.
+function camAnalizar(reg, verRem) {
+  var eventos = reg.eventos || [];
+  histAnotarPrevios(eventos);
+  var bloques = histAgrupar(eventos).filter(camEnVentana);
+  if (verRem) {
+    (reg.remisiones || []).forEach(function(m) {
+      var evs = m.eventos || [];
+      histAnotarPrevios(evs);
+      histAgrupar(evs).filter(camEnVentana).forEach(function(b) { b.rem = m; bloques.push(b); });
+    });
+  }
+  bloques.forEach(function(b, i) { b._i = i; });
+  bloques.sort(function(a, b) { return (new Date(a.inicio) - new Date(b.inicio)) || (a._i - b._i); });
+  var flags = {};
+  bloques.forEach(function(b) {
+    b._d = b.rem ? histDescribirBloqueRem(b) : histDescribirBloque(b);
+    b._f = camFlagsBloque(b, b._d);
+    Object.keys(b._f).forEach(function(k) { flags[k] = true; });
+  });
+  var ultimo = bloques.length ? bloques[bloques.length - 1] : null;
+  return {
+    reg: reg,
+    cons: reg.consecutivo || ('#' + reg.id),
+    bloques: bloques,
+    flags: flags,
+    impacto: CAM_IMPACTO.some(function(k) { return flags[k]; }),
+    ultimoBloque: ultimo,
+    ultimo: ultimo ? new Date(ultimo.inicio).getTime() : 0
+  };
+}
+
+function camAnalizarTodas() {
+  var verRem = camVerRem();
+  var todas = ((camData && camData.registros) || []).map(function(r) { return camAnalizar(r, verRem); })
+    .filter(function(a) { return a.bloques.length; });
+  todas.sort(function(a, b) { return b.ultimo - a.ultimo; });
+  return todas;
+}
+
+function camLegHtml(a) {
+  var datos = camDatosLeg(a.reg);
+  var tipoTxt = datos.tipo ? (typeof tipoLabel === 'function' ? tipoLabel({ Tipo: datos.tipo }) : datos.tipo) : '';
+  var chips = CAM_ORDEN.filter(function(k) { return a.flags[k]; }).map(function(k) {
+    return '<span class="cam-chip cam-' + k + '">' + escHtml(CAM_AREAS[k].txt) + '</span>';
+  }).join(' ');
+  var nLeg = a.bloques.filter(function(b) { return !b.rem; }).length;
+  var nRem = a.bloques.length - nLeg;
+  var ult = a.ultimoBloque;
+  return '<details class="cam-leg">' +
+    '<summary><strong>' + escHtml(a.cons) + '</strong>' +
+      '<span>' + escHtml([datos.fecha ? fmtDate(datos.fecha) : '', tipoTxt].filter(Boolean).join(' · ')) + '</span>' +
+      '<span>' + chips + '</span>' +
+      '<span class="hist-nota">Último cambio: ' + escHtml(histFechaHora(ult.inicio)) + ' · ' + escHtml(ult.usuario || 'Sistema') + '</span>' +
+      '<span class="hist-nota">' + nLeg + (nLeg === 1 ? ' guardado' : ' guardados') + (nRem ? ' · ' + nRem + ' de remisiones externas' : '') + '</span>' +
+    '</summary>' +
+    '<div class="hist-linea-tiempo">' + a.bloques.map(histBloqueHtml).join('') + '</div>' +
+    '<div style="padding:0 14px 12px"><button class="btn-edit" onclick="histIrAConsecutivo(\'' + escHtml(a.cons) + '\')">🕑 Ver historial completo</button></div>' +
+  '</details>';
+}
+
+function renderCambios() {
+  var box = document.getElementById('cam-body');
+  if (!box) return;
+  if (!camData) { box.innerHTML = ''; return; }
+  var todas = camAnalizarTodas();
+  var visibles = camSoloImpacto() ? todas.filter(function(a) { return a.impacto; }) : todas;
+  var ocultas = todas.length - visibles.length;
+  function cuenta(k) { return todas.filter(function(a) { return a.flags[k]; }).length; }
+
+  var rango = histFechaHora(camData.desde) + ' y ' + histFechaHora(camData.hasta);
+  var filtroFecha = (camData.fecha_desde || camData.fecha_hasta)
+    ? ' · legalizaciones con fecha ' + (camData.fecha_desde ? 'desde ' + fmtDate(camData.fecha_desde) : '') + (camData.fecha_desde && camData.fecha_hasta ? ' ' : '') + (camData.fecha_hasta ? 'hasta ' + fmtDate(camData.fecha_hasta) : '')
+    : '';
+
+  var html = '<div class="gpp-note" style="margin:0 0 12px">Cambios entre <strong>' + escHtml(rango) + '</strong> (hora de Colombia)' + escHtml(filtroFecha) + '. ' +
+    'Cubre las legalizaciones y envíos, sus líneas de gasto y su reparto, y las remisiones externas (MP-…, Chia Abago) que llevan hoy. ' +
+    '<strong>No</strong> cubre los cambios en Pedidos, Ingresos, Devoluciones, Cambios de mercancía ni Muestras (de ahí salen los productos de cada remisión), ' +
+    'ni los cambios en la fórmula del Prorrateo: esos también mueven el resultado sin que aparezca aquí ninguna legalización.</div>';
+
+  if (camData.omitidas_visibilidad > 0) {
+    html += '<div class="hist-aviso" style="margin:0 0 12px">🔒 ' + camData.omitidas_visibilidad + (camData.omitidas_visibilidad === 1 ? ' legalización de empresas' : ' legalizaciones de empresas') + ' a las que no tienes acceso no se muestran.</div>';
+  }
+  if (camData.omitidas_tope > 0) {
+    html += '<div class="hist-aviso hist-aviso-rojo" style="margin:0 0 12px">⚠️ Hay demasiados eventos: ' + camData.omitidas_tope + (camData.omitidas_tope === 1 ? ' legalización quedó fuera' : ' legalizaciones quedaron fuera') + '. Acorta el periodo o el rango de fechas.</div>';
+  }
+
+  html += '<div class="cam-resumen">' +
+    '<span><strong>' + todas.length + '</strong> con actividad</span>' +
+    '<span>✨ <strong>' + cuenta('nueva') + '</strong> nuevas</span>' +
+    '<span>🗑️ <strong>' + cuenta('eliminada') + '</strong> eliminadas</span>' +
+    '<span><strong>' + cuenta('cabecera') + '</strong> con fecha / tipo / remisiones</span>' +
+    '<span><strong>' + cuenta('gastos') + '</strong> con gastos</span>' +
+    '<span><strong>' + cuenta('reparto') + '</strong> con reparto</span>' +
+    '<span>📦 <strong>' + cuenta('remision') + '</strong> con remisión externa</span>' +
+    (ocultas ? '<span class="hist-nota">' + ocultas + (ocultas === 1 ? ' solo con cambios que no mueven el Prorrateo (oculta)' : ' solo con cambios que no mueven el Prorrateo (ocultas)') + '</span>' : '') +
+  '</div>';
+
+  if (!visibles.length) {
+    html += '<div class="empty">' + (todas.length
+      ? 'Todo lo que cambió en ese periodo son datos que no mueven el Prorrateo (responsable, placa, observaciones…). Desmarca «Solo lo que puede mover el Prorrateo» para verlo.'
+      : 'Ninguna legalización de ese rango de fechas tuvo cambios en ese periodo.') + '</div>';
+  } else {
+    html += visibles.map(camLegHtml).join('');
+  }
+  box.innerHTML = html;
+}
+
+function camAbrirTodas(abrir) {
+  document.querySelectorAll('#cam-body details.cam-leg').forEach(function(d) { d.open = abrir; });
+}
+
+// Texto plano de un fragmento de HTML (los renglones del historial vienen con marcas).
+function camTexto(html) {
+  var el = document.createElement('div');
+  // Las «chips» de un alta son spans seguidos: sin separador quedarían pegadas.
+  el.innerHTML = String(html).replace(/<\/span>(\s*)<span class="hist-chip">/g, '</span>; <span class="hist-chip">');
+  return (el.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function camTextoBloque(b) {
+  var d = b._d;
+  var partes = [];
+  function sec(titulo, lineas) {
+    if (!lineas || !lineas.length) return;
+    partes.push(titulo + ': ' + lineas.map(function(l) {
+      return (l.signo && l.signo !== '·' ? l.signo + ' ' : '') + camTexto(l.html);
+    }).join(' | '));
+  }
+  if (b.rem) { sec('Remisión externa', d.cabecera); sec('Líneas de la remisión', d.lineas); }
+  else { sec('Cabecera', d.cabecera); sec('Líneas de gasto', d.gastos); sec('Reparto', d.reparto); }
+  return partes.join(' ‖ ');
+}
+
+// Un renglón por guardado dentro del periodo, con lo mismo que se ve en pantalla.
+function exportarCambiosExcel() {
+  if (!camData) { showToast('Primero busca los cambios', '#e74c3c'); return; }
+  var solo = camSoloImpacto();
+  var data = [];
+  camAnalizarTodas().filter(function(a) { return !solo || a.impacto; }).forEach(function(a) {
+    var datos = camDatosLeg(a.reg);
+    var tipoTxt = datos.tipo ? (typeof tipoLabel === 'function' ? tipoLabel({ Tipo: datos.tipo }) : datos.tipo) : '';
+    a.bloques.forEach(function(b) {
+      data.push({
+        'Consecutivo': a.cons,
+        'Fecha de la legalización': datos.fecha ? fmtDate(datos.fecha) : '',
+        'Tipo': tipoTxt,
+        'Fecha y hora': histFechaHora(b.inicio),
+        'Usuario': b.usuario || 'Sistema',
+        'Correo': b.email || '',
+        'Qué': HIST_TIPOS[b._d.tipo].titulo,
+        'Remisión externa': b.rem ? (b.rem.remision || '') : '',
+        'Puede mover el Prorrateo': CAM_IMPACTO.some(function(k) { return b._f[k]; }) ? 'Sí' : 'No',
+        'Áreas': CAM_ORDEN.filter(function(k) { return b._f[k]; }).map(function(k) { return CAM_AREAS[k].plano; }).join(', '),
+        'Detalle': camTextoBloque(b)
+      });
+    });
+  });
+  if (!data.length) { showToast('No hay cambios para exportar', '#e74c3c'); return; }
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cambios');
+  XLSX.writeFile(wb, 'cambios_legalizaciones_desde_' + String(document.getElementById('cm-desde').value).slice(0, 10) + '.xlsx');
 }

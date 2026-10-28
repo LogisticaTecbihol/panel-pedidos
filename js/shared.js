@@ -587,6 +587,15 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, historial: res.data };
     }
+    // Qué legalizaciones/envíos se crearon, cambiaron o eliminaron desde un momento (todas, no una).
+    if (action === 'getCambiosLegalizacion') {
+      var res = await _sb.rpc('get_cambios_legalizacion_gastos', {
+        p_desde: opts && opts.desde, p_hasta: (opts && opts.hasta) || null,
+        p_fecha_desde: (opts && opts.fechaDesde) || null, p_fecha_hasta: (opts && opts.fechaHasta) || null
+      });
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, cambios: res.data };
+    }
     // Remisiones de proveedores externos (Chia Abago) que no están en el sistema.
     if (action === 'getRemisionesExternas') {
       var res = await _fetchAllRows('RemisionesExternas', cols);
