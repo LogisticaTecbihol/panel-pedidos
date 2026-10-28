@@ -581,8 +581,9 @@ var LG_SORT_COLS = {
     { id: 'acciones', label: 'Acciones' }
   ],
   // Detalle de remisiones y productos de Legalizaciones: cada fila es
-  // { leg, rem, cli, muestra, m, nota, primera } (m = línea de producto de la
-  // remisión, o null si no hay productos que mostrar; primera = primera fila de su
+  // { leg, rem, cli, muestra, m, nota, gasto, primera } (m = línea de producto de la
+  // remisión, o null si no hay productos que mostrar; gasto = lo que se le prorratea a
+  // esa línea, o null si no entra al prorrateo; primera = primera fila de su
   // legalización en el orden mostrado, la única que lleva el Total gastos).
   lgd: [
     { id: 'n', label: 'N°', fn: function(r) { return r.leg.Consecutivo || ''; } },
@@ -596,6 +597,7 @@ var LG_SORT_COLS = {
     { id: 'presentacion', label: 'Presentación', fn: function(r) { return r.m ? (r.m.presentacion || '') : ''; } },
     { id: 'cantidad', label: 'Cantidad', right: true, fn: function(r) { return r.m ? (Number(r.m.cantidad) || 0) : null; } },
     { id: 'empresa', label: 'Empresa', fn: function(r) { return r.m ? getSigla(r.m.empresa) : ''; } },
+    { id: 'gasto', label: 'Gasto prorrateado', right: true, fn: function(r) { return r.gasto; } },
     { id: 'total', label: 'Total gastos', right: true, fn: function(r) { return totalGastosOf(r.leg.id); } },
     { id: 'parte', label: _parteLabel, right: true, soloPropia: true, fn: function(r) { return _parteEmpresaPropia(r.leg); } },
     { id: 'estado', label: 'Estado', fn: function(r) { return estadoLeg(r.leg) || ''; } },
@@ -2113,8 +2115,36 @@ function renderLegTable() {
 // _remisionesConProductos). Una legalización sin remisiones (p. ej. un mantenimiento)
 // o con remisiones que no se resuelven queda en una fila con la nota, para que no
 // desaparezca de la vista. El Total gastos es el de toda la legalización y va solo en
-// la primera fila de cada una, para que la columna sume bien.
+// la primera fila de cada una, para que la columna sume bien. El Gasto prorrateado es,
+// en cambio, el de cada fila: lo que se le asigna a esa línea de producto (ver
+// _gastoProrrateadoDe).
 var legSub = 'lista'; // 'lista' | 'detalle'
+
+// Gasto prorrateado de cada línea de remisión de UNA legalización, con el mismo cálculo
+// de la pestaña Prorrateo (LegProrrateo.calcular: por litros y kilos entre los productos
+// de sus remisiones, sin Combustible ni Otros) aplicado a ese solo viaje. Devuelve
+// [{ m, codigo, monto }], con `m` el mismo objeto de línea que traen los mapas de
+// remisiones. Vacío si no entra al prorrateo (mantenimiento, rechazada, sin remisiones o
+// sin productos que se conviertan a litros, kilos o unidades).
+function _gastoProrrateadoDe(leg) {
+  if (!leg.Remisiones_Relacionadas) return [];
+  return LegProrrateo.calcular({
+    legs: [leg],
+    items: itemsOf(leg.id),
+    empresas: empresasOf(leg.id),
+    mapa: prorrateoMapa || remisionProductoMap,
+    mapaReparto: prorrateoMapaReparto || remisionProductoMapReparto
+  }, {}).lineasMonto;
+}
+
+// Lo prorrateado a una línea de remisión (suma si la misma línea cuenta más de una vez),
+// o null si esa línea no entra al prorrateo.
+function _gastoDeLinea(lineasMonto, m) {
+  if (!m) return null;
+  var hay = false, suma = 0;
+  lineasMonto.forEach(function(x) { if (x.m === m) { hay = true; suma += x.monto; } });
+  return hay ? suma : null;
+}
 
 function setLegSub(sub) {
   legSub = sub;
@@ -2134,8 +2164,9 @@ function _legsDetalleFilas() {
   var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
   var filas = [];
   _legsPorFiltros().forEach(function(leg) {
+    var prorrateo = _gastoProrrateadoDe(leg);
     _remisionesConProductos(leg).forEach(function(x) {
-      filas.push({ leg: leg, rem: x.rem, cli: x.cli, muestra: x.muestra, m: x.m, nota: x.nota, primera: false });
+      filas.push({ leg: leg, rem: x.rem, cli: x.cli, muestra: x.muestra, m: x.m, nota: x.nota, gasto: _gastoDeLinea(prorrateo, x.m), primera: false });
     });
   });
   if (fTxt) {
@@ -2188,6 +2219,7 @@ function renderLegDetalle() {
           '<td style="text-align:right;white-space:nowrap">' + escHtml(_cantidadLineaTxt(m)) + '</td>' +
           '<td><span class="sigla-badge ' + getSiglaClass(m.empresa) + '">' + escHtml(getSigla(m.empresa)) + '</span></td>'
         : '<td colspan="4" style="color:#a0aec0;font-style:italic">' + escHtml(r.nota) + '</td>') +
+      '<td style="text-align:right;white-space:nowrap">' + (r.gasto === null ? vacio : escHtml(fmtMoney2(r.gasto))) + '</td>' +
       '<td style="text-align:right">' + (r.primera ? escHtml(fmtMoney(totalGastosOf(leg.id))) : '') + '</td>' +
       (empresaPropia ? '<td style="text-align:right">' + (r.primera ? _parteEmpresaPropiaHtml(leg) : '') + '</td>' : '') +
       '<td>' + estadoBadgeHtml(leg) + '</td>' +
@@ -2218,6 +2250,7 @@ function exportarLegDetalleExcel() {
       'Cantidad': m ? (Number(m.cantidad) || 0) : '',
       'Unidad': m ? _unidadLineaTxt(m) : '',
       'Empresa': m ? getSigla(m.empresa) : '',
+      'Gasto prorrateado': r.gasto === null ? '' : Number(r.gasto.toFixed(2)),
       'Total gastos': r.primera ? totalGastosOf(leg.id) : ''
     };
     if (empresaPropia) fila['Parte de ' + empresaPropia.sigla] = r.primera && _parteEmpresaPropia(leg) !== null ? _parteEmpresaPropia(leg) : '';

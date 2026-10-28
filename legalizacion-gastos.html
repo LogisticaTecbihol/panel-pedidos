@@ -179,7 +179,7 @@
         </div>
       </div>
       <div style="padding:12px 20px 0">
-        <div class="gpp-note">Una fila por producto de cada remisión relacionada con la legalización (incluye muestras y las remisiones externas de Chia Abago / materia prima). «Cantidad» es la de esa remisión puntual (una remisión externa de varias plantas reparte su cantidad en partes iguales entre las empresas). Si una legalización no tiene remisiones (p. ej. un mantenimiento), o una remisión no está en el sistema o es de un tipo que aún no se resuelve (p. ej. órdenes de compra), aparece sin productos. «Total gastos» es el de toda la legalización y solo se muestra en su primera fila, para que la columna sume bien (igual la «Parte de …» que ven los usuarios de una sola empresa). Las remisiones de muestras no tienen cliente: en su lugar se muestra el responsable de la solicitud, marcado como «🧪 Muestra». Usa los filtros de arriba (Empresa, Tipo, Estado, Desde y Hasta); Buscar también filtra por remisión, producto, cliente y empresa.</div>
+        <div class="gpp-note">Una fila por producto de cada remisión relacionada con la legalización (incluye muestras y las remisiones externas de Chia Abago / materia prima). «Cantidad» es la de esa remisión puntual (una remisión externa de varias plantas reparte su cantidad en partes iguales entre las empresas). Si una legalización no tiene remisiones (p. ej. un mantenimiento), o una remisión no está en el sistema o es de un tipo que aún no se resuelve (p. ej. órdenes de compra), aparece sin productos. «Gasto prorrateado» es la parte del gasto del viaje que le toca a esa línea de producto, con el mismo cálculo de la pestaña Prorrateo (por litros y kilos de las remisiones; no incluye Combustible ni «Otros», que no se prorratean por producto); queda en blanco (—) si la línea no entra al prorrateo: mantenimientos, legalizaciones rechazadas, muestras en una ruta o productos que no se convierten a litros, kilos o unidades. «Total gastos» es el de toda la legalización y solo se muestra en su primera fila, para que la columna sume bien (igual la «Parte de …» que ven los usuarios de una sola empresa). Las remisiones de muestras no tienen cliente: en su lugar se muestra el responsable de la solicitud, marcado como «🧪 Muestra». Usa los filtros de arriba (Empresa, Tipo, Estado, Desde y Hasta); Buscar también filtra por remisión, producto, cliente y empresa.</div>
       </div>
       <div style="overflow-x:auto">
         <table>
@@ -827,7 +827,7 @@
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
-<script src="js/legalizacion-prorrateo.js?v=20261023a"></script>
-<script src="js/legalizacion-gastos.js?v=20261028c"></script>
+<script src="js/legalizacion-prorrateo.js?v=20261028a"></script>
+<script src="js/legalizacion-gastos.js?v=20261028d"></script>
 </body>
 </html>

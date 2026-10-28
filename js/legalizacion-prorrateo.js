@@ -514,6 +514,10 @@ var LegProrrateo = (function() {
     var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto litro/kilo resoluble)
     var sinIdentificarLegs = {};       // legId -> Consecutivo
     var totalGeneral = 0;              // solo lo prorrateado por producto (sin "Sin identificar")
+    // El mismo monto prorrateado, línea por línea de remisión (sin agrupar por producto ni
+    // por empresa): [{ m: línea del mapa de remisiones, codigo: remisión, monto }]. Lo usa el
+    // Detalle de remisiones y productos de Legalización para mostrar el gasto de cada fila.
+    var lineasMonto = [];
 
     // Combustible: porEmpresa = empresaSigla -> monto; legs = empresaSigla ->
     // { legId -> Consecutivo }; sinAsignar = monto de viajes/mantenimientos sin
@@ -537,6 +541,7 @@ var LegProrrateo = (function() {
         if (fEmpSigla && emp !== fEmpSigla) return;
         var monto = (l[campoUnidad] / totalUnidad) * subMonto;
         campoAcumMonto[emp] = (campoAcumMonto[emp] || 0) + monto;
+        lineasMonto.push({ m: l, codigo: item.codigo, monto: monto });
         var sku = (l.producto || 'Sin nombre') + (l.presentacion ? ' (' + l.presentacion + ')' : '');
         porEmpresa[emp] = (porEmpresa[emp] || 0) + monto;
         var skuMap = porEmpresaSku[emp] || (porEmpresaSku[emp] = {});
@@ -719,6 +724,7 @@ var LegProrrateo = (function() {
       // un solo monto en "Sin reparto asignado", sin discriminar por empresa.
       sinIdentificado: { porEmpresa: {}, legs: {}, sinAsignar: sinIdentificar, sinAsignarLegs: sinIdentificarLegs, total: sinIdentificar },
       totalGeneral: totalGeneral,
+      lineasMonto: lineasMonto,
       combustiblePorEmpresa: combustible.porEmpresa,
       combustibleLegs: combustible.legs,
       combustibleSinAsignar: combustible.sinAsignar,
