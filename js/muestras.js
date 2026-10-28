@@ -49,6 +49,7 @@ var muViewNewLines = [];
 var muViewProdACs = [];
 var muViewWorkingLines = [];
 var muViewEmpresa = '';
+var muViewColAsig = false;   // la tabla del detalle trae la columna «Asignar entrega» (solo con la solicitud aprobada)
 var muAsig = null;
 var ocsLegalizadasPorMuestra = {};
 
@@ -873,6 +874,10 @@ async function viewMuestra(id) {
     html += _muProduccionPanelHtml(r, emp, consec, aprEstado, sameConsec);
   } else if (sameConsec.length) {
     var despachoDisabled = aprEstado !== 'Aprobada';
+    // Las líneas nuevas también se pueden agregar mientras la solicitud espera
+    // aprobación (se guardan aparte, sin despachar); rechazada sigue cerrada.
+    var lineasNuevasPend = aprEstado === 'Por aprobar';
+    muViewColAsig = !despachoDisabled;
     muViewEmpresa = emp;
     muViewWorkingLines = sameConsec.map(function(x) {
       var copy = Object.assign({}, x);
@@ -914,8 +919,13 @@ async function viewMuestra(id) {
         (AUTH.canDeleteIn('muestras') ? '<button class="btn-del" onclick="closeViewMu();deleteMuestra(' + x.id + ')" style="font-size:0.75rem;padding:3px 8px">🗑️</button>' : '') + '</td></tr>';
     });
     html += '<tbody id="mu-view-new-lines"></tbody></table></div>';
-    if (AUTH.canEdit() && !despachoDisabled) {
-      html += '<div style="margin-top:8px"><button onclick="addMuViewLine()" style="background:#d35400;color:white;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:700">+ Agregar línea</button></div>';
+    if (AUTH.canEdit() && (!despachoDisabled || lineasNuevasPend)) {
+      html += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button onclick="addMuViewLine()" style="background:#d35400;color:white;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:700">+ Agregar línea</button>' +
+        (lineasNuevasPend
+          ? '<button onclick="saveLineasNuevasMuestra()" id="btn-save-lineas-mu" style="background:#27ae60;color:white;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:700">💾 Guardar líneas nuevas</button>' +
+            '<span style="font-size:0.74rem;color:#92400e">Quedan pendientes de la misma aprobación; no se despachan.</span>'
+          : '') +
+        '</div>';
     }
     html += _muDevolucionesPanelHtml(sameConsec);
   }
@@ -1599,6 +1609,61 @@ async function saveEntregas() {
   }
 }
 
+// Guarda SOLO las líneas nuevas de una solicitud que aún está «Por aprobar»:
+// no despacha ni genera remisión (eso es «Guardar entregas», ya aprobada).
+// Las líneas heredan «Por aprobar», así que la aprobación posterior (que actúa
+// sobre todas las filas del consecutivo) las cubre junto con las demás.
+async function saveLineasNuevasMuestra() {
+  syncMuViewNewLinesFromDOM();
+  var newLines = muViewNewLines.filter(function(p) { return p.producto && p.cantidad > 0; });
+  if (!newLines.length) {
+    showToast('Agrega al menos una línea con producto y cantidad', '#e67e22');
+    return;
+  }
+
+  var btn = document.getElementById('btn-save-lineas-mu');
+  btn.disabled = true;
+  btn.textContent = '⏳ Guardando...';
+
+  try {
+    await loadMuestras();
+    var head = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
+    if (!head) throw new Error('No se encontró la solicitud. Recarga la página e intenta de nuevo.');
+    // Alguien pudo aprobarla o rechazarla mientras estaba abierta: no se
+    // inserta con un estado de aprobación distinto al que ya tiene.
+    var aprHead = head.Estado_Aprobacion || 'Por aprobar';
+    if (aprHead !== 'Por aprobar') {
+      throw new Error('La solicitud ya está «' + aprHead + '». Ciérrala y ábrela de nuevo.');
+    }
+    var res = await apiPost({
+      action: 'agregarMuestra',
+      Empresa: head.Empresa, Consecutivo: head.Consecutivo, _reuse_consecutivo: true,
+      Fecha_Solicitud: head.Fecha_Solicitud, Fecha_Despacho: head.Fecha_Despacho,
+      Responsable: head.Responsable, Departamento: head.Departamento, Municipio: head.Municipio,
+      Tipo_Cultivo: head.Tipo_Cultivo, Fecha_Aplicacion: head.Fecha_Aplicacion,
+      Fecha_Seguimiento: head.Fecha_Seguimiento, Remision: head.Remision || '',
+      Solicitante: head.Solicitante, Autoriza: head.Autoriza,
+      Estado: head.Estado || 'Pendiente', Objetivo: head.Objetivo,
+      Estado_Aprobacion: 'Por aprobar', Aprobada_Por: '', Fecha_Aprobacion: '',
+      Observaciones: head.Observaciones,
+      Tipo_Solicitud: head.Tipo_Solicitud || 'Despacho',
+      // Un usuario «comercial» solo puede insertar filas con su propio responsable_id (RLS).
+      responsable_id: head.responsable_id || null,
+      lineas: newLines.map(function(l) {
+        return { Producto: l.producto, Presentacion: l.presentacion, Cantidad: l.cantidad };
+      })
+    });
+    if (!res.ok) throw new Error(res.error || 'Error al agregar nuevas líneas');
+    closeViewMu();
+    showToast('✅ ' + newLines.length + ' línea(s) nueva(s) agregada(s)');
+    await loadMuestras();
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+    btn.disabled = false;
+    btn.textContent = '💾 Guardar líneas nuevas';
+  }
+}
+
 // ── Apartado de stock (reserva sin despachar) ─────────────────────
 
 function _muConsecLookup(empresa, consecutivo) {
@@ -1941,7 +2006,7 @@ function renderMuViewNewLines() {
       '<td><input class="ef mu-view-new-pres" data-i="' + i + '" type="text" value="' + pres + '" placeholder="Presentación" style="width:100px;font-size:0.82rem;padding:4px 6px"></td>' +
       '<td><input class="ef mu-view-new-cant" data-i="' + i + '" type="number" min="0" value="' + (p.cantidad || '') + '" placeholder="0" style="width:70px;text-align:right;font-size:0.82rem;padding:4px 6px"></td>' +
       '<td></td>' +
-      (muAsig ? '<td></td>' : '') +
+      (muViewColAsig ? '<td></td>' : '') +
       '<td style="text-align:center"><button onclick="removeMuViewLine(' + i + ')" style="background:#e74c3c;color:white;border:none;padding:3px 8px;border-radius:5px;cursor:pointer;font-size:0.75rem;font-weight:700">✕</button></td>' +
       '</tr>';
   }).join('');
