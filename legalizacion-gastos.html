@@ -19,6 +19,30 @@
 /* ── Tabs del módulo ── */
 .lg-tab{background:#718096;color:white;border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600;transition:background .2s}
 
+/* ── Historial de una legalización ── */
+.hist-resumen{display:flex;flex-wrap:wrap;gap:6px 24px;padding:4px 20px 12px;font-size:.84rem;color:#4a5568}
+.hist-aviso{margin:0 20px 12px;padding:8px 12px;border-radius:8px;font-size:.84rem;background:#fffaf0;border:1px solid #fbd38d;color:#b7791f}
+.hist-aviso-rojo{background:#fff5f5;border-color:#feb2b2;color:#c0392b}
+.hist-linea-tiempo{padding:4px 20px 16px;margin-left:8px}
+.hist-bloque{position:relative;border-left:3px solid #cbd5e0;padding:2px 0 14px 16px}
+.hist-bloque::before{content:"";position:absolute;left:-8px;top:4px;width:13px;height:13px;border-radius:50%;background:#718096;border:2px solid #fff}
+.hist-bloque.hist-creacion{border-left-color:#27ae60}.hist-bloque.hist-creacion::before{background:#27ae60}
+.hist-bloque.hist-modificacion{border-left-color:#2e86c1}.hist-bloque.hist-modificacion::before{background:#2e86c1}
+.hist-bloque.hist-conciliacion{border-left-color:#1e8449}.hist-bloque.hist-conciliacion::before{background:#1e8449}
+.hist-bloque.hist-rechazo,.hist-bloque.hist-eliminacion{border-left-color:#c0392b}.hist-bloque.hist-rechazo::before,.hist-bloque.hist-eliminacion::before{background:#c0392b}
+.hist-cab{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;font-size:.88rem;margin-bottom:6px}
+.hist-cuando{color:#1a5276;font-weight:600}
+.hist-nota{font-size:.76rem;color:#718096}
+.hist-sec{margin:6px 0 0}
+.hist-sec-t{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#718096;margin-bottom:2px}
+.hist-linea{display:flex;gap:8px;font-size:.84rem;padding:1px 0}
+.hist-signo{font-weight:700;width:12px;flex:none;text-align:center}
+.hist-mas .hist-signo{color:#27ae60}.hist-menos .hist-signo{color:#c0392b}
+.hist-antes{color:#c0392b;background:#fff5f5;border-radius:4px;padding:0 4px}
+.hist-despues{color:#276749;background:#f0fff4;border-radius:4px;padding:0 4px}
+.hist-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.hist-chip{background:#edf2f7;border-radius:12px;padding:1px 10px;font-size:.78rem;color:#4a5568}
+
 /* ── Proporción de gastos por producto / por empresa (tabla) ── */
 .lg-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
 @media (max-width:900px){.lg-row{grid-template-columns:1fr}}
@@ -141,6 +165,7 @@
     <button class="lg-tab" id="tab-vehiculos" onclick="switchTab('vehiculos')" style="background:#718096">🚚 Vehículos</button>
     <button class="lg-tab" id="tab-detalle" onclick="switchTab('detalle')" style="background:#718096">🔎 Vista detallada</button>
     <button class="lg-tab" id="tab-consecutivo" onclick="switchTab('consecutivo')" style="background:#718096">🧮 Consecutivo</button>
+    <button class="lg-tab" id="tab-historial" onclick="switchTab('historial')" style="background:#718096;display:none">🕑 Historial</button>
     <button class="lg-tab" id="tab-remisiones" onclick="switchTab('remisiones')" style="background:#718096">🗂️ Remisiones externas</button>
   </div>
   <div class="gpp-note" id="lg-sort-hint" style="margin:-6px 0 12px">↕ Para ordenar, haz clic en el encabezado de una columna (↑ ascendente, ↓ descendente; un tercer clic la quita). Haz clic en más columnas para ordenar por varios campos: el número indica la prioridad. Shift + clic quita una columna del orden.</div>
@@ -442,6 +467,21 @@
         </table>
       </div>
     </div>
+  </div>
+
+  <!-- Historial: quién creó y modificó una legalización (js/legalizacion-historial.js) -->
+  <div id="panel-historial" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Consecutivo</label>
+        <input type="text" id="hf-cons" list="hf-cons-list" placeholder="LEG-00044, ENV-00012…" autocomplete="off" style="width:220px" onkeydown="if(event.key==='Enter')cargarHistorial()">
+        <datalist id="hf-cons-list"></datalist>
+      </div>
+      <div class="fg"><button class="btn-dl" onclick="cargarHistorial()">🔎 Consultar</button></div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <button class="btn-dl" onclick="exportarHistorialExcel()">📥 Exportar Excel</button>
+      </div>
+    </div>
+    <div id="hist-body"></div>
   </div>
 
   <!-- Remisiones externas: Chia Abago y materia prima registradas fuera del sistema -->
@@ -824,6 +864,7 @@
       <div class="mftr-btns" style="width:100%;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
         <button class="btn-edit" onclick="exportarPDF()">🖨️ Exportar PDF</button>
         <button class="btn-edit" id="ver-btn-editar" onclick="editarDesdeVer()" style="display:none">✏️ Editar</button>
+        <button class="btn-edit" id="ver-btn-historial" onclick="abrirHistorialDesdeVer()" style="display:none">🕑 Historial</button>
         <span style="flex:1"></span>
         <button class="btn-cancel" onclick="closeVer()">Cerrar</button>
       </div>
@@ -834,11 +875,12 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261023a"></script>
+<script src="js/shared.js?v=20261028a"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261028b"></script>
-<script src="js/legalizacion-gastos.js?v=20261028e"></script>
+<script src="js/legalizacion-historial.js?v=20261028a"></script>
+<script src="js/legalizacion-gastos.js?v=20261028f"></script>
 </body>
 </html>

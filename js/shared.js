@@ -570,6 +570,13 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, auditoria: res.data };
     }
+    // Historial de una legalización (creación y cambios, desde audit_log). Solo
+    // quien concilia gastos: audit_log lo lee un admin, así que lo abre el servidor.
+    if (action === 'getHistorialLegalizacion') {
+      var res = await _sb.rpc('get_historial_legalizacion_gastos', { p_consecutivo: opts && opts.consecutivo });
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, historial: res.data };
+    }
     // Remisiones de proveedores externos (Chia Abago) que no están en el sistema.
     if (action === 'getRemisionesExternas') {
       var res = await _fetchAllRows('RemisionesExternas', cols);

@@ -4,7 +4,7 @@
 
 // ── Tabs ──
 function switchTab(tab) {
-  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle', 'consecutivo', 'remisiones'].forEach(function(t) {
+  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle', 'consecutivo', 'historial', 'remisiones'].forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
@@ -16,6 +16,7 @@ function switchTab(tab) {
   if (tab === 'vehiculos') renderVehiculosTab();
   if (tab === 'detalle') renderDetalleTable();
   if (tab === 'consecutivo') loadConsecutivoData(); // siempre fresco: otros usuarios crean/borran/anotan
+  if (tab === 'historial') abrirTabHistorial(); // js/legalizacion-historial.js
   if (tab === 'remisiones') renderRemisionesExternasTab();
   // Desde/Hasta de la barra de arriba solo filtran Legalizaciones: las demás pestañas tienen los suyos.
   ['f-fg-desde', 'f-fg-hasta'].forEach(function(id) {
@@ -473,6 +474,7 @@ async function loadLegalizaciones() {
   populateEmpresaSelect('df-emp', 'Todas');
   populateEmpresaSelect('ef-emp', 'Todas');
   aplicarRestriccionEmpresaPropia();
+  aplicarVisibilidadHistorial(); // pestaña Historial: solo quien concilia y no es de una sola empresa
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
   var loadZone = document.getElementById('load-zone');
@@ -4656,6 +4658,7 @@ function openVer(id) {
 
   var editBtn = document.getElementById('ver-btn-editar');
   editBtn.style.display = puedeEditarLeg(leg) ? 'inline-block' : 'none';
+  document.getElementById('ver-btn-historial').style.display = histPuede() ? 'inline-block' : 'none';
 
   renderVerBody(leg);
   document.getElementById('ver-overlay').classList.add('show');
