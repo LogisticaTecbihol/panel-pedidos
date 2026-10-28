@@ -124,6 +124,8 @@
         <option value="">Todas</option>
       </select>
     </div>
+    <div class="fg" id="f-fg-desde"><label>Desde</label><input type="date" id="f-desde" onchange="renderTable()"></div>
+    <div class="fg" id="f-fg-hasta"><label>Hasta</label><input type="date" id="f-hasta" onchange="renderTable()"></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="responsable, ruta, cliente, N°…" style="width:240px" oninput="renderTable()"></div>
     <div style="margin-left:auto;display:flex;gap:8px">
       <button class="btn-dl" onclick="openForm()">+ Nueva legalización</button>
@@ -177,7 +179,7 @@
         </div>
       </div>
       <div style="padding:12px 20px 0">
-        <div class="gpp-note">Una fila por producto de cada remisión relacionada con la legalización (incluye muestras y las remisiones externas de Chia Abago / materia prima). «Cantidad» es la de esa remisión puntual (una remisión externa de varias plantas reparte su cantidad en partes iguales entre las empresas). Si una legalización no tiene remisiones (p. ej. un mantenimiento), o una remisión no está en el sistema o es de un tipo que aún no se resuelve (p. ej. órdenes de compra), aparece sin productos. «Total gastos» es el de toda la legalización y solo se muestra en su primera fila, para que la columna sume bien (igual la «Parte de …» que ven los usuarios de una sola empresa). Las remisiones de muestras no tienen cliente: en su lugar se muestra el responsable de la solicitud, marcado como «🧪 Muestra». Usa los filtros de arriba (Empresa, Tipo, Estado); Buscar también filtra por remisión, producto, cliente y empresa.</div>
+        <div class="gpp-note">Una fila por producto de cada remisión relacionada con la legalización (incluye muestras y las remisiones externas de Chia Abago / materia prima). «Cantidad» es la de esa remisión puntual (una remisión externa de varias plantas reparte su cantidad en partes iguales entre las empresas). Si una legalización no tiene remisiones (p. ej. un mantenimiento), o una remisión no está en el sistema o es de un tipo que aún no se resuelve (p. ej. órdenes de compra), aparece sin productos. «Total gastos» es el de toda la legalización y solo se muestra en su primera fila, para que la columna sume bien (igual la «Parte de …» que ven los usuarios de una sola empresa). Las remisiones de muestras no tienen cliente: en su lugar se muestra el responsable de la solicitud, marcado como «🧪 Muestra». Usa los filtros de arriba (Empresa, Tipo, Estado, Desde y Hasta); Buscar también filtra por remisión, producto, cliente y empresa.</div>
       </div>
       <div style="overflow-x:auto">
         <table>
@@ -826,6 +828,6 @@
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261023a"></script>
-<script src="js/legalizacion-gastos.js?v=20261028b"></script>
+<script src="js/legalizacion-gastos.js?v=20261028c"></script>
 </body>
 </html>

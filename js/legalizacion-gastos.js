@@ -17,6 +17,11 @@ function switchTab(tab) {
   if (tab === 'detalle') renderDetalleTable();
   if (tab === 'consecutivo') loadConsecutivoData(); // siempre fresco: otros usuarios crean/borran/anotan
   if (tab === 'remisiones') renderRemisionesExternasTab();
+  // Desde/Hasta de la barra de arriba solo filtran Legalizaciones: las demás pestañas tienen los suyos.
+  ['f-fg-desde', 'f-fg-hasta'].forEach(function(id) {
+    var fg = document.getElementById(id);
+    if (fg) fg.style.display = (tab === 'legalizaciones') ? '' : 'none';
+  });
   var hint = document.getElementById('lg-sort-hint'); // Prorrateo no tiene tablas ordenables
   if (hint) hint.style.display = (tab === 'prorrateo') ? 'none' : 'block';
 }
@@ -1993,7 +1998,7 @@ function exportarDetalleExcel() {
 }
 
 // Exporta la lista de la pestaña Legalizaciones tal como se ve: mismas filas
-// (filtros Empresa/Tipo/Estado/Buscar), mismo orden y mismas columnas.
+// (filtros Empresa/Tipo/Estado/Desde/Hasta/Buscar), mismo orden y mismas columnas.
 function exportarLegalizacionesExcel() {
   var rows = _legsListaFiltradas();
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
@@ -2029,19 +2034,23 @@ function renderTable() {
   renderDetalleTable();
 }
 
-// Legalizaciones que pasan Empresa/Tipo/Estado (sin Buscar ni orden de columnas),
-// la más reciente primero: base común de la lista y del Detalle de remisiones y
-// productos.
+// Legalizaciones que pasan Empresa/Tipo/Estado y el rango Desde/Hasta (por Fecha de
+// la legalización; sin Buscar ni orden de columnas), la más reciente primero: base
+// común de la lista y del Detalle de remisiones y productos.
 function _legsPorFiltros() {
   var fEmp = document.getElementById('f-emp').value;
   var fTipo = document.getElementById('f-tipo').value;
   var fEstado = document.getElementById('f-estado').value;
+  var fDesde = document.getElementById('f-desde').value;
+  var fHasta = document.getElementById('f-hasta').value;
 
   return legs.filter(function(leg) {
     if (esEnvio(leg)) return false; // los envíos tienen su propia pestaña (renderEnviosTable)
     if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
+    if (fDesde && (leg.Fecha || '') < fDesde) return false;
+    if (fHasta && (leg.Fecha || '') > fHasta) return false;
     return true;
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
 }
@@ -2188,8 +2197,8 @@ function renderLegDetalle() {
 }
 
 // Exporta el detalle tal como se ve: mismas filas (filtros Empresa/Tipo/Estado/
-// Buscar), mismo orden y dos columnas más: el tipo de remisión y la nota de las filas
-// sin productos.
+// Desde/Hasta/Buscar), mismo orden y dos columnas más: el tipo de remisión y la nota
+// de las filas sin productos.
 function exportarLegDetalleExcel() {
   var rows = _legsDetalleFilas();
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
