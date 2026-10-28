@@ -31,12 +31,16 @@ var HIST_CAMPOS = {
   Estado_Conciliacion: 'Estado', Conciliado_Por: 'Conciliado por', Fecha_Conciliacion: 'Fecha de conciliación',
   Motivo_Rechazo: 'Motivo del rechazo',
   Concepto: 'Concepto', Proveedor: 'Proveedor', NIT: 'NIT', Valor: 'Valor', Galones: 'Galones', Km_Placa: 'Km',
-  Empresa: 'Empresa', Monto: 'Monto'
+  Empresa: 'Empresa', Monto: 'Monto',
+  Remision: 'Remisión', Planta: 'Planta', Producto: 'Producto', Presentacion: 'Presentación', Cantidad: 'Cantidad', Unidad: 'Unidad'
 };
 var HIST_MONEDA = ['Anticipo_Entregado', 'Saldo_Favor_Empleado', 'Saldo_Reembolsar_Empresa', 'Valor', 'Monto'];
 var HIST_FECHA = ['Fecha', 'Fecha_Salida', 'Fecha_Llegada'];
 var HIST_FECHA_HORA = ['Fecha_Conciliacion'];
-var HIST_TABLAS = { LegalizacionGastos: 'Cabecera', LegalizacionGastosItems: 'Línea de gasto', LegalizacionGastosEmpresas: 'Reparto' };
+var HIST_TABLAS = {
+  LegalizacionGastos: 'Cabecera', LegalizacionGastosItems: 'Línea de gasto', LegalizacionGastosEmpresas: 'Reparto',
+  RemisionesExternas: 'Remisión externa', RemisionesExternasItems: 'Línea de remisión'
+};
 var HIST_ACCIONES = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Baja' };
 var HIST_TIPOS = {
   creacion:     { icono: '✨', titulo: 'Creación' },
@@ -50,6 +54,12 @@ var HIST_TIPOS = {
 function histPuede() {
   return typeof AUTH !== 'undefined' && AUTH.canConciliarGastos() &&
     !(typeof empresaPropia !== 'undefined' && empresaPropia);
+}
+
+// ¿Mostrar también los cambios de las remisiones externas relacionadas? (casilla de la pestaña)
+function histVerRemisiones() {
+  var c = document.getElementById('hf-rem');
+  return !c || c.checked;
 }
 
 // Muestra la pestaña solo a quien puede (se llama al cargar las legalizaciones).
@@ -79,7 +89,7 @@ function histValor(k, v) {
 
 // Campos con valor de un registro, como "Campo: valor" (sin id ni vacíos).
 function histPares(d) {
-  return Object.keys(d || {}).filter(function(k) { return k !== 'id' && k !== 'Legalizacion_Id' && !histVacio(d[k]); })
+  return Object.keys(d || {}).filter(function(k) { return k !== 'id' && k !== 'Legalizacion_Id' && k !== 'Remision_Id' && !histVacio(d[k]); })
     .map(function(k) { return histCampo(k) + ': ' + histValor(k, d[k]); });
 }
 
@@ -161,6 +171,26 @@ function histLinea(signo, html) {
   return { signo: signo, html: html };
 }
 
+// Líneas de lo que pasó con una cabecera (legalización o remisión externa):
+// alta → sus datos; baja → lo que tenía; cambio → campo: antes → después.
+function histCabeceraLineas(cab) {
+  var out = [];
+  cab.forEach(function(e) {
+    if (e.accion === 'INSERT') {
+      out.push(histLinea('', '<div class="hist-chips">' + histChips(histPares(e.despues)) + '</div>'));
+    } else if (e.accion === 'DELETE') {
+      out.push(histLinea('', 'Eliminada. Tenía: <div class="hist-chips">' + histChips(histPares(e.antes)) + '</div>'));
+    } else {
+      Object.keys(e.despues || {}).forEach(function(k) {
+        out.push(histLinea('', '<strong>' + escHtml(histCampo(k)) + ':</strong> ' +
+          '<span class="hist-antes">' + escHtml(histValor(k, (e.antes || {})[k])) + '</span> → ' +
+          '<span class="hist-despues">' + escHtml(histValor(k, e.despues[k])) + '</span>'));
+      });
+    }
+  });
+  return out;
+}
+
 // Qué hizo un guardado: { tipo, cabecera:[], gastos:[], reparto:[], soloLineas }.
 // Cada línea es { signo: '+' | '−' | '·' | '', html }.
 function histDescribirBloque(bloque) {
@@ -180,21 +210,7 @@ function histDescribirBloque(bloque) {
     });
   }
 
-  // Cabecera
-  var cabecera = [];
-  cab.forEach(function(e) {
-    if (e.accion === 'INSERT') {
-      cabecera.push(histLinea('', '<div class="hist-chips">' + histChips(histPares(e.despues)) + '</div>'));
-    } else if (e.accion === 'DELETE') {
-      cabecera.push(histLinea('', 'Eliminada. Tenía: <div class="hist-chips">' + histChips(histPares(e.antes)) + '</div>'));
-    } else {
-      Object.keys(e.despues || {}).forEach(function(k) {
-        cabecera.push(histLinea('', '<strong>' + escHtml(histCampo(k)) + ':</strong> ' +
-          '<span class="hist-antes">' + escHtml(histValor(k, (e.antes || {})[k])) + '</span> → ' +
-          '<span class="hist-despues">' + escHtml(histValor(k, e.despues[k])) + '</span>'));
-      });
-    }
-  });
+  var cabecera = histCabeceraLineas(cab);
 
   // Líneas de gasto
   var gastos = [];
@@ -249,6 +265,83 @@ function histDescribirBloque(bloque) {
   }
 
   return { tipo: tipo, cabecera: cabecera, gastos: gastos, reparto: reparto, soloLineas: cab.length === 0 && tipo === 'modificacion' };
+}
+
+// ── Remisiones externas relacionadas ──
+// El reparto de una legalización sale de la planta y las líneas de sus remisiones
+// externas (MP-…, Chia Abago): corregir una de ellas y re-guardar la legalización
+// es una modificación que, sin esto, solo se vería en el historial de la remisión.
+
+function histRemNombre(d) {
+  d = d || {};
+  return [d.Producto, d.Presentacion].filter(function(x) { return !histVacio(x); }).join(' ') || 'Línea';
+}
+
+// Una línea de remisión en una frase: Producto Presentación · 140 L
+function histRemItemTxt(d) {
+  d = d || {};
+  var cant = histVacio(d.Cantidad) ? '' : String(d.Cantidad) + (histVacio(d.Unidad) ? '' : ' ' + d.Unidad);
+  return histRemNombre(d) + (cant ? ' · ' + cant : '');
+}
+
+// Mismo producto, presentación y unidad = la misma línea con otra cantidad.
+function histRemClaveNombre(d) {
+  d = d || {};
+  return [d.Producto, d.Presentacion, d.Unidad].map(function(x) { return String(x || '').trim().toLowerCase(); }).join('|');
+}
+
+// Empareja lo quitado con lo agregado que sea la misma línea (misma clave de
+// nombre): son cambios de cantidad, no una línea quitada y otra nueva.
+function histEmparejarLineas(quitadas, agregadas) {
+  var rest = agregadas.slice();
+  var cambios = [];
+  var q = [];
+  quitadas.forEach(function(d) {
+    var c = histRemClaveNombre(d);
+    var i = rest.findIndex(function(a) { return histRemClaveNombre(a) === c; });
+    if (i >= 0) { cambios.push({ antes: d, despues: rest[i] }); rest.splice(i, 1); }
+    else q.push(d);
+  });
+  return { cambios: cambios, quitadas: q, agregadas: rest };
+}
+
+// Qué hizo un guardado sobre una remisión externa: { tipo, cabecera:[], lineas:[] }.
+function histDescribirBloqueRem(bloque) {
+  var ev = bloque.eventos;
+  var cab = ev.filter(function(e) { return e.tabla === 'RemisionesExternas'; });
+  var its = ev.filter(function(e) { return e.tabla === 'RemisionesExternasItems'; });
+
+  var tipo = 'modificacion';
+  if (cab.some(function(e) { return e.accion === 'INSERT'; })) tipo = 'creacion';
+  else if (cab.some(function(e) { return e.accion === 'DELETE'; })) tipo = 'eliminacion';
+
+  var lineas = [];
+  var quitadas = its.filter(function(e) { return e.accion === 'DELETE'; }).map(function(e) { return e.antes || {}; });
+  var agregadas = its.filter(function(e) { return e.accion === 'INSERT'; }).map(function(e) { return e.despues || {}; });
+  var dg = histDiffFilas(quitadas, agregadas);
+  var par = histEmparejarLineas(dg.quitadas, dg.agregadas);
+  par.cambios.forEach(function(c) {
+    var cambios = Object.keys(c.despues).filter(function(k) {
+      return k !== 'id' && k !== 'Remision_Id' && String(c.antes[k]) !== String(c.despues[k]);
+    }).map(function(k) {
+      return escHtml(histCampo(k)) + ': <span class="hist-antes">' + escHtml(histValor(k, c.antes[k])) + '</span> → <span class="hist-despues">' + escHtml(histValor(k, c.despues[k])) + '</span>';
+    }).join(' · ');
+    lineas.push(histLinea('', '<strong>' + escHtml(histRemNombre(c.despues)) + ':</strong> ' + cambios));
+  });
+  par.quitadas.forEach(function(d) { lineas.push(histLinea('−', escHtml(histRemItemTxt(d)) + ' <span class="hist-nota">(quitada)</span>')); });
+  par.agregadas.forEach(function(d) { lineas.push(histLinea('+', escHtml(histRemItemTxt(d)) + (tipo === 'creacion' ? '' : ' <span class="hist-nota">(agregada)</span>'))); });
+  its.filter(function(e) { return e.accion === 'UPDATE'; }).forEach(function(e) {
+    var base = e._previo || {};
+    var cambios = Object.keys(e.despues || {}).map(function(k) {
+      return escHtml(histCampo(k)) + ': <span class="hist-antes">' + escHtml(histValor(k, (e.antes || {})[k])) + '</span> → <span class="hist-despues">' + escHtml(histValor(k, e.despues[k])) + '</span>';
+    }).join(' · ');
+    lineas.push(histLinea('', '<strong>' + escHtml(base.Producto ? histRemNombre(base) : 'Línea #' + e.registro_id) + ':</strong> ' + cambios));
+  });
+  if (dg.iguales) {
+    lineas.push(histLinea('·', '<span class="hist-nota">' + dg.iguales + (dg.iguales === 1 ? ' línea sin cambios (se regrabó igual)' : ' líneas sin cambios (se regrabaron iguales)') + '</span>'));
+  }
+
+  return { tipo: tipo, cabecera: histCabeceraLineas(cab), lineas: lineas };
 }
 
 // Texto plano de un evento (para el Excel).
@@ -320,8 +413,10 @@ function abrirHistorialDesdeVer() {
 }
 
 function histBloqueHtml(bloque) {
-  var d = histDescribirBloque(bloque);
+  var esRem = !!bloque.rem; // guardado de una remisión externa relacionada
+  var d = esRem ? histDescribirBloqueRem(bloque) : histDescribirBloque(bloque);
   var t = HIST_TIPOS[d.tipo];
+  var titulo = esRem ? '📦 Remisión ' + escHtml(bloque.rem.remision || 'externa') + ' · ' + t.titulo : t.icono + ' ' + t.titulo;
   var quien = bloque.usuario || 'Sistema (cambio directo en la base de datos)';
 
   function seccion(titulo, lineas) {
@@ -333,16 +428,16 @@ function histBloqueHtml(bloque) {
       }).join('') + '</div>';
   }
 
-  return '<div class="hist-bloque hist-' + d.tipo + '">' +
-    '<div class="hist-cab"><strong>' + t.icono + ' ' + t.titulo + '</strong>' +
+  return '<div class="hist-bloque hist-' + d.tipo + (esRem ? ' hist-rem' : '') + '">' +
+    '<div class="hist-cab"><strong>' + titulo + '</strong>' +
       '<span class="hist-cuando">' + escHtml(histFechaHora(bloque.inicio)) + '</span>' +
       '<span>' + escHtml(quien) + '</span>' +
       (bloque.email ? '<span class="hist-nota">' + escHtml(bloque.email) + '</span>' : '') +
     '</div>' +
-    seccion('Cabecera', d.cabecera) +
-    seccion('Líneas de gasto', d.gastos) +
-    seccion('Reparto entre empresas', d.reparto) +
-    (d.soloLineas ? '<div class="hist-nota" style="margin-top:6px">ℹ️ Solo cambiaron líneas o reparto: un guardado así no actualiza «Modificada» en la cabecera.</div>' : '') +
+    (esRem
+      ? seccion('Remisión externa', d.cabecera) + seccion('Líneas de la remisión', d.lineas)
+      : seccion('Cabecera', d.cabecera) + seccion('Líneas de gasto', d.gastos) + seccion('Reparto entre empresas', d.reparto)) +
+    (d.soloLineas ?'<div class="hist-nota" style="margin-top:6px">ℹ️ Solo cambiaron líneas o reparto: un guardado así no actualiza «Modificada» en la cabecera.</div>' : '') +
   '</div>';
 }
 
@@ -351,7 +446,20 @@ function histRegistroHtml(reg) {
   var cons = histConsecutivoDe(reg);
   var eventos = reg.eventos || [];
   histAnotarPrevios(eventos);
-  var bloques = histAgrupar(eventos);
+  var bloquesLeg = histAgrupar(eventos);
+
+  // Guardados de las remisiones externas relacionadas, en la misma línea de tiempo.
+  var bloquesRem = [];
+  if (histVerRemisiones()) {
+    (reg.remisiones || []).forEach(function(m) {
+      var evs = m.eventos || [];
+      histAnotarPrevios(evs);
+      histAgrupar(evs).forEach(function(b) { b.rem = m; bloquesRem.push(b); });
+    });
+  }
+  var bloques = bloquesLeg.concat(bloquesRem);
+  bloques.forEach(function(b, i) { b._i = i; });
+  bloques.sort(function(a, b) { return (new Date(a.inicio) - new Date(b.inicio)) || (a._i - b._i); });
 
   var tipoTxt = a ? (typeof tipoLabel === 'function' ? tipoLabel({ Tipo: a.tipo }) : (a.tipo || '')) : '';
   var meta = a
@@ -384,7 +492,8 @@ function histRegistroHtml(reg) {
 
   return '<div class="card" style="margin-bottom:16px">' +
     '<div class="card-head"><h3>' + escHtml(cons) + (meta ? ' <span style="font-weight:400;color:#718096">· ' + escHtml(meta) + '</span>' : '') + '</h3>' +
-      '<span style="font-size:0.78rem;color:#718096">' + bloques.length + (bloques.length === 1 ? ' guardado' : ' guardados') + ' · ' + eventos.length + ' eventos</span></div>' +
+      '<span style="font-size:0.78rem;color:#718096">' + bloquesLeg.length + (bloquesLeg.length === 1 ? ' guardado' : ' guardados') + ' · ' + eventos.length + ' eventos' +
+        (bloquesRem.length ? ' · ' + bloquesRem.length + (bloquesRem.length === 1 ? ' guardado' : ' guardados') + ' de remisiones externas' : '') + '</span></div>' +
     resumen + avisos + lineaTiempo +
   '</div>';
 }
@@ -400,7 +509,8 @@ function renderHistorialTab() {
   }
   box.innerHTML =
     '<div class="gpp-note" style="margin:0 0 12px">Consultado: ' + escHtml(histFechaHora(histData.generado)) + ' · hora de Colombia. ' +
-    'Un «guardado» agrupa lo que una persona grabó en pocos segundos. Al guardar, el panel borra y vuelve a crear las líneas de gasto y el reparto; las que quedan iguales se marcan «sin cambios».</div>' +
+    'Un «guardado» agrupa lo que una persona grabó en pocos segundos. Al guardar, el panel borra y vuelve a crear las líneas de gasto y el reparto; las que quedan iguales se marcan «sin cambios». ' +
+    'Los bloques 📦 morados son cambios de las remisiones externas (MP-…) que la legalización lleva o llevó en «Remisiones relacionadas»: su planta y sus líneas alimentan el reparto, así que corregirlas explica muchos re-guardados.</div>' +
     regs.map(histRegistroHtml).join('');
 }
 
@@ -410,9 +520,19 @@ function exportarHistorialExcel() {
   var data = [];
   histData.registros.forEach(function(reg) {
     var cons = histConsecutivoDe(reg);
-    (reg.eventos || []).forEach(function(e) {
+    // Eventos de la legalización y, si se están viendo, los de sus remisiones externas.
+    var filas = (reg.eventos || []).map(function(e) { return { e: e, rem: '' }; });
+    if (histVerRemisiones()) {
+      (reg.remisiones || []).forEach(function(m) {
+        (m.eventos || []).forEach(function(e) { filas.push({ e: e, rem: m.remision || '' }); });
+      });
+    }
+    filas.sort(function(a, b) { return (new Date(a.e.cuando) - new Date(b.e.cuando)) || (a.e.audit_id - b.e.audit_id); });
+    filas.forEach(function(f) {
+      var e = f.e;
       data.push({
         'Consecutivo': cons,
+        'Remisión externa': f.rem,
         'Fecha y hora': histFechaHora(e.cuando),
         'Usuario': e.usuario || 'Sistema',
         'Correo': e.email || '',

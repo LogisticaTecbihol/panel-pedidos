@@ -30,6 +30,7 @@
 .hist-bloque.hist-modificacion{border-left-color:#2e86c1}.hist-bloque.hist-modificacion::before{background:#2e86c1}
 .hist-bloque.hist-conciliacion{border-left-color:#1e8449}.hist-bloque.hist-conciliacion::before{background:#1e8449}
 .hist-bloque.hist-rechazo,.hist-bloque.hist-eliminacion{border-left-color:#c0392b}.hist-bloque.hist-rechazo::before,.hist-bloque.hist-eliminacion::before{background:#c0392b}
+.hist-bloque.hist-rem{border-left-color:#8e44ad}.hist-bloque.hist-rem::before{background:#8e44ad}
 .hist-cab{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;font-size:.88rem;margin-bottom:6px}
 .hist-cuando{color:#1a5276;font-weight:600}
 .hist-nota{font-size:.76rem;color:#718096}
@@ -477,6 +478,7 @@
         <datalist id="hf-cons-list"></datalist>
       </div>
       <div class="fg"><button class="btn-dl" onclick="cargarHistorial()">🔎 Consultar</button></div>
+      <div class="fg"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="hf-rem" checked onchange="renderHistorialTab()"> Incluir remisiones externas relacionadas</label></div>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
         <button class="btn-dl" onclick="exportarHistorialExcel()">📥 Exportar Excel</button>
       </div>
@@ -880,7 +882,7 @@
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261028b"></script>
-<script src="js/legalizacion-historial.js?v=20261028a"></script>
+<script src="js/legalizacion-historial.js?v=20261028b"></script>
 <script src="js/legalizacion-gastos.js?v=20261028f"></script>
 </body>
 </html>
