@@ -301,6 +301,17 @@
       </div>
       <div id="gpi-body"></div>
     </div>
+    <!-- Solo para el usuario de una sola empresa (a quien no se le muestran Otros ni Sin identificar) -->
+    <div class="card" style="margin-bottom:16px;display:none">
+      <div class="card-head">
+        <h3>Gastos no prorrateados (informativo)</h3>
+        <span id="gpn-total" style="font-weight:600;color:#1a5276;font-size:0.86rem"></span>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Combustible, Mantenimiento, Otros y Sin identificar no se prorratean por producto. Aquí se suman completos, de todas las empresas, en las legalizaciones que ves en el período (incluyen la parte de otras empresas en los viajes compartidos): solo es informativo y no se atribuye a tu empresa. Tu parte de Combustible y Mantenimiento está en sus tarjetas de arriba.</div>
+      </div>
+      <div id="gpn-body"></div>
+    </div>
     <div class="lg-row">
       <div class="card">
         <div class="card-head">
@@ -827,7 +838,7 @@
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
-<script src="js/legalizacion-prorrateo.js?v=20261028a"></script>
-<script src="js/legalizacion-gastos.js?v=20261028d"></script>
+<script src="js/legalizacion-prorrateo.js?v=20261028b"></script>
+<script src="js/legalizacion-gastos.js?v=20261028e"></script>
 </body>
 </html>

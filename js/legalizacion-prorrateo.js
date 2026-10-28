@@ -735,6 +735,29 @@ var LegProrrateo = (function() {
     };
   }
 
+  // Gastos que no se prorratean por producto, sumados de todas las empresas: Combustible,
+  // Mantenimiento, Otros y Sin identificar. Resumen informativo para el usuario de una sola
+  // empresa, a quien las tablas por empresa solo le dejan su parte (o nada, en Otros y Sin
+  // identificar). `calc` = resultado de calcular() SIN filtro de empresa. Devuelve
+  // { filas: [{ label, monto, legs: { legId: consecutivo } }], total }.
+  function noProrrateado(calc) {
+    function legsDe(porEmpresaLegs, sinAsignarLegs) {
+      var legs = {};
+      Object.keys(porEmpresaLegs || {}).forEach(function(emp) {
+        Object.keys(porEmpresaLegs[emp]).forEach(function(id) { legs[id] = porEmpresaLegs[emp][id]; });
+      });
+      Object.keys(sinAsignarLegs || {}).forEach(function(id) { legs[id] = sinAsignarLegs[id]; });
+      return legs;
+    }
+    var filas = [
+      { label: 'Combustible', monto: calc.combustibleTotalGeneral, legs: legsDe(calc.combustibleLegs, calc.combustibleSinAsignarLegs) },
+      { label: 'Mantenimiento', monto: calc.mantenimiento.total, legs: legsDe(calc.mantenimiento.legs, calc.mantenimiento.sinAsignarLegs) },
+      { label: 'Otros', monto: calc.otros.total, legs: legsDe(calc.otros.legs, calc.otros.sinAsignarLegs) },
+      { label: 'Sin identificar', monto: calc.sinIdentificar, legs: legsDe({}, calc.sinIdentificarLegs) }
+    ];
+    return { filas: filas, total: filas.reduce(function(s, f) { return s + f.monto; }, 0) };
+  }
+
   return {
     CONCEPTOS_RUTA_FIJOS: CONCEPTOS_RUTA_FIJOS,
     esConceptoOtros: esConceptoOtros,
@@ -754,6 +777,7 @@ var LegProrrateo = (function() {
     cargarFuentesCompletas: cargarFuentesCompletas,
     empresaVisible: empresaVisible,
     empresaUnica: empresaUnica,
-    calcular: calcular
+    calcular: calcular,
+    noProrrateado: noProrrateado
   };
 })();

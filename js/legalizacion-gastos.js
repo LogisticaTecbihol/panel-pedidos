@@ -1207,6 +1207,37 @@ function calcularProrrateoGastos() {
   }, _filtrosProrrateo());
 }
 
+// Gastos no prorrateados (LegProrrateo.noProrrateado) de las legalizaciones que el usuario
+// ve, de todas las empresas: el cálculo de la pestaña pero sin el filtro de empresa, que al
+// usuario de una sola empresa le queda fijo en la suya. Solo informativo, respeta Desde/Hasta.
+function calcularNoProrrateado() {
+  var f = _filtrosProrrateo();
+  return LegProrrateo.noProrrateado(LegProrrateo.calcular({
+    legs: legs,
+    items: legItems,
+    empresas: legEmpresas,
+    mapa: prorrateoMapa || remisionProductoMap,
+    mapaReparto: prorrateoMapaReparto || remisionProductoMapReparto
+  }, { fEmp: '', fDesde: f.fDesde, fHasta: f.fHasta }));
+}
+
+// Tarjeta «Gastos no prorrateados (informativo)» del usuario de una sola empresa.
+function renderNoProrrateado() {
+  var box = document.getElementById('gpn-body');
+  if (!box) return;
+  var info = calcularNoProrrateado();
+  document.getElementById('gpn-total').textContent = 'Total: ' + fmtMoney2(info.total);
+  var body = info.filas.map(function(f) {
+    var legsHtml = Object.keys(f.legs).map(function(id) { return { id: Number(id), consecutivo: f.legs[id] }; })
+      .sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); })
+      .map(function(l) { return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>'; }).join(', ');
+    return '<tr><td>' + escHtml(f.label) + (legsHtml ? '<div class="ac-sub">' + legsHtml + '</div>' : '') + '</td>' +
+      '<td style="text-align:right">' + escHtml(fmtMoney2(f.monto)) + '</td></tr>';
+  }).join('');
+  box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead>' +
+    '<tbody>' + body + '</tbody></table></div>';
+}
+
 // El mismo cálculo sobre TODAS las legalizaciones: el monto y el % de una empresa
 // salen iguales para cualquier usuario (el reparto de un viaje depende de las demás
 // empresas y el % del total del grupo). Sin `prorrateoGrupo` (admin/cartera, o la
@@ -1312,11 +1343,16 @@ function renderProrrateoGastos() {
   // Otros y Sin identificar son un solo monto «Sin reparto asignado», que no se puede
   // atribuir a una empresa: el usuario de una sola empresa no ve esas dos tablas.
   ['gpo-body', 'gpi-body'].forEach(function(id) { _mostrarCardProrrateo(id, !empresaPropia); });
+  // En su lugar, un resumen informativo con los totales de Combustible, Mantenimiento,
+  // Otros y Sin identificar de las legalizaciones que ve.
+  _mostrarCardProrrateo('gpn-body', !!empresaPropia);
   renderCombustiblePorEmpresa(calc);
   renderMantenimientoPorEmpresa(calc);
   if (!empresaPropia) {
     renderOtrosPorEmpresa(calc);
     renderSinIdentificarPorEmpresa(calc);
+  } else {
+    renderNoProrrateado();
   }
   renderGastoPorProducto(grupo);
   renderGastoPorEmpresa(grupo);
@@ -1547,9 +1583,11 @@ function exportarProrrateoExcel() {
   var rowsMant = filasAparte(calc.mantenimiento);
   var rowsOtros = filasAparte(calc.otros);
   var rowsSinId = filasAparte(calc.sinIdentificado);
-  // Otros y Sin identificar no son de ninguna empresa: el usuario de una sola empresa no las recibe.
-  if (empresaPropia) { rowsOtros = []; rowsSinId = []; }
-  if (!empresas.length && empresaPropia && !rowsComb.length && !rowsMant.length) {
+  // Otros y Sin identificar no son de ninguna empresa: el usuario de una sola empresa no recibe
+  // esas hojas, sino una hoja informativa con los totales no prorrateados de lo que ve.
+  var noPro = null;
+  if (empresaPropia) { rowsOtros = []; rowsSinId = []; noPro = calcularNoProrrateado(); }
+  if (!empresas.length && empresaPropia && !rowsComb.length && !rowsMant.length && !(noPro.total > 0)) {
     showToast('No hay datos para exportar', '#e74c3c');
     return;
   }
@@ -1618,6 +1656,15 @@ function exportarProrrateoExcel() {
     var wsSinId = XLSX.utils.json_to_sheet(rowsSinId);
     wsSinId['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, wsSinId, 'Sin identificar');
+  }
+  if (noPro) {
+    var rowsNoPro = noPro.filas.map(function(f) {
+      return { 'Concepto': f.label, 'Monto': Number(f.monto.toFixed(2)), 'Legalizaciones': Object.keys(f.legs).map(function(id) { return f.legs[id]; }).sort().join(', ') };
+    });
+    rowsNoPro.push({ 'Concepto': 'TOTAL', 'Monto': Number(noPro.total.toFixed(2)), 'Legalizaciones': '' });
+    var wsNoPro = XLSX.utils.json_to_sheet(rowsNoPro);
+    wsNoPro['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, wsNoPro, 'No prorrateado');
   }
   XLSX.writeFile(wb, 'prorrateo_gastos_' + today() + '.xlsx');
   showToast('Excel exportado');

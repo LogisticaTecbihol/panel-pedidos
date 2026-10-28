@@ -3035,6 +3035,17 @@ function dLegCalcular(datos, desde, hasta, fEmp) {
     mapaReparto: datos.mapas.repMap
   }, { fEmp: fEmp || '', fDesde: desde, fHasta: hasta }) : d.pro;
 
+  // Usuario de una sola empresa: Combustible, Mantenimiento, Otros y Sin identificar sumados de
+  // todas las empresas en las legalizaciones que ve (informativo; sus tablas por empresa solo le
+  // dejan su parte). Sin empresa elegida es el mismo cálculo de arriba.
+  d.noProrr = !dLegEmpresaUnica() ? null : LegProrrateo.noProrrateado(!fEmp ? d.pro : LegProrrateo.calcular({
+    legs: datos.legs,
+    items: datos.items,
+    empresas: datos.empresas,
+    mapa: datos.mapas.prodMap,
+    mapaReparto: datos.mapas.repMap
+  }, { fEmp: '', fDesde: desde, fHasta: hasta }));
+
   // Documentos donde participa la empresa elegida: los que tienen productos suyos en
   // sus remisiones (prorrateo) o combustible / mantenimiento repartido a ella. Con
   // fEmp, calcular() solo registra las legalizaciones de esa empresa, así que basta
@@ -3198,6 +3209,19 @@ function dLegTablaEmpresa(rows, total, extra, totalPct) {
     '</tbody></table>';
 }
 
+// Gastos no prorrateados del usuario de una sola empresa (LegProrrateo.noProrrateado): una fila
+// por concepto, con cuántas legalizaciones lo componen (el tooltip las lista) y el total.
+function dLegTablaNoProrrateado(info) {
+  return '<table class="mini-table"><thead><tr><th>Concepto</th><th class="num">Monto</th><th class="num">Legalizaciones</th></tr></thead><tbody>' +
+    info.filas.map(function(f) {
+      var n = Object.keys(f.legs).length;
+      return '<tr><td>' + escHtml(f.label) + '</td><td class="num">' + escHtml(dLegMoney2(f.monto)) + '</td>' +
+        '<td class="num"' + (n ? ' title="' + escHtml(dLegLegsTxt(f.legs)) + '"' : '') + '>' + dLegNum(n) + '</td></tr>';
+    }).join('') +
+    '<tr style="font-weight:700;background:#f7fafc"><td>Total</td><td class="num">' + escHtml(dLegMoney2(info.total)) + '</td><td class="num"></td></tr>' +
+    '</tbody></table>';
+}
+
 // Columnas de carga transportada de «Gasto por empresa»: litros, kilos, unidades (solo
 // si las hay) y costo por litro / por kilo / por unidad de cada empresa.
 function dLegExtraCarga(pro, carga) {
@@ -3345,8 +3369,11 @@ async function buildLegalizacionDash() {
     { label: 'Sin reparto asignado', value: pro.otros.sinAsignar, legs: dLegLegsTxt(pro.otros.sinAsignarLegs) });
   document.getElementById('leg-pro-emp').innerHTML = dLegTablaEmpresa(proRows, proTotalVisible, dLegExtraCarga(pg, d.carga),
     proTodasVisibles ? null : (pg.totalGeneral > 0 ? proTotalVisible / pg.totalGeneral * 100 : 0));
-  // Usuario de una sola empresa: Otros y Sin identificar no se muestran (no son de ninguna empresa).
+  // Usuario de una sola empresa: Otros y Sin identificar no se muestran por empresa (no son de
+  // ninguna); en su lugar, el resumen informativo de lo que no se prorratea.
   ['leg-otros', 'leg-sinid'].forEach(function(id) { dLegMostrarCard(id, !unica); });
+  dLegMostrarCard('leg-noprorr', !!unica);
+  if (unica) document.getElementById('leg-noprorr').innerHTML = dLegTablaNoProrrateado(d.noProrr);
   document.getElementById('leg-comb').innerHTML = dLegTablaEmpresa(combRows, combB.totalMonto, null, combB.totalPct);
   document.getElementById('leg-mant').innerHTML = dLegTablaEmpresa(mantRows, mantB.totalMonto, null, mantB.totalPct);
   if (!unica) {
@@ -3408,7 +3435,7 @@ async function buildLegalizacionDash() {
     (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento + otros (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
     (datos.fallidas.length ? '<p class="leg-aviso">⚠ No se pudieron cargar: ' + escHtml(datos.fallidas.join(', ')) + '. Las remisiones que dependen de esas fuentes pueden aparecer como «Sin identificar».</p>' : '') +
     '<p>• <b>Rendimiento:</b> km de los viajes con galones registrados ÷ galones de combustible; ⚠ si queda más de 25 % por debajo del esperado. Solo hay datos de las placas del piloto de kilometraje; los envíos y el mantenimiento no suman km.</p>' +
-    (unica ? '<p>• Tu usuario tiene una sola empresa (' + escHtml(unica.sigla) + '): ves los montos, porcentajes y costos por unidad de tu empresa; el % es sobre el total del grupo. «Combustible» y «Mantenimiento» muestran solo tu fila; «Otros» y «Sin identificar» no se muestran porque no se pueden atribuir a una empresa.</p>' : '') +
+    (unica ? '<p>• Tu usuario tiene una sola empresa (' + escHtml(unica.sigla) + '): ves los montos, porcentajes y costos por unidad de tu empresa; el % es sobre el total del grupo. «Combustible» y «Mantenimiento» muestran solo tu fila; «Otros» y «Sin identificar» no se pueden atribuir a una empresa, así que no se muestran por empresa: en «Gastos no prorrateados» ves, solo como información, sus totales y los de Combustible y Mantenimiento de las legalizaciones que ves, de todas las empresas.</p>' : '') +
     ((rolP === 'admin' || rolP === 'cartera') ? '' : '<p>• Si tu usuario está limitado a ciertas empresas, solo ves las legalizaciones que las involucran: los totales pueden ser parciales. «Gasto por empresa» y la carga transportada se calculan con todas las legalizaciones (como las ve el administrador) y solo se muestran tus empresas; su % es sobre el total del grupo.</p>');
 }
 
@@ -3540,7 +3567,7 @@ function exportLegalizacionExcel() {
   // Usuario de una sola empresa: sin las hojas Otros y Sin identificar (un solo monto
   // «Sin reparto asignado», que no es de ninguna empresa).
   if (unica) {
-    criterios.push(['Tu usuario tiene una sola empresa (' + unica.sigla + '): las hojas traen los montos, porcentajes y costos por unidad de tu empresa (el % es sobre el total del grupo); Combustible y Mantenimiento solo con tu fila, y no se incluyen las hojas Otros y Sin identificar porque no se pueden atribuir a una empresa.']);
+    criterios.push(['Tu usuario tiene una sola empresa (' + unica.sigla + '): las hojas traen los montos, porcentajes y costos por unidad de tu empresa (el % es sobre el total del grupo); Combustible y Mantenimiento solo con tu fila, y no se incluyen las hojas Otros y Sin identificar porque no se pueden atribuir a una empresa; en su lugar, la hoja "No prorrateado" trae, solo como información, los totales de Combustible, Mantenimiento, Otros y Sin identificar de las legalizaciones que ves, de todas las empresas.']);
     wsC = XLSX.utils.aoa_to_sheet(criterios);
     wsC['!cols'] = [{ wch: 130 }, { wch: 30 }];
   }
@@ -3554,6 +3581,12 @@ function exportLegalizacionExcel() {
   if (!unica) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaOtros), 'Otros por empresa');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaSinId), 'Sin identificar');
+  } else {
+    var hojaNoPro = d.noProrr.filas.map(function(f) {
+      return { 'Concepto': f.label, 'Monto': r2(f.monto), 'Legalizaciones': Object.keys(f.legs).length };
+    });
+    hojaNoPro.push({ 'Concepto': 'TOTAL', 'Monto': r2(d.noProrr.total), 'Legalizaciones': '' });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaNoPro), 'No prorrateado');
   }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaVeh.length ? hojaVeh : [{ 'Placa': '(sin viajes con kilometraje en el período)' }]), 'Vehículos');
   XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
