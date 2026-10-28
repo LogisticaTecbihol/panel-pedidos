@@ -5,6 +5,8 @@
 // como "Por aprobar"; un aprobador (admin o permiso "Aprobar solicitudes a Mercadeo") la
 // aprueba o la rechaza con motivo. SOLO al aprobarse llega al Tablero de Mercadeo de
 // panel-pqrs, donde queda en "Recibido". Si quien envía ya puede aprobar, se aprueba sola.
+// Las solicitudes NO comerciales (ni quien envía ni la persona «a nombre de» tienen rol comercial, y el área no es
+// «Comercial») se saltan la aprobación: van directo a Mercadeo (directa_mercadeo; `smEsDirecta` solo avisa, decide el servidor).
 // El solicitante puede editar su solicitud mientras Mercadeo no la haya entregado ni cancelado:
 // por aprobar -> se actualiza y sigue por aprobar; rechazada -> se corrige y se reenvía; ya
 // aprobada -> sale del Tablero y vuelve a aprobación (llega de nuevo al aprobarse).
@@ -50,7 +52,8 @@ var SM_ESTADOS = {
   por_aprobar:   { t: 'Por aprobar',   cls: 'b-pendiente-aprob' },
   rechazada:     { t: 'Rechazada',     cls: 'b-anulado' },
   aprobada:     { t: 'Aprobada',      cls: 'b-ent' },
-  solicitada:    { t: 'Recibido',      cls: 'b-rec' },
+  directa:       { t: 'No aplica',     cls: 'b-par' },   // solicitud no comercial: va directo a Mercadeo
+  solicitada:   { t: 'Recibido',      cls: 'b-rec' },
   confirmada:    { t: 'Confirmada',    cls: 'b-par' },
   en_produccion: { t: 'En producción', cls: 'b-alistado' },
   en_validacion: { t: 'En validación', cls: 'b-fac' },
@@ -122,8 +125,11 @@ function smBadgesEstado(s) {
   if (s.estado_aprobacion === 'Rechazada' && !s.rechazada_por_mercadeo) return etapa('Gerente comercial', ayudaGerente, SM_ESTADOS.rechazada);
   // Aprobada (también la que Mercadeo devolvió después): la aprobación quedó firme y Mercadeo tiene su propio estado.
   var merc = s.rechazada_por_mercadeo ? SM_ESTADOS.rechazada : (s.estado ? smEstadoDe(s.estado) : null);
-  return etapa('Gerente comercial', s.auto_aprobada ? ayudaGerente + ' Se aprobó sola porque quien envió tiene permiso de aprobar.' : ayudaGerente, SM_ESTADOS.aprobada) +
-    (merc ? etapa('Mercadeo', ayudaMercadeo, merc) : '');
+  // Solicitud no comercial: no pasó por el gerente comercial, llegó directo a Mercadeo.
+  var aprob = s.directa_mercadeo
+    ? etapa('Gerente comercial', 'Esta solicitud no es comercial: no necesita la aprobación del gerente comercial y llegó directo a Mercadeo.', SM_ESTADOS.directa)
+    : etapa('Gerente comercial', s.auto_aprobada ? ayudaGerente + ' Se aprobó sola porque quien envió tiene permiso de aprobar.' : ayudaGerente, SM_ESTADOS.aprobada);
+  return aprob + (merc ? etapa('Mercadeo', ayudaMercadeo, merc) : '');
 }
 
 function smNuevoRequestId() {
@@ -213,11 +219,36 @@ function smPoblarFormulario() {
   SM_ASUNTOS.forEach(function (a) { as += '<option value="' + a.k + '">' + escHtml(smAsuntoOpcion(a)) + '</option>'; });
   smEl('sm-asunto').innerHTML = as;
 
-  // El estado inicial es "Por aprobar"; si quien envía ya puede aprobar, pasa directo a Mercadeo.
-  smEl('sm-estado').value = 'Por aprobar';
+  smActualizarRuta();
+}
+
+// ¿La solicitud que se está llenando irá DIRECTO a Mercadeo, sin aprobación del gerente comercial? Es una solicitud no
+// comercial: ni quien envía ni la persona «a nombre de» tienen un rol comercial, y el área elegida no es «Comercial».
+// Misma regla que `esComercial` en la Edge Function, que es la que decide al enviar; aquí solo se avisa.
+function smEsDirecta() {
+  var ctx = _sm.ctx;
+  if (!ctx || !ctx.roles_comerciales || ctx.puede_aprobar) return false;   // quien aprueba se aprueba solo; sin la regla del servidor no se avisa nada
+  if (ctx.roles_comerciales.indexOf(ctx.yo.rol) >= 0) return false;
+  if (smNorm(smAreaValor()) === smNorm(ctx.area_comercial || 'Comercial')) return false;
+  var o = smComboOpcion(smSolicitanteId());
+  if (o && !o.yo && ctx.roles_comerciales.indexOf(o.rol) >= 0) return false;
+  return true;
+}
+
+// Campo «Estado» del formulario y botón de envío según la ruta que seguirá la solicitud (aprobación o directo).
+function smActualizarRuta() {
+  var ctx = _sm.ctx;
+  if (!ctx) return;
+  var directa = smEsDirecta();
+  var est = smEl('sm-estado');
+  est.value = directa ? 'Directo a Mercadeo' : 'Por aprobar';
+  est.classList.toggle('directo', directa);
   smEl('sm-estado-hint').textContent = ctx.puede_aprobar
     ? 'Como tienes permiso de aprobar, tu solicitud se aprueba sola y pasa directo a Mercadeo.'
-    : 'Un aprobador la revisa; al aprobarla pasa a Mercadeo.';
+    : directa
+      ? 'No necesita aprobación del gerente comercial: llega directo a Mercadeo.'
+      : 'Un aprobador la revisa; al aprobarla pasa a Mercadeo.';
+  if (!_sm.enviando) smEl('sm-enviar').textContent = smTextoEnviar();
 }
 
 // ── Combo "Solicitante": todos los usuarios activos del panel, con búsqueda por nombre ──
@@ -262,6 +293,7 @@ function smComboElegir(id) {
   smEl('sm-solicitante').value = smEtiqueta(o);
   _sm.combo.ultimo = o.id;
   smComboCerrar();
+  smActualizarRuta();
 }
 
 function smComboPintar() {
@@ -401,17 +433,18 @@ function smResetForm() {
   smEl('sm-files').value = '';
   smEl('sm-progreso').textContent = '';
   smEl('sm-edit-banner').style.display = 'none';
-  smEl('sm-enviar').textContent = smTextoEnviar();
+  smActualizarRuta();
   smRenderArchivos();
 }
 
-// Texto del botón de envío según lo que se está haciendo.
+// Texto del botón de envío según lo que se está haciendo (y si la solicitud irá directo a Mercadeo o por aprobación).
 function smTextoEnviar() {
   var s = _sm.editando;
   if (!s) return '📨 Enviar solicitud';
-  if (s.estado_aprobacion === 'Por aprobar') return '💾 Guardar cambios';
-  if (s.estado_aprobacion === 'Aprobada') return '📨 Guardar y volver a aprobación';
-  return '📨 Reenviar a aprobación';
+  var directa = smEsDirecta();
+  if (s.estado_aprobacion === 'Por aprobar') return directa ? '📨 Guardar y enviar a Mercadeo' : '💾 Guardar cambios';
+  if (s.estado_aprobacion === 'Aprobada') return directa ? '📨 Guardar y reenviar a Mercadeo' : '📨 Guardar y volver a aprobación';
+  return directa ? '📨 Reenviar a Mercadeo' : '📨 Reenviar a aprobación';
 }
 
 // Texto del botón de la lista/detalle: "Editar y reenviar" solo cuando está rechazada.
@@ -525,10 +558,12 @@ async function smEnviar() {
   var previa = _sm.editando;
   // Una ya aprobada sale del Tablero de Mercadeo al modificarla: se pide confirmación.
   if (previa && previa.estado_aprobacion === 'Aprobada' &&
-      !confirm('La solicitud ' + smRef(previa) + ' ya fue aprobada y está con Mercadeo' +
+      !confirm('La solicitud ' + smRef(previa) + (previa.directa_mercadeo ? ' llegó directo a Mercadeo' : ' ya fue aprobada y está con Mercadeo') +
         (previa.estado ? ' (' + smEstadoDe(previa.estado).t + ')' : '') + '.\n\n' +
-        'Si la modificas, sale del Tablero de Mercadeo y vuelve a aprobación del gerente comercial; ' +
-        'llegará de nuevo a Mercadeo cuando se apruebe.\n\n¿Quieres continuar?')) return;
+        (smEsDirecta()
+          ? 'Si la modificas, sale del Tablero de Mercadeo y se vuelve a enviar directo, como solicitud nueva, con los cambios.'
+          : 'Si la modificas, sale del Tablero de Mercadeo y vuelve a aprobación del gerente comercial; ' +
+            'llegará de nuevo a Mercadeo cuando se apruebe.') + '\n\n¿Quieres continuar?')) return;
 
   _sm.enviando = true;
   var btn = smEl('sm-enviar');
@@ -553,7 +588,9 @@ async function smEnviar() {
     });
     var s = res.solicitud || {};
     var antes = previa ? previa.estado_aprobacion : null;
-    if (s.estado_aprobacion === 'Aprobada') {
+    if (s.estado_aprobacion === 'Aprobada' && s.directa_mercadeo) {
+      showToast('✅ Solicitud ' + smRef(s) + (reenvio ? ' modificada' : ' enviada') + ': fue directo a Mercadeo, sin aprobación (Recibido)', '#27ae60');
+    } else if (s.estado_aprobacion === 'Aprobada') {
       showToast('✅ Solicitud ' + smRef(s) + (reenvio ? ' modificada' : ' enviada') + ': ya está con Mercadeo (Recibido)', '#27ae60');
     } else if (antes === 'Por aprobar') {
       showToast('✅ Solicitud ' + smRef(s) + ' modificada: sigue por aprobar', '#27ae60');
@@ -602,10 +639,12 @@ function smEditar(s) {
     smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud ' + ref + ', por aprobar. ' +
       'Al guardar, los cambios quedan registrados y sigue por aprobar; “Limpiar” cancela la edición.';
   } else if (s.estado_aprobacion === 'Aprobada') {
-    smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud ' + ref + ', ya aprobada' +
+    smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud ' + ref + (s.directa_mercadeo ? ', enviada directo a Mercadeo' : ', ya aprobada') +
       (s.estado ? ' y en Mercadeo (' + escHtml(smEstadoDe(s.estado).t) + ')' : '') + '. ' +
-      '<strong>Al guardar, sale del Tablero de Mercadeo y vuelve a aprobación del gerente comercial;</strong> ' +
-      'llegará de nuevo a Mercadeo cuando se apruebe. “Limpiar” cancela la edición.';
+      (smEsDirecta()
+        ? '<strong>Al guardar, sale del Tablero de Mercadeo y se vuelve a enviar directo</strong> como solicitud nueva, con los cambios. '
+        : '<strong>Al guardar, sale del Tablero de Mercadeo y vuelve a aprobación del gerente comercial;</strong> ' +
+          'llegará de nuevo a Mercadeo cuando se apruebe. ') + '“Limpiar” cancela la edición.';
   } else {
     smEl('sm-edit-banner').innerHTML = '✏️ Editando la solicitud ' + ref + ', rechazada' +
       (s.rechazada_por_mercadeo
@@ -614,7 +653,7 @@ function smEditar(s) {
       (s.motivo_rechazo ? ' <strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo) : '') +
       ' Corrígela y reenvíala; “Limpiar” cancela la edición.';
   }
-  smEl('sm-enviar').textContent = smTextoEnviar();
+  smActualizarRuta();
   smRenderArchivos();
   smCerrarDetalle();
   smCambiarTab('nueva');
@@ -826,6 +865,7 @@ var SM_TIPOS_HIST = {
   edicion:       function (h) { return '✏️ Modificada por <strong>' + escHtml(h.por) + '</strong>'; },
   retiro_tablero: function () { return '↩ Retirada del Tablero de Mercadeo: vuelve a aprobación y llegará de nuevo al aprobarse'; },
   aprobacion:    function (h) { return '✅ Aprobada por <strong>' + escHtml(h.por) + '</strong>'; },
+  envio_directo: function () { return '📨 Enviada directo a Mercadeo, sin aprobación del gerente comercial (solicitud no comercial)'; },
   autoaprobacion: function (h) { return '✅ Aprobada automáticamente (<strong>' + escHtml(h.por) + '</strong> puede aprobar)'; },
   rechazo:       function (h) { return '❌ Rechazada por <strong>' + escHtml(h.por) + '</strong>' + (h.motivo ? ' — ' + escHtml(h.motivo) : ''); },
   rechazo_mercadeo: function (h) { return '❌ Rechazada por Mercadeo (<strong>' + escHtml(h.por) + '</strong>)' + (h.motivo ? ' — ' + escHtml(h.motivo) : ''); },
@@ -872,6 +912,9 @@ function smVerDetalle(origen, i, enfocarObs) {
       (s.aprobada_por ? (s.rechazada_por_mercadeo ? ' (' : ' por ') + '<strong>' + escHtml(s.aprobada_por) + '</strong>' + (s.rechazada_por_mercadeo ? ')' : '') : '') +
       (s.fecha_aprobacion ? ' el ' + escHtml(smFmtFechaHora(s.fecha_aprobacion)) : '') +
       '<br><strong>Motivo:</strong> ' + escHtml(s.motivo_rechazo || '—') + '</div>';
+  } else if (s.directa_mercadeo) {
+    aprobacion = '<div class="sm-box sm-box-ok">📨 Enviada directo a Mercadeo: no necesita la aprobación del gerente comercial.' +
+      (s.fecha_aprobacion ? ' ' + escHtml(smFmtFechaHora(s.fecha_aprobacion)) : '') + '</div>';
   } else {
     aprobacion = '<div class="sm-box sm-box-ok">✅ Aprobada' + (s.auto_aprobada ? ' automáticamente' : '') +
       (s.aprobada_por ? ' por <strong>' + escHtml(s.aprobada_por) + '</strong>' : '') +
@@ -1038,7 +1081,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var cbo = smEl('sm-solicitante');
   cbo.addEventListener('focus', smComboAlEnfocar);
   cbo.addEventListener('click', smComboAlEnfocar);
-  cbo.addEventListener('input', function () { smEl('sm-solicitante-id').value = ''; smComboAbrir(this.value); });
+  cbo.addEventListener('input', function () { smEl('sm-solicitante-id').value = ''; smComboAbrir(this.value); smActualizarRuta(); });
   cbo.addEventListener('keydown', smComboAlTeclear);
   cbo.addEventListener('blur', smComboAlSalir);
   // mousedown (no click): se elige antes de que el cuadro pierda el foco.
@@ -1049,7 +1092,8 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   smEl('sm-desc').addEventListener('input', function () { smEl('sm-desc-ct').textContent = this.value.length; });
   smEl('sm-empresa').addEventListener('change', smActualizarEmpresaOtra);
-  smEl('sm-area').addEventListener('change', smActualizarAreaOtra);
+  smEl('sm-area').addEventListener('change', function () { smActualizarAreaOtra(); smActualizarRuta(); });
+  smEl('sm-area-otra').addEventListener('input', smActualizarRuta);
   smEl('sm-asunto').addEventListener('change', function () {
     var otros = this.value === 'otros';
     smMostrarAsuntoOtro(otros);

@@ -114,3 +114,19 @@ Mismo patrón que «Solicitudes a Mercadeo» (`solicitudes-mercadeo.*`): aprobac
 - **Avisos**: campanita con módulo `solicitudes_mercadeo` y referencia `SE-<n>`; `js/notificaciones.js` enruta las `SE-` a `solicitudes-eventos.html`.
 - Probado con un arnés de navegador (Edge Function simulada en memoria); las funciones se desplegaron y rechazan llamadas sin credenciales. El flujo
   completo contra producción requiere una sesión real de un usuario con el permiso.
+
+## Solicitudes a Mercadeo: envío directo de las no comerciales
+
+`solicitudes-mercadeo.html` + `js/solicitudes-mercadeo.js` + Edge Function `solicitud-mercadeo`. Una solicitud **no comercial** se salta la aprobación del gerente
+comercial: se crea de una vez en el Tablero de Mercadeo (panel-pqrs, «Recibido») y allí Mercadeo la acepta o la rechaza, como a cualquier otra.
+
+- **Regla** (`esComercial` en la función; `smEsDirecta` en el JS solo AVISA, la que decide es la función): es comercial —y sigue la aprobación de siempre— si quien envía
+  tiene rol `admin`/`editor`/`comercial`/`gerente_iaso` (`ROLES_COMERCIALES`), **o** la persona «a nombre de» tiene uno de esos roles, **o** el área elegida es «Comercial»
+  (compara sin tildes ni mayúsculas, también si se escribió en «Otros»). Todo lo demás (contabilidad, cartera, producción… con cualquier otra área o sin área) va directo.
+  Quien ya puede aprobar (`solicitudes_mercadeo_aprobar`) conserva su autoaprobación de siempre. La función manda `roles_comerciales` / `area_comercial` en `contexto`.
+- **Datos** (`supabase/add_solicitudes_mercadeo_directa.sql`, migración remota `add_solicitudes_mercadeo_directa`, aplicar ANTES de desplegar la función): columna
+  `directa_mercadeo boolean`. La fila queda `Aprobada` con `aprobada_por = NULL`, `aprobada_por_nombre = 'Envío directo (sin aprobación comercial)'` (es el texto que ve
+  el Tablero como «aprobada por») e historial `envio_directo`. Editar o reenviar apaga la bandera y vuelve a evaluar la ruta (un cambio de área puede mandarla a aprobación).
+- **Pantalla**: el campo «Estado» del formulario cambia a «Directo a Mercadeo» (azul) al elegir área/solicitante; en la lista y el detalle la etapa «Gerente comercial»
+  muestra «No aplica». Si el envío directo falla (Mercadeo no responde) la solicitud queda «Por aprobar» y se avisa a los aprobadores, como en la autoaprobación.
+- Las solicitudes anteriores no se tocaron: una «Por aprobar» de un usuario no comercial sigue en la bandeja hasta que alguien la apruebe o su dueño la edite (entonces va directo).

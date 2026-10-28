@@ -7,6 +7,9 @@
 // Flujo (misma lógica que las solicitudes de muestras):
 //   crear/reenviar -> la solicitud queda guardada aquí en 'Por aprobar' (tabla solicitudes_mercadeo)
 //                     y se avisa a los aprobadores. Si quien envía ya es aprobador, se aprueba sola.
+//                     Si la solicitud NO es comercial (ver `esComercial`), se salta la aprobación: va DIRECTO
+//                     al Tablero de Mercadeo y queda 'Aprobada' con directa_mercadeo = true (sin aprobador);
+//                     allí Mercadeo la acepta o la rechaza como a cualquier otra.
 //   aprobar        -> SOLO entonces se crea en el Tablero de panel-pqrs (estado "Recibido") con la
 //                     función `solicitud-mercadeo-pedidos` y un secreto compartido (server -> server).
 //   rechazar       -> motivo obligatorio; el solicitante puede editarla y reenviarla.
@@ -80,6 +83,12 @@ const ASUNTO_ETIQUETA: Record<string, string> = {
   diseno_ajuste_institucional: 'Diseño y ajuste de material institucional',
   desarrollo_marca: 'Desarrollo de marca', otros: 'Otros',
 }
+// Solicitud COMERCIAL (pasa por la aprobación previa del gerente comercial): la envía, o se hace a nombre de, alguien
+// con uno de estos roles, o en el formulario se eligió el área «Comercial». Cualquier otra va DIRECTO a Mercadeo.
+const ROLES_COMERCIALES = ['admin', 'editor', 'comercial', 'gerente_iaso']
+const AREA_COMERCIAL = 'Comercial'
+// Texto que se guarda (y se le muestra al Tablero) como «aprobador» de una solicitud directa.
+const APROBADOR_DIRECTO = 'Envío directo (sin aprobación comercial)'
 const MAX_ARCHIVOS = 5
 // Estados del Tablero en los que la solicitud sigue con Mercadeo (después ya no se modifica ni se observa).
 const ESTADOS_ABIERTOS = ['solicitada', 'confirmada', 'en_produccion', 'en_validacion']
@@ -113,6 +122,11 @@ function uuid(v: unknown, campo: string): string {
 }
 
 const refSM = (n: number | string) => `SM-${n}`
+
+// Sin tildes ni mayúsculas, para comparar el área escrita con «Comercial».
+function normaliza(s: unknown): string {
+  return String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim()
+}
 
 // Llama a la función de pqrs. Los 4xx de validación se reenvían con su mensaje;
 // un 401 (secreto mal configurado) o un fallo de red se traducen a mensajes neutros.
@@ -387,15 +401,19 @@ serve(async (req) => {
     // Marca la solicitud como aprobada (solo si sigue 'Por aprobar' Y sin cambios desde que se leyó:
     // si el solicitante la editó mientras se aprobaba, la tarjeta creada ya no corresponde).
     // Devuelve la fila resultante.
-    async function marcarAprobada(r: any, tareaId: number, auto: boolean) {
+    // `directa`: la solicitud no es comercial y se mandó a Mercadeo sin aprobación; quien la envió no es
+    // aprobador, así que no se registra como tal (aprobada_por nulo y el texto de APROBADOR_DIRECTO).
+    async function marcarAprobada(r: any, tareaId: number, auto: boolean, directa = false) {
       const ahora = new Date().toISOString()
-      const historial = [...(r.historial || []), { tipo: auto ? 'autoaprobacion' : 'aprobacion', por: nombreUsuario, en: ahora }]
+      const tipo = directa ? 'envio_directo' : auto ? 'autoaprobacion' : 'aprobacion'
+      const historial = [...(r.historial || []), { tipo, por: nombreUsuario, en: ahora }]
       const u = await admin.from(TABLA).update({
         estado_aprobacion: 'Aprobada',
-        aprobada_por: user.id,
-        aprobada_por_nombre: nombreUsuario,
+        aprobada_por: directa ? null : user.id,
+        aprobada_por_nombre: directa ? APROBADOR_DIRECTO : nombreUsuario,
         fecha_aprobacion: ahora,
         auto_aprobada: auto,
+        directa_mercadeo: directa,
         pqrs_tarea_id: tareaId,
         modificado_en: ahora,
         historial,
@@ -432,6 +450,7 @@ serve(async (req) => {
         aprobada_por: r.aprobada_por_nombre,
         fecha_aprobacion: r.fecha_aprobacion,
         auto_aprobada: r.auto_aprobada,
+        directa_mercadeo: !!r.directa_mercadeo,
         // Se puede modificar mientras Mercadeo no la haya entregado ni cancelado. Si no se pudo leer el
         // Tablero (pq nulo) se ofrece igual: `editar` lo vuelve a comprobar con pqrs.
         puede_editar: r.creado_por === user.id && (
@@ -468,21 +487,36 @@ serve(async (req) => {
       }
     }
 
-    // Registra (o reenvía) una solicitud y, si quien envía ya es aprobador, la aprueba sola.
-    // `modificada`: es una edición, el aviso a los aprobadores lo dice.
+    // ¿La solicitud es comercial (pasa por la aprobación previa)? Sí si quien la envía —siempre es el usuario de la
+    // petición—, o la persona «a nombre de» quien se hace, tiene un rol comercial, o si el área elegida es «Comercial».
+    // Si ninguna se cumple, es una solicitud no comercial y va directo a Mercadeo.
+    async function esComercial(fila: any): Promise<boolean> {
+      if (ROLES_COMERCIALES.includes(perfil.rol)) return true
+      if (normaliza(fila.departamento_area) === normaliza(AREA_COMERCIAL)) return true
+      if (fila.a_nombre_de_id) {
+        const a = await admin.from('usuarios').select('rol').eq('id', fila.a_nombre_de_id).maybeSingle()
+        if (a.error) throw a.error
+        if (a.data && ROLES_COMERCIALES.includes(a.data.rol)) return true
+      }
+      return false
+    }
+
+    // Registra (o reenvía) una solicitud y, si quien envía ya es aprobador, la aprueba sola; si no es comercial,
+    // la manda directo a Mercadeo sin aprobación. `modificada`: es una edición, el aviso a los aprobadores lo dice.
     async function resolverEnvio(fila: any, esReenvio: boolean, modificada = false) {
       let actual = fila
       let aviso: string | null = null
-      if (puedeAprobar) {
+      const directa = !puedeAprobar && !(await esComercial(actual))
+      if (puedeAprobar || directa) {
         try {
-          const t = await enviarAMercadeo(actual, nombreUsuario)
-          const m = await marcarAprobada(actual, t.id, true)
+          const t = await enviarAMercadeo(actual, directa ? APROBADOR_DIRECTO : nombreUsuario)
+          const m = await marcarAprobada(actual, t.id, !directa, directa)
           if (m) actual = m
           else actual = (await filaPorId(actual.id)) || actual
         } catch (e) {
           // No se pudo mandar a Mercadeo: queda por aprobar y se avisa a los aprobadores.
           aviso = e instanceof Rechazo ? e.message : 'No se pudo enviar a Mercadeo'
-          console.error('solicitud-mercadeo: autoaprobación fallida:', (e as Error)?.message)
+          console.error(`solicitud-mercadeo: ${directa ? 'envío directo' : 'autoaprobación'} fallido:`, (e as Error)?.message)
         }
       }
       if (actual.estado_aprobacion === 'Por aprobar') await avisarAprobadores(actual, modificada)
@@ -503,6 +537,9 @@ serve(async (req) => {
           yo: { id: user.id, nombre: nombreUsuario, rol: perfil.rol },
           empresas,
           empresas_extra: EMPRESAS_EXTRA,
+          // Para que el formulario avise si la solicitud irá directo a Mercadeo (la función lo decide igual al enviar).
+          roles_comerciales: ROLES_COMERCIALES,
+          area_comercial: AREA_COMERCIAL,
           usuarios,
           puede_enviar: puedeEnviar,
           puede_aprobar: puedeAprobar,
@@ -607,6 +644,7 @@ serve(async (req) => {
           aprobada_por_nombre: null,
           fecha_aprobacion: null,
           auto_aprobada: false,
+          directa_mercadeo: false,
           // Si la había rechazado Mercadeo, la tarea vieja queda atrás: al aprobarse de nuevo
           // se crea una nueva en el Tablero (pqrs_tarea_id se vuelve a fijar entonces).
           rechazada_por_mercadeo: false,
@@ -673,6 +711,7 @@ serve(async (req) => {
             aprobada_por_nombre: null,
             fecha_aprobacion: null,
             auto_aprobada: false,
+            directa_mercadeo: false,
             rechazada_por_mercadeo: false,
             pqrs_tarea_id: null,
             reenvios: (r.reenvios || 0) + 1,
