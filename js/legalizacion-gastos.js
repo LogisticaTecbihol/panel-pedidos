@@ -570,6 +570,7 @@ var LG_SORT_COLS = {
     { id: 'ruta', label: 'Ruta', fn: function(l) { return l.Recorrido_Ruta || ''; } },
     { id: 'empresas', label: 'Empresas', fn: _empresasSortTxt },
     { id: 'total', label: 'Total gastos', right: true, fn: function(l) { return totalGastosOf(l.id); } },
+    { id: 'parte', label: _parteLabel, right: true, soloPropia: true, fn: _parteEmpresaPropia },
     { id: 'anticipo', label: 'Anticipo', right: true, fn: function(l) { return Number(l.Anticipo_Entregado) || 0; } },
     { id: 'estado', label: 'Estado', fn: function(l) { return estadoLeg(l) || ''; } },
     { id: 'acciones', label: 'Acciones' }
@@ -591,6 +592,7 @@ var LG_SORT_COLS = {
     { id: 'cantidad', label: 'Cantidad', right: true, fn: function(r) { return r.m ? (Number(r.m.cantidad) || 0) : null; } },
     { id: 'empresa', label: 'Empresa', fn: function(r) { return r.m ? getSigla(r.m.empresa) : ''; } },
     { id: 'total', label: 'Total gastos', right: true, fn: function(r) { return totalGastosOf(r.leg.id); } },
+    { id: 'parte', label: _parteLabel, right: true, soloPropia: true, fn: function(r) { return _parteEmpresaPropia(r.leg); } },
     { id: 'estado', label: 'Estado', fn: function(r) { return estadoLeg(r.leg) || ''; } },
     { id: 'acciones', label: 'Acciones' }
   ],
@@ -716,16 +718,38 @@ function clearSortLg(key) {
 // (si hay más de un criterio) y el clic que alterna el orden.
 function sortHeadCellsHtml(key) {
   var levels = lgSort[key] || [];
-  return LG_SORT_COLS[key].map(function(col) {
+  return _lgColsVisibles(key).map(function(col) {
     var right = col.right ? ' style="text-align:right"' : '';
-    if (!col.fn) return '<th' + right + '>' + col.label + '</th>';
+    var label = typeof col.label === 'function' ? col.label() : col.label;
+    if (!col.fn) return '<th' + right + '>' + label + '</th>';
     var idx = levels.findIndex(function(l) { return l.id === col.id; });
     var active = idx >= 0;
     var cls = 'sortable' + (active ? (levels[idx].dir === 'asc' ? ' sort-asc' : ' sort-desc') : '');
     var badge = levels.length > 1 && active ? '<span class="sort-badge">' + (idx + 1) + '</span>' : '';
     return '<th class="' + cls + '"' + right + ' title="Clic: ordenar · Shift + clic: quitar del orden" onclick="toggleSortLg(\'' + key + '\',\'' + col.id + '\',event)">' +
-      col.label + badge + '<span class="sort-icon"></span></th>';
+      label + badge + '<span class="sort-icon"></span></th>';
   }).join('');
+}
+
+// Columnas que se dibujan de una tabla: las marcadas soloPropia (la parte de la empresa
+// del usuario) solo existen para el usuario de una sola empresa. Un `label` puede ser
+// una función, para los rótulos que dependen del usuario.
+function _lgColsVisibles(key) {
+  return LG_SORT_COLS[key].filter(function(col) { return !col.soloPropia || empresaPropia; });
+}
+
+// Columna «Parte de PARCELAR» de la lista y el detalle de Legalizaciones: lo que el
+// reparto le asignó a la empresa del usuario de una sola empresa en cada legalización
+// (en un viaje compartido, el «Total gastos» es el de todo el viaje). null si el
+// reparto no tiene fila de su empresa.
+function _parteLabel() { return 'Parte de ' + escHtml(empresaPropia.sigla); }
+function _parteEmpresaPropia(leg) {
+  var emps = empresasVisiblesOf(leg.id);
+  return emps.length ? emps.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0) : null;
+}
+function _parteEmpresaPropiaHtml(leg) {
+  var parte = _parteEmpresaPropia(leg);
+  return parte === null ? '<span style="color:#a0aec0">—</span>' : escHtml(fmtMoney(parte));
 }
 
 // Dibuja el encabezado de una tabla con <tr id="headId"> y muestra u oculta su
@@ -1228,11 +1252,12 @@ function fmtHora(h) { return h ? String(h).slice(0, 5) : ''; }
 // texto plano de la primera columna (badge de sigla en "por empresa"); legs
 // (si viene) es [{id, consecutivo}] de las legalizaciones que aportaron a
 // esa fila, mostradas como enlaces a "Ver" debajo del label.
-// Usuario de una sola empresa (ver _sinCifrasProrrateo): en vez de Monto y %, columnas
-// Litros y Kilos (y Unidades si alguna fila las tiene) con r.litros / r.kilos / r.unidades.
-function lgProrrateoTable(rows, headerLabel) {
+// conCantidades (usuario de una sola empresa, ver _prorrateoConCantidades): agrega,
+// a la derecha de Monto y %, las columnas Litros y Kilos (y Unidades si alguna fila
+// las tiene) con r.litros / r.kilos / r.unidades.
+function lgProrrateoTable(rows, headerLabel, conCantidades) {
   if (!rows.length) return '<div class="empty">Sin datos.</div>';
-  var hayUnid = _sinCifrasProrrateo() && rows.some(function(r) { return r.unidades > 0; });
+  var hayUnid = conCantidades && rows.some(function(r) { return r.unidades > 0; });
   function celdaCant(v, fmt) { return '<td style="text-align:right">' + (v > 0 ? escHtml(fmt(v)) : '—') + '</td>'; }
   var body = rows.map(function(r) {
     // El km recorridos (piloto KM_PILOTO_PLACAS) se muestra como referencia
@@ -1245,22 +1270,25 @@ function lgProrrateoTable(rows, headerLabel) {
       return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + kmTxt;
     }).join(', ') + '</div>' : '';
     return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
-      (_sinCifrasProrrateo()
+      '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
+      '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td>' +
+      (conCantidades
         ? celdaCant(r.litros, _litFmtLg) + celdaCant(r.kilos, _kiloFmtLg) + (hayUnid ? celdaCant(r.unidades, _undFmtLg) : '')
-        : '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
-          '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td>') + '</tr>';
+        : '') + '</tr>';
   }).join('');
   return '<div style="overflow-x:auto"><table>' +
     '<thead><tr><th>' + escHtml(headerLabel) + '</th>' +
-      (_sinCifrasProrrateo()
+      '<th style="text-align:right">Monto</th><th style="text-align:right">%</th>' +
+      (conCantidades
         ? '<th style="text-align:right">Litros</th><th style="text-align:right">Kilos</th>' + (hayUnid ? '<th style="text-align:right">Unidades</th>' : '')
-        : '<th style="text-align:right">Monto</th><th style="text-align:right">%</th>') + '</tr></thead>' +
+        : '') + '</tr></thead>' +
     '<tbody>' + body + '</tbody></table></div>';
 }
 
-// El usuario de una sola empresa no ve montos, % ni costos por unidad del prorrateo
-// (solo litros, kilos y unidades): las tablas que quedarían sin cifras se ocultan.
-function _sinCifrasProrrateo() { return !!empresaPropia; }
+// El usuario de una sola empresa ve los montos, % y costos del prorrateo de su empresa
+// (nunca los de las demás) y, además, las cantidades movidas (litros, kilos y
+// unidades) junto a cada monto de las tablas por producto y por empresa.
+function _prorrateoConCantidades() { return !!empresaPropia; }
 
 // Muestra u oculta la tarjeta (card) que contiene el cuerpo con ese id.
 function _mostrarCardProrrateo(bodyId, mostrar) {
@@ -1274,32 +1302,34 @@ function renderProrrateoGastos() {
   var calc = calcularProrrateoGastos();
   var grupo = calcularProrrateoGrupo(calc); // todas las legalizaciones: monto y % de cada empresa como los ve el admin
   renderResumenProrrateo(calc);
-  // Usuario de una sola empresa: estas tablas solo traen montos y %, así que no se muestran.
-  var conCifras = !_sinCifrasProrrateo();
-  ['gpc-body', 'gpm-body', 'gpo-body', 'gpi-body', 'gpe-body'].forEach(function(id) { _mostrarCardProrrateo(id, conCifras); });
-  if (conCifras) {
-    renderCombustiblePorEmpresa(calc);
-    renderMantenimientoPorEmpresa(calc);
+  // Otros y Sin identificar son un solo monto «Sin reparto asignado», que no se puede
+  // atribuir a una empresa: el usuario de una sola empresa no ve esas dos tablas.
+  ['gpo-body', 'gpi-body'].forEach(function(id) { _mostrarCardProrrateo(id, !empresaPropia); });
+  renderCombustiblePorEmpresa(calc);
+  renderMantenimientoPorEmpresa(calc);
+  if (!empresaPropia) {
     renderOtrosPorEmpresa(calc);
     renderSinIdentificarPorEmpresa(calc);
   }
   renderGastoPorProducto(grupo);
-  if (conCifras) renderGastoPorEmpresa(grupo);
+  renderGastoPorEmpresa(grupo);
 }
 
 // Gastos que no se prorratean por producto (Combustible, Mantenimiento) se
 // muestran aparte, por empresa, según el reparto manual de cada legalización.
 // d = { total, porEmpresa: {emp: monto}, legs: {emp: {legId: consecutivo}},
 // sinAsignar, sinAsignarLegs: {legId: consecutivo} }.
+// El usuario de una sola empresa ve solo la fila de la suya (el % sigue siendo sobre
+// el total) y no «Sin reparto asignado», que no es de ninguna empresa.
 function _gastoAparteRows(d) {
-  var rows = Object.keys(d.porEmpresa).map(function(emp) {
+  var rows = Object.keys(d.porEmpresa).filter(esEmpresaPropia).map(function(emp) {
     var legs = Object.keys(d.legs[emp] || {}).map(function(id) {
       return { id: Number(id), consecutivo: d.legs[emp][id] };
     }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
     return { label: emp, value: d.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>', legs: legs };
   }).sort(function(a, b) { return b.value - a.value; });
 
-  if (d.sinAsignar > 0) {
+  if (d.sinAsignar > 0 && !empresaPropia) {
     var legsSin = Object.keys(d.sinAsignarLegs || {}).map(function(id) {
       return { id: Number(id), consecutivo: d.sinAsignarLegs[id] };
     }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
@@ -1441,19 +1471,10 @@ function exportarProrrateoExcel() {
   var grupo = calcularProrrateoGrupo(calc);
   var total = grupo.totalGeneral;
   var empresas = Object.keys(grupo.porEmpresa).filter(_empresaDelUsuario);
-  // Usuario de una sola empresa: sin Monto, % ni costos por unidad, y sin las hojas que
-  // solo traen montos (Combustible, Mantenimiento, Otros y Sin identificar).
-  var sinCifras = _sinCifrasProrrateo();
-  var COLS_CIFRAS = ['Monto', '% del total', '%', '$ por litro', '$ por kilo', '$ por unidad'];
-  function sinCifrasFilas(filas) {
-    if (!sinCifras) return filas;
-    return filas.map(function(f) {
-      var o = {};
-      Object.keys(f).forEach(function(k) { if (COLS_CIFRAS.indexOf(k) < 0) o[k] = f[k]; });
-      return o;
-    });
-  }
-  if (!empresas.length && (sinCifras || (calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0 && calc.otros.total <= 0))) {
+  // Usuario de una sola empresa: mismas hojas y columnas, pero solo con las filas de la
+  // suya; sin las hojas Otros y Sin identificar (un solo monto «Sin reparto asignado»
+  // que no es de ninguna empresa).
+  if (!empresas.length && !empresaPropia && calc.sinIdentificar <= 0 && calc.combustibleTotalGeneral <= 0 && calc.mantenimiento.total <= 0 && calc.otros.total <= 0) {
     showToast('No hay datos para exportar', '#e74c3c');
     return;
   }
@@ -1487,7 +1508,7 @@ function exportarProrrateoExcel() {
   // Filas de una hoja "aparte" (Combustible / Mantenimiento): una por empresa
   // (más "Sin reparto asignado" si aplica).
   function filasAparte(d) {
-    var rowsA = Object.keys(d.porEmpresa)
+    var rowsA = Object.keys(d.porEmpresa).filter(esEmpresaPropia)
       .sort(function(a, b) { return d.porEmpresa[b] - d.porEmpresa[a]; })
       .map(function(emp) {
         var legsTxt = Object.keys(d.legs[emp] || {}).map(function(id) { return d.legs[emp][id]; }).sort().join(', ');
@@ -1498,7 +1519,7 @@ function exportarProrrateoExcel() {
           'Legalizaciones': legsTxt
         };
       });
-    if (d.sinAsignar > 0) {
+    if (d.sinAsignar > 0 && !empresaPropia) {
       var legsSinTxt = Object.keys(d.sinAsignarLegs || {}).map(function(id) { return d.sinAsignarLegs[id]; }).sort().join(', ');
       rowsA.push({
         'Empresa': 'Sin reparto asignado',
@@ -1519,14 +1540,16 @@ function exportarProrrateoExcel() {
   var rowsMant = filasAparte(calc.mantenimiento);
   var rowsOtros = filasAparte(calc.otros);
   var rowsSinId = filasAparte(calc.sinIdentificado);
-  // Esas cuatro hojas solo traen montos: el usuario de una sola empresa no las recibe.
-  if (sinCifras) { rowsComb = []; rowsMant = []; rowsOtros = []; rowsSinId = []; }
+  // Otros y Sin identificar no son de ninguna empresa: el usuario de una sola empresa no las recibe.
+  if (empresaPropia) { rowsOtros = []; rowsSinId = []; }
+  if (!empresas.length && empresaPropia && !rowsComb.length && !rowsMant.length) {
+    showToast('No hay datos para exportar', '#e74c3c');
+    return;
+  }
 
   var wb = XLSX.utils.book_new();
-  var ws = XLSX.utils.json_to_sheet(sinCifrasFilas(rows));
-  ws['!cols'] = sinCifras
-    ? [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }]
-    : [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+  var ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Prorrateo');
 
   // Resumen por empresa (mismas columnas que la hoja "Prorrateo por empresa" del
@@ -1566,10 +1589,8 @@ function exportarProrrateoExcel() {
     '$ por unidad': costoUn(sumaEmp(grupo.porEmpresaMontoUnidades), totUnid),
     'Legalizaciones': fEmpSigla ? Object.keys(grupo.porEmpresaLegs[fEmpSigla] || {}).length : calc.legsPeriodoCount
   });
-  var wsRes = XLSX.utils.json_to_sheet(sinCifrasFilas(rowsRes));
-  wsRes['!cols'] = sinCifras
-    ? [{ wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 15 }]
-    : [{ wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
+  var wsRes = XLSX.utils.json_to_sheet(rowsRes);
+  wsRes['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 17 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
   XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen por empresa');
   if (rowsComb.length) {
     var wsComb = XLSX.utils.json_to_sheet(rowsComb);
@@ -1630,21 +1651,18 @@ function renderGastoPorProducto(calc) {
       });
       return { label: sku, value: entry.monto, legs: legs, litros: cant.litros, kilos: cant.kilos, unidades: cant.unidades };
     });
-    // Usuario de una sola empresa: sin montos, se ordena por lo movido (litros, luego kilos y unidades).
-    rows.sort(_sinCifrasProrrateo()
-      ? function(a, b) { return (b.litros - a.litros) || (b.kilos - a.kilos) || (b.unidades - a.unidades); }
-      : function(a, b) { return b.value - a.value; });
+    rows.sort(function(a, b) { return b.value - a.value; });
     rows.forEach(function(r) { r.pct = empTotal > 0 ? (r.value / empTotal * 100) : 0; });
 
     return '<div class="gpp-group">' +
       '<div class="gpp-group-head">' +
         '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' +
-        (_sinCifrasProrrateo()
-          // Sin monto: el total de la empresa es lo que movió (litros, kilos y/o unidades).
-          ? '<span class="gpp-group-total">' + escHtml(_cantidadesTxt(calc.porEmpresaLitros[emp] || 0, calc.porEmpresaKilos[emp] || 0, calc.porEmpresaUnidades[emp] || 0)) + '</span>'
-          : '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span></span>') +
+        '<span class="gpp-group-total">' + escHtml(fmtMoney2(empTotal)) + ' <span style="color:#a0aec0;font-weight:400">(' + pctEmp.toFixed(2) + '% del total)</span>' +
+          // Usuario de una sola empresa: además, lo que movió la empresa (litros, kilos y/o unidades).
+          (_prorrateoConCantidades() ? ' <span style="color:#718096;font-weight:400">· ' + escHtml(_cantidadesTxt(calc.porEmpresaLitros[emp] || 0, calc.porEmpresaKilos[emp] || 0, calc.porEmpresaUnidades[emp] || 0)) + '</span>' : '') +
+        '</span>' +
       '</div>' +
-      lgProrrateoTable(rows, 'Producto') +
+      lgProrrateoTable(rows, 'Producto', _prorrateoConCantidades()) +
     '</div>';
   }).join('');
 
@@ -1664,12 +1682,13 @@ function renderGastoPorEmpresa(calc) {
   // para que no altere los % por empresa.
   // Solo las empresas del usuario; el % sigue siendo sobre el total del grupo.
   var rows = Object.keys(calc.porEmpresa).filter(_empresaDelUsuario).map(function(emp) {
-    return { label: emp, value: calc.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>' };
+    return { label: emp, value: calc.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>',
+      litros: calc.porEmpresaLitros[emp] || 0, kilos: calc.porEmpresaKilos[emp] || 0, unidades: calc.porEmpresaUnidades[emp] || 0 };
   }).sort(function(a, b) { return b.value - a.value; });
 
   rows.forEach(function(r) { r.pct = r.value / total * 100; });
 
-  box.innerHTML = lgProrrateoTable(rows, 'Empresa');
+  box.innerHTML = lgProrrateoTable(rows, 'Empresa', _prorrateoConCantidades());
 }
 
 function esEnvio(leg) { return !!leg && leg.Tipo === 'Envio'; }
@@ -1979,17 +1998,19 @@ function exportarLegalizacionesExcel() {
   var rows = _legsListaFiltradas();
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
   var data = rows.map(function(leg) {
-    return {
+    var fila = {
       'N°': leg.Consecutivo || '',
       'Fecha': fmtDate(leg.Fecha),
       'Responsable': leg.Responsable || '',
       'Tipo': tipoLabel(leg),
       'Ruta': leg.Recorrido_Ruta || '',
       'Empresas (reparto)': empresasVisiblesOf(leg.id).map(function(e) { return getSigla(e.Empresa) + ' ' + fmtMoney(e.Monto); }).join(', '),
-      'Total gastos': totalGastosOf(leg.id),
-      'Anticipo': Number(leg.Anticipo_Entregado) || 0,
-      'Estado': estadoLeg(leg) || ''
+      'Total gastos': totalGastosOf(leg.id)
     };
+    if (empresaPropia) fila['Parte de ' + empresaPropia.sigla] = _parteEmpresaPropia(leg) === null ? '' : _parteEmpresaPropia(leg);
+    fila['Anticipo'] = Number(leg.Anticipo_Entregado) || 0;
+    fila['Estado'] = estadoLeg(leg) || '';
+    return fila;
   });
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Legalizaciones');
@@ -2067,11 +2088,12 @@ function renderLegTable() {
       '<td>' + escHtml(leg.Recorrido_Ruta || '') + '</td>' +
       '<td>' + empresasBadgesHtml(leg.id) + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney(total)) + '</td>' +
+      (empresaPropia ? '<td style="text-align:right">' + _parteEmpresaPropiaHtml(leg) + '</td>' : '') +
       '<td style="text-align:right">' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</td>' +
       '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td>' + acciones + '</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="10"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
+  }).join('') || '<tr><td colspan="' + _lgColsVisibles('leg').length + '"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
   renderLegDetalle();
 }
 
@@ -2158,10 +2180,11 @@ function renderLegDetalle() {
           '<td><span class="sigla-badge ' + getSiglaClass(m.empresa) + '">' + escHtml(getSigla(m.empresa)) + '</span></td>'
         : '<td colspan="4" style="color:#a0aec0;font-style:italic">' + escHtml(r.nota) + '</td>') +
       '<td style="text-align:right">' + (r.primera ? escHtml(fmtMoney(totalGastosOf(leg.id))) : '') + '</td>' +
+      (empresaPropia ? '<td style="text-align:right">' + (r.primera ? _parteEmpresaPropiaHtml(leg) : '') + '</td>' : '') +
       '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="14"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
+  }).join('') || '<tr><td colspan="' + _lgColsVisibles('lgd').length + '"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
 }
 
 // Exporta el detalle tal como se ve: mismas filas (filtros Empresa/Tipo/Estado/
@@ -2172,7 +2195,7 @@ function exportarLegDetalleExcel() {
   if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
   var data = rows.map(function(r) {
     var leg = r.leg, m = r.m;
-    return {
+    var fila = {
       'N°': leg.Consecutivo || '',
       'Fecha': fmtDate(leg.Fecha),
       'Responsable': leg.Responsable || '',
@@ -2186,10 +2209,12 @@ function exportarLegDetalleExcel() {
       'Cantidad': m ? (Number(m.cantidad) || 0) : '',
       'Unidad': m ? _unidadLineaTxt(m) : '',
       'Empresa': m ? getSigla(m.empresa) : '',
-      'Total gastos': r.primera ? totalGastosOf(leg.id) : '',
-      'Estado': estadoLeg(leg) || '',
-      'Observación': r.nota
+      'Total gastos': r.primera ? totalGastosOf(leg.id) : ''
     };
+    if (empresaPropia) fila['Parte de ' + empresaPropia.sigla] = r.primera && _parteEmpresaPropia(leg) !== null ? _parteEmpresaPropia(leg) : '';
+    fila['Estado'] = estadoLeg(leg) || '';
+    fila['Observación'] = r.nota;
+    return fila;
   });
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Remisiones y productos');

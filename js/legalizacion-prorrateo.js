@@ -373,8 +373,9 @@ var LegProrrateo = (function() {
   }
 
   // Usuario con UNA sola empresa asignada (admin y cartera no cuentan): { sigla, nombre },
-  // o null. A ese usuario no se le muestran montos, % ni costos por unidad del prorrateo
-  // (ni en el módulo Legalización ni en el Dashboard). `auth` = el objeto AUTH de auth.js.
+  // o null. Ese usuario ve los montos, % y costos por unidad del prorrateo solo de su empresa
+  // (en el módulo Legalización y en el Dashboard), con las cantidades movidas junto a ellos; no
+  // ve Otros ni Sin identificar (no son de ninguna empresa). `auth` = el objeto AUTH de auth.js.
   function empresaUnica(auth) {
     if (!auth || !auth.getProfile || !auth.getCompanies) return null;
     var prof = auth.getProfile() || {};
