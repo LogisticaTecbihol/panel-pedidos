@@ -32,6 +32,15 @@ Suite de skills instalada en `~/.claude/skills/gstack` (requiere `bun` + `./setu
 - **Navegación web**: usa la habilidad `/browse` de gstack cuando esté disponible. Si `/browse` falla o el binario no está instalado, recurre a las herramientas de navegador integradas.
 - Skills disponibles: `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`
 
+## Kardex → Existencias por Empresa: listado fijo de PARCELAR
+
+`PARCELAR_LISTADO` (`js/kardex.js`, junto a `_existSoloUnaEmpresa`) es una lista fija de 121 productos (92 propios + 26 Carval + 3 Maxi Pasto, tomada de
+`PRODUCTOS PARCELAR.xlsx`). Para quien ve la empresa PARCELAR (`_existVeParcelar`), `calcularExistencias` los crea en cero si no tienen movimientos (o reutiliza
+la fila existente, comparando sin mayúsculas/espacios) y los marca `_listado`. El rol con acceso **solo** a PARCELAR, que normalmente solo ve existencias ≠ 0,
+ve estos productos también en cero (y la opción «Solo sin existencia» se le habilita). Cada producto cae en su sección (Propio / Carval / Maxi Pasto) por las
+reglas de siempre. Los nombres deben ser los del maestro/movimientos: «CLEAN CROP X 20 LITROS» (el Excel decía «BIDON DE 20 LITROS»). Para agregar o quitar un
+producto se edita el arreglo; no hay tabla en BD. Solo aplica a la pestaña Existencias por Empresa (no a Existencias NC ni al Comparativo).
+
 ## Cambios de mercancía: trámite parcial (`devoluciones.html` → pestaña «Cambios de Mercancía»)
 
 «Gestionar» ya no registra cada lado de una sola vez: cada pasada guarda lo que **realmente** ingresó y/o salió (cantidad por línea) con su propia remisión,

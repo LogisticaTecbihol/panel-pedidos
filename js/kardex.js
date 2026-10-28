@@ -2834,9 +2834,147 @@ function _allParcelarKeys() {
   return [PARCELAR_EMPRESA_VAL, PARCELAR_CARVAL_VAL, PARCELAR_GERMI_VAL];
 }
 
+// ── Listado fijo de productos de PARCELAR (Existencias por Empresa) ──
+// Estos productos aparecen SIEMPRE en la tabla de quien ve PARCELAR, aunque no
+// tengan ningún movimiento, y el rol con acceso solo a PARCELAR (que de otro modo
+// solo ve existencias ≠ 0) también los ve en cero. Los nombres son los del maestro
+// de productos / movimientos; se comparan sin tildes, espacios repetidos ni mayúsculas.
+var PARCELAR_LISTADO = [
+  // Propios
+  'AFINADOR CAB X 250 ML',
+  'AFINADOR CAB X 500 ML',
+  'AFINADOR CAB X BIDON 20 LITROS',
+  'AFINADOR CAB X GALON',
+  'AFINADOR CAB X LITRO',
+  'BORDEL CROP X 250 ML',
+  'BORDEL CROP X BIDON 20 LITROS',
+  'BORDEL CROP X GALON',
+  'BORDEL CROP X LITRO',
+  'BORO 21 X KILO',
+  'CALIMAN X CANECA 10 LITROS',
+  'CALIMAN X CANECA 20 LITROS',
+  'CALIMAN X GALON',
+  'CALIMAN X LITRO',
+  'CLEAN CROP X 100 ML',
+  'CLEAN CROP X 250 ML',
+  'CLEAN CROP X 20 LITROS',
+  'CLEAN CROP X GALON',
+  'CLEAN CROP X LITRO',
+  'CREOLINA X 250 ML',
+  'CREOLINA X 500 ML',
+  'CREOLINA X GALON',
+  'CREOLINA X LITRO',
+  'DESESTRES P X 100 ML',
+  'DESESTRES P X 250 ML',
+  'DESESTRES P X 500 ML',
+  'DESESTRES P X BIDON 20 LITROS',
+  'DESESTRES P X GALON',
+  'DESESTRES P X LITRO',
+  'ENGORDE K X 100 ML',
+  'ENGORDE K X 250 ML',
+  'ENGORDE K X 500 ML',
+  'ENGORDE K X BIDON 20 LITROS',
+  'ENGORDE K X GALON',
+  'ENGORDE K X LITRO',
+  'ESPAIDER CROP X 250 ML',
+  'ESPAIDER CROP X BIDON 20 LITROS',
+  'ESPAIDER CROP X LITRO',
+  'ESPAIDER CROP X GALON',
+  'FERTI-HUMI 16 X BIDON 20 LITROS',
+  'FERTI-HUMI 16 X GALON',
+  'FERTI-HUMI 16 X LITRO',
+  'FERTILASER PRODUCCION X KILO',
+  'GREEN MOLUS-KILL X 250 ML',
+  'GREEN MOLUS-KILL X LITRO',
+  'GREEN VAX X LITRO',
+  'JABOLAN X 250 ML',
+  'JABOLAN X BIDON 20 LITROS',
+  'JABOLAN X GALON',
+  'JABOLAN X LITRO',
+  'MERO BRIO X 100 ML',
+  'MERO BRIO X 250 ML',
+  'MERO BRIO X BIDON 20 LITROS',
+  'MERO BRIO X GALON',
+  'MERO BRIO X LITRO',
+  'MICROZUL FZ&V LOMBRI-CROP X GALON',
+  'MICROZUL FZ&V LOMBRI-CROP X LITRO',
+  'NEEM GREEN X BIDON 20 LITROS',
+  'NEMATO CROP X 250 ML',
+  'NEMATO CROP X 500 ML',
+  'NEMATO CROP X BIDON 20 LITROS',
+  'NEMATO CROP X GALON',
+  'NEMATO CROP X LITRO',
+  'NOI-1 X 100 ML',
+  'NOI-1 X 250 ML',
+  'NOI-1 X LITRO',
+  'NOI-1 X GALON',
+  'NOI-1 X BIDON 20 LITROS',
+  'OXICLORURO DE COBRE X KILO',
+  'PEGASSO OIL X 100 ML',
+  'PEGASSO OIL X 200 LITROS',
+  'PEGASSO OIL X 250 ML',
+  'PEGASSO OIL X 60 LITROS',
+  'PEGASSO OIL X BIDON 20 LITROS',
+  'PEGASSO OIL X GALON',
+  'PEGASSO OIL X LITRO',
+  'PEGASSO PH X 100 ML',
+  'PEGASSO PH X 250 ML',
+  'PEGASSO PH X 60 LITROS',
+  'PEGASSO PH X BIDON 20 LITROS',
+  'PEGASSO PH X CANECA 200 LITROS',
+  'PEGASSO PH X GALON',
+  'PEGASSO PH X LITRO',
+  'TRIP CROP X 250 ML',
+  'TRIP CROP X BIDON 20 LITROS',
+  'TRIP CROP X LITRO',
+  'TRIP CROP X GALON',
+  'YODO X 250 ML',
+  'YODO X 500 ML',
+  'YODO X GALON',
+  'YODO X LITRO',
+  'YODO X BIDON 20 LITROS',
+  // Carval
+  'AMETRINA 80WG X KILO',
+  'CERTUS 70 WS X 100 GR CV',
+  'CERTUS 70 WS X 50 GR',
+  'CERTUS 70 WS X 500 GR CV',
+  'CONTRA 200 SC X 200 ML',
+  'CUFIGA 80 WP X 500 GR CV',
+  'DIRVO 60% WG X 20 GR CV',
+  'DIRVO 60% WG X KILO ( METSULFURON) CV',
+  'FICLORAM LITRO',
+  'FICLORAM SL X GALON',
+  'FICLORAM X BIDON 20 LITROS',
+  'FIPRID 75 SC 100ML CV',
+  'FIPRID X 500 ML',
+  'FOSTAL 80 WP X 500 GR CV',
+  'GRADUS 43 SC X LITRO CV',
+  'GRADUS 43 X 500 ML CV',
+  'HEXAZINONA 300 GR',
+  'LAMBDA CIHALOTRINA X 100 ML',
+  'LAMBDA CIHALOTRINA X 500 ML',
+  'LAMBDA CIHALOTRINA X LITRO',
+  'RUDOWN X 1 KG',
+  'RUDOWN X 50 GR',
+  'SAGUM 25 SC X 500 ML CV',
+  'SAGUM X LITRO CV',
+  'SHOCK UPI 36 EG X 500G',
+  'TABUS 50 WG X 40 GR CV',
+  // Maxi Pasto (Germisemillas)
+  'MAXI PASTO X BIDON 20 LITROS',
+  'MAXI PASTO X GALON',
+  'MAXI PASTO X LITRO'
+];
+
+// ¿El usuario ve la empresa PARCELAR? Solo entonces aplica el listado fijo.
+function _existVeParcelar() {
+  return _empresasExistView().some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
+}
+
 // Rol con acceso a UNA sola empresa (p. ej. PARCELAR): en Existencias por Empresa
-// solo ve los productos con existencia ≠ 0 (positiva o negativa). Admin, gerente
-// IASO y los roles con varias empresas ven todo, como antes.
+// solo ve los productos con existencia ≠ 0 (positiva o negativa), más —si ve
+// PARCELAR— los del listado fijo PARCELAR_LISTADO aunque estén en cero. Admin,
+// gerente IASO y los roles con varias empresas ven todo, como antes.
 function _existSoloUnaEmpresa() {
   return _empresasExistView().length === 1;
 }
@@ -2942,6 +3080,24 @@ function calcularExistencias() {
     }
   });
 
+  // ── Listado fijo de PARCELAR: siempre presente, con o sin movimientos ──
+  // Si el producto ya tiene saldo (se compara sin mayúsculas ni espacios de más) solo
+  // se marca; si no, se crea en cero para que la tabla lo muestre igual.
+  if (_existVeParcelar()) {
+    var saldoKeyPorNombre = {};
+    Object.keys(saldos).forEach(function(k) { saldoKeyPorNombre[_normProd(k).toUpperCase()] = k; });
+    PARCELAR_LISTADO.forEach(function(nombre) {
+      var k = saldoKeyPorNombre[_normProd(nombre).toUpperCase()];
+      if (!k) {
+        k = nombre;
+        saldos[k] = { producto: nombre };
+        empresasView.forEach(function(e) { saldos[k][e.value] = 0; });
+      }
+      saldos[k]._hold = true;
+      saldos[k]._listado = true;
+    });
+  }
+
   // ── Capa "apartado" (stock reservado a pedidos sin remisionar) ──
   // Se pliega por bucket con _empresaExistKey igual que los saldos, para
   // que la columna "Disp. neto" de PARCELAR caiga en el cubo correcto
@@ -2984,9 +3140,10 @@ function calcularExistencias() {
     (prevEmp === 'GRANEL' && !!granelOpt);
   selEmp.value = stillExists ? prevEmp : '';
 
-  // «Solo sin existencia» no aplica a quien solo ve existencias ≠ 0 (saldría siempre vacío).
+  // «Solo sin existencia» no aplica a quien solo ve existencias ≠ 0 (saldría siempre vacío),
+  // salvo que vea PARCELAR: ahí los productos del listado fijo sí pueden estar en cero.
   var optSinStock = document.querySelector('#ex-f-mostrar option[value="sin_stock"]');
-  if (optSinStock) optSinStock.hidden = optSinStock.disabled = _existSoloUnaEmpresa();
+  if (optSinStock) optSinStock.hidden = optSinStock.disabled = _existSoloUnaEmpresa() && !_existVeParcelar();
 
   var selProd = document.getElementById('ex-f-buscar');
   var prevProd = selProd.value;
@@ -3058,7 +3215,7 @@ function renderExistencias() {
     empresasView.forEach(function(e) { totalView += _existEmpVal(row, e.value); });
     row._totalView = totalView;
     var g = existShowGranel ? _existGranelVal(row) : 0;
-    if (soloUnaEmpresa && totalView === 0 && g === 0) return false;
+    if (soloUnaEmpresa && totalView === 0 && g === 0 && !row._listado) return false;
     if (mostrar === 'con_stock' && totalView <= 0 && g <= 0) return false;
     if (mostrar === 'sin_stock' && (totalView !== 0 || g !== 0)) return false;
     if (mostrar === 'negativo' && totalView >= 0 && g >= 0) return false;
