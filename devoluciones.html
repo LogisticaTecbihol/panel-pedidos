@@ -56,6 +56,12 @@
 .gc-lado-btn.gc-sinrecep:hover{border-color:#d35400;color:#a04000}
 .gc-lado-btn.gc-sinrecep.active{background:#d35400;color:#fff;border-color:#d35400}
 .gc-lado-btn:disabled{opacity:.45;cursor:not-allowed;border-color:#cbd5e0;color:#4a5568}
+/* ── Autocompletar Departamento / Municipio (js/colombia-geo.js), igual que en Pedidos ── */
+.ac-dropdown{position:fixed;background:white;border:1px solid #cbd5e0;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.ac-item{padding:8px 12px;cursor:pointer;font-size:.84rem;border-bottom:1px solid #f7fafc}
+.ac-item:hover,.ac-item.active{background:#ebf5fb}
+.ac-item strong{color:#1a5276}
+.ac-sub{font-size:.72rem;color:#718096;margin-top:2px}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
@@ -1026,6 +1032,26 @@
           <input class="ef" id="cam-num-factura" type="text" placeholder="Ej: FV 3472">
         </div>
       </div>
+      <!-- Datos de entrega: igual que «Nuevo Pedido» (Sucursal, Dirección, Municipio, Departamento) -->
+      <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr;gap:12px;margin-bottom:6px">
+        <div>
+          <label class="ef-label">Sucursal</label>
+          <input class="ef" id="cam-sucursal" type="text" list="dl-cam-sucursal" placeholder="Seleccionar sucursal" autocomplete="off">
+          <datalist id="dl-cam-sucursal"></datalist>
+        </div>
+        <div>
+          <label class="ef-label">Dirección</label>
+          <input class="ef" id="cam-direccion" type="text" placeholder="Dirección">
+        </div>
+        <div>
+          <label class="ef-label">Municipio *</label>
+          <input class="ef" id="cam-municipio" type="text" placeholder="Municipio" autocomplete="off">
+        </div>
+        <div>
+          <label class="ef-label">Departamento *</label>
+          <input class="ef" id="cam-departamento" type="text" placeholder="Departamento" autocomplete="off">
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
         <div>
           <label class="ef-label">Fecha de Compra</label>
@@ -1276,14 +1302,16 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20261023a"></script>
+<script src="js/shared.js?v=20261028a"></script>
 <script src="js/auth.js?v=20261022a"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
+<script src="js/colombia-geo.js?v=20260826a"></script>
+<script src="js/entrega-cliente.js?v=20261028a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/asignacion-inventario.js?v=20260909g"></script>
 <script src="js/devoluciones.js?v=20261022a"></script>
-<script src="js/cambios.js?v=20261023a"></script>
+<script src="js/cambios.js?v=20261028a"></script>
 <script src="js/despachos-devcam.js?v=20261023a"></script>
 </body>
 </html>

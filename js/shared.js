@@ -348,6 +348,16 @@ async function apiGet(action, opts) {
       all = _filterGerenteIaso(all, 'Nombre_Empresa');
       return { ok: true, pedidos: _addRow(all) };
     }
+    // Líneas de pedidos de UN cliente (autocompletar los datos de entrega: sucursal, dirección, municipio).
+    // opts.cliente = nombre exacto del cliente (sin distinguir mayúsculas); el pedido más reciente primero.
+    if (action === 'getPedidosDeCliente') {
+      var nomCli = String((opts && opts.cliente) || '').trim();
+      if (!nomCli) return { ok: true, pedidos: [] };
+      var patCli = nomCli.replace(/[\\%_]/g, '\\$&');
+      var resPC = await _fetchAllRows('Pedidos', cols, function(q) { return q.ilike('Cliente', patCli); });
+      if (resPC.error) return { ok: false, error: resPC.error.message, pedidos: [] };
+      return { ok: true, pedidos: _filterGerenteIaso(resPC.data, 'Nombre_Empresa') };
+    }
     if (action === 'getConsecutivos') {
       var res = await _sb.from('Consecutivos').select(cols).order('"N"');
       if (res.error) return { ok: false, error: res.error.message };
@@ -1379,6 +1389,8 @@ async function _apiPostCore(body) {
           Empresa: h.Empresa || '', Fecha_Solicitud: h.Fecha_Solicitud || '',
           Fecha_Recogida: h.Fecha_Recogida || '', Consecutivo: h.Consecutivo || '',
           Cliente: h.Cliente || '', NIT: h.NIT || '', Telefono: h.Telefono || '',
+          Sucursal: h.Sucursal || '', Direccion_Envio: h.Direccion_Envio || '',
+          Municipio: h.Municipio || '', Departamento: h.Departamento || '',
           Correo: h.Correo || '', Num_Factura: h.Num_Factura || '',
           Fecha_Compra: h.Fecha_Compra || '', Tipo_Linea: 'CAMBIAR',
           Producto: lin.Producto || '', Cantidad: Number(lin.Cantidad) || 0,
@@ -1401,6 +1413,8 @@ async function _apiPostCore(body) {
           Empresa: h.Empresa || '', Fecha_Solicitud: h.Fecha_Solicitud || '',
           Fecha_Recogida: h.Fecha_Recogida || '', Consecutivo: h.Consecutivo || '',
           Cliente: h.Cliente || '', NIT: h.NIT || '', Telefono: h.Telefono || '',
+          Sucursal: h.Sucursal || '', Direccion_Envio: h.Direccion_Envio || '',
+          Municipio: h.Municipio || '', Departamento: h.Departamento || '',
           Correo: h.Correo || '', Num_Factura: h.Num_Factura || '',
           Fecha_Compra: h.Fecha_Compra || '', Tipo_Linea: 'ENTREGAR',
           Producto: lin.Producto || '', Cantidad: Number(lin.Cantidad) || 0,

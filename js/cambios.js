@@ -122,13 +122,15 @@ function buildClientSearchCam() {
       var item = document.createElement('div');
       item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f4f8';
       var nitL = c.nit ? ' <span style="color:#718096;font-size:0.75rem">NIT: '+escHtml(c.nit)+'</span>' : '';
-      item.innerHTML = '<span style="font-weight:600">'+escHtml(c.cliente)+'</span>'+nitL;
+      var muniL = c.municipio ? ' <span style="color:#a0aec0;font-size:0.72rem">· '+escHtml(c.municipio)+'</span>' : '';
+      item.innerHTML = '<span style="font-weight:600">'+escHtml(c.cliente)+'</span>'+nitL+muniL;
       item.addEventListener('mousedown', function(ev) {
         ev.preventDefault();
         document.getElementById('cam-cliente').value = c.cliente || '';
         document.getElementById('cam-nit').value = c.nit || '';
         document.getElementById('cam-telefono').value = c.telefono || '';
         closeCamClientAC();
+        camAplicarEntregaCliente(c);
       });
       item.addEventListener('mouseover', function() { this.style.background='#f0f8ff'; });
       item.addEventListener('mouseout', function() { this.style.background='white'; });
@@ -142,6 +144,75 @@ function buildClientSearchCam() {
 }
 function closeCamClientAC() {
   document.querySelectorAll('.cam-client-ac').forEach(function(el) { el.remove(); });
+}
+
+// ── Datos de entrega: Sucursal · Dirección · Municipio · Departamento ──
+// Misma lógica que «Nuevo Pedido»: las opciones de Sucursal y lo que se rellena al elegir el cliente salen de su
+// ficha en Clientes y de sus pedidos anteriores (js/entrega-cliente.js); Departamento y Municipio se eligen de la
+// lista oficial (js/colombia-geo.js) y se normalizan al guardar.
+var camSucursalMapa = {};          // texto de la sucursal (minúscula) → {direccion, municipio, departamento}
+var camEntregaToken = 0;           // descarta la respuesta tardía de un cliente que ya no es el elegido
+var camPedidosClienteCache = {};   // nombre del cliente (minúscula) → líneas de sus pedidos
+var camEntregaBound = false;
+
+async function camPedidosDeCliente(nombre) {
+  var k = entregaNormCliente(nombre);
+  if (!k) return [];
+  if (camPedidosClienteCache[k]) return camPedidosClienteCache[k];
+  try {
+    var r = await apiGet('getPedidosDeCliente', {
+      cliente: nombre,
+      columns: 'Cliente,Nombre_Empresa,Fecha_Pedido,Municipio,Departamento,Direccion_Envio,Sucursal'
+    });
+    if (r && r.ok) { camPedidosClienteCache[k] = r.pedidos || []; return camPedidosClienteCache[k]; }
+  } catch (e) {}
+  return [];   // sin pedidos previos o sin acceso: quedan solo los datos de la ficha del cliente
+}
+
+// Arma la lista de sucursales del cliente (datalist) y devuelve las opciones con su mapa.
+function camLlenarSucursales(nombre, pedidos) {
+  var suc = entregaSucursales(nombre, catalogoClientesCam, pedidos);
+  camSucursalMapa = suc.mapa;
+  var dl = document.getElementById('dl-cam-sucursal');
+  if (dl) dl.innerHTML = suc.opciones.map(function(o) { return '<option value="' + escHtml(o) + '">'; }).join('');
+  return suc;
+}
+
+// Al elegir un cliente de la lista: sucursales disponibles y datos por defecto (ficha del cliente y, donde falten, su último pedido).
+async function camAplicarEntregaCliente(c) {
+  var token = ++camEntregaToken;
+  var pedidos = await camPedidosDeCliente(c.cliente);
+  if (token !== camEntregaToken) return;
+  var suc = camLlenarSucursales(c.cliente, pedidos);
+  var def = entregaPorDefecto(c, suc, pedidos);
+  document.getElementById('cam-sucursal').value = def.sucursal;
+  document.getElementById('cam-direccion').value = def.direccion;
+  document.getElementById('cam-municipio').value = def.municipio;
+  document.getElementById('cam-departamento').value = def.departamento;
+}
+
+// Al editar un cambio: solo las sucursales del cliente; los valores guardados no se tocan.
+async function camCargarSucursalesCliente(nombre) {
+  var token = ++camEntregaToken;
+  camLlenarSucursales(nombre, []);
+  var pedidos = await camPedidosDeCliente(nombre);
+  if (token !== camEntregaToken) return;
+  camLlenarSucursales(nombre, pedidos);
+}
+
+function camOnSucursalChange() {
+  var m = camSucursalMapa[document.getElementById('cam-sucursal').value.trim().toLowerCase()];
+  if (!m) return;
+  document.getElementById('cam-direccion').value = m.direccion;
+  document.getElementById('cam-municipio').value = m.municipio;
+  document.getElementById('cam-departamento').value = m.departamento;
+}
+
+function camSetupEntrega() {
+  if (camEntregaBound) return;
+  camEntregaBound = true;
+  document.getElementById('cam-sucursal').addEventListener('change', camOnSucursalChange);
+  setupGeoAutocomplete(document.getElementById('cam-departamento'), document.getElementById('cam-municipio'));
 }
 
 // ── Product autocomplete for cambio lines ──
@@ -248,7 +319,7 @@ function filteredCam() {
     if (fc && r.Cliente !== fc) return false;
     if (fst && r.Estado !== fst) return false;
     if (ft) {
-      var hay = [r.Cliente, r.NIT, r.Producto, r.Num_Factura, r.Razon_Cambio, r.Observaciones, r.Observacion_Cierre, r.Consecutivo, r.Correo].join(' ').toLowerCase();
+      var hay = [r.Cliente, r.NIT, r.Producto, r.Num_Factura, r.Razon_Cambio, r.Observaciones, r.Observacion_Cierre, r.Consecutivo, r.Correo, r.Sucursal, r.Direccion_Envio, r.Municipio, r.Departamento].join(' ').toLowerCase();
       if (hay.indexOf(ft) < 0) return false;
     }
     return true;
@@ -419,6 +490,10 @@ function viewCamDetail(key) {
     cf('Correo', r.Correo) +
     cf('N° Factura', r.Num_Factura) +
     cf('Fecha Compra', r.Fecha_Compra ? fmtDate(r.Fecha_Compra) : '—') +
+    cf('Sucursal', r.Sucursal) +
+    cf('Dirección', r.Direccion_Envio) +
+    cf('Municipio', r.Municipio) +
+    cf('Departamento', r.Departamento) +
     cfHtml('Estado', estadoLabel) +
     '</div>' +
     (r.Cierre_Sin_Recepcion
@@ -724,6 +799,13 @@ function openNewCambio() {
   document.getElementById('cam-telefono').value = '';
   document.getElementById('cam-correo').value = '';
   document.getElementById('cam-num-factura').value = '';
+  document.getElementById('cam-sucursal').value = '';
+  document.getElementById('cam-direccion').value = '';
+  document.getElementById('cam-municipio').value = '';
+  document.getElementById('cam-departamento').value = '';
+  camEntregaToken++;
+  camSucursalMapa = {};
+  document.getElementById('dl-cam-sucursal').innerHTML = '';
   document.getElementById('cam-fecha-compra').value = '';
   document.getElementById('cam-valor-cliente').value = '';
   document.getElementById('cam-valor-empresa').value = '';
@@ -743,6 +825,7 @@ function openNewCambio() {
   renderCamLines('cambiar');
   renderCamLines('entregar');
   buildClientSearchCam();
+  camSetupEntrega();
   document.getElementById('cam-overlay').classList.add('show');
 }
 
@@ -765,6 +848,10 @@ function openEditCamGroup(key) {
   document.getElementById('cam-telefono').value = r.Telefono || '';
   document.getElementById('cam-correo').value = r.Correo || '';
   document.getElementById('cam-num-factura').value = r.Num_Factura || '';
+  document.getElementById('cam-sucursal').value = r.Sucursal || '';
+  document.getElementById('cam-direccion').value = r.Direccion_Envio || '';
+  document.getElementById('cam-municipio').value = r.Municipio || '';
+  document.getElementById('cam-departamento').value = r.Departamento || '';
   document.getElementById('cam-fecha-compra').value = r.Fecha_Compra ? toDateInput(r.Fecha_Compra) : '';
   document.getElementById('cam-valor-cliente').value = r.Valor_Cliente || '';
   document.getElementById('cam-valor-empresa').value = r.Valor_Empresa || '';
@@ -783,16 +870,23 @@ function openEditCamGroup(key) {
   renderCamLines('cambiar');
   renderCamLines('entregar');
   buildClientSearchCam();
+  camSetupEntrega();
+  camCargarSucursalesCliente(r.Cliente || '');
   document.getElementById('cam-overlay').classList.add('show');
 }
 
 function closeCamModal() {
   document.getElementById('cam-overlay').classList.remove('show');
   editCam = null;
+  camEntregaToken++;
   closeCamProdAC();
   closeCamClientAC();
 }
 document.getElementById('cam-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeCamModal(); });
+// Las listas de Departamento/Municipio (position:fixed) no siguen al contenido: se ocultan al desplazar el formulario.
+document.getElementById('cam-overlay').addEventListener('scroll', function() {
+  [].slice.call(document.querySelectorAll('.ac-dropdown')).forEach(function(dd) { dd.style.display = 'none'; });
+}, true);
 
 // ── Save ──
 async function saveCambio() {
@@ -805,6 +899,10 @@ async function saveCambio() {
   var telefono = document.getElementById('cam-telefono').value.trim();
   var correo = document.getElementById('cam-correo').value.trim();
   var numFactura = document.getElementById('cam-num-factura').value.trim();
+  var sucursal = document.getElementById('cam-sucursal').value.trim();
+  var direccion = document.getElementById('cam-direccion').value.trim();
+  var municipio = document.getElementById('cam-municipio').value.trim();
+  var departamento = document.getElementById('cam-departamento').value.trim();
   var fechaCompra = document.getElementById('cam-fecha-compra').value;
   var valorCliente = Number(document.getElementById('cam-valor-cliente').value) || 0;
   var valorEmpresa = Number(document.getElementById('cam-valor-empresa').value) || 0;
@@ -817,6 +915,13 @@ async function saveCambio() {
   if (!fechaSolicitud) { showToast('Selecciona la fecha de solicitud', '#e74c3c'); return; }
   if (!esHistoricoCam && !AUTH.isAdmin() && fechaSolicitud < today()) { showToast('La fecha de solicitud no puede ser anterior a hoy', '#e74c3c'); return; }
   if (!cliente) { showToast('Ingresa el nombre del cliente', '#e74c3c'); return; }
+  // Municipio y departamento son obligatorios, salvo en la carga histórica (registros anteriores que pueden no tenerlos)
+  if (!esHistoricoCam && !municipio) { showToast('Ingresa el municipio', '#e74c3c'); document.getElementById('cam-municipio').focus(); return; }
+  if (!esHistoricoCam && !departamento) { showToast('Ingresa el departamento', '#e74c3c'); document.getElementById('cam-departamento').focus(); return; }
+  // Igual que Nuevo Pedido: se corrige a la grafía oficial (js/colombia-geo.js) y se completa el departamento
+  var geoCam = normalizarMunicipio(municipio, departamento);
+  municipio = geoCam.municipio;
+  departamento = geoCam.departamento || normalizarDepartamento(departamento);
 
   readCamLines();
   var validCambiar = camLineasCambiar.filter(function(l) { return l.Producto; });
@@ -839,6 +944,7 @@ async function saveCambio() {
   var header = {
     Empresa: empresa, Fecha_Solicitud: fechaSolicitud, Fecha_Recogida: fechaRecogida,
     Consecutivo: consecutivo, Cliente: cliente, NIT: nit, Telefono: telefono,
+    Sucursal: sucursal, Direccion_Envio: direccion, Municipio: municipio, Departamento: departamento,
     Correo: correo, Num_Factura: numFactura, Fecha_Compra: fechaCompra,
     Valor_Cliente: valorCliente, Valor_Empresa: valorEmpresa, Observaciones: observaciones,
     Historico: esHistoricoCam
@@ -1335,11 +1441,11 @@ async function saveGestionarCam() {
         };
         var jsPDFDoc = null;
         if (_finalRemIngC) {
-          var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']], entregas:_eItems(lineasIng), qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
+          var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']].concat(_camEntregaPdf(head).izq), right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']].concat(_camEntregaPdf(head).der), entregas:_eItems(lineasIng), qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
           if (rI) jsPDFDoc = rI.doc;
         }
         if (_finalRemSalC) {
-          var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']], right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']], entregas:_eItems(lineasSal), qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
+          var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']].concat(_camEntregaPdf(head).izq), right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']].concat(_camEntregaPdf(head).der), entregas:_eItems(lineasSal), qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
           if (jsPDFDoc) optsS._doc = jsPDFDoc;
           var rS = generarRemisionPDF(optsS);
           if (rS) jsPDFDoc = rS.doc;
@@ -1380,6 +1486,14 @@ async function saveGestionarCam() {
 }
 
 // ── PDF Export (Cambios) ──
+// Datos de entrega del cambio para los recuadros de los PDF (solicitud y remisiones): dos filas por columna.
+function _camEntregaPdf(head) {
+  return {
+    izq: [['Sucursal', head.Sucursal || ''], ['Direccion', head.Direccion_Envio || '']],
+    der: [['Municipio', head.Municipio || ''], ['Departamento', head.Departamento || '']]
+  };
+}
+
 function _camViewContext() {
   if (!camViewingKey) { showToast('No hay cambio seleccionado.', '#e67e22'); return null; }
   if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
@@ -1468,13 +1582,13 @@ function exportarCamSolicitudPDF(opts) {
     ['NIT', head.NIT || ''],
     ['Telefono', head.Telefono || ''],
     ['Correo', head.Correo || '']
-  ];
+  ].concat(_camEntregaPdf(head).izq);
   var right = [
     ['N° Factura', head.Num_Factura || ''],
     ['Fecha compra', head.Fecha_Compra || ''],
     ['Fecha recogida', head.Fecha_Recogida || ''],
     ['Estado', head.Estado || 'Pendiente']
-  ];
+  ].concat(_camEntregaPdf(head).der);
 
   var ph = doc.internal.pageSize.getHeight();
   function _camSalto(need) {
@@ -1692,13 +1806,13 @@ function exportarCamRemisionPDF(tipo, opts) {
     ['NIT', head.NIT || ''],
     ['Telefono', head.Telefono || ''],
     ['N° Factura', head.Num_Factura || '']
-  ];
+  ].concat(_camEntregaPdf(head).izq);
   var right = [
     ['Correo', head.Correo || ''],
     ['Bodega', bodega || ''],
     ['Fecha compra', head.Fecha_Compra || ''],
     ['Estado', head.Estado || 'Pendiente']
-  ];
+  ].concat(_camEntregaPdf(head).der);
 
   var data = {
     empresa: head.Empresa || '',

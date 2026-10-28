@@ -61,6 +61,31 @@ y lo que falta queda pendiente para otra pasada. Una línea puede tener varias r
 - Probado contra producción con transacciones revertidas (parcial, exceso, grupo incompleto, cierre con faltante, solo CAMBIAR, dato anterior) y con arneses de navegador
   (paridad SQL↔JS de `_kx_movs`/`buildKxMovimientos`/kardex Buenos y NC/prorrateo/reportes, y el modal con Supabase simulado). El flujo completo con usuarios reales no se probó.
 
+## Cambios de mercancía: datos de entrega (Sucursal, Dirección, Municipio, Departamento)
+
+El formulario «Registrar Cambio de Mercancía» captura los mismos datos de entrega que «Nuevo Pedido» (`pedidos.html`): **Sucursal**, **Dirección**, **Municipio** y **Departamento**.
+
+- **Modelo** (`supabase/migrations/add_direccion_entrega_cambios.sql`, migración remota `add_direccion_entrega_cambios`; aplicar ANTES de publicar el código, porque `agregarCambio`
+  ya inserta las columnas): `CambiosMercancia.Sucursal`, `Direccion_Envio`, `Municipio`, `Departamento` (text, default `''`, mismos nombres que en `Pedidos`). Son datos del cambio
+  completo, no de cada línea: se repiten en todas las filas, como Cliente/NIT/Teléfono. **Los cambios anteriores quedan vacíos** (sin backfill; el detalle muestra «—») y,
+  como un cambio con movimientos no se edita, así se quedan. El trámite parcial (`Movs_*`, `tramitar_cambio`) no usa estas columnas.
+- **Obligatoriedad**: Municipio y Departamento obligatorios; Dirección y Sucursal opcionales. Al guardar se normaliza igual que Nuevo Pedido (`normalizarMunicipio` /
+  `normalizarDepartamento` de `js/colombia-geo.js`: corrige la grafía y completa el departamento). La **carga histórica** (admin) queda exenta de la obligatoriedad.
+  Si se edita un cambio anterior (sin movimientos) hay que completar municipio y departamento para guardar.
+- **Lógica de Nuevo Pedido, reutilizada**: Departamento/Municipio usan `setupGeoAutocomplete` (`js/colombia-geo.js`, lista oficial). Las opciones de Sucursal y lo que se rellena al elegir
+  el cliente salen de `js/entrega-cliente.js` (`entregaSucursales`, `entregaPorDefecto`, `entregaUltimoPedido`), que es el equivalente de `_populateSucursalDL` y del `onSelect` del
+  cliente en `pedidos.js`: ficha del cliente en Clientes + sus pedidos anteriores; con más de una dirección no se rellena nada y se elige la sucursal (que rellena dirección, municipio
+  y departamento); con una sola se rellena con la ficha y, donde falte, con el último pedido. **`pedidos.js` conserva su propia copia: si cambias una, cambia la otra** (paridad
+  comprobada contra el código real de `pedidos.js` con 4000 casos aleatorios, 0 diferencias). Como `devoluciones.html` no carga pedidos, los pedidos del cliente se piden al elegirlo con
+  `apiGet('getPedidosDeCliente', {cliente, columns})` (shared.js; solo ese cliente; respeta `_filterGerenteIaso`); si falla o no hay acceso, quedan solo los datos de Clientes.
+  Diferencia menor: al elegir cliente aquí se limpian los cuatro campos antes de rellenar (Nuevo Pedido deja los valores anteriores cuando el cliente tiene varias direcciones).
+- **Se ven en**: formulario de alta y de edición (`cam-sucursal`, `cam-direccion`, `cam-municipio`, `cam-departamento`; el desplegable `.ac-dropdown` de geo está en el `<style>` de
+  `devoluciones.html`), detalle del cambio, búsqueda de la lista y los PDF: solicitud (OP-PDC-FO11, +2 filas por columna) y las remisiones de ingreso/salida, tanto al exportar como
+  las que salen a contabilidad al «Gestionar» (los cuatro sitios usan `_camEntregaPdf` en `cambios.js`).
+- Probado con un arnés de navegador (Supabase simulado: relleno por cliente con una y varias direcciones, sucursal, geo, validación, alta, edición, histórico, detalle y PDF) y con la
+  migración dentro de una transacción revertida contra producción (columnas, idempotencia, filas anteriores con `''`, inserción, `_kx_movs` idéntico: 4284 filas). El flujo con usuarios
+  reales (permisos de lectura de `Pedidos` por rol) no se probó.
+
 ## Solicitudes de Eventos (formato MC-ISO-FO01)
 
 `solicitudes-eventos.html` + `js/solicitudes-eventos.js`: el comercial diligencia el formato de solicitud de eventos (6 secciones).
