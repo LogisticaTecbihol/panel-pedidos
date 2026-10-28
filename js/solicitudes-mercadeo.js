@@ -17,8 +17,9 @@
 // Todo pasa por la Edge Function `solicitud-mercadeo` (sesión, permiso y empresas). Los
 // adjuntos suben directo al Storage de pqrs con URLs firmadas que entrega la función
 // (la clave anon de pqrs es pública; por sí sola no da acceso a nada).
+// El campo opcional «Productos relacionados» es el componente compartido de productos-solicitud.js (psCrear).
 // Depende de: _sb, _authReady, EMPRESAS_HOLDING, escHtml, showToast, fmtDate, today
-// (shared.js) y AUTH (auth.js).
+// (shared.js), AUTH (auth.js) y productos-solicitud.js.
 
 var SM_PQRS_URL = 'https://kvfqcymeihglohkcckdp.supabase.co';
 var SM_PQRS_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2ZnFjeW1laWhnbG9oa2Nja2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0OTQyNjksImV4cCI6MjEwNTA3MDI2OX0.kdutwtsqpUDC6v9r7FPWTSKLFW62SMGy_1F41Fcv8Mk';
@@ -89,7 +90,8 @@ var _sm = {
   detalle: null,      // { origen: 'mis'|'pend'|'apr', idx }
   observando: false,  // candado anti doble clic al enviar una observación
   rechazando: null,   // solicitud que se está rechazando
-  pqrs: null
+  pqrs: null,
+  productos: null     // campo «Productos relacionados» (psCrear, productos-solicitud.js)
 };
 
 function smEl(id) { return document.getElementById(id); }
@@ -218,6 +220,8 @@ function smPoblarFormulario() {
   var as = '<option value="">— Seleccionar —</option>';
   SM_ASUNTOS.forEach(function (a) { as += '<option value="' + a.k + '">' + escHtml(smAsuntoOpcion(a)) + '</option>'; });
   smEl('sm-asunto').innerHTML = as;
+
+  _sm.productos = psCrear(smEl('sm-productos'));
 
   smActualizarRuta();
 }
@@ -430,6 +434,7 @@ function smResetForm() {
   smEl('sm-fecha').min = today();
   smEl('sm-desc').value = '';
   smEl('sm-desc-ct').textContent = '0';
+  if (_sm.productos) _sm.productos.limpiar();
   smEl('sm-files').value = '';
   smEl('sm-progreso').textContent = '';
   smEl('sm-edit-banner').style.display = 'none';
@@ -496,7 +501,9 @@ function smLeerFormulario() {
     // Solo cuenta con asunto "Otros".
     asunto_otro: smEl('sm-asunto').value === 'otros' ? smEl('sm-asunto-otro').value.trim().replace(/\s+/g, ' ') : null,
     fecha_tentativa: smEl('sm-fecha').value,
-    descripcion: smEl('sm-desc').value.trim()
+    descripcion: smEl('sm-desc').value.trim(),
+    productos: _sm.productos ? _sm.productos.valor() : [],
+    productoPendiente: _sm.productos ? _sm.productos.pendiente() : ''   // no viaja al servidor: solo para validar
   };
 }
 
@@ -514,6 +521,7 @@ function smValidar(d) {
   if (d.fecha_tentativa < today()) return 'La fecha tentativa no puede ser anterior a hoy';
   if (d.descripcion.length < 10) return 'Describe la solicitud (mínimo 10 caracteres)';
   if (d.descripcion.length > 2000) return 'La descripción no puede superar 2000 caracteres';
+  if (d.productoPendiente) return 'Tienes un producto escrito sin agregar («' + d.productoPendiente + '»): presiona «Agregar» o borra el texto';
   return null;
 }
 
@@ -584,6 +592,7 @@ async function smEnviar() {
       asunto_otro: d.asunto_otro,
       fecha_tentativa: d.fecha_tentativa,
       descripcion: d.descripcion,
+      productos: d.productos,
       archivos: archivos
     });
     var s = res.solicitud || {};
@@ -633,6 +642,7 @@ function smEditar(s) {
   smEl('sm-fecha').value = s.fecha_tentativa && s.fecha_tentativa >= today() ? s.fecha_tentativa : '';
   smEl('sm-desc').value = s.descripcion || '';
   smEl('sm-desc-ct').textContent = (s.descripcion || '').length;
+  _sm.productos.poner(s.productos);
   smEl('sm-edit-banner').style.display = '';
   var ref = '<strong>' + escHtml(smRef(s)) + '</strong>';
   if (s.estado_aprobacion === 'Por aprobar') {
@@ -929,6 +939,7 @@ function smVerDetalle(origen, i, enfocarObs) {
       '<span class="k">Solicitante</span><span>' + escHtml(s.solicitante || '—') + '</span>' +
       '<span class="k">A nombre de</span><span>' + escHtml(s.a_nombre_de || '—') + '</span>' +
       '<span class="k">Fecha tentativa</span><span>' + escHtml(fmtDate(s.fecha_tentativa)) + '</span>' +
+      '<span class="k">Productos</span><span>' + psTagsHtml(s.productos) + '</span>' +
       (enMercadeo
         ? '<span class="k">Fecha comprometida</span><span>' + escHtml(s.fecha_comprometida ? fmtDate(s.fecha_comprometida) : 'Por definir por Mercadeo') + '</span>' +
           '<span class="k">Entregada</span><span>' + escHtml(s.entregada_en ? smFmtFechaHora(s.entregada_en) : '—') + '</span>' +

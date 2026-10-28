@@ -90,6 +90,11 @@ const AREA_COMERCIAL = 'Comercial'
 // Texto que se guarda (y se le muestra al Tablero) como «aprobador» de una solicitud directa.
 const APROBADOR_DIRECTO = 'Envío directo (sin aprobación comercial)'
 const MAX_ARCHIVOS = 5
+// «Productos relacionados» (opcional): nombres del maestro sin la presentación, o escritos a mano. Mismas reglas que el
+// formulario (js/productos-solicitud.js) y que panel-pqrs; el servidor no consulta el maestro, acepta cualquier texto dentro de estos límites.
+const MAX_PRODUCTOS = 20
+const PRODUCTO_MIN = 2
+const PRODUCTO_MAX = 100
 // Estados del Tablero en los que la solicitud sigue con Mercadeo (después ya no se modifica ni se observa).
 const ESTADOS_ABIERTOS = ['solicitada', 'confirmada', 'en_produccion', 'en_validacion']
 const MAX_PENDIENTES_POR_USUARIO = 30
@@ -126,6 +131,27 @@ const refSM = (n: number | string) => `SM-${n}`
 // Sin tildes ni mayúsculas, para comparar el área escrita con «Comercial».
 function normaliza(s: unknown): string {
   return String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+// Productos relacionados: hasta MAX_PRODUCTOS nombres de PRODUCTO_MIN a PRODUCTO_MAX caracteres, en una sola línea y sin repetir
+// (sin importar tildes ni mayúsculas; el primero que llegue se queda).
+function productosValidos(v: unknown): string[] {
+  if (v === null || v === undefined) return []
+  if (!Array.isArray(v)) throw new Rechazo('Los productos relacionados no son válidos')
+  if (v.length > MAX_PRODUCTOS) throw new Rechazo(`Máximo ${MAX_PRODUCTOS} productos por solicitud`)
+  const out: string[] = []
+  const vistos = new Set<string>()
+  for (const x of v) {
+    if (typeof x !== 'string') throw new Rechazo('Los productos relacionados no son válidos')
+    const n = x.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (n.length < PRODUCTO_MIN) throw new Rechazo(`El nombre de un producto debe tener al menos ${PRODUCTO_MIN} caracteres`)
+    if (n.length > PRODUCTO_MAX) throw new Rechazo(`El nombre de un producto no puede superar ${PRODUCTO_MAX} caracteres`)
+    const k = normaliza(n)
+    if (vistos.has(k)) continue
+    vistos.add(k)
+    out.push(n)
+  }
+  return out
 }
 
 // Llama a la función de pqrs. Los 4xx de validación se reenvían con su mensaje;
@@ -337,6 +363,8 @@ serve(async (req) => {
       if (descripcion.length < 10) throw new Rechazo('La descripción debe tener al menos 10 caracteres')
       if (descripcion.length > 2000) throw new Rechazo('La descripción no puede superar 2000 caracteres')
 
+      const productos = productosValidos(body.productos)
+
       // "A nombre de": cualquier usuario activo del panel (el nombre sale de la BD, no del navegador).
       let aNombre: { id: string; nombre: string } | null = null
       if (body.a_nombre_de_id) {
@@ -372,7 +400,7 @@ serve(async (req) => {
         if (faltan.length) throw new Rechazo('Un archivo no llegó completo; vuelve a intentarlo')
       }
 
-      return { empresa: body.empresa, empresaOtra, departamentoArea, asunto: body.asunto, asuntoOtro, fecha, descripcion, aNombre, archivos }
+      return { empresa: body.empresa, empresaOtra, departamentoArea, asunto: body.asunto, asuntoOtro, fecha, descripcion, productos, aNombre, archivos }
     }
 
     // Manda una solicitud YA aprobada al Tablero de Mercadeo (idempotente por origen_ref = id).
@@ -394,6 +422,7 @@ serve(async (req) => {
         asunto_otro: r.asunto_otro,
         fecha_tentativa: r.fecha_tentativa,
         descripcion: r.descripcion,
+        productos: r.productos ?? [],
         archivos: r.archivos,
       })
     }
@@ -470,6 +499,7 @@ serve(async (req) => {
         empresa_otra: r.empresa_otra ?? null,
         departamento_area: r.departamento_area ?? null,
         descripcion: r.descripcion,
+        productos: Array.isArray(r.productos) ? r.productos : [],
         fecha_tentativa: r.fecha_tentativa,
         solicitante: r.creado_por_nombre,
         solicitante_id: r.creado_por,
@@ -603,6 +633,7 @@ serve(async (req) => {
           asunto_otro: v.asuntoOtro,
           fecha_tentativa: v.fecha,
           descripcion: v.descripcion,
+          productos: v.productos,
           archivos: v.archivos,
           historial: [{ tipo: 'envio', por: nombreUsuario, en: ahora }],
         }).select('*').single()
@@ -637,6 +668,7 @@ serve(async (req) => {
           asunto_otro: v.asuntoOtro,
           fecha_tentativa: v.fecha,
           descripcion: v.descripcion,
+          productos: v.productos,
           archivos: v.archivos,
           estado_aprobacion: 'Por aprobar',
           motivo_rechazo: null,
@@ -697,6 +729,7 @@ serve(async (req) => {
           asunto_otro: v.asuntoOtro,
           fecha_tentativa: v.fecha,
           descripcion: v.descripcion,
+          productos: v.productos,
           archivos: v.archivos,
           modificado_en: ahora,
           historial,

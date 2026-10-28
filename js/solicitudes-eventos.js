@@ -14,8 +14,9 @@
 // Todo pasa por la Edge Function `solicitud-evento` (sesión, permiso y empresas). Los adjuntos suben directo al
 // Storage de pqrs con URLs firmadas que entrega la función (la clave anon de pqrs es pública; por sí sola no da
 // acceso a nada).
+// El campo opcional «Productos relacionados» (paso 3) es el componente compartido de productos-solicitud.js (psCrear).
 // Depende de: _sb, _authReady, EMPRESAS_HOLDING, escHtml, showToast, fmtDate, today, isBackdropClick
-// (shared.js) y AUTH (auth.js).
+// (shared.js), AUTH (auth.js), colombia-geo.js y productos-solicitud.js.
 
 var EV_PQRS_URL = 'https://kvfqcymeihglohkcckdp.supabase.co';
 var EV_PQRS_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2ZnFjeW1laWhnbG9oa2Nja2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0OTQyNjksImV4cCI6MjEwNTA3MDI2OX0.kdutwtsqpUDC6v9r7FPWTSKLFW62SMGy_1F41Fcv8Mk';
@@ -76,6 +77,7 @@ var _ev = {
   rechazando: null,   // solicitud que se está rechazando
   clientes: null,     // clientes para buscar al distribuidor/cliente del lugar [{ cliente, nit, municipio, departamento, norm, nitDig }]
   distSel: null,      // cliente elegido de la lista (para limpiar el NIT si se cambia el nombre)
+  productos: null,    // campo «Productos relacionados» (psCrear, productos-solicitud.js)
   pqrs: null
 };
 
@@ -254,6 +256,8 @@ function evPoblarFormulario() {
   evEl('ev-modalidad').innerHTML = Object.keys(EV_MODALIDAD).map(function (k) {
     return '<label><input type="radio" name="ev-mod" value="' + k + '"' + (k === 'fisico' ? ' checked' : '') + '> ' + EV_MODALIDAD[k] + '</label>';
   }).join('');
+
+  _ev.productos = psCrear(evEl('ev-productos'));
 
   // El estado inicial es "Por aprobar"; si quien envía ya puede aprobar, pasa directo a Mercadeo.
   evEl('sm-estado').value = 'Por aprobar';
@@ -644,6 +648,7 @@ function evResetForm() {
   evEl('ev-fecha').min = today();
   evEl('sm-desc').value = '';
   evEl('sm-desc-ct').textContent = '0';
+  if (_ev.productos) _ev.productos.limpiar();
   var m = document.querySelector('input[name="ev-mod"][value="fisico"]');
   if (m) m.checked = true;
   evChecks('ev-objetivos', EV_OBJETIVOS, []);
@@ -730,6 +735,7 @@ function evLeerFormulario() {
     areaOtros: evEl('ev-area').value === 'Otros',   // no viaja al servidor: solo para validar
     plataformaOtra: evEl('ev-plataforma').value === 'Otra',
     segOtros: evEl('ev-seg').value === 'Otros',
+    productoPendiente: _ev.productos ? _ev.productos.pendiente() : '',   // no viaja al servidor: solo para validar
     datos: {
       empresa: evEl('sm-empresa').value,
       empresa_otra: evEl('sm-empresa').value === 'OTROS' ? evEl('ev-empresa-otra').value.trim().replace(/\s+/g, ' ') : '',
@@ -752,6 +758,7 @@ function evLeerFormulario() {
       plataforma: evPlataformaValor(),
       objetivos: evMarcados('ev-objetivos'),
       objetivos_otro: evEl('ev-objetivos-otro').value.trim(),
+      productos: _ev.productos ? _ev.productos.valor() : [],
       publico_objetivo: evEl('ev-publico').value.trim(),
       segmento_profesional: evSegmentacionValor(),   // el demográfico y el nivel de conocimiento ya no se piden
       total_invitados: evEnteroOpc('ev-invitados'),
@@ -812,7 +819,8 @@ function evValidarPaso(f, n) {
     }
   }
   if (n === 3) {
-    if (f.segOtros && (d.segmento_profesional.length < 3 || d.segmento_profesional.length > 100)) return 'Escribe la segmentación (entre 3 y 100 caracteres)';
+    if (f.productoPendiente) return 'Tienes un producto escrito sin agregar («' + f.productoPendiente + '»): presiona «Agregar» o borra el texto';
+    if (f.segOtros &&(d.segmento_profesional.length < 3 || d.segmento_profesional.length > 100)) return 'Escribe la segmentación (entre 3 y 100 caracteres)';
     var enteros = [['total_invitados', 'El total de invitados'], ['asistentes_presencial', 'Los asistentes presenciales'], ['asistentes_virtual', 'Los asistentes virtuales']];
     for (var i = 0; i < enteros.length; i++) {
       var v = d[enteros[i][0]];
@@ -893,6 +901,7 @@ function evRenderResumen() {
     ['Fecha del evento', d.fecha_evento ? fmtDate(d.fecha_evento) + (d.hora_inicio ? ' · ' + d.hora_inicio : '') : '—'],
     ['Lugar', (EV_MODALIDAD[d.modalidad] || '—') + (d.lugar ? ' · ' + d.lugar : '') + (d.plataforma ? ' · Plataforma: ' + d.plataforma : '')],
     ['Objetivos', cuantos(d.objetivos, d.objetivos_otro)],
+    ['Productos', (d.productos || []).join(', ') || 'ninguno'],
     ['Canales de promoción', cuantos(d.canales, d.canales_otro)],
     ['Materiales', cuantos(d.materiales, d.materiales_otro)],
     ['Logística', cuantos(d.logistica, d.logistica_otro)],
@@ -1032,6 +1041,7 @@ function evEditar(s) {
   evPonerPlataforma(d.plataforma);
   evChecks('ev-objetivos', EV_OBJETIVOS, d.objetivos || []);
   evEl('ev-objetivos-otro').value = d.objetivos_otro || '';
+  _ev.productos.poner(d.productos);
   evEl('ev-publico').value = d.publico_objetivo || '';
   evPonerSegmentacion(d.segmento_profesional);
   evEl('ev-invitados').value = evNum(d.total_invitados);
@@ -1367,6 +1377,7 @@ function evVerDetalle(origen, i, enfocarObs) {
     '<h4>Descripción</h4><div style="white-space:pre-wrap;font-size:0.88rem">' + escHtml(d.descripcion || '') + '</div>' +
     '<h4>3. Objetivos y público</h4>' + evListaTxt(EV_OBJETIVOS, d.objetivos, d.objetivos_otro) +
     '<div class="kv" style="margin-top:8px">' +
+      '<span class="k">Productos</span><span>' + psTagsHtml(d.productos) + '</span>' +
       '<span class="k">Público objetivo</span><span>' + escHtml(d.publico_objetivo || '—') + '</span>' +
       '<span class="k">Segmentación</span><span>' + escHtml(d.segmento_profesional || '—') + '</span>' +
       // Solicitudes de antes del cambio: se siguen mostrando los dos datos que ya no se piden.

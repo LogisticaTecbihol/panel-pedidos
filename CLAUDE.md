@@ -164,3 +164,30 @@ comercial: se crea de una vez en el Tablero de Mercadeo (panel-pqrs, «Recibido�
 - **Pantalla**: el campo «Estado» del formulario cambia a «Directo a Mercadeo» (azul) al elegir área/solicitante; en la lista y el detalle la etapa «Gerente comercial»
   muestra «No aplica». Si el envío directo falla (Mercadeo no responde) la solicitud queda «Por aprobar» y se avisa a los aprobadores, como en la autoaprobación.
 - Las solicitudes anteriores no se tocaron: una «Por aprobar» de un usuario no comercial sigue en la bandeja hasta que alguien la apruebe o su dueño la edite (entonces va directo).
+
+## Solicitudes a Mercadeo y de Eventos: «Productos relacionados»
+
+Campo **opcional** en `solicitudes-mercadeo.html` (después de la descripción) y en `solicitudes-eventos.html` (paso 3 «Objetivos y público», después de los objetivos). Es un
+solo componente, `js/productos-solicitud.js` (`psCrear`, lo cargan las dos páginas antes de su JS): buscador con chips, varios productos por solicitud.
+
+- **Nombre sin presentación**: las sugerencias salen de `maestro_productos` (`apiGet('getMaestroProductos')`; la leen todos los roles con sesión) cortando cada nombre en la primera « X »
+  sin importar mayúsculas (`psNombreBase`): «CALIMAN X LITRO» y «CALIMAN X GALON» dan «CALIMAN». Hoy 555 filas dan 210 nombres únicos. Los 30 que no traen « X » («ACIDO CITRICO»,
+  «HIDROPLANTS INICIO NPK11-45-11+0»…) se ofrecen completos, y si un producto está escrito de dos maneras en el maestro («ACTIV K 50 LITRO» y «ACTIV K 50 X …») salen dos opciones:
+  se corrige en el maestro, no aquí. La búsqueda ignora tildes y mayúsculas y pide todas las palabras escritas.
+- **Fuera del listado**: lo escrito que no coincide con un producto del listado se ofrece como «➕ Agregar «…»» (Enter o el botón «Agregar»), queda como chip punteado ámbar y se guarda
+  tal cual **en la solicitud**; NO se agrega a `maestro_productos`. Un texto escrito y sin agregar impide enviar (aviso con el texto) para que no se pierda en silencio.
+- **Reglas** (las mismas en `productos-solicitud.js`, en `solicitud-mercadeo` y `solicitud-evento` —`productosValidos`—, en `solicitud-mercadeo-pedidos` y `solicitud-evento-pedidos`
+  de panel-pqrs y en el CHECK de pqrs): hasta 20 productos, de 2 a 100 caracteres, una sola línea, sin repetir (sin tildes ni mayúsculas; el servidor descarta el repetido sin error).
+  El servidor no consulta el maestro: acepta cualquier texto dentro de esos límites. Si cambias una regla, cámbiala en todos.
+- **Modelo**: Solicitudes a Mercadeo → columna `solicitudes_mercadeo.productos text[]` (`supabase/add_solicitudes_mercadeo_productos.sql`, migración remota
+  `add_solicitudes_mercadeo_productos`; aplicar ANTES de desplegar la función, que ya la escribe). Solicitudes de Eventos → dentro de `datos.productos` (jsonb): sin migración.
+  Las solicitudes anteriores quedan sin productos (el detalle muestra «—»); editarlas permite agregarlos.
+- **Hacia Mercadeo (panel-pqrs)**: en el Tablero, la tarea trae una línea «Productos relacionados: A, B» al inicio del brief (junto a Empresa y Departamento / Área; no hay columna
+  propia). En Eventos, columna `mercadeo_eventos.productos` (migración 0038 de panel-pqrs): el trigger de aprobación la incluye en el brief de la tarea, el PDF del evento la muestra, la
+  bitácora anota sus cambios y la búsqueda de la lista la encuentra. El formulario de Eventos de pqrs también tiene el campo (alineado con este), pero allá es texto libre: no hay maestro.
+- **Se ve en**: formulario (alta y edición), resumen del último paso de Eventos y detalle de la solicitud (bandeja del solicitante y de los aprobadores).
+- **Orden de despliegue**: migración 0038 de pqrs → funciones de pqrs (`solicitud-mercadeo-pedidos`, `solicitud-evento-pedidos`) → migración `add_solicitudes_mercadeo_productos` →
+  funciones de pedidos (`solicitud-mercadeo`, `solicitud-evento`) → frontends de los dos repos. Una función vieja de pqrs ignora el campo `productos` sin fallar, pero la nueva lo inserta.
+- Probado con arneses de navegador sobre las páginas reales con la Edge Function simulada (catálogo con casos reales del maestro, búsqueda, texto libre, repetidos, tope, texto
+  pendiente, alta, detalle, edición, escritorio y móvil) y con las dos migraciones en transacciones revertidas contra producción (columnas, CHECK, filas anteriores vacías,
+  brief y bitácora de Eventos, idempotencia). El flujo completo con usuarios reales no se probó.

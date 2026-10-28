@@ -77,6 +77,11 @@ const CANALES = ['email', 'redes', 'web', 'relaciones_publicas', 'publicidad_dig
 const MATERIALES = ['banners_redes', 'diseno_email', 'invitaciones', 'presentacion', 'flyers', 'rollups', 'merchandising']
 const LOGISTICA = ['registros', 'coordinacion_logistica', 'plataforma_virtual', 'presencia_mercadeo']
 const MAX_ARCHIVOS = 5
+// «Productos relacionados» (opcional): nombres del maestro sin la presentación, o escritos a mano. Mismas reglas que el
+// formulario (js/productos-solicitud.js), que solicitud-mercadeo y que panel-pqrs; el servidor no consulta el maestro.
+const MAX_PRODUCTOS = 20
+const PRODUCTO_MIN = 2
+const PRODUCTO_MAX = 100
 // Estados del evento en Mercadeo: aún sin aprobar (se puede modificar) y con Mercadeo (se puede observar).
 const EST_SIN_APROBAR = ['radicada', 'en_revision']
 const EST_ABIERTOS = ['radicada', 'en_revision', 'aprobada', 'en_preparacion', 'realizada']
@@ -170,6 +175,27 @@ function lista(v: unknown, validos: string[], campo: string): string[] {
   for (const x of v) {
     if (typeof x !== 'string' || !validos.includes(x)) throw new Rechazo(`${campo}: opción inválida`)
     if (!out.includes(x)) out.push(x)
+  }
+  return out
+}
+
+// Productos relacionados: hasta MAX_PRODUCTOS nombres de PRODUCTO_MIN a PRODUCTO_MAX caracteres, en una sola línea y sin repetir
+// (sin importar tildes ni mayúsculas; el primero que llegue se queda).
+function productosValidos(v: unknown): string[] {
+  if (v === null || v === undefined) return []
+  if (!Array.isArray(v)) throw new Rechazo('Los productos relacionados no son válidos')
+  if (v.length > MAX_PRODUCTOS) throw new Rechazo(`Máximo ${MAX_PRODUCTOS} productos por solicitud`)
+  const out: string[] = []
+  const vistos = new Set<string>()
+  for (const x of v) {
+    if (typeof x !== 'string') throw new Rechazo('Los productos relacionados no son válidos')
+    const n = x.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (n.length < PRODUCTO_MIN) throw new Rechazo(`El nombre de un producto debe tener al menos ${PRODUCTO_MIN} caracteres`)
+    if (n.length > PRODUCTO_MAX) throw new Rechazo(`El nombre de un producto no puede superar ${PRODUCTO_MAX} caracteres`)
+    const k = n.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    if (vistos.has(k)) continue
+    vistos.add(k)
+    out.push(n)
   }
   return out
 }
@@ -449,6 +475,7 @@ serve(async (req) => {
         plataforma,
         objetivos: lista(d.objetivos, OBJETIVOS, 'Objetivos'),
         objetivos_otro: textoOpc(d.objetivos_otro, 'Otros objetivos', 300),
+        productos: productosValidos(d.productos),
         publico_objetivo: textoOpc(d.publico_objetivo, 'El público objetivo', 500),
         segmento_demografico: textoOpc(d.segmento_demografico, 'El segmento demográfico', 500),
         segmento_profesional: textoOpc(d.segmento_profesional, 'La segmentación profesional', 500),
