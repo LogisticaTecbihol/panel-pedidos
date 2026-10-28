@@ -272,6 +272,7 @@ async function loadClientesConRemision() {
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
     renderRemisionesExternasTab();
     renderEnviosDetalle(); // los productos de cada remisión llegan con este fetch
+    renderLegDetalle();
   } catch (e) {
     clientesConRemisionCache = clientesConRemisionCache || [];
   }
@@ -533,7 +534,8 @@ async function loadLegalizaciones() {
 // también desempata entre filas iguales (el sort es estable). Los vacíos van
 // siempre al final, en ascendente y en descendente.
 //
-// Un orden por tabla (clave): leg, env, detleg (Vista detallada por
+// Un orden por tabla (clave): leg, lgd (Detalle de remisiones y productos de
+// Legalizaciones), env, detleg (Vista detallada por
 // legalización), detlin (Vista detallada por línea de gasto), veh, cons y ext
 // (Remisiones externas; su orden de siempre es la más recién registrada primero).
 // Cada columna es { id, label, fn(fila) [, right] }; sin fn no es ordenable
@@ -570,6 +572,26 @@ var LG_SORT_COLS = {
     { id: 'total', label: 'Total gastos', right: true, fn: function(l) { return totalGastosOf(l.id); } },
     { id: 'anticipo', label: 'Anticipo', right: true, fn: function(l) { return Number(l.Anticipo_Entregado) || 0; } },
     { id: 'estado', label: 'Estado', fn: function(l) { return estadoLeg(l) || ''; } },
+    { id: 'acciones', label: 'Acciones' }
+  ],
+  // Detalle de remisiones y productos de Legalizaciones: cada fila es
+  // { leg, rem, cli, muestra, m, nota, primera } (m = línea de producto de la
+  // remisión, o null si no hay productos que mostrar; primera = primera fila de su
+  // legalización en el orden mostrado, la única que lleva el Total gastos).
+  lgd: [
+    { id: 'n', label: 'N°', fn: function(r) { return r.leg.Consecutivo || ''; } },
+    { id: 'fecha', label: 'Fecha', fn: function(r) { return r.leg.Fecha || ''; } },
+    { id: 'responsable', label: 'Responsable', fn: function(r) { return r.leg.Responsable || ''; } },
+    { id: 'tipo', label: 'Tipo', fn: function(r) { return tipoLabel(r.leg); } },
+    { id: 'ruta', label: 'Ruta', fn: function(r) { return r.leg.Recorrido_Ruta || ''; } },
+    { id: 'remision', label: 'Remisión', fn: function(r) { return r.rem; } },
+    { id: 'cliente', label: 'Cliente', fn: function(r) { return r.cli; } },
+    { id: 'producto', label: 'Producto', fn: function(r) { return r.m ? (r.m.producto || '') : ''; } },
+    { id: 'presentacion', label: 'Presentación', fn: function(r) { return r.m ? (r.m.presentacion || '') : ''; } },
+    { id: 'cantidad', label: 'Cantidad', right: true, fn: function(r) { return r.m ? (Number(r.m.cantidad) || 0) : null; } },
+    { id: 'empresa', label: 'Empresa', fn: function(r) { return r.m ? getSigla(r.m.empresa) : ''; } },
+    { id: 'total', label: 'Total gastos', right: true, fn: function(r) { return totalGastosOf(r.leg.id); } },
+    { id: 'estado', label: 'Estado', fn: function(r) { return estadoLeg(r.leg) || ''; } },
     { id: 'acciones', label: 'Acciones' }
   ],
   env: [
@@ -664,6 +686,7 @@ var LG_SORT_COLS = {
 // recalcula Prorrateo ni los indicadores).
 var LG_SORT_RENDER = {
   leg: function() { renderLegTable(); },
+  lgd: function() { renderLegDetalle(); },
   env: function() { renderEnviosTable(); },
   envd: function() { renderEnviosDetalle(); },
   detleg: function() { renderDetalleTable(); },
@@ -1985,26 +2008,34 @@ function renderTable() {
   renderDetalleTable();
 }
 
-// Filas de la lista de Legalizaciones según los filtros f-* y el orden de
-// columnas elegido (la tabla y el Excel comparten esta misma lista).
-function _legsListaFiltradas() {
+// Legalizaciones que pasan Empresa/Tipo/Estado (sin Buscar ni orden de columnas),
+// la más reciente primero: base común de la lista y del Detalle de remisiones y
+// productos.
+function _legsPorFiltros() {
   var fEmp = document.getElementById('f-emp').value;
   var fTipo = document.getElementById('f-tipo').value;
   var fEstado = document.getElementById('f-estado').value;
-  var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
 
-  var rows = legs.filter(function(leg) {
+  return legs.filter(function(leg) {
     if (esEnvio(leg)) return false; // los envíos tienen su propia pestaña (renderEnviosTable)
     if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
-    if (fTxt) {
-      var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes, proveedoresTexto(leg.id)]
-        .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
-      if (hay.indexOf(fTxt) < 0) return false;
-    }
     return true;
   }).sort(function(a, b) { return (b.Fecha || '').localeCompare(a.Fecha || '') || (b.id - a.id); });
+}
+
+// Filas de la lista de Legalizaciones según los filtros f-* y el orden de
+// columnas elegido (la tabla y el Excel comparten esta misma lista).
+function _legsListaFiltradas() {
+  var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
+
+  var rows = _legsPorFiltros().filter(function(leg) {
+    if (!fTxt) return true;
+    var hay = [leg.Consecutivo, leg.Responsable, leg.Recorrido_Ruta, leg.Clientes, proveedoresTexto(leg.id)]
+      .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
+    return hay.indexOf(fTxt) >= 0;
+  });
   return applySortLg('leg', rows);
 }
 
@@ -2041,6 +2072,129 @@ function renderLegTable() {
       '<td>' + acciones + '</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="10"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
+  renderLegDetalle();
+}
+
+// ── Detalle de remisiones y productos de las legalizaciones ──
+// Segunda mirada sobre las mismas legalizaciones y los mismos filtros f-* de la
+// lista: una fila por producto de cada remisión relacionada, con la cantidad de ESA
+// remisión (misma resolución de productos que el Detalle de productos de Envíos, ver
+// _remisionesConProductos). Una legalización sin remisiones (p. ej. un mantenimiento)
+// o con remisiones que no se resuelven queda en una fila con la nota, para que no
+// desaparezca de la vista. El Total gastos es el de toda la legalización y va solo en
+// la primera fila de cada una, para que la columna sume bien.
+var legSub = 'lista'; // 'lista' | 'detalle'
+
+function setLegSub(sub) {
+  legSub = sub;
+  document.getElementById('lg-sub-lista').style.display = sub === 'lista' ? 'block' : 'none';
+  document.getElementById('lg-sub-detalle').style.display = sub === 'detalle' ? 'block' : 'none';
+  document.getElementById('lg-sub-lista-btn').style.background = sub === 'lista' ? '#1a5276' : '#718096';
+  document.getElementById('lg-sub-detalle-btn').style.background = sub === 'detalle' ? '#1a5276' : '#718096';
+  document.getElementById('f-txt').placeholder = sub === 'detalle' ? 'responsable, ruta, cliente, remisión, producto, N°…' : 'responsable, ruta, cliente, N°…';
+  renderLegDetalle();
+}
+
+// Filas según los filtros f-* y el orden elegido (la tabla y el Excel comparten esta
+// lista). Sin orden: la legalización más reciente primero y, dentro de ella, las
+// remisiones en el orden en que se relacionaron. Buscar, además de los campos de la
+// lista, filtra por remisión, producto, presentación y empresa.
+function _legsDetalleFilas() {
+  var fTxt = (document.getElementById('f-txt').value || '').toLowerCase().trim();
+  var filas = [];
+  _legsPorFiltros().forEach(function(leg) {
+    _remisionesConProductos(leg).forEach(function(x) {
+      filas.push({ leg: leg, rem: x.rem, cli: x.cli, muestra: x.muestra, m: x.m, nota: x.nota, primera: false });
+    });
+  });
+  if (fTxt) {
+    filas = filas.filter(function(r) {
+      var hay = [r.leg.Consecutivo, r.leg.Responsable, r.leg.Recorrido_Ruta, r.leg.Clientes, proveedoresTexto(r.leg.id), r.rem, r.cli, r.nota, r.muestra ? 'muestra' : '']
+        .concat(r.m ? [r.m.producto, r.m.presentacion, getSigla(r.m.empresa)] : [])
+        .map(function(v) { return (v || '').toLowerCase(); }).join(' ');
+      return hay.indexOf(fTxt) >= 0;
+    });
+  }
+  filas = applySortLg('lgd', filas);
+  var vistas = {};
+  filas.forEach(function(r) {
+    if (!vistas[r.leg.id]) { vistas[r.leg.id] = true; r.primera = true; }
+  });
+  return filas;
+}
+
+function renderLegDetalle() {
+  var body = document.getElementById('lgd-body');
+  if (!body || legSub !== 'detalle') return; // se dibuja al abrir la subpestaña
+  var rows = _legsDetalleFilas();
+  renderSortHead('lgd', 'lgd-head');
+
+  var legsVistas = {};
+  var total = 0;
+  rows.forEach(function(r) {
+    if (r.primera) { legsVistas[r.leg.id] = true; total += totalGastosOf(r.leg.id); }
+  });
+  var nLegs = Object.keys(legsVistas).length;
+  document.getElementById('lgd-ct').textContent = '(' + rows.length + ' fila' + (rows.length === 1 ? '' : 's') + ' · ' + nLegs + (nLegs === 1 ? ' legalización' : ' legalizaciones') + ')';
+  document.getElementById('lgd-total').textContent = nLegs ? 'Total: ' + fmtMoney(total) : '';
+
+  var vacio = '<span style="color:#a0aec0">—</span>';
+  body.innerHTML = rows.map(function(r) {
+    var leg = r.leg, m = r.m;
+    return '<tr>' +
+      '<td style="white-space:nowrap">' + escHtml(leg.Consecutivo || '') + '</td>' +
+      '<td style="white-space:nowrap">' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
+      '<td>' + escHtml(leg.Responsable || '—') + '</td>' +
+      '<td style="white-space:nowrap">' + tipoBadgeHtml(leg) + '</td>' +
+      '<td>' + escHtml(leg.Recorrido_Ruta || '—') + '</td>' +
+      '<td style="white-space:nowrap">' + (r.rem ? escHtml(r.rem) : vacio) + '</td>' +
+      '<td' + (r.muestra ? ' style="min-width:150px"' : '') + '>' + (r.muestra
+        ? escHtml(r.cli || '—') + '<div class="ac-sub" style="white-space:nowrap" title="Remisión de una solicitud de muestras: no tiene cliente, se muestra el responsable de la solicitud">🧪 Muestra · responsable</div>'
+        : (r.cli ? escHtml(r.cli) : vacio)) + '</td>' +
+      (m
+        ? '<td style="white-space:normal;min-width:180px">' + escHtml(m.producto || '—') + '</td>' +
+          '<td>' + (m.presentacion ? escHtml(m.presentacion) : vacio) + '</td>' +
+          '<td style="text-align:right;white-space:nowrap">' + escHtml(_cantidadLineaTxt(m)) + '</td>' +
+          '<td><span class="sigla-badge ' + getSiglaClass(m.empresa) + '">' + escHtml(getSigla(m.empresa)) + '</span></td>'
+        : '<td colspan="4" style="color:#a0aec0;font-style:italic">' + escHtml(r.nota) + '</td>') +
+      '<td style="text-align:right">' + (r.primera ? escHtml(fmtMoney(totalGastosOf(leg.id))) : '') + '</td>' +
+      '<td>' + estadoBadgeHtml(leg) + '</td>' +
+      '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="14"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
+}
+
+// Exporta el detalle tal como se ve: mismas filas (filtros Empresa/Tipo/Estado/
+// Buscar), mismo orden y dos columnas más: el tipo de remisión y la nota de las filas
+// sin productos.
+function exportarLegDetalleExcel() {
+  var rows = _legsDetalleFilas();
+  if (!rows.length) { showToast('No hay datos para exportar', '#e74c3c'); return; }
+  var data = rows.map(function(r) {
+    var leg = r.leg, m = r.m;
+    return {
+      'N°': leg.Consecutivo || '',
+      'Fecha': fmtDate(leg.Fecha),
+      'Responsable': leg.Responsable || '',
+      'Tipo': tipoLabel(leg),
+      'Ruta': leg.Recorrido_Ruta || '',
+      'Remisión': r.rem,
+      'Cliente': r.cli,
+      'Tipo de remisión': r.muestra ? 'Muestra (el nombre es el del responsable)' : '',
+      'Producto': m ? (m.producto || '') : '',
+      'Presentación': m ? (m.presentacion || '') : '',
+      'Cantidad': m ? (Number(m.cantidad) || 0) : '',
+      'Unidad': m ? _unidadLineaTxt(m) : '',
+      'Empresa': m ? getSigla(m.empresa) : '',
+      'Total gastos': r.primera ? totalGastosOf(leg.id) : '',
+      'Estado': estadoLeg(leg) || '',
+      'Observación': r.nota
+    };
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Remisiones y productos');
+  XLSX.writeFile(wb, 'legalizaciones_remisiones_productos_' + today() + '.xlsx');
+  showToast('Excel exportado');
 }
 
 // ── Pestaña Envíos (Tipo='Envio'): vista aparte de las legalizaciones ──
@@ -2159,38 +2313,49 @@ function _cantidadLineaTxt(m) {
   return (Number(m.cantidad) || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + ' ' + _unidadLineaTxt(m);
 }
 
+// Remisiones relacionadas de una legalización o un envío con sus productos: una
+// entrada { rem, cli, muestra, m, nota } por producto de cada remisión, en el orden en
+// que se relacionaron (m = línea de la remisión, o null si no hay productos que
+// mostrar, y entonces `nota` dice por qué). Sin remisiones relacionadas: una sola
+// entrada con la nota. Compartida por el Detalle de productos de Envíos y el Detalle
+// de remisiones y productos de Legalizaciones.
+function _remisionesConProductos(leg) {
+  var mapaProductos = prorrateoMapaReparto || remisionProductoMapReparto;
+  var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+  if (!codigos.length) return [{ rem: '', cli: '', muestra: false, m: null, nota: 'Sin remisiones relacionadas' }];
+  var out = [];
+  codigos.forEach(function(rem) {
+    var key = rem.toUpperCase();
+    var cli = remisionClienteMap[key] || (prorrateoClienteMap && prorrateoClienteMap[key]) || '';
+    // Una remisión de muestras no tiene cliente: en su lugar va el responsable de
+    // la solicitud, y la fila queda marcada como muestra.
+    var mue = cli ? null : remisionMuestraMap[key];
+    if (mue) cli = mue.responsable;
+    var muestra = !!mue;
+    var todas = mapaProductos[key] || [];
+    // Un usuario restringido por empresa solo ve los productos de la suya.
+    var lineas = todas.filter(function(m) { return _empresaDelUsuario(m.empresa); });
+    if (!lineas.length) {
+      out.push({ rem: rem, cli: cli, muestra: muestra, m: null,
+        nota: todas.length ? 'Sin productos de tu empresa' : 'Sin productos en el sistema' });
+      return;
+    }
+    lineas.forEach(function(m) { out.push({ rem: rem, cli: cli, muestra: muestra, m: m, nota: '' }); });
+  });
+  return out;
+}
+
 // Filas según los filtros ef-* y el orden elegido (la tabla y el Excel comparten
 // esta lista). Sin orden: el envío más reciente primero, y dentro de él las
 // remisiones en el orden en que se relacionaron.
 function _enviosDetalleFilas() {
   var fTxt = (document.getElementById('ef-txt').value || '').toLowerCase().trim();
   var filas = [];
-  var mapaProductos = prorrateoMapaReparto || remisionProductoMapReparto;
   _enviosPorEmpresaFecha().forEach(function(leg) {
     var prov = proveedoresTexto(leg.id);
     var nit = nitEnvioDe(leg);
-    var codigos = (leg.Remisiones_Relacionadas || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
-    if (!codigos.length) {
-      filas.push({ leg: leg, prov: prov, nit: nit, rem: '', cli: '', muestra: false, m: null, nota: 'Sin remisiones relacionadas' });
-      return;
-    }
-    codigos.forEach(function(rem) {
-      var key = rem.toUpperCase();
-      var cli = remisionClienteMap[key] || (prorrateoClienteMap && prorrateoClienteMap[key]) || '';
-      // Una remisión de muestras no tiene cliente: en su lugar va el responsable de
-      // la solicitud, y la fila queda marcada como muestra.
-      var mue = cli ? null : remisionMuestraMap[key];
-      if (mue) cli = mue.responsable;
-      var muestra = !!mue;
-      var todas = mapaProductos[key] || [];
-      // Un usuario restringido por empresa solo ve los productos de la suya.
-      var lineas = todas.filter(function(m) { return _empresaDelUsuario(m.empresa); });
-      if (!lineas.length) {
-        filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, muestra: muestra, m: null,
-          nota: todas.length ? 'Sin productos de tu empresa' : 'Sin productos en el sistema' });
-        return;
-      }
-      lineas.forEach(function(m) { filas.push({ leg: leg, prov: prov, nit: nit, rem: rem, cli: cli, muestra: muestra, m: m, nota: '' }); });
+    _remisionesConProductos(leg).forEach(function(x) {
+      filas.push({ leg: leg, prov: prov, nit: nit, rem: x.rem, cli: x.cli, muestra: x.muestra, m: x.m, nota: x.nota });
     });
   });
   if (fTxt) {

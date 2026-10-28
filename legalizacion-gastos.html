@@ -144,7 +144,11 @@
   <div class="gpp-note" id="lg-sort-hint" style="margin:-6px 0 12px">↕ Para ordenar, haz clic en el encabezado de una columna (↑ ascendente, ↓ descendente; un tercer clic la quita). Haz clic en más columnas para ordenar por varios campos: el número indica la prioridad. Shift + clic quita una columna del orden.</div>
 
   <div id="panel-legalizaciones">
-    <div class="card">
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="lg-tab" id="lg-sub-lista-btn" onclick="setLegSub('lista')" style="background:#1a5276">📋 Lista de legalizaciones</button>
+      <button class="lg-tab" id="lg-sub-detalle-btn" onclick="setLegSub('detalle')" style="background:#718096">🔎 Detalle de remisiones y productos</button>
+    </div>
+    <div class="card" id="lg-sub-lista">
       <div class="card-head">
         <h3>Legalizaciones <span id="lg-ct" style="font-weight:400;color:#718096"></span><span id="lg-desc-ct" style="font-weight:600;color:#b7791f;font-size:0.82rem"></span></h3>
         <div style="display:flex;gap:8px;align-items:center">
@@ -159,6 +163,28 @@
             <tr id="lg-head"></tr>
           </thead>
           <tbody id="lg-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" id="lg-sub-detalle" style="display:none">
+      <div class="card-head">
+        <h3>Remisiones y productos por legalización <span id="lgd-ct" style="font-weight:400;color:#718096"></span></h3>
+        <span id="lgd-total" style="font-size:0.86rem;color:#4a5568;margin-left:auto;margin-right:12px"></span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-clear-sort" id="btn-clear-sort-lgd" onclick="clearSortLg('lgd')" title="Quitar el orden de columnas">✕ Limpiar orden</button>
+          <button class="btn-dl" onclick="exportarLegDetalleExcel()">📥 Exportar Excel</button>
+          <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Una fila por producto de cada remisión relacionada con la legalización (incluye muestras y las remisiones externas de Chia Abago / materia prima). «Cantidad» es la de esa remisión puntual (una remisión externa de varias plantas reparte su cantidad en partes iguales entre las empresas). Si una legalización no tiene remisiones (p. ej. un mantenimiento), o una remisión no está en el sistema o es de un tipo que aún no se resuelve (p. ej. órdenes de compra), aparece sin productos. «Total gastos» es el de toda la legalización y solo se muestra en su primera fila, para que la columna sume bien. Las remisiones de muestras no tienen cliente: en su lugar se muestra el responsable de la solicitud, marcado como «🧪 Muestra». Usa los filtros de arriba (Empresa, Tipo, Estado); Buscar también filtra por remisión, producto, cliente y empresa.</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr id="lgd-head"></tr>
+          </thead>
+          <tbody id="lgd-body"></tbody>
         </table>
       </div>
     </div>
@@ -800,6 +826,6 @@
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261023a"></script>
-<script src="js/legalizacion-gastos.js?v=20261027c"></script>
+<script src="js/legalizacion-gastos.js?v=20261028a"></script>
 </body>
 </html>
