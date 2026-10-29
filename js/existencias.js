@@ -382,7 +382,7 @@
   var SNAPSHOT_COLS = {
     pedidos:          'Nombre_Empresa,Cant_Entregada,Estado_2,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido,Historico',
     ingresos:         'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion,Historico',
-    ordenes:          'Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido',
+    ordenes:          'id,Consecutivo,pedido_id,Estado_Aprobacion,Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido',
     muestras:         'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion,Tipo_Solicitud,Historico',
     reenvases:        'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Historico',
     devoluciones:     'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Historico',
@@ -560,6 +560,63 @@
   function getDisponibleNeto(snapshot, empresa, producto) {
     return getPorEmpresaEspecifica(snapshot, empresa, producto)
          - getApartadoEspecifico(snapshot, empresa, producto);
+  }
+
+  // QUIÉN tiene apartado un producto, en cualquier empresa visible al usuario. Usa las mismas
+  // dos fuentes y los mismos criterios que computeApartadoPorEmpresa, así que lo que suma por
+  // empresa coincide con el «(n apartado)» del selector de pedidos. Cada elemento:
+  //   { tipo, empresa_stock, cantidad, ... } con tipo
+  //     'apartado'  → fila Activa de apartados_pedido (empresa_pedido, consecutivo, cliente,
+  //                   pedido_id, notas)
+  //     'muestra'   → fila Activa de apartados_muestra (empresa_pedido = empresa de la muestra,
+  //                   consecutivo, cliente = responsable/solicitante)
+  //     'solicitud' → OC de traslado viva ligada a un pedido, apartada contra Empresa_Origen
+  //                   (ref_pedido, pedido_id, oc_consecutivo, aprobacion)
+  // opts.soloGranel igual que en getPorEmpresa.
+  function getApartadoDetalle(snapshot, producto, opts) {
+    if (!snapshot) return [];
+    var prodKey = _normProd(producto);
+    var base = (opts && opts.soloGranel) ? [EMPRESA_GRANEL] : EMPRESAS_HOLDING;
+    var visibles = (typeof AUTH !== 'undefined' && AUTH.getFilteredEmpresas)
+      ? AUTH.getFilteredEmpresas(base)
+      : base;
+    var permitidas = {};
+    visibles.forEach(function(e) { permitidas[e.value] = true; });
+    var out = [];
+    (snapshot.apartados || []).forEach(function(a) {
+      if (String(a.estado || '') !== 'Activo') return;
+      if (_normProd(a.producto) !== prodKey) return;
+      var emp = String(a.empresa_stock || '').trim();
+      var n = Number(a.cantidad) || 0;
+      if (!emp || !permitidas[emp] || n <= 0) return;
+      if (a._esMuestra) {
+        out.push({
+          tipo: 'muestra', empresa_stock: emp, cantidad: n, empresa_pedido: a.empresa_muestra || '',
+          consecutivo: a.consecutivo || '', cliente: a.responsable || a.solicitante || ''
+        });
+      } else {
+        out.push({
+          tipo: 'apartado', empresa_stock: emp, cantidad: n, pedido_id: a.pedido_id,
+          empresa_pedido: a.empresa_pedido || '', consecutivo: a.consecutivo || '',
+          cliente: a.cliente || '', notas: a.notas || ''
+        });
+      }
+    });
+    ((snapshot.sources && snapshot.sources.ordenes) || []).forEach(function(oc) {
+      if (!esSolicitudCompraViva(oc)) return;
+      if (String(oc.Remision_Origen || '').trim()) return; // ya salió del origen
+      if (!String(oc.Ref_Pedido || '').trim()) return;     // solo traslados ligados a un pedido
+      if (_normProd(oc.Producto) !== prodKey) return;
+      var emp = String(oc.Empresa_Origen || '').trim();
+      var n = Number(oc.Cantidad) || 0;
+      if (!emp || !permitidas[emp] || n <= 0) return;
+      out.push({
+        tipo: 'solicitud', empresa_stock: emp, cantidad: n, ref_pedido: oc.Ref_Pedido,
+        pedido_id: oc.pedido_id != null ? oc.pedido_id : null,
+        oc_consecutivo: oc.Consecutivo || '', aprobacion: oc.Estado_Aprobacion || ''
+      });
+    });
+    return out;
   }
 
   // Devuelve [{empresa, sigla, disponible, apartado, disponibleNeto}]
@@ -833,6 +890,7 @@
     getPorEmpresa: getPorEmpresa,
     getPorEmpresaEspecifica: getPorEmpresaEspecifica,
     getApartadoEspecifico: getApartadoEspecifico,
+    getApartadoDetalle: getApartadoDetalle,
     getDisponibleNeto: getDisponibleNeto,
     computeApartadoPorEmpresa: computeApartadoPorEmpresa,
     buildKxMovimientos: buildKxMovimientos,

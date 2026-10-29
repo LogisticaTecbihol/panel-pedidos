@@ -248,6 +248,12 @@ podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío
   libre** (decisión del usuario); al legalizarse la OC, sus unidades pasan a ser el apartado de la línea. El tope vale también para las solicitudes de compra nuevas (no se vuelve a pedir lo ya pedido).
   Al guardar, `_validarEntregasContraStockFresco(entregas, solicitudes)` relee las OC (`_leerOCEnCamino`) y lo entregado (`_leerEntregadas`) y frena si lo asignado pasa de
   `Cantidad − entregada − unidades en OC`. Las OC históricas sin `pedido_id` no se pueden atar a una línea y no restringen; si no se pueden releer las OC, no se frena por este motivo.
+- **«Para qué pedidos está apartado»** (selector de empresa del modal): bajo el selector, un desplegable «🔒 Apartado (PARCELAR 30) — ver para qué pedidos» lista, por empresa de stock, quién tiene
+  reservado el producto: apartados de pedidos (con «de OC …» si vienen de una OC), apartados de muestras y solicitudes de compra a esa empresa (OC viva, con su estado «aprobada, falta legalizar» /
+  «por aprobar»), marcando «este pedido» en la propia. Sale de `Existencias.getApartadoDetalle(snapshot, producto, {soloGranel})` (`existencias.js`), que usa las MISMAS dos fuentes y criterios que
+  `computeApartadoPorEmpresa`, así que lo que suma por empresa es exactamente el «(n apartado)» de cada opción. Respeta las empresas visibles del usuario. `SNAPSHOT_COLS.ordenes` ahora pide
+  `id,Consecutivo,pedido_id,Estado_Aprobacion` (para mostrar la OC y el cliente de la solicitud). Al elegir una empresa con apartado el desplegable se abre y resalta su grupo (`onAsignEmpresaChange`).
+  Se complementa con el panel «Quién tiene este producto apartado» (`_competenciaApartadoHtml`), que solo sale cuando el neto no alcanza y trae los botones «Liberar».
 - **Alcance elegido: control solo en pantalla.** No hay candado en la base de datos: una entrega registrada por otra vía todavía podría usar unidades reservadas para otro pedido. Tampoco
   se cubren las OC de muestras (`muestra_id`) ni las OC de IASO a PARCELAR (`oc-como-pedido.js`, solo consulta).
 - Probado con la migración dentro de una transacción revertida contra producción (regularización: 2 filas, idempotencia, legalizar una OC, tope al hueco, suma sobre un apartado existente, pedido pendiente

@@ -3032,6 +3032,63 @@ function _competenciaApartadoHtml(l, empresaPedido) {
   '</div>';
 }
 
+// Una fila del detalle «para qué pedidos está apartado»: pedido, cliente, unidades y de qué tipo
+// es la reserva. Marca la del pedido que se está gestionando.
+function _apartadoDetalleFila(d, l) {
+  var propio = d.pedido_id != null && l && Number(d.pedido_id) === Number(l.__row);
+  var ped, cli, tag;
+  if (d.tipo === 'muestra') {
+    ped = getSigla(d.empresa_pedido) + ' Muestra #' + d.consecutivo;
+    cli = d.cliente;
+    tag = 'muestra';
+  } else if (d.tipo === 'solicitud') {
+    var ref = _parseRefPedido(d.ref_pedido);
+    var p = d.pedido_id != null ? _pedidoPorId[d.pedido_id] : null;
+    ped = ref ? getSigla(ref.empresa) + ' #' + ref.consecutivo : String(d.ref_pedido || '');
+    cli = p ? (p.Cliente || '') : '';
+    tag = 'solicitud de compra OC ' + d.oc_consecutivo + ' (' + (d.aprobacion === 'Aprobada' ? 'aprobada, falta legalizar' : 'por aprobar') + ')';
+  } else {
+    var oc = _apartadoOrigenOC(d);
+    ped = getSigla(d.empresa_pedido) + ' #' + d.consecutivo;
+    cli = d.cliente;
+    tag = 'apartado' + (oc ? ' · de OC ' + oc : '');
+  }
+  return '<div style="margin-left:8px">• <b>' + escHtml(ped) + '</b>' + (cli ? ' · ' + escHtml(cli) : '') +
+    ' · ' + d.cantidad + ' ud · <span style="color:#64748b">' + escHtml(tag) + '</span>' +
+    (propio ? ' <span style="background:#dbeafe;color:#1d4ed8;padding:0 5px;border-radius:8px;font-weight:700">este pedido</span>' : '') +
+  '</div>';
+}
+
+// Detalle de PARA QUÉ PEDIDOS está apartado el producto de la línea, por empresa de stock.
+// Es lo que hay detrás del «(n apartado)» de cada opción del selector: apartados de pedidos,
+// de muestras y solicitudes de compra a esa empresa. Va plegado; al elegir una empresa en el
+// selector se abre y resalta su grupo (onAsignEmpresaChange).
+function _apartadoDetalleHtml(i, l, empresaPedido) {
+  if (!l || !existSnapshot || typeof Existencias === 'undefined' || !Existencias.getApartadoDetalle) return '';
+  var det = Existencias.getApartadoDetalle(existSnapshot, _normProdSel(l.Producto), { soloGranel: _esGranel(empresaPedido) });
+  if (!det.length) return '';
+  var porEmp = {}, orden = [];
+  det.forEach(function(d) {
+    var k = norm(d.empresa_stock);
+    if (!porEmp[k]) { porEmp[k] = { emp: d.empresa_stock, total: 0, filas: [] }; orden.push(k); }
+    porEmp[k].total += d.cantidad;
+    porEmp[k].filas.push(d);
+  });
+  orden.sort(function(a, b) { return getSigla(porEmp[a].emp).localeCompare(getSigla(porEmp[b].emp), 'es'); });
+  var resumen = orden.map(function(k) { return getSigla(porEmp[k].emp) + ' ' + Math.round(porEmp[k].total * 100) / 100; }).join(' · ');
+  var grupos = orden.map(function(k) {
+    var g = porEmp[k];
+    return '<div class="asig-apa-grupo" data-emp="' + escHtml(k) + '" style="margin-top:3px;padding:2px 4px;border-radius:4px">' +
+      '<b>' + escHtml(getSigla(g.emp)) + '</b> · ' + Math.round(g.total * 100) / 100 + ' ud apartadas' +
+      g.filas.map(function(d) { return _apartadoDetalleFila(d, l); }).join('') +
+    '</div>';
+  }).join('');
+  return '<details class="asig-apa-det" data-i="' + i + '" style="font-size:0.70rem;color:#7c4a03;background:#fffbeb;border:1px solid #fde68a;padding:3px 6px;border-radius:4px;margin-top:3px">' +
+    '<summary style="cursor:pointer;font-weight:700">🔒 Apartado (' + escHtml(resumen) + ') — ver para qué pedidos</summary>' +
+    grupos +
+  '</details>';
+}
+
 // ── Asignación de existencias a la entrega ────────────────
 // Renderiza la celda que reemplaza al viejo qty-input libre.
 // Muestra un selector de empresa origen (con las existencias
@@ -3115,6 +3172,7 @@ function renderAsignacionCell(i, l, empresaPedido) {
   return refBar + _apartadoLineaHtml(i, l, empresaPedido) +
     (ocLinea.cant > 0 ? _ocEnCaminoHtml(ocLinea, libreBase) : '') +
     _competenciaApartadoHtml(l, empresaPedido) + selectHTML +
+    _apartadoDetalleHtml(i, l, empresaPedido) +
     '<div style="display:flex;gap:4px;margin-top:3px">' +
       '<input type="number" class="asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right" oninput="validateAsignCant(' + i + ')">' +
       '<button type="button" onclick="addAsignacion(' + i + ')" ' +
@@ -3154,6 +3212,20 @@ function _maxAsignable(i) {
 }
 
 function onAsignEmpresaChange(i) {
+  // Si la empresa elegida tiene unidades apartadas, abre el detalle de para qué pedidos y
+  // resalta su grupo; las demás empresas quedan sin resaltar.
+  var det = document.querySelector('.asig-apa-det[data-i="' + i + '"]');
+  if (det) {
+    var selE = document.querySelector('.asig-empresa[data-i="' + i + '"]');
+    var empN = selE && selE.value ? norm(selE.value) : '';
+    var hay = false;
+    [].forEach.call(det.querySelectorAll('.asig-apa-grupo'), function(g) {
+      var es = !!empN && g.getAttribute('data-emp') === empN;
+      g.style.background = es ? '#fef3c7' : '';
+      if (es) hay = true;
+    });
+    if (hay) det.open = true;
+  }
   // Ajusta el placeholder + revalida el input actual al cambiar la empresa.
   var inp = document.querySelector('.asig-cant[data-i="' + i + '"]');
   if (!inp) return;
