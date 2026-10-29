@@ -632,6 +632,10 @@
           </div>
           <div id="rem-picker" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;min-width:260px;max-height:280px;overflow-y:auto;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:200"></div>
         </div>
+        <div style="position:relative;display:inline-block">
+          <button class="btn-cancel" id="btn-export-rem-completo" onclick="exportarRemisionDesdeModal(event, {share:true, completo:true, triggerBtn:this})" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar el paquete COMPLETO: pedido + remisión + los traslados de todas las entregas del pedido (el envío automático a contabilidad lleva solo los de la última entrega)">📨 Enviar paquete completo ▾</button>
+          <div id="rem-picker-completo" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;min-width:260px;max-height:280px;overflow-y:auto;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:200"></div>
+        </div>
         <div style="position:relative;display:none">
           <button class="btn-cancel" id="btn-export-rem-share" onclick="exportarRemisionDesdeModal(event, {share:true, triggerBtn:this})" style="background:#7d3c98;color:white;border-color:#7d3c98" title="Enviar remisión a otro usuario del panel">📨 Enviar Remisión ▾</button>
           <div id="rem-picker-share" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;min-width:260px;max-height:280px;overflow-y:auto;background:white;border:1px solid #cbd5e0;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);z-index:200"></div>
@@ -1052,6 +1056,6 @@
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
 <script src="js/oc-como-pedido.js?v=20261029b"></script>
-<script src="js/pedidos.js?v=20261029a"></script>
+<script src="js/pedidos.js?v=20261029b"></script>
 </body>
 </html>

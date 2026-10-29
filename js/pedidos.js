@@ -765,6 +765,86 @@ async function _ocsLegalizadasDeFresco(c) {
   }
 }
 
+// Traslados que corresponden a UNA entrega del pedido.
+//
+// Cuando un pedido tiene entregas parciales, el paquete que va a contabilidad
+// debe llevar solo las remisiones de traslado (RE/RS) de ESA entrega: las de
+// las entregas anteriores ya salieron en su momento. El sistema no guarda qué
+// OC alimentó qué entrega (el stock se maneja por empresa), así que se asignan
+// por tiempo: pertenecen a la entrega los traslados legalizados DESPUÉS de la
+// entrega parcial anterior del pedido y hasta esta entrega. La hora de
+// legalización sale del RPC oc_fecha_legalizacion (bitácora de auditoría);
+// OrdenesCompra.modificado_en no sirve porque se mueve con cualquier edición
+// posterior. La hora de cada entrega es EntregasPedido.creado_en (primera
+// fila de esa remisión, entre las líneas de ESTE pedido).
+//
+// Recibe los grupos de _ocsLegalizadasDeFresco y devuelve { grupos, omitidos,
+// fallo }. Ante cualquier dato que falte (RPC sin aplicar, entrega sin hora,
+// OC sin hora) deja los traslados: a contabilidad le llega de más, nunca de
+// menos. `fallo` trae el motivo cuando no se pudo separar nada.
+// lineasExtra: líneas del modal aún no indexadas (detailWorkingLines).
+async function _trasladosDeLaEntrega(c, remNum, ocGroups, lineasExtra) {
+  var todos = { grupos: ocGroups || [], omitidos: 0, fallo: '' };
+  try {
+    if (!ocGroups || !ocGroups.length) return todos;
+    var rem = String(remNum == null ? '' : remNum).trim();
+    if (!rem) return todos;
+
+    var idsSet = {};
+    getLinesFor(c).concat(lineasExtra || []).forEach(function(l) {
+      if (l && l.__row != null) idsSet[l.__row] = true;
+    });
+    var pedIds = Object.keys(idsSet).map(Number);
+    if (!pedIds.length) return todos;
+
+    var re = await _sb.from('EntregasPedido').select('remision,creado_en').in('pedido_id', pedIds);
+    if (re.error) throw new Error(re.error.message);
+    var tPorRem = {};
+    (re.data || []).forEach(function(r) {
+      var k = String(r.remision || '').trim();
+      var t = r.creado_en ? new Date(r.creado_en).getTime() : NaN;
+      if (!k || isNaN(t)) return;
+      if (tPorRem[k] == null || t < tPorRem[k]) tPorRem[k] = t;
+    });
+    var tEntrega = tPorRem[rem];
+    if (tEntrega == null) return todos;            // entrega sin hora (anterior a EntregasPedido)
+    var tPrevia = -Infinity;                       // entrega parcial inmediatamente anterior
+    Object.keys(tPorRem).forEach(function(k) {
+      if (k !== rem && tPorRem[k] < tEntrega && tPorRem[k] > tPrevia) tPrevia = tPorRem[k];
+    });
+
+    function _idOC(l) { var id = (l.id != null ? l.id : l.__row); return id == null ? null : Number(id); }
+    var ocIds = [];
+    ocGroups.forEach(function(g) { (g || []).forEach(function(l) { var id = _idOC(l); if (id != null) ocIds.push(id); }); });
+    if (!ocIds.length) return todos;
+    var rl = await _sb.rpc('oc_fecha_legalizacion', { p_oc_ids: ocIds });
+    if (rl.error) throw new Error(rl.error.message);
+    var legPorId = {};
+    (rl.data || []).forEach(function(r) {
+      var t = r.legalizada_en ? new Date(r.legalizada_en).getTime() : NaN;
+      if (!isNaN(t)) legPorId[r.oc_id] = t;
+    });
+
+    var omitidosPar = {};
+    var grupos = [];
+    ocGroups.forEach(function(g) {
+      var keep = (g || []).filter(function(l) {
+        var t = legPorId[_idOC(l)];
+        if (t == null) return true;                // sin hora: se deja
+        if (t > tPrevia && t <= tEntrega) return true;
+        omitidosPar[String(l.Remision || '').trim() + '||' + String(l.Remision_Origen || '').trim()] = true;
+        return false;
+      });
+      if (keep.length) grupos.push(keep);
+    });
+    return { grupos: grupos, omitidos: Object.keys(omitidosPar).length, fallo: '' };
+  } catch (e) {
+    console.error('_trasladosDeLaEntrega (se dejan todos los traslados)', e);
+    todos.fallo = (e && e.message) ? e.message : String(e);
+    return todos;
+  }
+}
+
 // Renderiza la sección de solicitudes de compra pendientes dentro
 // del modal detalle. Se oculta si no hay OCs abiertas para ese
 // pedido. Fuente de verdad: solicitudesCompraPorPedido (indexado
@@ -3754,13 +3834,21 @@ async function guardarTodo() {
       // contabilidad de cada una.
       if (_pendingContab && typeof NOTIF !== 'undefined') {
         try {
-          var _cr = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsPkg, { contabilidad: true });
+          // A contabilidad solo le van los traslados de ESTA entrega: los de las
+          // entregas parciales anteriores ya salieron en su paquete. La descarga
+          // local de arriba y el botón «Enviar paquete completo» llevan todo.
+          var _tr = await _trasladosDeLaEntrega(c, rem, _ocGroupsPkg, detailWorkingLines);
+          var _ocGroupsContab = _tr.grupos;
+          if (_tr.fallo) {
+            showToast('⚠ No se pudieron separar los traslados de entregas anteriores; a contabilidad se envían todos los del pedido.', '#e67e22');
+          }
+          var _cr = _construirPaquetePedidoPDF(_pedidoPkgData, _pdfData, _ocGroupsContab, { contabilidad: true });
           if (!_cr) throw new Error('no se pudo armar el paquete PDF');
-          var _refsOC = NOTIF.refsDeOCs(_ocGroupsPkg);
+          var _refsOC = NOTIF.refsDeOCs(_ocGroupsContab);
           await NOTIF.enviarPDFContabilidad(_cr, {
             modulo: 'pedidos', referencia: rem,
             titulo: 'Paquete Pedido ' + c.Consecutivo + ' — Rem ' + rem +
-                    (_ocGroupsPkg.length ? ' + OC' : ''),
+                    (_ocGroupsContab.length ? ' + OC' : ''),
             docLabel: 'Paquete',
             accionManual: 'Enviar Pedido',
             empresas: _refsOC.empresas,
@@ -6470,7 +6558,7 @@ function exportOrdenesExcel() {
 
 // ── PDF Export ──
 function closeRemPicker() {
-  ['rem-picker', 'rem-picker-share'].forEach(function(id) {
+  ['rem-picker', 'rem-picker-share', 'rem-picker-completo'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) { el.style.display = 'none'; el.innerHTML = ''; }
   });
@@ -6481,8 +6569,10 @@ function _remPickerOutside(ev) {
   var pickerShare = document.getElementById('rem-picker-share');
   var btn = document.getElementById('btn-export-rem');
   var btnShare = document.getElementById('btn-export-rem-share');
+  var pickerCompleto = document.getElementById('rem-picker-completo');
+  var btnCompleto = document.getElementById('btn-export-rem-completo');
   var inside = false;
-  [picker, pickerShare, btn, btnShare].forEach(function(el) {
+  [picker, pickerShare, btn, btnShare, pickerCompleto, btnCompleto].forEach(function(el) {
     if (el && el.contains(ev.target)) inside = true;
   });
   if (inside) return;
@@ -6727,6 +6817,17 @@ async function _exportarRemisionEspecifica(rem, opts) {
   var dataPedidoPkg = _dataPedidoDesdeModal(c);
   var ocGroupsPkg = await _ocsLegalizadasDeFresco(c);
 
+  // Envío a contabilidad / usuarios: por defecto solo los traslados de ESA
+  // entrega (opts.completo = «Enviar paquete completo» manda todos, como
+  // la descarga PDF).
+  if (opts.share && !opts.completo) {
+    var _tr = await _trasladosDeLaEntrega(c, rem.remision, ocGroupsPkg);
+    ocGroupsPkg = _tr.grupos;
+    if (_tr.fallo) {
+      showToast('⚠ No se pudieron separar los traslados de entregas anteriores; el paquete lleva todos los del pedido.', '#e67e22');
+    }
+  }
+
   if (opts.share) {
     if (typeof NOTIF === 'undefined' || !NOTIF.openModalEnviar) {
       showToast('Módulo de notificaciones no cargado.', '#e74c3c'); return;
@@ -6734,7 +6835,7 @@ async function _exportarRemisionEspecifica(rem, opts) {
     NOTIF.openModalEnviar({
       modulo: 'pedidos',
       referencia: (sig ? sig + ' ' : '') + (c.Consecutivo || '') + ' · Rem ' + rem.remision,
-      titulo: 'Paquete Pedido #' + (c.Consecutivo || '') + ' — Rem ' + rem.remision +
+      titulo: (opts.completo ? 'Paquete completo Pedido #' : 'Paquete Pedido #') + (c.Consecutivo || '') + ' — Rem ' + rem.remision +
               (ocGroupsPkg.length ? ' + OC' : '') + ' — ' + (data.cliente || 'sin cliente'),
       empresa: c.Nombre_Empresa || '',
       // El paquete incluye las remisiones de traslado de las OC: la contabilidad
@@ -6774,7 +6875,7 @@ function exportarRemisionDesdeModal(ev, opts) {
     _exportarRemisionEspecifica(remisiones[0], opts);
     return;
   }
-  var pickerId = opts.share ? 'rem-picker-share' : 'rem-picker';
+  var pickerId = opts.completo ? 'rem-picker-completo' : (opts.share ? 'rem-picker-share' : 'rem-picker');
   var picker = document.getElementById(pickerId) || document.getElementById('rem-picker');
   if (!picker) { _exportarRemisionEspecifica(remisiones[0], opts); return; }
   if (picker.style.display === 'block') { closeRemPicker(); return; }
