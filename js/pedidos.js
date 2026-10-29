@@ -632,6 +632,13 @@ var apartadosPorPedido = {};
 var apartadosPorProdEmp = {};
 var apartadosPorLinea = {};
 
+// Unidades de cada LÍNEA que están en una OC de traslado aún sin legalizar (sin Remisión
+// de destino y no anulada): ya se pidieron a otra empresa, así que NO se pueden despachar
+// del stock de la empresa ni volver a pedir; salen cuando la OC se legalice y esas
+// unidades queden apartadas para la línea (migración reservar_stock_oc_traslado).
+//   ocEnCaminoPorLinea[Pedidos.id] = { cant, ocs: [{id, consecutivo, cantidad, aprobacion, origen}] }
+var ocEnCaminoPorLinea = {};
+
 // Remisiones anuladas (registro manual en Reportes → "Registrar remisión
 // anulada", tabla RemisionesAnuladas). Mismo criterio que usan Kardex y
 // Existencias: por N° de remisión, sin distinguir empresa ni producto.
@@ -927,6 +934,76 @@ function _buildSolicitudesMap(ordenes) {
   return map;
 }
 
+// OC de traslado vivas (esSolicitudCompraViva) agrupadas por la línea de pedido que las
+// originó (OrdenesCompra.pedido_id). Las OC históricas sin pedido_id no se pueden atar a
+// una línea y no restringen nada.
+function _buildOCEnCaminoMap(ordenes) {
+  var map = {};
+  (ordenes || []).forEach(function(oc) {
+    if (!esSolicitudCompraViva(oc) || oc.pedido_id == null) return;
+    var cant = Number(oc.Cantidad) || 0;
+    if (cant <= 0) return;
+    var m = map[oc.pedido_id] || (map[oc.pedido_id] = { cant: 0, ocs: [] });
+    m.cant += cant;
+    m.ocs.push({
+      id: oc.id, consecutivo: oc.Consecutivo || '', cantidad: cant,
+      aprobacion: oc.Estado_Aprobacion || '', origen: oc.Empresa_Origen || ''
+    });
+  });
+  return map;
+}
+
+// Relee de OrdenesCompra las OC de traslado de esas líneas (el mapa de la carga de la
+// página puede estar viejo: una OC se aprueba o se legaliza en otra pestaña). Devuelve el
+// mapa nuevo, o null si no se pudo leer (quien llama no restringe con datos dudosos).
+async function _leerOCEnCamino(lineIds) {
+  if (!lineIds || !lineIds.length) return {};
+  try {
+    var res = await _sb.from('OrdenesCompra')
+      .select('id,Consecutivo,Tipo,Estado,Estado_Aprobacion,Remision,Cantidad,Empresa_Origen,pedido_id')
+      .eq('Tipo', 'Traslado')
+      .in('pedido_id', lineIds);
+    if (res.error) throw new Error(res.error.message);
+    return _buildOCEnCaminoMap(res.data);
+  } catch (e) {
+    console.warn('No se pudieron releer las OC de traslado de las líneas:', e);
+    return null;
+  }
+}
+
+async function _refrescarOCEnCamino(lineIds) {
+  var fresco = await _leerOCEnCamino(lineIds);
+  if (!fresco) return;
+  lineIds.forEach(function(id) { delete ocEnCaminoPorLinea[id]; });
+  Object.keys(fresco).forEach(function(k) { ocEnCaminoPorLinea[k] = fresco[k]; });
+}
+
+// Cant_Entregada vigente de esas líneas (null si no se pudo leer).
+async function _leerEntregadas(lineIds) {
+  if (!lineIds || !lineIds.length) return {};
+  try {
+    var res = await _sb.from('Pedidos').select('id,Cant_Entregada').in('id', lineIds);
+    if (res.error) throw new Error(res.error.message);
+    var out = {};
+    (res.data || []).forEach(function(r) { out[r.id] = Number(r.Cant_Entregada) || 0; });
+    return out;
+  } catch (e) {
+    console.warn('No se pudo releer lo entregado de las líneas:', e);
+    return null;
+  }
+}
+
+function _ocEnCaminoLinea(l) {
+  var m = (l && l.__row != null) ? ocEnCaminoPorLinea[l.__row] : null;
+  return m || { cant: 0, ocs: [] };
+}
+
+function _ocEnCaminoTxt(m) {
+  return (m.ocs || []).map(function(o) {
+    return o.consecutivo + ' (' + o.cantidad + ' ud, ' + (o.aprobacion === 'Aprobada' ? 'aprobada, falta legalizar' : 'por aprobar') + ')';
+  }).join(', ');
+}
+
 function _buildOCsLegalizadasMap(ordenes) {
   var map = {};
   (ordenes || []).forEach(function(oc) {
@@ -992,7 +1069,7 @@ async function loadFromAPI() {
     // sin badges (los pedidos siguen cargando).
     var pedidosPromise = apiGet('getPedidos');
     var ordenesPromise = apiGet('getOrdenesCompra', {
-      columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id'
+      columns: 'id,Consecutivo,Tipo,Estado,Estado_Aprobacion,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id'
     }).catch(function() { return { ok: true, ordenes: [] }; });
     var apartadosPromise = apiGet('getApartadosPedido', {
       columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,bonificado,orden_compra_id,notas'
@@ -1109,6 +1186,7 @@ async function loadFromAPI() {
     _buildApartadosMaps(apartadosRows, apartadosMuRows);
     solicitudesCompraPorPedido = _buildSolicitudesMap(allOCs);
     ocsLegalizadasPorPedido = _buildOCsLegalizadasMap(allOCs);
+    ocEnCaminoPorLinea = _buildOCEnCaminoMap(allOCs);
 
     populateFilters();
     renderTable();
@@ -2210,6 +2288,8 @@ async function openDetail(idx) {
   // página; si una OC se legalizó después, su reserva nueva no estaría. Se rearman con la
   // lectura fresca de existencias.
   _reconstruirApartadosDesdeSnapshot(existSnapshot);
+  // Igual con las OC sin legalizar de cada línea: se releen para que el tope sea el de ahora.
+  await _refrescarOCEnCamino(lines.map(function(l) { return l.__row; }).filter(Boolean));
   if (_acP.length) await Promise.all(_acP);
   _mergePreciosEmbedded();
 
@@ -2981,6 +3061,10 @@ function renderAsignacionCell(i, l, empresaPedido) {
            '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
   }
 
+  // Unidades de esta línea que ya están en una OC sin legalizar: no se asignan ahora.
+  var ocLinea = _ocEnCaminoLinea(l);
+  var libreBase = Math.max(0, pendienteBase - ocLinea.cant);
+
   var prodStock = _normProdSel(l.Producto);
   var opciones = '';
   if (existSnapshot && typeof Existencias !== 'undefined') {
@@ -3019,8 +3103,18 @@ function renderAsignacionCell(i, l, empresaPedido) {
     '<span>Pedida: <b>' + pedida + '</b></span>' +
     '<span style="color:#b0bec5">|</span>' +
     '<span>Pend: <b style="color:' + (pendienteBase > 0 ? '#e67e22' : '#27ae60') + '">' + pendienteBase + '</b></span>' +
+    (ocLinea.cant > 0
+      ? '<span style="color:#b0bec5">|</span><span title="Unidades en una OC de traslado sin legalizar">En OC: <b style="color:#c0392b">' + ocLinea.cant + '</b></span>'
+      : '') +
   '</div>';
-  return refBar + _apartadoLineaHtml(i, l, empresaPedido) + _competenciaApartadoHtml(l, empresaPedido) + selectHTML +
+  // Todo lo pendiente está en OC: solo queda lo que ya esté apartado (Emitir entrega).
+  if (ocLinea.cant > 0 && libreBase <= 0) {
+    return refBar + _apartadoLineaHtml(i, l, empresaPedido) + _ocEnCaminoHtml(ocLinea, 0) +
+      '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
+  }
+  return refBar + _apartadoLineaHtml(i, l, empresaPedido) +
+    (ocLinea.cant > 0 ? _ocEnCaminoHtml(ocLinea, libreBase) : '') +
+    _competenciaApartadoHtml(l, empresaPedido) + selectHTML +
     '<div style="display:flex;gap:4px;margin-top:3px">' +
       '<input type="number" class="asig-cant" data-i="' + i + '" min="0" step="1" placeholder="0" style="width:60px;font-size:0.75rem;padding:2px 4px;text-align:right" oninput="validateAsignCant(' + i + ')">' +
       '<button type="button" onclick="addAsignacion(' + i + ')" ' +
@@ -3053,7 +3147,7 @@ function _maxAsignable(i) {
   var dl = detailWorkingLines[i];
   if (!dl) return null;
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
-  var pendiente = _pendienteRestante(i);
+  var pendiente = _pendienteLibre(i);
   var yaEnSesion = _asignadoEnSesion(sel.value, dl.Producto, i);
   var libre = Math.max(0, disp - yaEnSesion);
   return Math.min(pendiente, libre);
@@ -3101,7 +3195,8 @@ function validateAsignCant(i, _skipPropagate) {
     return;
   }
   var dl = detailWorkingLines[i];
-  var pendiente = _pendienteRestante(i);
+  var pendiente = _pendienteLibre(i);
+  var enOC = dl ? _ocEnCaminoLinea(dl).cant : 0;
   var disp = Number(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.disp) || 0;
   var yaEnSesion = dl ? _asignadoEnSesion(sel.value, dl.Producto, i) : 0;
   var libre = Math.max(0, disp - yaEnSesion);
@@ -3112,7 +3207,9 @@ function validateAsignCant(i, _skipPropagate) {
     inp.value = tope;
     inp.max = tope;
     var motivo = (tope === pendiente && pendiente <= libre)
-      ? 'Ajustado al pendiente por entregar (' + pendiente + ')'
+      ? (enOC > 0
+          ? 'Ajustado a lo que no está en una OC sin legalizar (' + pendiente + '): las ' + enOC + ' ud en OC salen cuando se legalice'
+          : 'Ajustado al pendiente por entregar (' + pendiente + ')')
       : 'Ajustado al disponible en esa empresa (' + libre + ')';
     inp.title = motivo;
     // Marcamos el borde rojo brevemente como feedback visual del recorte,
@@ -3151,6 +3248,27 @@ function _pendienteRestante(i) {
   var yaEntregada = (dl._entregas || []).reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
   var yaAsignada = (dl._asignaciones || []).reduce(function(s, a) { return s + (a.cantidad || 0); }, 0);
   return Math.max(0, pedida - yaEntregada - yaAsignada);
+}
+
+// Lo que de la línea i aún se puede asignar AHORA con el selector de empresa: lo pendiente
+// menos lo que ya está en una OC de traslado sin legalizar. Esas unidades no se despachan
+// del stock de la empresa ni se vuelven a pedir: salen cuando la OC se legalice, ya
+// apartadas para esta línea («Emitir entrega»). Lo no cubierto por una OC no cambia.
+function _pendienteLibre(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return 0;
+  return Math.max(0, _pendienteRestante(i) - _ocEnCaminoLinea(dl).cant);
+}
+
+// Aviso del modal para una línea con unidades en OC sin legalizar.
+function _ocEnCaminoHtml(m, libre) {
+  return '<div style="font-size:0.72rem;color:#7d2820;background:#fdf2f0;border:1px solid #f5c2c0;padding:4px 6px;border-radius:4px;margin-bottom:4px">' +
+    '🛒 <b>' + m.cant + ' ud</b> de esta línea están en una orden de compra sin legalizar: ' + escHtml(_ocEnCaminoTxt(m)) + '. ' +
+    (libre > 0
+      ? 'Ahora solo puedes asignar ' + libre + ' ud; '
+      : 'Por ahora no se puede asignar ni despachar nada más de esta línea; ') +
+    'esas ' + m.cant + ' ud salen cuando la OC esté aprobada y legalizada en Órdenes.' +
+  '</div>';
 }
 
 // Normalización de producto compatible con Existencias._normProd
@@ -3546,28 +3664,84 @@ function _reconstruirApartadosDesdeSnapshot(snap) {
   );
 }
 
-// Revalida las entregas directas contra existencias y apartados LEÍDOS DE NUEVO.
-// El selector del modal se arma al abrir el pedido: si pasó un rato y otra persona
-// apartó, despachó o legalizó una OC, esos topes están viejos y la entrega podía
-// usar unidades reservadas para otro pedido.
+// Revalida lo que se va a guardar (entregas directas y solicitudes de compra nuevas)
+// contra datos LEÍDOS DE NUEVO. El selector del modal se arma al abrir el pedido: si pasó
+// un rato y otra persona apartó, despachó, aprobó o legalizó una OC, esos topes están
+// viejos y la entrega podía usar unidades de otro pedido o de una OC que aún no llega.
 //
-// Por línea y empresa de stock, las unidades que salen de SU PROPIO apartado (el de
-// la OC o el manual) se descuentan de lo que pide: solo lo que exceda ese apartado
-// debe caber en el stock LIBRE (existencia − apartados de todos los pedidos). Si no
-// cabe se frena el guardado, se refresca el modal con los datos nuevos y se dice qué
-// pedidos tienen apartado ese producto. Si no se pudo releer, no se frena (el
-// selector ya validó con los datos que tenía).
-async function _validarEntregasContraStockFresco(entregas) {
-  if (!entregas || !entregas.length || typeof Existencias === 'undefined') return true;
+//  1. Unidades en OC sin legalizar: de cada línea, lo que se asigna ahora (entregas +
+//     solicitudes) no puede pasar de pedida − entregada − lo que ya está en una OC viva.
+//  2. Stock libre: por línea y empresa de stock, las unidades que salen de SU PROPIO
+//     apartado (el de la OC o el manual) se descuentan de lo que pide; solo lo que exceda
+//     ese apartado debe caber en el stock LIBRE (existencia − apartados de todos).
+//
+// Si algo no cabe se frena el guardado, se refresca el modal con los datos nuevos y se
+// dice por qué (y qué pedidos tienen apartado el producto). Lo que no se pudo releer no
+// frena (el selector ya validó con los datos que tenía).
+async function _validarEntregasContraStockFresco(entregas, solicitudes) {
+  entregas = entregas || [];
+  solicitudes = solicitudes || [];
+  if (!entregas.length && !solicitudes.length) return true;
   var btn = document.getElementById('btn-confirmar');
   var txtBtn = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando existencias...'; }
-  var snap = null;
-  try { snap = await Existencias.loadSnapshot(); }
-  catch (e) { console.warn('No se pudo releer las existencias antes de guardar:', e); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = txtBtn; } }
-  if (!snap || !snap.apartadosOk) return true;
+  var todas = entregas.concat(solicitudes);
+  var rowsAfectadas = {};
+  todas.forEach(function(x) { if (x.row != null) rowsAfectadas[x.row] = true; });
+  var rowIds = Object.keys(rowsAfectadas).map(Number);
+  var snap = null, ocFresco = null, entregadasFresco = null;
+  try {
+    var lecturas = await Promise.all([
+      (entregas.length && typeof Existencias !== 'undefined')
+        ? Existencias.loadSnapshot().catch(function(e) { console.warn('No se pudo releer las existencias antes de guardar:', e); return null; })
+        : null,
+      _leerOCEnCamino(rowIds),
+      _leerEntregadas(rowIds)
+    ]);
+    snap = lecturas[0]; ocFresco = lecturas[1]; entregadasFresco = lecturas[2];
+  } finally { if (btn) { btn.disabled = false; btn.textContent = txtBtn; } }
 
+  // 1. Unidades de la línea que ya están en una OC sin legalizar.
+  var porOC = [];
+  if (ocFresco) {
+    rowIds.forEach(function(row) {
+      var m = ocFresco[row];
+      if (!m || !(m.cant > 0)) return;
+      var dl = detailWorkingLines.filter(function(l) { return l && Number(l.__row) === row; })[0];
+      if (!dl) return;
+      var yaEnt = (entregadasFresco && entregadasFresco[row] != null)
+        ? entregadasFresco[row]
+        : (dl._entregas || []).reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
+      var ahora = todas.reduce(function(s, x) { return Number(x.row) === row ? s + (Number(x.cantidad) || 0) : s; }, 0);
+      var cabe = Math.max(0, (Number(dl.Cantidad) || 0) - yaEnt - m.cant);
+      if (ahora > cabe + 1e-6) {
+        porOC.push('«' + (dl.Producto || '') + '»: ' + m.cant + ' ud están en la OC ' + _ocEnCaminoTxt(m) +
+          ' y salen cuando se legalice; ahora solo puedes asignar ' + cabe + ' y asignaste ' + ahora);
+      }
+    });
+  }
+
+  // 2. Stock libre.
+  var faltas = (snap && snap.apartadosOk) ? _faltasStockLibre(snap, entregas) : [];
+  if (!porOC.length && !faltas.length) return true;
+
+  // Datos viejos en pantalla: se actualizan para que el usuario vea el tope real.
+  if (snap) { existSnapshot = snap; _reconstruirApartadosDesdeSnapshot(snap); }
+  if (ocFresco) {
+    rowIds.forEach(function(id) { delete ocEnCaminoPorLinea[id]; });
+    Object.keys(ocFresco).forEach(function(k) { ocEnCaminoPorLinea[k] = ocFresco[k]; });
+  }
+  detailWorkingLines.forEach(function(_, i) { refreshAsignacionCell(i); });
+  var partes = [];
+  if (porOC.length) partes.push('Hay unidades en OC sin legalizar: ' + porOC.join(' · '));
+  if (faltas.length) partes.push('Otro pedido apartó o despachó ese stock mientras tenías este abierto: ' + faltas.join(' · '));
+  showToast('🚫 ' + partes.join('. ') + '. Ajusta las cantidades y vuelve a guardar.', '#e74c3c', 12000);
+  return false;
+}
+
+// Entregas directas que no caben en el stock LIBRE de su empresa, con los datos de
+// `snap` (existencias y apartados recién leídos). Devuelve los textos de aviso.
+function _faltasStockLibre(snap, entregas) {
   var apas = (snap.apartados || []).filter(function(a) {
     return !a._esMuestra && String(a.estado || '') === 'Activo';
   });
@@ -3616,15 +3790,7 @@ async function _validarEntregasContraStockFresco(entregas) {
         (quien.length ? ' (apartado por: ' + quien.join(', ') + ')' : ''));
     }
   });
-  if (!faltas.length) return true;
-
-  // Datos viejos en pantalla: se actualizan para que el usuario vea el tope real.
-  existSnapshot = snap;
-  _reconstruirApartadosDesdeSnapshot(snap);
-  detailWorkingLines.forEach(function(_, i) { refreshAsignacionCell(i); });
-  showToast('🚫 Otro pedido apartó o despachó ese stock mientras tenías este abierto. ' + faltas.join(' · ') +
-    '. Ajusta las cantidades y vuelve a guardar.', '#e74c3c', 12000);
-  return false;
+  return faltas;
 }
 
 // ── Save all changes (edits + deliveries) ──
@@ -3690,7 +3856,7 @@ async function guardarTodo() {
 
   // Antes de gastar el consecutivo de la remisión: las entregas no pueden usar
   // unidades que otro pedido (o su OC) apartó mientras este modal estaba abierto.
-  if (!(await _validarEntregasContraStockFresco(entregas))) return;
+  if (!(await _validarEntregasContraStockFresco(entregas, solicitudesCompra))) return;
 
   var remGenerada = '';
   if (entregas.length > 0 && !rem) {

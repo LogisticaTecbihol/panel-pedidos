@@ -240,6 +240,14 @@ podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío
 - **Revalidación al guardar** (`_validarEntregasContraStockFresco`, solo si hay entregas directas): vuelve a leer existencias y apartados, descuenta de cada entrega el apartado propio de la línea
   y exige que lo que exceda quepa en el stock LIBRE (existencia − apartados de todos). Si no cabe, no se gasta la remisión, se refresca el modal y el aviso nombra qué pedidos tienen apartado
   ese producto. Si no se pudo releer, no frena (como antes). Si `consumir_apartados_pedido` falla al guardar, ahora se avisa (antes se ignoraba y el apartado quedaba restando dos veces).
+- **Unidades en una OC sin legalizar no se despachan** (caso IASO #26, BODEGA ESPINAL, PEGASSO PH X LITRO 60 ud con la OC T-20261029-100802-PARCELAR de 60): mientras la OC siga viva
+  (`esSolicitudCompraViva`: traslado, sin Remisión de destino, ni anulada ni cerrada; también «Por aprobar») sus unidades salen del tope del selector. `ocEnCaminoPorLinea[Pedidos.id]`
+  (`_buildOCEnCaminoMap`, se arma al cargar y se relee con `_refrescarOCEnCamino` al abrir el pedido) y `_pendienteLibre(i) = pedida − entregada − asignado − unidades en OC` gobiernan
+  `_maxAsignable`, `validateAsignCant` y `renderAsignacionCell`: con 60 de 60 en OC el modal no ofrece selector ni cantidad, muestra «🛒 60 ud … en una orden de compra sin legalizar: <OC> (aprobada,
+  falta legalizar)» y deja solo «Emitir entrega» de lo ya apartado; con una OC parcial (40 de 60) quedan 20 por asignar con normalidad. **Lo no cubierto por una OC sigue pudiendo salir del stock
+  libre** (decisión del usuario); al legalizarse la OC, sus unidades pasan a ser el apartado de la línea. El tope vale también para las solicitudes de compra nuevas (no se vuelve a pedir lo ya pedido).
+  Al guardar, `_validarEntregasContraStockFresco(entregas, solicitudes)` relee las OC (`_leerOCEnCamino`) y lo entregado (`_leerEntregadas`) y frena si lo asignado pasa de
+  `Cantidad − entregada − unidades en OC`. Las OC históricas sin `pedido_id` no se pueden atar a una línea y no restringen; si no se pueden releer las OC, no se frena por este motivo.
 - **Alcance elegido: control solo en pantalla.** No hay candado en la base de datos: una entrega registrada por otra vía todavía podría usar unidades reservadas para otro pedido. Tampoco
   se cubren las OC de muestras (`muestra_id`) ni las OC de IASO a PARCELAR (`oc-como-pedido.js`, solo consulta).
 - Probado con la migración dentro de una transacción revertida contra producción (regularización: 2 filas, idempotencia, legalizar una OC, tope al hueco, suma sobre un apartado existente, pedido pendiente
