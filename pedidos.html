@@ -347,12 +347,24 @@
       <div style="padding:8px 18px;font-size:0.78rem;color:#718096;border-bottom:1px solid #edf2f7">
         Solo consulta · órdenes de compra que IASO le hace a PARCELAR, vistas como pedidos de un cliente. No crean pedidos ni mueven inventario; sus remisiones también aparecen en la pestaña Despachos.
       </div>
-      <div style="overflow-x:auto">
+      <div style="padding:10px 18px 10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-export" id="iaso-btn-pedidos" onclick="OCComoPedido.cambiarVista('pedidos')" style="background:#1a5276" title="Una fila por orden de compra">📋 Por pedido</button>
+        <button class="btn-export" id="iaso-btn-detalle" onclick="OCComoPedido.cambiarVista('detalle')" style="background:#718096" title="Una fila por producto con remisión de PARCELAR">📑 Productos remisionados</button>
+      </div>
+      <div id="iaso-vista-pedidos" style="overflow-x:auto">
         <table>
           <thead>
             <tr id="iaso-head"></tr>
           </thead>
           <tbody id="iaso-body"></tbody>
+        </table>
+      </div>
+      <div id="iaso-vista-detalle" style="overflow-x:auto;display:none">
+        <table>
+          <thead>
+            <tr id="iaso-det-head"></tr>
+          </thead>
+          <tbody id="iaso-det-body"></tbody>
         </table>
       </div>
     </div>
@@ -1039,7 +1051,7 @@
 <script src="js/colombia-geo.js?v=20260826a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/oc-como-pedido.js?v=20261029a"></script>
+<script src="js/oc-como-pedido.js?v=20261029b"></script>
 <script src="js/pedidos.js?v=20261029a"></script>
 </body>
 </html>

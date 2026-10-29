@@ -31,6 +31,9 @@ var OCComoPedido = (function() {
   var _orden = [{ col: 'fecha', dir: 'desc' }];
   var _abiertos = {};                // clave del pedido -> detalle desplegado
   var _vista = [];                   // filas mostradas ahora (las que exporta el Excel)
+  var _modo = 'pedidos';             // vista activa: 'pedidos' (una fila por OC) | 'detalle' (productos remisionados)
+  var _ordenDet = [{ col: 'fecha', dir: 'desc' }, { col: 'remision', dir: 'asc' }];
+  var _vistaDet = [];                // líneas remisionadas mostradas ahora
 
   function _t(v) { return v == null ? '' : String(v).trim(); }
   function _n(v) { var n = Number(v); return isNaN(n) ? 0 : n; }
@@ -187,32 +190,64 @@ var OCComoPedido = (function() {
 
   function _val(id) { var e = document.getElementById(id); return e ? e.value : ''; }
 
-  function _col(id) {
-    for (var i = 0; i < COLUMNAS.length; i++) if (COLUMNAS[i].id === id) return COLUMNAS[i];
+  // Vista «Productos remisionados»: una fila por línea de OC que ya tiene remisión de
+  // PARCELAR. Cada fila es { g: pedido, l: línea }.
+  var COLUMNAS_DET = [
+    { id: 'fecha',        label: 'Fecha Remisión', fn: function(r) { return r.g.fecha; } },
+    { id: 'remision',     label: 'Remisión',       fn: function(r) { return r.l.remision.toLowerCase(); } },
+    { id: 'consecutivo',  label: 'Pedido (OC)',    fn: function(r) { return r.g.consecutivo.toLowerCase(); } },
+    { id: 'producto',     label: 'Producto',       fn: function(r) { return r.l.producto.toLowerCase(); } },
+    { id: 'presentacion', label: 'Presentación',   fn: function(r) { return r.l.presentacion.toLowerCase(); } },
+    { id: 'cantidad',     label: 'Cantidad',       fn: function(r) { return r.l.cantidad; }, num: true },
+    { id: 'valorUnitario', label: 'Valor Unit.',   fn: function(r) { return r.l.valorUnitario; }, num: true },
+    { id: 'valorTotal',   label: 'Valor Total',    fn: function(r) { return r.l.valorTotal; }, num: true },
+    { id: 'bonificado',   label: 'Bonificado',     fn: function(r) { return r.l.bonificado.toLowerCase(); } },
+    { id: 'factura',      label: 'N° Factura',     fn: function(r) { return r.l.facturaNum.toLowerCase(); } },
+    { id: 'fechaFactura', label: 'Fecha Factura',  fn: function(r) { return r.l.facturaFecha; } },
+    { id: 'estado',       label: 'Estado',         fn: function(r) { return r.g.estado; } }
+  ];
+
+  function _buscarCol(defs, id) {
+    for (var i = 0; i < defs.length; i++) if (defs[i].id === id) return defs[i];
     return null;
   }
 
-  function ordenar(col, e) {
-    var def = _col(col);
-    if (!def || def.sort === false) return;
-    var shift = e && e.shiftKey;
+  // Orden multinivel compartido por las dos vistas: clic = ordena por esa columna (otro
+  // clic invierte, un tercero lo quita); Mayús+clic suma o quita un nivel.
+  function _alternarOrden(orden, def, e) {
     var dir = def.num ? 'desc' : 'asc';
     var idx = -1;
-    _orden.forEach(function(l, i) { if (l.col === col) idx = i; });
-    if (shift) {
-      if (idx >= 0) _orden.splice(idx, 1);
-      else _orden.push({ col: col, dir: dir });
-    } else if (idx >= 0) {
-      if (_orden[idx].dir === 'asc') _orden[idx].dir = 'desc';
-      else _orden.splice(idx, 1);
-    } else {
-      _orden = [{ col: col, dir: dir }];
+    orden.forEach(function(l, i) { if (l.col === def.id) idx = i; });
+    if (e && e.shiftKey) {
+      if (idx >= 0) orden.splice(idx, 1);
+      else orden.push({ col: def.id, dir: dir });
+      return orden;
     }
+    if (idx >= 0) {
+      if (orden[idx].dir === 'asc') orden[idx].dir = 'desc';
+      else orden.splice(idx, 1);
+      return orden;
+    }
+    return [{ col: def.id, dir: dir }];
+  }
+
+  function ordenar(col, e) {
+    var def = _buscarCol(COLUMNAS, col);
+    if (!def || def.sort === false) return;
+    _orden = _alternarOrden(_orden, def, e);
     _pintar();
   }
 
-  function _filtrar(lista) {
-    var q = _val('iaso-f-buscar').toLowerCase().trim();
+  function ordenarDetalle(col, e) {
+    var def = _buscarCol(COLUMNAS_DET, col);
+    if (!def) return;
+    _ordenDet = _alternarOrden(_ordenDet, def, e);
+    _pintarDetalle();
+  }
+
+  // `sinTexto`: la vista de productos aplica el texto de búsqueda por línea, no por pedido.
+  function _filtrar(lista, sinTexto) {
+    var q = sinTexto ? '' : _val('iaso-f-buscar').toLowerCase().trim();
     var est = _val('iaso-f-estado');
     var desde = _val('iaso-f-desde');
     var hasta = _val('iaso-f-hasta');
@@ -229,19 +264,31 @@ var OCComoPedido = (function() {
     });
   }
 
-  function _ordenarFilas(filas) {
+  function _ordenarPor(filas, orden, defs) {
     var copia = filas.slice();
-    if (!_orden.length) return copia;
+    if (!orden.length) return copia;
     return copia.sort(function(a, b) {
-      for (var s = 0; s < _orden.length; s++) {
-        var def = _col(_orden[s].col);
+      for (var s = 0; s < orden.length; s++) {
+        var def = _buscarCol(defs, orden[s].col);
         if (!def || !def.fn) continue;
         var va = def.fn(a), vb = def.fn(b);
         var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
-        if (cmp !== 0) return _orden[s].dir === 'asc' ? cmp : -cmp;
+        if (cmp !== 0) return orden[s].dir === 'asc' ? cmp : -cmp;
       }
       return 0;
     });
+  }
+
+  // Encabezado con flechas de orden; `accion` es el método público que recibe el clic.
+  function _encabezadoHtml(defs, orden, accion) {
+    return '<th>#</th>' + defs.map(function(col) {
+      if (col.sort === false) return '<th>' + col.label + '</th>';
+      var idx = -1;
+      orden.forEach(function(l, i) { if (l.col === col.id) idx = i; });
+      var cls = idx >= 0 ? (orden[idx].dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+      var badge = idx >= 0 && orden.length > 1 ? '<span style="font-size:0.6rem;vertical-align:super;color:#2980b9">' + (idx + 1) + '</span>' : '';
+      return '<th class="sortable ' + cls + '" onclick="OCComoPedido.' + accion + '(\'' + col.id + '\',event)">' + col.label + badge + '<span class="sort-icon"></span></th>';
+    }).join('');
   }
 
   function _badgeEstado(est) {
@@ -275,7 +322,7 @@ var OCComoPedido = (function() {
   }
 
   function _pintar() {
-    var filas = _ordenarFilas(_filtrar(_datos || []));
+    var filas = _ordenarPor(_filtrar(_datos || []), _orden, COLUMNAS);
     _vista = filas;
 
     var lineas = 0, total = 0;
@@ -287,16 +334,7 @@ var OCComoPedido = (function() {
     }
 
     var head = document.getElementById('iaso-head');
-    if (head) {
-      head.innerHTML = '<th>#</th>' + COLUMNAS.map(function(col) {
-        if (col.sort === false) return '<th>' + col.label + '</th>';
-        var idx = -1;
-        _orden.forEach(function(l, i) { if (l.col === col.id) idx = i; });
-        var cls = idx >= 0 ? (_orden[idx].dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
-        var badge = idx >= 0 && _orden.length > 1 ? '<span style="font-size:0.6rem;vertical-align:super;color:#2980b9">' + (idx + 1) + '</span>' : '';
-        return '<th class="sortable ' + cls + '" onclick="OCComoPedido.ordenar(\'' + col.id + '\',event)">' + col.label + badge + '<span class="sort-icon"></span></th>';
-      }).join('') + '<th>Acción</th>';
-    }
+    if (head) head.innerHTML = _encabezadoHtml(COLUMNAS, _orden, 'ordenar') + '<th>Acción</th>';
 
     var cuerpo = document.getElementById('iaso-body');
     if (!cuerpo) return;
@@ -334,21 +372,143 @@ var OCComoPedido = (function() {
     _pintar();
   }
 
+  // ── Vista «Productos remisionados» ──
+  // Una fila por línea con remisión de PARCELAR, de los pedidos que pasan los filtros de
+  // estado y fecha; el texto de búsqueda se aplica a cada línea (producto, remisión, etc.).
+  function _lineasRemisionadas() {
+    var q = _val('iaso-f-buscar').toLowerCase().trim();
+    var filas = [];
+    _filtrar(_datos || [], true).forEach(function(g) {
+      g.lineas.forEach(function(l) {
+        if (!l.remision) return;
+        if (q) {
+          var txt = [g.consecutivo, g.refIaso, l.producto, l.presentacion, l.remision, l.facturaNum, l.bonificado].join(' ').toLowerCase();
+          if (txt.indexOf(q) < 0) return;
+        }
+        filas.push({ g: g, l: l });
+      });
+    });
+    return filas;
+  }
+
+  function _pintarDetalle() {
+    var filas = _ordenarPor(_lineasRemisionadas(), _ordenDet, COLUMNAS_DET);
+    _vistaDet = filas;
+
+    var remisiones = {}, nRem = 0, unidades = 0, total = 0;
+    filas.forEach(function(r) {
+      if (!remisiones[r.l.remision]) { remisiones[r.l.remision] = true; nRem++; }
+      unidades += r.l.cantidad;
+      total += r.l.valorTotal;
+    });
+    var cuenta = document.getElementById('iaso-count');
+    if (cuenta) {
+      cuenta.textContent = '(' + filas.length + ' producto' + (filas.length === 1 ? '' : 's') + ' · ' +
+        nRem + (nRem === 1 ? ' remisión' : ' remisiones') + ' · ' + unidades.toLocaleString('es-CO') + ' und · ' + fmtMoney(total) + ')';
+    }
+
+    var head = document.getElementById('iaso-det-head');
+    if (head) head.innerHTML = _encabezadoHtml(COLUMNAS_DET, _ordenDet, 'ordenarDetalle');
+
+    var cuerpo = document.getElementById('iaso-det-body');
+    if (!cuerpo) return;
+    if (!filas.length) {
+      var hayRem = (_datos || []).some(function(g) { return g.remisiones.length; });
+      cuerpo.innerHTML = '<tr><td colspan="' + (COLUMNAS_DET.length + 1) + '"><div class="empty">' +
+        (hayRem ? 'No hay productos remisionados con los filtros seleccionados.' : 'Todavía no hay productos remisionados de las órdenes de compra de IASO.') +
+        '</div></td></tr>';
+      return;
+    }
+    var vacio = '<span style="color:#cbd5e0">—</span>';
+    cuerpo.innerHTML = filas.map(function(r, i) {
+      var g = r.g, l = r.l;
+      return '<tr>' +
+        '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
+        '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(g.fecha) + '</td>' +
+        '<td style="white-space:nowrap;font-weight:600;font-size:0.82rem">' + escHtml(l.remision) +
+          ' <span title="Orden de compra de IASO a PARCELAR" style="background:#ebf5fb;color:#1a5276;padding:1px 6px;border-radius:9px;font-size:0.68rem;font-weight:700">OC</span></td>' +
+        '<td style="white-space:nowrap;font-size:0.78rem">' + escHtml(g.consecutivo) + '</td>' +
+        '<td style="font-size:0.82rem">' + escHtml(l.producto || '—') + '</td>' +
+        '<td style="font-size:0.78rem">' + escHtml(l.presentacion || '') + '</td>' +
+        '<td class="money">' + l.cantidad.toLocaleString('es-CO') + '</td>' +
+        '<td class="money">' + fmtMoney(l.valorUnitario) + '</td>' +
+        '<td class="money">' + fmtMoney(l.valorTotal) + '</td>' +
+        '<td style="font-size:0.78rem">' + (l.bonificado ? escHtml(l.bonificado) : vacio) + '</td>' +
+        '<td style="font-size:0.78rem">' + (l.facturaNum ? escHtml(l.facturaNum) : vacio) + '</td>' +
+        '<td style="white-space:nowrap;font-size:0.78rem">' + (l.facturaFecha ? fmtDate(l.facturaFecha) : vacio) + '</td>' +
+        '<td><span class="badge ' + _badgeEstado(g.estado) + '">' + escHtml(g.estado) + '</span></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function _repintar() {
+    if (_modo === 'detalle') _pintarDetalle(); else _pintar();
+  }
+
+  // Cambia entre «Por pedido» y «Productos remisionados» (los filtros de arriba valen para ambas).
+  function cambiarVista(modo) {
+    _modo = modo === 'detalle' ? 'detalle' : 'pedidos';
+    var vp = document.getElementById('iaso-vista-pedidos');
+    var vd = document.getElementById('iaso-vista-detalle');
+    if (vp) vp.style.display = _modo === 'pedidos' ? 'block' : 'none';
+    if (vd) vd.style.display = _modo === 'detalle' ? 'block' : 'none';
+    var bp = document.getElementById('iaso-btn-pedidos');
+    var bd = document.getElementById('iaso-btn-detalle');
+    if (bp) bp.style.background = _modo === 'pedidos' ? '#1a5276' : '#718096';
+    if (bd) bd.style.background = _modo === 'detalle' ? '#1a5276' : '#718096';
+    return render();
+  }
+
   // Lo llama switchPedidoTab('iaso') y cada filtro de la pestaña.
   function render() {
     if (!AUTH.verPedidosIASO()) return;
-    if (_datos) { _pintar(); return; }
-    var cuerpo = document.getElementById('iaso-body');
-    var colspan = COLUMNAS.length + 2;
+    if (_datos) { _repintar(); return; }
+    var cuerpo = document.getElementById(_modo === 'detalle' ? 'iaso-det-body' : 'iaso-body');
+    var colspan = _modo === 'detalle' ? COLUMNAS_DET.length + 1 : COLUMNAS.length + 2;
     if (cuerpo) cuerpo.innerHTML = '<tr><td colspan="' + colspan + '"><div class="empty">Cargando órdenes de compra de IASO…</div></td></tr>';
-    return cargar().then(function() { _pintar(); }, function(e) {
+    return cargar().then(function() { _repintar(); }, function(e) {
       if (cuerpo) cuerpo.innerHTML = '<tr><td colspan="' + colspan + '"><div class="empty">⚠ No se pudieron cargar las órdenes de compra: ' +
         escHtml((e && e.message) || e) + '</div></td></tr>';
     });
   }
 
-  // Dos hojas, como Cargas históricas: una fila por pedido y una por línea.
+  // Una hoja con los productos remisionados que se están viendo.
+  function _exportarDetalle() {
+    if (!_vistaDet.length) { showToast('No hay productos remisionados para exportar', '#e74c3c'); return; }
+    var datos = _vistaDet.map(function(r) {
+      return {
+        'Fecha Remisión': r.g.fecha,
+        'Remisión': r.l.remision,
+        'Pedido (OC)': r.g.consecutivo,
+        'Tipo OC': r.g.tipo,
+        'Ref. IASO': r.g.refIaso,
+        'Cliente': r.g.cliente,
+        'Producto': r.l.producto,
+        'Presentación': r.l.presentacion,
+        'Cantidad': r.l.cantidad,
+        'Valor Unitario': r.l.valorUnitario,
+        'Valor Total': r.l.valorTotal,
+        'Bonificado': r.l.bonificado,
+        'N° Factura': r.l.facturaNum,
+        'Fecha Factura': r.l.facturaFecha,
+        'Estado': r.g.estado
+      };
+    });
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.json_to_sheet(datos);
+    ws['!cols'] = [{wch:14},{wch:20},{wch:30},{wch:10},{wch:14},{wch:36},{wch:28},{wch:16},{wch:10},{wch:14},{wch:14},{wch:10},{wch:14},{wch:14},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Productos remisionados');
+    XLSX.writeFile(wb, 'productos_remisionados_IASO_OC_' + today() + '.xlsx');
+    showToast('Excel exportado: ' + _vistaDet.length + ' productos', '#27ae60');
+  }
+
+  // Exporta la vista activa.
   function exportarExcel() {
+    if (_modo === 'detalle') _exportarDetalle(); else _exportarPedidos();
+  }
+
+  // Dos hojas, como Cargas históricas: una fila por pedido y una por línea.
+  function _exportarPedidos() {
     if (!_vista.length) { showToast('No hay pedidos para exportar', '#e74c3c'); return; }
     var pedidosData = _vista.map(function(g) {
       return {
@@ -410,6 +570,8 @@ var OCComoPedido = (function() {
     despachos: despachos,
     render: render,
     ordenar: ordenar,
+    ordenarDetalle: ordenarDetalle,
+    cambiarVista: cambiarVista,
     alternarDetalle: alternarDetalle,
     exportarExcel: exportarExcel
   };
