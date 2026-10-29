@@ -288,6 +288,19 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'cartera';
   }
 
+  // Pestaña «Pedidos IASO» de Pedidos (js/oc-como-pedido.js): las OC que IASO le
+  // hace a PARCELAR se ven como pedidos de un cliente IASO (solo consulta). Aplica
+  // a quien tiene PARCELAR como ÚNICA empresa y un rol que ya lee Pedidos; no al
+  // comercial (RLS lo limita a sus propios pedidos) ni a admin/cartera/gerente_iaso
+  // (ven todo o ya tienen IASO). Es el único interruptor: para cambiar a quién se
+  // le muestra, se cambia esta función.
+  function verPedidosIASO() {
+    if (!_profile) return false;
+    var roles = ['editor', 'lector', 'contabilidad', 'despachador', 'remisionador', 'produccion'];
+    if (roles.indexOf(_profile.rol) < 0) return false;
+    return _companies.length === 1 && _companies[0].sigla === 'PARCELAR';
+  }
+
   // Quién puede poner/quitar el estado "Bloqueado por cartera"
   // (Pedidos.Estado_2 y ClientesUnicos.Estado). El backend lo hace cumplir
   // con dos triggers + la RPC set_bloqueo_cartera_pedido.
@@ -466,6 +479,7 @@ var AUTH = (function() {
     isGerenteIaso: isGerenteIaso,
     isDespachador: isDespachador,
     isCartera: isCartera,
+    verPedidosIASO: verPedidosIASO,
     canToggleBloqueoCartera: canToggleBloqueoCartera,
     canApproveNuevoCliente: canApproveNuevoCliente,
     canDescomprometer: canDescomprometer,

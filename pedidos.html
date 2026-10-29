@@ -247,6 +247,7 @@
     <button class="btn-export" id="tab-detalle" onclick="switchPedidoTab('detalle')" style="background:#718096">📑 Vista detallada</button>
     <button class="btn-export" id="tab-despachos" onclick="switchPedidoTab('despachos')" style="background:#718096;display:none">🚚 Despachos</button>
     <button class="btn-export" id="tab-cargashist" onclick="switchPedidoTab('cargashist')" style="background:#718096;display:none" title="Solo admin — pedidos de carga histórica (anteriores al 2026-07-01) para validarlos">📜 Cargas históricas</button>
+    <button class="btn-export" id="tab-iaso" onclick="switchPedidoTab('iaso')" style="background:#718096;display:none" title="Órdenes de compra que IASO le hace a PARCELAR, vistas como pedidos de un cliente — solo consulta">🏭 Pedidos IASO</button>
   </div>
 
   <div id="panel-ordenes">
@@ -318,6 +319,40 @@
             <tr id="ch-head"></tr>
           </thead>
           <tbody id="ch-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel Pedidos IASO (solo consulta): OC de IASO a PARCELAR vistas como pedidos. Lógica en js/oc-como-pedido.js -->
+  <div id="panel-iaso" style="display:none">
+    <div class="card">
+      <div class="card-head desp-head">
+        <h3>🏭 Pedidos IASO <span id="iaso-count" style="font-weight:400;color:#718096"></span></h3>
+        <div class="desp-filtros">
+          <select id="iaso-f-estado" title="Estado" onchange="OCComoPedido.render()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+            <option value="">Estado: todos</option>
+            <option value="Recibido">Recibido</option>
+            <option value="Parcial">Parcial</option>
+            <option value="Entregado">Entregado</option>
+            <option value="Facturado">Facturado</option>
+          </select>
+          <input type="text" id="iaso-f-buscar" placeholder="Buscar consecutivo, remisión o producto…" oninput="OCComoPedido.render()" style="padding:5px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+          <input type="date" id="iaso-f-desde" title="Fecha del pedido — desde" onchange="OCComoPedido.render()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+          <input type="date" id="iaso-f-hasta" title="Fecha del pedido — hasta" onchange="OCComoPedido.render()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+          <button class="btn-dl" onclick="OCComoPedido.exportarExcel()" style="background:#217346">📊 Exportar Excel</button>
+          <button class="btn-dl" onclick="OCComoPedido.recargar()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="padding:8px 18px;font-size:0.78rem;color:#718096;border-bottom:1px solid #edf2f7">
+        Solo consulta · órdenes de compra que IASO le hace a PARCELAR, vistas como pedidos de un cliente. No crean pedidos ni mueven inventario; sus remisiones también aparecen en la pestaña Despachos.
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr id="iaso-head"></tr>
+          </thead>
+          <tbody id="iaso-body"></tbody>
         </table>
       </div>
     </div>
@@ -999,11 +1034,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js?v=20261023a"></script>
-<script src="js/auth.js?v=20261021"></script>
+<script src="js/auth.js?v=20261029a"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/pedidos.js?v=20261020a"></script>
+<script src="js/oc-como-pedido.js?v=20261029a"></script>
+<script src="js/pedidos.js?v=20261029a"></script>
 </body>
 </html>

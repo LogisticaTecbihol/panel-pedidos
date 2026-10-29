@@ -868,6 +868,7 @@ function _buildOCsLegalizadasMap(ordenes) {
 // ── Load from API ──
 async function loadFromAPI() {
   await _authReady;
+  OCComoPedido.invalidar(); // las OC de IASO (pestaña Pedidos IASO / Despachos) se vuelven a leer
   // incluirGranel=true: la muestra solo a quien ya tenga GRANEL asignada
   // (AUTH.getFilteredEmpresas filtra por usuario_empresas), igual que en
   // Ingresos/Salidas/Reenvases. Los pedidos de Granel solo descuentan su
@@ -1018,6 +1019,7 @@ async function loadFromAPI() {
     renderTable();
     initDespachosTab();
     initCargasHistTab();
+    initIasoTab();
 
     // La mayoría de los pedidos de gerente_iaso (IASO) terminan en Histórico
     // (ya entregados/cerrados); abrir ahí por defecto en la primera carga
@@ -5960,13 +5962,14 @@ async function guardarNuevoPedido() {
 // 'detalle', 'despachos' y 'cargashist' son paneles propios.
 function switchPedidoTab(tab) {
   if (tab === 'cargashist' && !AUTH.isAdmin()) return;
+  if (tab === 'iaso' && !AUTH.verPedidosIASO()) return;
   var scopeTab = (tab === 'activos' || tab === 'historico');
   if (scopeTab) {
     if (pedidoScope !== tab) currentPage = 1;
     pedidoScope = tab;
   }
 
-  ['activos', 'historico', 'detalle', 'despachos', 'cargashist'].forEach(function(t) {
+  ['activos', 'historico', 'detalle', 'despachos', 'cargashist', 'iaso'].forEach(function(t) {
     var btn = document.getElementById('tab-' + t);
     if (btn) btn.style.background = t === tab ? '#1a5276' : '#718096';
   });
@@ -5982,11 +5985,22 @@ function switchPedidoTab(tab) {
   if (panelDesp) panelDesp.style.display = tab === 'despachos' ? 'block' : 'none';
   var panelCh = document.getElementById('panel-cargashist');
   if (panelCh) panelCh.style.display = tab === 'cargashist' ? 'block' : 'none';
+  var panelIaso = document.getElementById('panel-iaso');
+  if (panelIaso) panelIaso.style.display = tab === 'iaso' ? 'block' : 'none';
 
   if (scopeTab) renderTable();
   if (tab === 'detalle') renderDetalle();
   if (tab === 'despachos') buildDespachos();
   if (tab === 'cargashist') renderCargasHist();
+  if (tab === 'iaso') OCComoPedido.render();
+}
+
+// La pestaña "Pedidos IASO" (OC de IASO a PARCELAR vistas como pedidos, solo
+// consulta; ver js/oc-como-pedido.js) solo la ve quien cumpla AUTH.verPedidosIASO();
+// el botón nace oculto y se muestra aquí.
+function initIasoTab() {
+  var btn = document.getElementById('tab-iaso');
+  if (btn && AUTH.verPedidosIASO()) btn.style.display = 'inline-block';
 }
 
 // La pestaña "Cargas históricas" es solo para admin (único rol que crea
@@ -7496,9 +7510,15 @@ var SORT_COLS_DESP = [
   { id:'valor',     label:'Valor Remisión', fn: function(d) { return d.valor || 0; }, style:'text-align:right' },
   { id:'adjuntos',  label:'📎',          fn: function(d) { return adjuntosIndex[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] ? 1 : 0; }, style:'width:60px;text-align:center' },
   { id:'uploaders', label:'Adjuntado por', fn: function(d) { return (adjuntosUploaders[adjuntoKey(d.empresa, d.consecutivo, d.cliente)] || []).join(', ').toLowerCase(); } },
-  { id:'num_factura',   label:'N° Factura',    fn: function(d) { var f = _despFacturaMap[d.remision]; return f ? (f.num_factura || '').toLowerCase() : ''; } },
-  { id:'fecha_factura', label:'Fecha Factura', fn: function(d) { var f = _despFacturaMap[d.remision]; return f ? (f.fecha_factura || '') : ''; } },
+  { id:'num_factura',   label:'N° Factura',    fn: function(d) { return (_despFac(d).num_factura || '').toLowerCase(); } },
+  { id:'fecha_factura', label:'Fecha Factura', fn: function(d) { return _despFac(d).fecha_factura || ''; } },
 ];
+
+// Factura de una remisión: la de las OC de IASO viene en la propia fila (ocVirtual);
+// las demás, de EntregasPedido (_despFacturaMap).
+function _despFac(d) {
+  return d.ocVirtual ? (d.factura || {}) : (_despFacturaMap[d.remision] || {});
+}
 
 function toggleSortDesp(id, e) {
   var shift = e && e.shiftKey;
@@ -7602,6 +7622,20 @@ async function buildDespachos() {
       remMap[key].valor += cant * vUni;
     });
   });
+  // Remisiones de las OC de IASO a PARCELAR (solo para quien ve la pestaña
+  // «Pedidos IASO»): filas de solo consulta, marcadas ocVirtual. Si la consulta
+  // falla, Despachos sigue mostrando los pedidos normales.
+  if (AUTH.verPedidosIASO()) {
+    try {
+      (await OCComoPedido.despachos()).forEach(function(o) {
+        var k = o.empresa + '||' + o.consecutivo + '||' + o.cliente + '||' + o.remision;
+        if (remMap[k]) return;
+        o.pedidoAnulado = false;
+        o.remisionAnulada = !!remAnuladasSet[o.remision];
+        remMap[k] = o;
+      });
+    } catch (e) { console.warn('No se pudieron cargar las OC de IASO en Despachos:', e); }
+  }
   despachosData = Object.keys(remMap).sort(function(a, b) {
     return remMap[b].fecha.localeCompare(remMap[a].fecha) || a.localeCompare(b);
   }).map(function(k) { remMap[k].valor = Math.round(remMap[k].valor * 100) / 100; return remMap[k]; });
@@ -7625,7 +7659,8 @@ async function buildDespachos() {
   selEmp.value = prev || '';
   renderDespachos();
 
-  var allRems = despachosData.map(function(d) { return d.remision; }).filter(Boolean);
+  // Las remisiones de OC traen su factura en la propia OC: no se buscan en EntregasPedido.
+  var allRems = despachosData.filter(function(d) { return !d.ocVirtual; }).map(function(d) { return d.remision; }).filter(Boolean);
   if (allRems.length) {
     try {
       var batchSize = 200;
@@ -7676,7 +7711,7 @@ function renderDespachos() {
         if (hasta && f10 > hasta) return false;
       }
       if (buscar) {
-        var fac = _despFacturaMap[d.remision] || {};
+        var fac = _despFac(d);
         var txt = (d.cliente + ' ' + d.remision + ' ' + d.consecutivo + ' ' + (fac.num_factura || '')).toLowerCase();
         if (txt.indexOf(buscar) < 0) return false;
       }
@@ -7721,15 +7756,18 @@ function renderDespachos() {
       var uploadersHtml = uploaders.length
         ? uploaders.map(function(n) { return '<span style="display:inline-block;background:#ebf5fb;color:#1a5276;padding:1px 7px;border-radius:10px;font-size:0.72rem;font-weight:600;margin:1px 2px">' + escHtml(n) + '</span>'; }).join('')
         : '<span style="color:#cbd5e0;font-size:0.75rem">—</span>';
-      var fac = _despFacturaMap[d.remision] || {};
+      var fac = _despFac(d);
       var nf = escHtml(fac.num_factura || '');
       var ff = fac.fecha_factura || '';
       var facIcon = (nf && ff) ? ' <span style="color:#3730a3;font-weight:700" title="Facturado">✓</span>' : '';
       var remEsc = escHtml(d.remision);
-      var numFacCell = canEdit
+      // Las remisiones de OC de IASO son de solo consulta (ocVirtual): sin campos que escriban.
+      var editaFac = canEdit && !d.ocVirtual;
+      var ocTag = d.ocVirtual ? ' <span title="Orden de compra de IASO a PARCELAR (solo consulta)" style="background:#ebf5fb;color:#1a5276;padding:1px 6px;border-radius:9px;font-size:0.68rem;font-weight:700">OC</span>' : '';
+      var numFacCell = editaFac
         ? '<input type="text" value="' + nf + '" placeholder="—" data-rem="' + remEsc + '" class="desp-fac-num" onchange="onDespFacturaChange(this)" style="width:100px;font-size:0.78rem;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px">' + facIcon
         : '<span style="font-size:0.78rem">' + (nf || '—') + '</span>' + facIcon;
-      var fechaFacCell = canEdit
+      var fechaFacCell = editaFac
         ? '<input type="date" value="' + ff + '" data-rem="' + remEsc + '" class="desp-fac-fecha" onchange="onDespFacturaChange(this)" style="width:130px;font-size:0.78rem;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px">'
         : '<span style="font-size:0.78rem">' + (ff ? formatDateShort(ff) : '—') + '</span>';
       var anulTags = '';
@@ -7737,7 +7775,7 @@ function renderDespachos() {
       if (d.remisionAnulada) anulTags += ' <span style="display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:0px 6px;border-radius:9px;font-size:0.68rem;font-weight:700" title="Registrada en Reportes → Remisiones Anuladas — excluida del Kardex">⛔ Remisión anulada</span>';
       var rowCls = (d.pedidoAnulado || d.remisionAnulada) ? ' class="row-bloqueada-cartera"' : '';
       var tipo = _despTipo(d);
-      var tipoCell = canSetTipo
+      var tipoCell = (canSetTipo && !d.ocVirtual)
         ? '<select class="desp-tipo" data-idx="' + i + '" onchange="onDespTipoChange(this)" style="font-size:0.78rem;padding:3px 6px;border-radius:5px;font-weight:600;' + despTipoCss(tipo) + '">' +
             DESP_TIPOS.map(function(t) { return '<option value="' + t + '"' + (t === tipo ? ' selected' : '') + '>' + t + '</option>'; }).join('') +
           '</select>'
@@ -7745,7 +7783,7 @@ function renderDespachos() {
       return '<tr' + rowCls + '>' +
         '<td style="color:#718096;font-size:0.78rem">' + (i + 1) + '</td>' +
         '<td style="font-size:0.82rem;font-weight:600">' + escHtml(sig) + '</td>' +
-        '<td style="font-size:0.82rem">' + escHtml(d.remision) + anulTags + '</td>' +
+        '<td style="font-size:0.82rem">' + escHtml(d.remision) + ocTag + anulTags + '</td>' +
         '<td style="font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(d.cliente) + '">' + escHtml(d.cliente) + '</td>' +
         '<td style="font-size:0.82rem">' + fechaFmt + '</td>' +
         '<td style="white-space:nowrap">' + tipoCell + '</td>' +
@@ -7777,7 +7815,7 @@ function exportDespachosExcel() {
 
   var data = rows.map(function(d) {
     var key = adjuntoKey(d.empresa, d.consecutivo, d.cliente);
-    var fac = _despFacturaMap[d.remision] || {};
+    var fac = _despFac(d);
     var anulLabels = [];
     if (d.pedidoAnulado) anulLabels.push('Pedido anulado');
     if (d.remisionAnulada) anulLabels.push('Remisión anulada');
@@ -7852,7 +7890,8 @@ function openDespachoAdjuntos(idx) {
   var panel = document.getElementById('desp-adjuntos-panel');
   panel.style.display = 'block';
 
-  var canUpload = AUTH.canUploadAdjuntos();
+  // Las remisiones de OC de IASO (ocVirtual) son de solo consulta: no se suben adjuntos.
+  var canUpload = AUTH.canUploadAdjuntos() && !d.ocVirtual;
   document.getElementById('desp-adjunto-dropzone').style.display = canUpload ? 'block' : 'none';
 
   loadDespachoAdjuntos();
