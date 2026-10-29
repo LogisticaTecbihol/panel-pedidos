@@ -645,6 +645,19 @@ function _apartadoPedKey(a) {
   return _pedKeyPorId(a.pedido_id) || _keyPed(a.empresa_pedido, a.consecutivo, a.cliente);
 }
 
+// N° de la(s) OC de traslado que respaldan un apartado. La migración
+// reservar_stock_oc_traslado deja en `notas` «Reservado por OC <consecutivo> (n ud)»
+// (varias separadas por « | » si llegaron varias OC a la misma línea). Un apartado
+// manual no trae esa nota: devuelve ''.
+function _apartadoOrigenOC(a) {
+  var vistos = {}, out = [];
+  String((a && a.notas) || '').replace(/Reservado por OC ([^\s(|]+)/g, function(_, cons) {
+    if (!vistos[cons]) { vistos[cons] = 1; out.push(cons); }
+    return _;
+  });
+  return out.join(', ');
+}
+
 function _buildApartadosMaps(rows, muRows) {
   apartadosPorPedido = {};
   apartadosPorProdEmp = {};
@@ -665,7 +678,9 @@ function _buildApartadosMaps(rows, muRows) {
       bonificado: a.bonificado || '', _esMuestra: false
     });
     (apartadosPorLinea[a.pedido_id] || (apartadosPorLinea[a.pedido_id] = [])).push({
-      empresa_stock: a.empresa_stock, cantidad: cant, bonificado: a.bonificado || ''
+      empresa_stock: a.empresa_stock, cantidad: cant, bonificado: a.bonificado || '',
+      orden_compra_id: a.orden_compra_id != null ? a.orden_compra_id : null,
+      origenOC: _apartadoOrigenOC(a)
     });
   });
   // Apartados de MUESTRAS que compiten por el mismo (producto, empresa_stock):
@@ -980,7 +995,7 @@ async function loadFromAPI() {
       columns: 'id,Consecutivo,Tipo,Estado,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id'
     }).catch(function() { return { ok: true, ordenes: [] }; });
     var apartadosPromise = apiGet('getApartadosPedido', {
-      columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,bonificado'
+      columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,bonificado,orden_compra_id,notas'
     }).catch(function() { return { ok: true, apartados: [] }; });
     var apartadosMuPromise = apiGet('getApartadosMuestra', {
       columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_aplicacion'
@@ -2191,6 +2206,10 @@ async function openDetail(idx) {
   if (!listaPreciosCache) _acP.push(apiGet('getListaPrecios').then(function(r) { if (r.ok) listaPreciosCache = r.precios || []; }).catch(function() { listaPreciosCache = []; }));
   try { existSnapshot = await Existencias.loadSnapshot(); }
   catch (e) { existSnapshot = null; console.warn('No se pudo cargar existencias:', e); }
+  // Los apartados del panel «Stock ya apartado para este pedido» se leyeron al cargar la
+  // página; si una OC se legalizó después, su reserva nueva no estaría. Se rearman con la
+  // lectura fresca de existencias.
+  _reconstruirApartadosDesdeSnapshot(existSnapshot);
   if (_acP.length) await Promise.all(_acP);
   _mergePreciosEmbedded();
 
@@ -2824,6 +2843,9 @@ function _apartadoLineaHtml(i, l, empresaPedido) {
     var sig = getSigla(a.empresa_stock);
     return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">' +
       '<span style="font-weight:700">🔒 ' + a.cantidad + ' ud apartadas · ' + escHtml(sig) + '</span>' +
+      (a.origenOC
+        ? '<span title="Estas unidades llegaron con la orden de compra de traslado de este pedido: solo esta línea puede despacharlas" style="font-size:0.68rem;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-weight:700">de OC ' + escHtml(a.origenOC) + '</span>'
+        : '') +
       '<button type="button" onclick="emitirEntregaApartado(' + i + ',\'' + escHtml(a.empresa_stock).replace(/'/g,"\\'") + '\',' + a.cantidad + ')" ' +
         'style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer">Emitir entrega</button>' +
       (AUTH.canDescomprometer()
@@ -3234,7 +3256,14 @@ function emitirEntregaApartado(i, empresaStock, cant) {
   var n = Math.min(Number(cant) || 0, tope);
   if (n <= 0) { showToast('La línea ya no tiene pendiente por asignar', '#e67e22'); return; }
   if (!dl._asignaciones) dl._asignaciones = [];
-  dl._asignaciones.push({ empresa_stock: empresaStock, cantidad: n, _fromApartado: true });
+  // Si la reserva viene de una OC de traslado, la entrega queda ligada a esa OC
+  // (EntregasPedido.orden_compra_id): así se ve de qué OC salió lo despachado.
+  var _apa = (apartadosPorLinea[dl.__row] || []).filter(function(x) { return norm(x.empresa_stock) === norm(empresaStock); })[0] || {};
+  dl._asignaciones.push({
+    empresa_stock: empresaStock, cantidad: n, _fromApartado: true,
+    orden_compra_id: _apa.orden_compra_id != null ? _apa.orden_compra_id : null,
+    _origenOC: _apa.origenOC || ''
+  });
   renderAsignacionChips(i);
   _refreshSameProductoCells(i);
   showToast('Añadida entrega de ' + n + ' ud desde ' + getSigla(empresaStock) + ' (apartado). Guarda con «✓ Guardar cambios y enviar».');
@@ -3326,7 +3355,7 @@ function renderAsignacionChips(i) {
     var tag = traslado
       ? '<span title="Genera SOLO una solicitud de compra (OC de traslado, Estado Abierta). La remisión al cliente NO se emite ahora: primero hay que legalizar la OC en Órdenes para que el stock quede en la empresa del pedido." style="color:#c0392b;font-weight:700">🛒 solicitud de compra (remisión pendiente)</span>'
       : '<span style="color:#27ae60;font-weight:700">✓ mismo origen — genera remisión</span>';
-    if (a._fromApartado) tag = '<span style="color:#16a34a;font-weight:700">🔒→✓ desde apartado</span> · ' + tag;
+    if (a._fromApartado) tag = '<span style="color:#16a34a;font-weight:700">🔒→✓ desde apartado' + (a._origenOC ? ' (OC ' + escHtml(a._origenOC) + ')' : '') + '</span> · ' + tag;
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
       '<span style="flex:1"><strong>' + escHtml(a.cantidad) + '</strong> ud · ' + escHtml(sigla) + ' · ' + tag + '</span>' +
       '<button type="button" onclick="removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
@@ -3506,6 +3535,98 @@ async function apartarSinRemisionar() {
   }
 }
 
+// Rearma los mapas de apartados con los apartados de un snapshot de existencias
+// recién leído. Solo si esa lectura salió bien (snap.apartadosOk): con una lectura
+// fallida los mapas quedarían vacíos y se esconderían apartados reales.
+function _reconstruirApartadosDesdeSnapshot(snap) {
+  if (!snap || !snap.apartadosOk || !Array.isArray(snap.apartados)) return;
+  _buildApartadosMaps(
+    snap.apartados.filter(function(a) { return !a._esMuestra; }),
+    snap.apartados.filter(function(a) { return a._esMuestra; })
+  );
+}
+
+// Revalida las entregas directas contra existencias y apartados LEÍDOS DE NUEVO.
+// El selector del modal se arma al abrir el pedido: si pasó un rato y otra persona
+// apartó, despachó o legalizó una OC, esos topes están viejos y la entrega podía
+// usar unidades reservadas para otro pedido.
+//
+// Por línea y empresa de stock, las unidades que salen de SU PROPIO apartado (el de
+// la OC o el manual) se descuentan de lo que pide: solo lo que exceda ese apartado
+// debe caber en el stock LIBRE (existencia − apartados de todos los pedidos). Si no
+// cabe se frena el guardado, se refresca el modal con los datos nuevos y se dice qué
+// pedidos tienen apartado ese producto. Si no se pudo releer, no se frena (el
+// selector ya validó con los datos que tenía).
+async function _validarEntregasContraStockFresco(entregas) {
+  if (!entregas || !entregas.length || typeof Existencias === 'undefined') return true;
+  var btn = document.getElementById('btn-confirmar');
+  var txtBtn = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando existencias...'; }
+  var snap = null;
+  try { snap = await Existencias.loadSnapshot(); }
+  catch (e) { console.warn('No se pudo releer las existencias antes de guardar:', e); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = txtBtn; } }
+  if (!snap || !snap.apartadosOk) return true;
+
+  var apas = (snap.apartados || []).filter(function(a) {
+    return !a._esMuestra && String(a.estado || '') === 'Activo';
+  });
+  // Lo que se entrega ahora por (línea, empresa de stock), menos su propio apartado.
+  var porLinea = {};
+  entregas.forEach(function(ent) {
+    var k = ent.row + '||' + norm(ent.empresa_stock);
+    if (!porLinea[k]) porLinea[k] = { row: ent.row, emp: ent.empresa_stock, idx: ent._idx, cant: 0 };
+    porLinea[k].cant += Number(ent.cantidad) || 0;
+  });
+  var libres = {};
+  Object.keys(porLinea).forEach(function(k) {
+    var g = porLinea[k];
+    var dl = detailWorkingLines[g.idx] || {};
+    var propio = apas.reduce(function(s, a) {
+      return (Number(a.pedido_id) === Number(g.row) && norm(a.empresa_stock) === norm(g.emp))
+        ? s + (Number(a.cantidad) || 0) : s;
+    }, 0);
+    var delLibre = Math.max(0, g.cant - propio);
+    if (delLibre <= 0) return;
+    var prodN = _normProdSel(dl.Producto);
+    var pk = prodN + '||' + norm(g.emp);
+    if (!libres[pk]) libres[pk] = { prod: dl.Producto || '', prodN: prodN, emp: g.emp, necesita: 0 };
+    libres[pk].necesita += delLibre;
+  });
+
+  function leer(mapa, prodN, emp) {
+    var porEmp = (mapa && mapa[prodN]) || {};
+    var total = 0;
+    Object.keys(porEmp).forEach(function(e) { if (norm(e) === norm(emp)) total += Number(porEmp[e]) || 0; });
+    return total;
+  }
+  var propiasRows = {};
+  detailWorkingLines.forEach(function(l) { if (l && l.__row != null) propiasRows[l.__row] = true; });
+  var faltas = [];
+  Object.keys(libres).forEach(function(pk) {
+    var g = libres[pk];
+    var neto = Math.round((leer(snap.saldos, g.prodN, g.emp) - leer(snap.apartadoPorEmpresa, g.prodN, g.emp)) * 100) / 100;
+    if (g.necesita > neto + 1e-6) {
+      var quien = apas.filter(function(a) {
+        return !propiasRows[a.pedido_id] && _normProdSel(a.producto) === g.prodN && norm(a.empresa_stock) === norm(g.emp);
+      }).slice(0, 3).map(function(a) {
+        return getSigla(a.empresa_pedido) + ' #' + a.consecutivo + ' (' + (a.cliente || '—') + ') ' + (Number(a.cantidad) || 0) + ' ud';
+      });
+      faltas.push('«' + g.prod + '» en ' + getSigla(g.emp) + ': necesitas ' + g.necesita + ' de stock libre y hay ' + Math.max(0, neto) +
+        (quien.length ? ' (apartado por: ' + quien.join(', ') + ')' : ''));
+    }
+  });
+  if (!faltas.length) return true;
+
+  // Datos viejos en pantalla: se actualizan para que el usuario vea el tope real.
+  existSnapshot = snap;
+  _reconstruirApartadosDesdeSnapshot(snap);
+  detailWorkingLines.forEach(function(_, i) { refreshAsignacionCell(i); });
+  showToast('🚫 Otro pedido apartó o despachó ese stock mientras tenías este abierto. ' + faltas.join(' · ') +
+    '. Ajusta las cantidades y vuelve a guardar.', '#e74c3c', 12000);
+  return false;
+}
+
 // ── Save all changes (edits + deliveries) ──
 async function guardarTodo() {
   if (activeIdx === null) return;
@@ -3550,7 +3671,9 @@ async function guardarTodo() {
         cantidad: cant,
         empresa_stock: a.empresa_stock,
         remision: rem,
-        fecha: fecha
+        fecha: fecha,
+        // OC de traslado que respalda la reserva de la que sale esta entrega (si la hay)
+        orden_compra_id: a.orden_compra_id != null ? a.orden_compra_id : null
       };
       if (norm(a.empresa_stock) === empPedidoN) entregas.push(item);
       else solicitudesCompra.push(item);
@@ -3564,6 +3687,10 @@ async function guardarTodo() {
     showToast('🚫 Pedido ' + _txtVetoTramite() + ': no se puede registrar entrega de producto ni solicitudes de compra', '#e74c3c');
     return;
   }
+
+  // Antes de gastar el consecutivo de la remisión: las entregas no pueden usar
+  // unidades que otro pedido (o su OC) apartó mientras este modal estaba abierto.
+  if (!(await _validarEntregasContraStockFresco(entregas))) return;
 
   var remGenerada = '';
   if (entregas.length > 0 && !rem) {
@@ -3748,7 +3875,10 @@ async function guardarTodo() {
 
     // Consumir el apartado que respalda cada entrega directa: pasa a
     // 'Consumido' (o baja su cantidad) para que el descuento de Kardex
-    // ocurra una sola vez. Best-effort: si no había apartado, no pasa nada.
+    // ocurra una sola vez. Si no había apartado, no pasa nada. Si el RPC falla la
+    // entrega ya quedó registrada, pero el apartado seguiría activo y restaría dos
+    // veces del disponible neto: se avisa al terminar para que lo libren a mano.
+    var _consFallos = [];
     if (entregas.length > 0) {
       var _consAgg = {};
       entregas.forEach(function(ent) {
@@ -3760,14 +3890,21 @@ async function guardarTodo() {
         if (!_consAgg.hasOwnProperty(_ck)) continue;
         var _parts = _ck.split('||');
         try {
-          await apiPost({
+          var _consRes = await apiPost({
             action: 'consumirApartados',
             pedido_id: Number(_parts[0]),
             empresa_stock: _parts.slice(1).join('||'),
             cantidad: _consAgg[_ck],
             remision: rem || ''
           });
-        } catch (e) { console.warn('consumirApartados:', e); }
+          if (_consRes && _consRes.ok === false) {
+            console.warn('consumirApartados:', _consRes.error);
+            _consFallos.push(_consRes.error || 'sin detalle');
+          }
+        } catch (e) {
+          console.warn('consumirApartados:', e);
+          _consFallos.push((e && e.message) || String(e));
+        }
       }
     }
 
@@ -3876,6 +4013,9 @@ async function guardarTodo() {
     if (solicitudesCompra.length > 0) {
       showToast('⚠ ' + solicitudesCompra.length + ' solicitud(es) de compra pendiente(s) — legalizar la OC en Órdenes para que el stock quede en ' + c.Nombre_Empresa + ' y poder emitir la remisión', '#e67e22');
     }
+    if (_consFallos.length > 0) {
+      showToast('⚠ La entrega quedó registrada, pero no se pudo descontar el apartado del pedido (' + _consFallos[0] + '). Revisa el apartado del pedido y libéralo con «Descomprometer» para que no reste dos veces del disponible.', '#e67e22', 12000);
+    }
     await loadFromAPI();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -3931,7 +4071,7 @@ async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, 
       cantidad: ent.cantidad,
       remision: rem,
       fecha: fecha || null,
-      orden_compra_id: null,
+      orden_compra_id: ent.orden_compra_id != null ? ent.orden_compra_id : null,
       observaciones: obs || '',
       creado_por: uid
     };

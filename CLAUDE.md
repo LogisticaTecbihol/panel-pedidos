@@ -213,3 +213,35 @@ solo componente, `js/productos-solicitud.js` (`psCrear`, lo cargan las dos pági
 - Probado con arneses de navegador sobre las páginas reales con la Edge Function simulada (catálogo con casos reales del maestro, búsqueda, texto libre, repetidos, tope, texto
   pendiente, alta, detalle, edición, escritorio y móvil) y con las dos migraciones en transacciones revertidas contra producción (columnas, CHECK, filas anteriores vacías,
   brief y bitácora de Eventos, idempotencia). El flujo completo con usuarios reales no se probó.
+
+## Pedidos: el stock que trae una OC de traslado queda apartado para SU pedido
+
+Cuando un pedido pide stock a otra empresa se crea una OC `Tipo='Traslado'` ligada a la línea (`OrdenesCompra.pedido_id`, `Ref_Pedido`). Mientras está abierta, esas unidades cuentan
+como apartadas contra la empresa ORIGEN. **Al legalizarse la OC esa reserva desaparecía** y las unidades entraban a la empresa destino como existencia común: cualquier otro pedido
+podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío en las 1.046 filas, así que tampoco quedaba rastro de qué OC respaldaba cada despacho).
+
+- **Migración** (`supabase/migrations/reservar_stock_oc_traslado.sql`, migración remota `reservar_stock_oc_traslado`; aplicar ANTES de publicar el código): trigger
+  `trg_oc_traslado_reserva_pedido` (AFTER UPDATE en `OrdenesCompra`) → `fn_oc_traslado_reserva_pedido` → `reservar_stock_oc_traslado(oc_id)`. Cuando una OC de traslado con `pedido_id`
+  recibe su `Remision` de destino (se legaliza) crea o amplía el apartado Activo de ESA línea en `Empresa_Destino` (`apartados_pedido.orden_compra_id` = la OC y nota
+  «Reservado por OC <consecutivo> (n ud)»; varias OC de la misma línea se acumulan en una sola fila y en la nota). Solo corre al pasar `Remision` de vacío a lleno, así que retocar una OC ya legalizada no reserva otra vez.
+  La base ya exige que la OC esté **Aprobada** para legalizarse (`oc_legalizacion_requiere_aprobacion`), por eso la reserva solo nace de OC aprobadas.
+- **Reglas**: se aparta `MIN(Cantidad de la OC, hueco)` con `hueco = Cantidad − Cant_Entregada − apartados activos de la línea` (si la OC trajo de más, o la línea ya se surtió de otro stock,
+  el sobrante queda libre). No aparta si la OC o la línea están anuladas, si la OC no trae `pedido_id` o si `Empresa_Destino` no es la empresa del pedido. **Nunca bloquea la legalización**:
+  cualquier fallo (p. ej. pedido «Pendiente de aprobación», que `trg_apartado_no_pendiente_aprobacion` rechaza) queda como WARNING y las unidades quedan libres. Un `pg_advisory_xact_lock`
+  por pedido evita que dos OC de la misma línea legalizadas a la vez se pasen del hueco. Las funciones no son llamables por clientes (REVOKE a `public/anon/authenticated`).
+- **Después de la reserva todo lo demás ya existía**: anular el pedido o cerrarlo libera el apartado (`fn_apartados_cascade_pedido`), bajar la cantidad exige «Descomprometer» primero, el panel
+  «Stock ya apartado para este pedido» ofrece «Emitir entrega» / «Liberar», y `consumir_apartados_pedido` lo descuenta al despachar.
+- **Regularización incluida en la migración**: OC ya legalizadas de líneas que siguen abiertas y a las que la OC trajo más unidades de las despachadas desde esa empresa. Hoy eran 2 filas:
+  IASO #30, NUTRICEL K50 X LITRO (pedido_id 2925 → 12 ud, 2926 → 1 ud). El resto de OC legalizadas no se toca. Volver a correr la migración no reserva dos veces (el tope es el hueco).
+- **Pantalla** (`pedidos.js`): el panel muestra la etiqueta «de OC <consecutivo>»; «Emitir entrega» deja el chip con `orden_compra_id` y `EntregasPedido.orden_compra_id` se guarda **solo en las
+  entregas emitidas desde la reserva** (una entrega tomada del stock libre queda en null aunque al guardar `consumirApartados` descuente primero el apartado propio de la línea en esa empresa, como siempre).
+  Al abrir un pedido los mapas de apartados se rearman con el snapshot de existencias recién leído (`_reconstruirApartadosDesdeSnapshot`; antes se leían al cargar la página y una OC
+  legalizada después no aparecía). `loadSnapshot` ahora devuelve `apartadosOk` (false si falló la lectura de apartados) y los apartados traen `orden_compra_id,notas`.
+- **Revalidación al guardar** (`_validarEntregasContraStockFresco`, solo si hay entregas directas): vuelve a leer existencias y apartados, descuenta de cada entrega el apartado propio de la línea
+  y exige que lo que exceda quepa en el stock LIBRE (existencia − apartados de todos). Si no cabe, no se gasta la remisión, se refresca el modal y el aviso nombra qué pedidos tienen apartado
+  ese producto. Si no se pudo releer, no frena (como antes). Si `consumir_apartados_pedido` falla al guardar, ahora se avisa (antes se ignoraba y el apartado quedaba restando dos veces).
+- **Alcance elegido: control solo en pantalla.** No hay candado en la base de datos: una entrega registrada por otra vía todavía podría usar unidades reservadas para otro pedido. Tampoco
+  se cubren las OC de muestras (`muestra_id`) ni las OC de IASO a PARCELAR (`oc-como-pedido.js`, solo consulta).
+- Probado con la migración dentro de una transacción revertida contra producción (regularización: 2 filas, idempotencia, legalizar una OC, tope al hueco, suma sobre un apartado existente, pedido pendiente
+  de aprobación sin bloquear la OC, retoque de una OC ya legalizada, anulación del pedido) y con un arnés de navegador sobre el código real de `pedidos.js`/`existencias.js` (30 comprobaciones: panel, chip,
+  `EntregasPedido`, revalidación y `apartadosOk`). El flujo completo con usuarios reales (legalizar en Órdenes y despachar después) no se probó.

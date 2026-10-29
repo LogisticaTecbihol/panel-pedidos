@@ -390,7 +390,7 @@
     ajustesNC:        'id,Cantidad,Tipo,Motivo,Fecha,Remision,Empresa,Producto,Presentacion,Historico',
     cambios:          'Tipo_Linea,Cantidad,Estado,Consecutivo,Remision_Ingreso,Remision_Salida,Fecha_Ingreso,Fecha_Salida,Fecha_Solicitud,Empresa,Producto,Bodega_Ingreso,Bodega_Salida,Historico,Cierre_Sin_Recepcion,Cierre_Con_Faltante,Movs_Ingreso,Movs_Salida',
     remAnuladas:      'Remision',
-    apartadosPedido:  'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado',
+    apartadosPedido:  'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,plazo_pago,precio_facturacion,fecha_compromiso,bonificado,orden_compra_id,notas',
     apartadosMuestra: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,presentacion,empresa_stock,cantidad,estado,fecha_despacho,fecha_aplicacion'
   };
 
@@ -461,10 +461,12 @@
         .catch(function() { return { ok: true, cambios: [] }; }),
       fuente('remAnuladas', 'getRemisionesAnuladas', 'remisionesAnuladas')
         .catch(function() { return { ok: true, remisionesAnuladas: [] }; }),
+      // ok:false si la lectura de apartados falla: el snapshot sigue saliendo (sin esa capa,
+      // como siempre) pero `apartadosOk` avisa a quien necesite fiarse de ella.
       fuente('apartadosPedido', 'getApartadosPedido', 'apartados')
-        .catch(function() { return { ok: true, apartados: [] }; }),
+        .catch(function() { return { ok: false, apartados: [] }; }),
       fuente('apartadosMuestra', 'getApartadosMuestra', 'apartados')
-        .catch(function() { return { ok: true, apartados: [] }; })
+        .catch(function() { return { ok: false, apartados: [] }; })
     ]);
 
     var sources = {
@@ -511,7 +513,8 @@
       kxMovimientos: kxMovs,
       saldos: saldos,
       apartados: apartados,
-      apartadoPorEmpresa: apartadoPorEmpresa
+      apartadoPorEmpresa: apartadoPorEmpresa,
+      apartadosOk: !!(res[10] && res[10].ok !== false) && !!(res[11] && res[11].ok !== false)
     };
   }
 
