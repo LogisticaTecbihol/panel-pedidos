@@ -474,6 +474,7 @@ async function loadLegalizaciones() {
   populateEmpresaSelect('df-emp', 'Todas');
   populateEmpresaSelect('ef-emp', 'Todas');
   aplicarRestriccionEmpresaPropia();
+  aplicarPermisosEscritura(); // oculta los «+ Nueva…» al rol de solo lectura
   aplicarVisibilidadHistorial(); // pestaña Historial: solo quien concilia y no es de una sola empresa
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
@@ -816,7 +817,7 @@ function renderVehiculosTab() {
   var btnNuevo = document.getElementById('veh-btn-nuevo');
   if (!box) return;
 
-  if (btnNuevo) btnNuevo.style.display = AUTH.hasModule('legalizacion_gastos') ? 'inline-block' : 'none';
+  if (btnNuevo) btnNuevo.style.display = AUTH.canWriteLegalizacion() ? 'inline-block' : 'none';
   var puedeEditar = AUTH.canConciliarGastos();
 
   var rows = applySortLg('veh', vehiculos.slice().sort(function(a, b) { return a.Placa.localeCompare(b.Placa, 'es'); }));
@@ -856,6 +857,7 @@ async function guardarVehiculoCampo(id, campo, valor) {
 }
 
 async function openNuevoVehiculo() {
+  if (!AUTH.canWriteLegalizacion()) return;
   var placa = (prompt('Placa del vehículo nuevo:') || '').trim().toUpperCase();
   if (!placa) return;
   if (placaExiste(placa)) { showToast('Esa placa ya existe en el catálogo', '#e67e22'); return; }
@@ -1146,7 +1148,16 @@ function legEsCompartida(legId) {
 // Editar/eliminar: una legalización compartida la edita quien ve todas las empresas
 // (el formulario reescribe el reparto completo). La BD lo hace cumplir también.
 function puedeEditarLeg(leg) {
-  return !!leg && leg.Estado_Conciliacion === 'Por conciliar' && AUTH.hasModule('legalizacion_gastos') && !legEsCompartida(leg.id);
+  return !!leg && leg.Estado_Conciliacion === 'Por conciliar' && AUTH.canWriteLegalizacion() && !legEsCompartida(leg.id);
+}
+
+// Los botones que crean algo (+ Nueva legalización / mantenimiento / envío) quedan
+// ocultos para el rol de solo lectura; el resto de permisos se decide en AUTH.
+function aplicarPermisosEscritura() {
+  var puede = AUTH.canWriteLegalizacion();
+  document.querySelectorAll('.lg-solo-escritura').forEach(function(el) {
+    el.style.display = puede ? '' : 'none';
+  });
 }
 
 // Deja los filtros de Empresa fijos en la empresa del usuario (sin "Todas": el
@@ -3550,7 +3561,7 @@ function renderRemisionesExternasTab() {
   var box = document.getElementById('ext-body');
   if (!box) return;
   var ctEl = document.getElementById('ext-ct');
-  var puedeEditar = AUTH.hasModule('legalizacion_gastos');
+  var puedeEditar = AUTH.canWriteLegalizacion();
   var puedeBorrar = AUTH.isAdmin();
   var total = Object.keys(remisionesExternas).length;
   var rows = _remisionesExternasFilas();
@@ -3684,6 +3695,7 @@ function recalcTotals() {
 
 // ── Abrir / cerrar formulario (crear o editar) ──
 function openForm(id) {
+  if (!AUTH.canWriteLegalizacion()) return;
   editingLegId = id || null;
   if (editingLegId) {
     var leg = legs.find(function(l) { return l.id === editingLegId; });
@@ -4265,6 +4277,7 @@ function recalcTotalsMant() {
 }
 
 function openFormMant(id) {
+  if (!AUTH.canWriteLegalizacion()) return;
   editingLegId = id || null;
   if (editingLegId) {
     var leg = legs.find(function(l) { return l.id === editingLegId; });
@@ -4529,6 +4542,7 @@ function calcularRepartoEnv() {
 }
 
 function openFormEnvio(id) {
+  if (!AUTH.canWriteLegalizacion()) return;
   editingLegId = id || null;
   var leg = null;
   if (editingLegId) {
@@ -4818,7 +4832,7 @@ function renderVerBody(leg) {
     // Los envíos no se concilian: sin bloque de conciliación.
     (esEnv ? '' : '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Conciliación</h3>' + conciliacionHtml) +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:16px 0 6px">Soportes adjuntos <span id="lg-adj-count"></span></h3>' +
-    (AUTH.hasModule('legalizacion_gastos') && leg.Estado_Conciliacion === 'Por conciliar' ?
+    (AUTH.canWriteLegalizacion() && leg.Estado_Conciliacion === 'Por conciliar' ?
       '<input type="file" id="lg-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleAdjuntoUploadLG(this)" style="margin-bottom:8px">' : '') +
     '<div id="lg-adjuntos-list"></div>' +
     _auditoriaHtml(legAuditoria(leg), false);
@@ -4875,7 +4889,7 @@ async function loadAdjuntosLG(legId) {
     var nameEsc = escHtml(f.name);
     var pathEsc = escHtml(path);
     var leg = legs.find(function(l) { return l.id === legId; });
-    var puedeBorrar = AUTH.hasModule('legalizacion_gastos') && leg && leg.Estado_Conciliacion === 'Por conciliar';
+    var puedeBorrar = AUTH.canWriteLegalizacion() && leg && leg.Estado_Conciliacion === 'Por conciliar';
     return '<div class="adjunto-item">' +
       '<div class="adjunto-icon">' + icon + '</div>' +
       '<div class="adjunto-info">' +

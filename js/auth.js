@@ -258,6 +258,19 @@ var AUTH = (function() {
     return _profile && _profile.rol === 'admin';
   }
 
+  // El rol 'lector' es de solo lectura: ve los módulos que tenga asignados pero no
+  // crea, edita ni elimina nada.
+  function isLector() {
+    return !!(_profile && _profile.rol === 'lector');
+  }
+
+  // Quién puede crear/editar en Legalización de Gastos (legalizaciones, envíos,
+  // vehículos, soportes adjuntos y remisiones externas). Tener el módulo no basta:
+  // el lector lo necesita para ver la pantalla y por eso se excluye aparte.
+  function canWriteLegalizacion() {
+    return !isLector() && hasModule('legalizacion_gastos');
+  }
+
   function canAutoConsec() {
     if (!_profile) return false;
     return _profile.rol === 'admin' || _profile.rol === 'remisionador';
@@ -394,6 +407,7 @@ var AUTH = (function() {
   // El backend lo hace cumplir con el RPC conciliar_legalizacion_gastos.
   function canConciliarGastos() {
     if (!_profile) return false;
+    if (_profile.rol === 'lector') return false; // solo lectura, aunque tenga el permiso
     if (_profile.rol === 'admin') return true;
     return _modules.indexOf('legalizacion_gastos_aprobar') >= 0;
   }
@@ -473,6 +487,8 @@ var AUTH = (function() {
     canManageUsers: canManageUsers,
     canAudit: canAudit,
     isAdmin: isAdmin,
+    isLector: isLector,
+    canWriteLegalizacion: canWriteLegalizacion,
     canAutoConsec: canAutoConsec,
     canDevolverMuestra: canDevolverMuestra,
     isComercial: isComercial,

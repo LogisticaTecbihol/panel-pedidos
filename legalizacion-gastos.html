@@ -166,8 +166,8 @@
     <div class="fg" id="f-fg-hasta"><label>Hasta</label><input type="date" id="f-hasta" onchange="renderTable()"></div>
     <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="responsable, ruta, cliente, N°…" style="width:240px" oninput="renderTable()"></div>
     <div style="margin-left:auto;display:flex;gap:8px">
-      <button class="btn-dl" onclick="openForm()">+ Nueva legalización</button>
-      <button class="btn-dl" onclick="openFormMant()">+ Nuevo mantenimiento</button>
+      <button class="btn-dl lg-solo-escritura" onclick="openForm()">+ Nueva legalización</button>
+      <button class="btn-dl lg-solo-escritura" onclick="openFormMant()">+ Nuevo mantenimiento</button>
     </div>
   </div>
 
@@ -238,7 +238,7 @@
       <div class="fg"><label>Desde</label><input type="date" id="ef-desde" onchange="renderEnviosTable()"></div>
       <div class="fg"><label>Hasta</label><input type="date" id="ef-hasta" onchange="renderEnviosTable()"></div>
       <div class="fg"><label>Buscar</label><input type="text" id="ef-txt" placeholder="proveedor, NIT, remisión, N°…" style="width:240px" oninput="renderEnviosTable()"></div>
-      <div style="margin-left:auto"><button class="btn-dl" onclick="openFormEnvio()">+ Nuevo envío</button></div>
+      <div style="margin-left:auto"><button class="btn-dl lg-solo-escritura" onclick="openFormEnvio()">+ Nuevo envío</button></div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button class="lg-tab" id="envl-sub-lista-btn" onclick="setEnviosSub('lista')" style="background:#1a5276">📋 Lista de envíos</button>
@@ -932,11 +932,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js?v=20261028b"></script>
-<script src="js/auth.js?v=20261021"></script>
+<script src="js/auth.js?v=20261029b"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261028b"></script>
 <script src="js/legalizacion-historial.js?v=20261028c"></script>
-<script src="js/legalizacion-gastos.js?v=20261028g"></script>
+<script src="js/legalizacion-gastos.js?v=20261029a"></script>
 </body>
 </html>
