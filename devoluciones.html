@@ -46,6 +46,17 @@
 .adjunto-upload-progress .prog-bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
 .adjunto-upload-progress .prog-fill{height:100%;background:#1a5276;border-radius:3px;transition:width 0.3s}
 .adjunto-upload-progress .prog-text{font-size:0.72rem;color:#718096;margin-top:4px;text-align:center}
+/* ── Archivos de soporte en los formularios de alta (js/adjuntos-soporte.js) ── */
+.sop-drop{margin-top:0}
+.sop-lista{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.sop-item{display:flex;align-items:center;gap:8px;background:white;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px;font-size:0.8rem}
+.sop-ico{flex-shrink:0}
+.sop-nom{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:#2d3748}
+.sop-tam{flex-shrink:0;color:#a0aec0;font-size:0.72rem}
+.sop-quitar{flex-shrink:0;background:none;border:1px solid #feb2b2;color:#e53e3e;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.72rem}
+.sop-quitar:hover{background:#fff5f5}
+.sop-aviso{font-size:0.78rem;color:#718096;background:#f7fafc;border:1px dashed #cbd5e0;border-radius:6px;padding:8px 12px}
+.adjunto-consec{font-size:0.68rem;background:#ebf5fb;color:#1a5276;border-radius:8px;padding:1px 7px;margin-left:6px;font-weight:700}
 /* ── Sub-pestañas Pendientes / Tramitadas ── */
 #panel-dev-ordenes.solo-lectura .dev-accion-escritura,
 #panel-cam-lista.solo-lectura .cam-accion-escritura{display:none!important}
@@ -597,6 +608,12 @@
         <textarea class="ef" id="dev-observaciones" rows="2" placeholder="Notas adicionales" style="resize:vertical"></textarea>
       </div>
 
+      <!-- Archivos de soporte (opcional): se suben al guardar -->
+      <div style="margin-top:16px">
+        <label class="ef-label">📎 Archivos de soporte (opcional)</label>
+        <div id="dev-soporte"></div>
+      </div>
+
       <div class="auth-admin-only" data-display="block" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">
         <label style="font-size:0.8rem;cursor:pointer;user-select:none;color:#7c2d12">
           <input type="checkbox" id="dev-chk-historico" onchange="toggleCargaHistoricaDev(this.checked)">
@@ -1122,6 +1139,12 @@
         <textarea class="ef" id="cam-observaciones" rows="2" placeholder="Notas adicionales" style="resize:vertical"></textarea>
       </div>
 
+      <!-- Archivos de soporte (opcional): se suben al guardar -->
+      <div style="margin-top:14px">
+        <label class="ef-label">📎 Archivos de soporte (opcional)</label>
+        <div id="cam-soporte"></div>
+      </div>
+
       <div class="auth-admin-only" data-display="block" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">
         <label style="font-size:0.8rem;cursor:pointer;user-select:none;color:#7c2d12">
           <input type="checkbox" id="cam-chk-historico" onchange="toggleCargaHistoricaCam(this.checked)">
@@ -1297,12 +1320,18 @@
     <div id="cam-adjunto-preview-content"></div>
   </div>
 </div>
+<div class="adjunto-preview-overlay" id="dev-adjunto-preview-overlay" onclick="if(event.target===this)closeDevAdjuntoPreview()">
+  <div class="adjunto-preview-box">
+    <button class="btn-close-preview" onclick="closeDevAdjuntoPreview()">✕</button>
+    <div id="dev-adjunto-preview-content"></div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20261028a"></script>
+<script src="js/shared.js?v=20261029a"></script>
 <script src="js/auth.js?v=20261022a"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
@@ -1310,8 +1339,9 @@
 <script src="js/pdf-remision.js?v=20261001a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/asignacion-inventario.js?v=20260909g"></script>
-<script src="js/devoluciones.js?v=20261022a"></script>
-<script src="js/cambios.js?v=20261028a"></script>
+<script src="js/adjuntos-soporte.js?v=20261029a"></script>
+<script src="js/devoluciones.js?v=20261029a"></script>
+<script src="js/cambios.js?v=20261029a"></script>
 <script src="js/despachos-devcam.js?v=20261023a"></script>
 </body>
 </html>

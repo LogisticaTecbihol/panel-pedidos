@@ -95,6 +95,28 @@ El formulario «Registrar Cambio de Mercancía» captura los mismos datos de ent
   migración dentro de una transacción revertida contra producción (columnas, idempotencia, filas anteriores con `''`, inserción, `_kx_movs` idéntico: 4284 filas). El flujo con usuarios
   reales (permisos de lectura de `Pedidos` por rol) no se probó.
 
+## Devoluciones y Cambios: archivos de soporte al registrar
+
+Los formularios «Registrar Devolución» y «Registrar Cambio de Mercancía» (`devoluciones.html`) tienen la zona **opcional** «📎 Archivos de soporte» (`#dev-soporte` / `#cam-soporte`):
+se eligen o arrastran varios archivos antes de guardar y **se suben después de que el registro se guardó bien** (no quedan huérfanos si falla el guardado). Un solo componente,
+`js/adjuntos-soporte.js` (`aspCrear`, `aspFiltrar`, `aspSubir`, `aspSubirSoporte`; lo carga la página antes de `devoluciones.js`/`cambios.js`).
+
+- **Reglas**: PDF/JPG/PNG/WEBP, hasta 5 MB c/u (`ASP_MAX_BYTES`) y 10 archivos por vez (`ASP_MAX_ARCHIVOS`); sin archivos vacíos ni repetidos. Si el navegador no informa el tipo se usa la extensión.
+  Los buckets repiten el tope y los tipos. Si cambias una regla, cámbiala en el bucket también.
+- **Dónde quedan**: Cambios → bucket `cambios-adjuntos` (público, ya existía; es la misma carpeta que lista su detalle: `<SIGLA>/<consecutivo>_<cliente>/<marca>_<nombre>`).
+  Devoluciones → bucket nuevo **`devoluciones-adjuntos`, privado** (URL firmada de 1 h; `supabase/migrations/create_devoluciones_adjuntos.sql`, migración remota `create_devoluciones_adjuntos`,
+  aplicar ANTES de publicar el código; políticas: cualquier usuario autenticado con rol, `get_user_role()` no nulo, igual que las de cambios endurecidas), misma estructura de carpeta (`devAdjuntoFolder`).
+- **Sin consecutivo no se adjunta**: la carga histórica con consecutivo manual vacío no guarda si hay archivos (la carpeta se arma con el consecutivo).
+- **Si falla alguna subida** el registro ya existe: se avisa en un toast largo (`showToast(msg, color, ms)`, 3.er parámetro nuevo y opcional en `shared.js`) y se agrega desde el detalle.
+- **Detalle de la devolución** (nuevo, `devAdjuntosSeccionHtml` / `loadDevAdjuntos` en `devoluciones.js`): lista, ver (imagen/PDF), descargar, eliminar y adjuntar varios; un grupo del listado puede juntar varios
+  consecutivos (misma empresa/cliente/vendedor/fecha): se listan las carpetas de todos con la etiqueta «Consec. N» y se elige a cuál adjuntar. Subir exige `AUTH.canEdit()`, eliminar `AUTH.canUploadAdjuntos()`
+  (igual que el detalle de Cambios, que no se tocó).
+- **En «Editar»** la zona se reemplaza por un aviso (editar un cambio borra y recrea las líneas): los soportes se manejan desde el detalle. «Enviar Solicitud» y las remisiones a contabilidad **no** llevan los adjuntos.
+- La carpeta incluye el nombre del cliente (como en pedidos/cambios): si se edita el cliente de una devolución, sus archivos dejan de verse en el detalle (siguen en Storage).
+- Probado con un arnés de navegador (Supabase simulado en memoria: validación, alta con subida, falla parcial, detalle, grupo con dos consecutivos, ver/descargar/eliminar, edición, histórica sin consecutivo,
+  arrastrar y soltar) y con la migración en una transacción revertida contra producción (bucket, políticas, idempotencia; admin inserta/ve, usuario sin fila en `usuarios` bloqueado, `anon` no ve nada).
+  Subida/URL firmada/eliminación contra Storage real con un usuario real no se probaron.
+
 ## Solicitudes de Eventos (formato MC-ISO-FO01)
 
 `solicitudes-eventos.html` + `js/solicitudes-eventos.js`: el comercial diligencia el formato de solicitud de eventos (6 secciones).

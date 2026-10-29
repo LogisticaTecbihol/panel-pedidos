@@ -826,6 +826,8 @@ function openNewCambio() {
   renderCamLines('entregar');
   buildClientSearchCam();
   camSetupEntrega();
+  camSoporte.limpiar();
+  camSoporte.modoEdicion(false);
   document.getElementById('cam-overlay').classList.add('show');
 }
 
@@ -872,6 +874,8 @@ function openEditCamGroup(key) {
   buildClientSearchCam();
   camSetupEntrega();
   camCargarSucursalesCliente(r.Cliente || '');
+  camSoporte.limpiar();
+  camSoporte.modoEdicion(true);
   document.getElementById('cam-overlay').classList.add('show');
 }
 
@@ -937,6 +941,9 @@ async function saveCambio() {
     return;
   }
 
+  // Los archivos de soporte van a la carpeta <empresa>/<consecutivo>_<cliente>: sin consecutivo no hay dónde ponerlos
+  if (camSoporte.archivos().length && !consecutivo) { showToast('Ingresa el consecutivo para poder adjuntar archivos de soporte', '#e74c3c'); return; }
+
   var btn = document.getElementById('btn-save-cam');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
@@ -971,8 +978,12 @@ async function saveCambio() {
       lineasEntregar: validEntregar
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+    // El cambio ya existe: un fallo al subir el soporte no lo deshace, solo se avisa (aspSubirSoporte no lanza).
+    // Al editar no hay archivos: la zona se oculta (camSoporte.modoEdicion) y estos se manejan desde el detalle.
+    var sop = await aspSubirSoporte(camSoporte, CAM_ADJUNTOS_BUCKET, camAdjuntoFolder(empresa, consecutivo, cliente), btn);
     closeCamModal();
-    showToast('✅ ' + result.added + ' línea(s) registradas');
+    if (sop.falla) showToast('⚠️ Cambio registrado, pero ' + sop.falla, '#e67e22', 9000);
+    else showToast('✅ ' + result.added + ' línea(s) registradas' + sop.extra);
     await loadCambios();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -1874,6 +1885,8 @@ function exportarCamRemisionPDF(tipo, opts) {
 // ── Adjuntos Cambios (Supabase Storage) ──
 var CAM_ADJUNTOS_BUCKET = 'cambios-adjuntos';
 var camAdjuntosCache = {};
+// Zona «📎 Archivos de soporte» del formulario de alta (js/adjuntos-soporte.js): se suben al guardar, a la misma carpeta que lista el detalle
+var camSoporte = aspCrear('cam-soporte');
 
 function camSanitizeForPath(s) {
   return (s || '').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);

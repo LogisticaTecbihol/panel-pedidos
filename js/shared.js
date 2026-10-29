@@ -3088,10 +3088,10 @@ function esSolicitudCompraViva(oc) {
   return true;
 }
 
-function showToast(msg, color) {
+function showToast(msg, color, ms) {
   var t = document.getElementById('toast');
   t.textContent = msg; t.style.background = color || '#1a5276';
-  t.classList.add('show'); setTimeout(function() { t.classList.remove('show'); }, 3500);
+  t.classList.add('show'); setTimeout(function() { t.classList.remove('show'); }, ms || 3500);
 }
 
 var _overlayOpenedAt = 0;

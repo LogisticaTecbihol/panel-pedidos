@@ -698,6 +698,7 @@ function viewDevDetail(key) {
     });
   }
 
+  html += devAdjuntosSeccionHtml(consecList);
   html += _auditoriaHtml(lines, false);
 
   document.getElementById('view-dev-meta').innerHTML =
@@ -709,6 +710,8 @@ function viewDevDetail(key) {
   document.getElementById('view-dev-overlay').classList.add('show');
 
   devViewingKey = key;
+  initDevDropzone();
+  loadDevAdjuntos();
   var btnIn = document.getElementById('btn-dev-rem-ingreso');
   var btnOut = document.getElementById('btn-dev-rem-salida');
   var sendIn = document.getElementById('btn-dev-send-ingreso');
@@ -759,6 +762,213 @@ function viewDevDetail(key) {
 function closeViewDev() {
   document.getElementById('view-dev-overlay').classList.remove('show');
   devViewingKey = null;
+}
+
+// ── Archivos de soporte (Supabase Storage, bucket privado devoluciones-adjuntos) ──
+// Se eligen en el formulario «Registrar Devolución» (js/adjuntos-soporte.js, se suben al guardar) y aquí se ven, descargan,
+// agregan y eliminan. Un grupo del listado (misma empresa/cliente/vendedor/fecha) puede tener varios consecutivos: cada uno
+// tiene su carpeta y se listan todas. Mismo esquema de carpeta que Cambios (camAdjuntoFolder).
+var DEV_ADJUNTOS_BUCKET = 'devoluciones-adjuntos';
+var devSoporte = aspCrear('dev-soporte');
+var devAdjuntosVista = [];   // archivos del detalle abierto: [{ path, name, ext, consec, size }]
+
+function devAdjuntoFolder(empresa, consecutivo, cliente) {
+  var emp = getSiglaDev(empresa).replace(/[^a-zA-Z0-9_-]/g, '_');
+  return emp + '/' + consecutivo + '_' + String(cliente || '').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+}
+
+// Consecutivos distintos de las líneas, de menor a mayor.
+function devConsecutivosDe(lines) {
+  var set = {};
+  lines.forEach(function(l) { if (l.Consecutivo != null && l.Consecutivo !== '') set[l.Consecutivo] = 1; });
+  return Object.keys(set).sort(function(a, b) { return (Number(a)||0) - (Number(b)||0); });
+}
+
+function devAdjuntosSeccionHtml(consecList) {
+  var puede = AUTH.canEdit() && consecList.length > 0;
+  return '<div class="adjuntos-section" id="dev-adjuntos-section">' +
+    '<div class="adjuntos-header">' +
+      '<h4>📎 Archivos de soporte <span class="adjuntos-count" id="dev-adjuntos-count"></span></h4>' +
+      (puede ? '<button class="btn-adjuntar" onclick="document.getElementById(\'dev-adjunto-input\').click()">📤 Adjuntar archivos</button>' : '') +
+    '</div>' +
+    '<div class="adjuntos-list" id="dev-adjuntos-list"><div class="adjuntos-loading">Cargando adjuntos...</div></div>' +
+    (puede && consecList.length > 1
+      ? '<div style="margin-top:8px;font-size:0.76rem;color:#4a5568">Adjuntar al consecutivo: <select class="ef" id="dev-adjunto-consec" style="width:auto;padding:3px 8px;display:inline-block">' +
+          consecList.map(function(c) { return '<option value="' + escHtml(c) + '">' + escHtml(c) + '</option>'; }).join('') + '</select></div>'
+      : '') +
+    (puede ? '<div class="adjunto-dropzone" id="dev-adjunto-dropzone" onclick="document.getElementById(\'dev-adjunto-input\').click()">' +
+      'Arrastra archivos aquí o haz clic para seleccionar · PDF, JPG, PNG, WEBP (máx. ' + (ASP_MAX_BYTES / 1048576) + ' MB c/u)' +
+      '<input type="file" id="dev-adjunto-input" multiple accept="' + ASP_ACCEPT + '" onclick="event.stopPropagation()" onchange="handleDevAdjuntoUpload(Array.prototype.slice.call(this.files));this.value=\'\'">' +
+    '</div>' : '') +
+    '<div class="adjunto-upload-progress" id="dev-adjunto-progress">' +
+      '<div class="prog-bar"><div class="prog-fill" id="dev-adjunto-prog-fill" style="width:0%"></div></div>' +
+      '<div class="prog-text" id="dev-adjunto-prog-text">Subiendo...</div>' +
+    '</div>' +
+  '</div>';
+}
+
+async function loadDevAdjuntos() {
+  var key = devViewingKey;
+  var listEl = document.getElementById('dev-adjuntos-list');
+  var countEl = document.getElementById('dev-adjuntos-count');
+  if (!key || !listEl) return;
+  var lines = devLineasBase(key);
+  if (!lines.length) return;
+  var r = lines[0];
+  var consecs = devConsecutivosDe(lines);
+  if (!consecs.length) {
+    devAdjuntosVista = [];
+    listEl.innerHTML = '<div class="adjuntos-empty">Esta solicitud no tiene consecutivo: no se pueden adjuntar archivos</div>';
+    return;
+  }
+
+  var grupos = await Promise.all(consecs.map(function(c) {
+    var folder = devAdjuntoFolder(r.Empresa, c, r.Cliente);
+    return _sb.storage.from(DEV_ADJUNTOS_BUCKET).list(folder, { limit: 100 }).then(function(res) {
+      return {
+        error: res.error,
+        files: (res.data || []).filter(function(f) { return f.name && f.id; }).map(function(f) {
+          return { path: folder + '/' + f.name, name: f.name, ext: aspExtension(f.name), consec: c, size: f.metadata && f.metadata.size };
+        })
+      };
+    });
+  }));
+  if (devViewingKey !== key) return;   // se cerró o cambió el detalle mientras cargaba
+
+  var fallo = grupos.filter(function(g) { return g.error; })[0];
+  if (fallo) {
+    devAdjuntosVista = [];
+    listEl.innerHTML = '<div class="adjuntos-empty">No se pudieron cargar los archivos: ' + escHtml(fallo.error.message) + '</div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  devAdjuntosVista = [].concat.apply([], grupos.map(function(g) { return g.files; }));
+  if (!devAdjuntosVista.length) {
+    listEl.innerHTML = '<div class="adjuntos-empty">Sin archivos adjuntos</div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  if (countEl) countEl.textContent = '(' + devAdjuntosVista.length + ')';
+  listEl.innerHTML = devAdjuntosVista.map(function(a, i) {
+    return '<div class="adjunto-item">' +
+      '<div class="adjunto-icon">' + (a.ext === 'pdf' ? '📄' : '🖼️') + '</div>' +
+      '<div class="adjunto-info">' +
+        '<div class="adjunto-name" title="' + escHtml(aspNombreVisible(a.name)) + '">' + escHtml(aspNombreVisible(a.name)) +
+          (consecs.length > 1 ? '<span class="adjunto-consec">Consec. ' + escHtml(a.consec) + '</span>' : '') + '</div>' +
+        '<div class="adjunto-meta">' + a.ext.toUpperCase() + (a.size ? ' · ' + aspTamano(a.size) : '') + '</div>' +
+      '</div>' +
+      '<div class="adjunto-actions">' +
+        '<button class="btn-adj-ver" onclick="previewDevAdjunto(' + i + ')">👁 Ver</button>' +
+        '<button class="btn-adj-ver" onclick="downloadDevAdjunto(' + i + ')">⬇ Descargar</button>' +
+        (AUTH.canUploadAdjuntos() ? '<button class="btn-adj-del" onclick="deleteDevAdjunto(' + i + ')">🗑️</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// Sube los archivos elegidos desde el detalle (varios a la vez) a la carpeta del consecutivo indicado.
+async function handleDevAdjuntoUpload(files) {
+  var key = devViewingKey;
+  if (!key) return;
+  var lines = devLineasBase(key);
+  if (!lines.length) return;
+  var r = lines[0];
+  var selEl = document.getElementById('dev-adjunto-consec');
+  var consec = selEl ? selEl.value : devConsecutivosDe(lines)[0];
+  if (!consec) return;
+
+  var f = aspFiltrar(files, 0, null);
+  aspAvisar(f.msgs);
+  if (!f.ok.length) return;
+
+  var progWrap = document.getElementById('dev-adjunto-progress');
+  var progFill = document.getElementById('dev-adjunto-prog-fill');
+  var progText = document.getElementById('dev-adjunto-prog-text');
+  if (progWrap) progWrap.style.display = 'block';
+  if (progFill) progFill.style.width = '30%';
+  var res = await aspSubir(DEV_ADJUNTOS_BUCKET, devAdjuntoFolder(r.Empresa, consec, r.Cliente), f.ok, function(n, total, nombre) {
+    if (progFill) progFill.style.width = Math.round(30 + 60 * (n - 1) / total) + '%';
+    if (progText) progText.textContent = 'Subiendo ' + n + ' de ' + total + ': ' + nombre + '...';
+  });
+  if (progFill) progFill.style.width = '100%';
+  if (progText) progText.textContent = 'Listo';
+  setTimeout(function() { if (progWrap) progWrap.style.display = 'none'; if (progFill) progFill.style.width = '0%'; }, 1200);
+
+  if (res.fallos.length) {
+    showToast('⚠️ ' + (res.subidos ? res.subidos + ' archivo(s) subido(s), pero ' : '') + 'no se pudo subir: ' +
+      res.fallos.map(function(x) { return '«' + x.nombre + '» (' + x.error + ')'; }).join(', '), '#e67e22', 9000);
+  } else {
+    showToast(res.subidos === 1 ? 'Archivo adjuntado correctamente' : res.subidos + ' archivos adjuntados correctamente', '#27ae60');
+  }
+  await loadDevAdjuntos();
+}
+
+// Bucket privado: siempre URL firmada (1 h). «descargar» fuerza la descarga con el nombre original.
+async function devAdjuntoUrl(a, descargar) {
+  var res = await _sb.storage.from(DEV_ADJUNTOS_BUCKET).createSignedUrl(a.path, 3600, descargar ? { download: aspNombreVisible(a.name) } : undefined);
+  return res.data && res.data.signedUrl;
+}
+
+async function previewDevAdjunto(i) {
+  var a = devAdjuntosVista[i];
+  if (!a) return;
+  var url = await devAdjuntoUrl(a, false);
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+  var contentEl = document.getElementById('dev-adjunto-preview-content');
+  contentEl.innerHTML = '';
+  if (a.ext === 'pdf') {
+    var fr = document.createElement('iframe');
+    fr.src = url;
+    contentEl.appendChild(fr);
+  } else {
+    var im = document.createElement('img');
+    im.src = url;
+    im.alt = 'Vista previa';
+    contentEl.appendChild(im);
+  }
+  document.getElementById('dev-adjunto-preview-overlay').classList.add('show');
+}
+
+function closeDevAdjuntoPreview() {
+  document.getElementById('dev-adjunto-preview-overlay').classList.remove('show');
+  document.getElementById('dev-adjunto-preview-content').innerHTML = '';
+}
+
+async function downloadDevAdjunto(i) {
+  var a = devAdjuntosVista[i];
+  if (!a) return;
+  var url = await devAdjuntoUrl(a, true);
+  if (!url) { showToast('No se pudo obtener el archivo', '#e74c3c'); return; }
+  var l = document.createElement('a');
+  l.href = url;
+  l.download = aspNombreVisible(a.name);
+  document.body.appendChild(l);
+  l.click();
+  document.body.removeChild(l);
+}
+
+async function deleteDevAdjunto(i) {
+  var a = devAdjuntosVista[i];
+  if (!a) return;
+  if (!confirm('¿Eliminar este archivo adjunto?')) return;
+  var res = await _sb.storage.from(DEV_ADJUNTOS_BUCKET).remove([a.path]);
+  if (res.error) { showToast('Error al eliminar: ' + res.error.message, '#e74c3c'); return; }
+  // Storage no da error cuando una política impide borrar: simplemente no devuelve el objeto
+  if (!res.data || !res.data.length) { showToast('No se pudo eliminar el archivo (sin permiso)', '#e74c3c'); return; }
+  showToast('Archivo eliminado', '#e67e22');
+  await loadDevAdjuntos();
+}
+
+function initDevDropzone() {
+  var dz = document.getElementById('dev-adjunto-dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    if (e.dataTransfer && e.dataTransfer.files) handleDevAdjuntoUpload(Array.prototype.slice.call(e.dataTransfer.files));
+  });
 }
 
 var devExtrasVista = [];
@@ -1285,6 +1495,8 @@ function openNewDev() {
   devLineas = [{ Num_Factura: '', Producto: '', Presentacion: '', Cantidad: '', Cant_Entregada: '', Valor_Unitario: '', Valor_Total: 0 }];
   renderDevLines();
   buildClientSearchDev();
+  devSoporte.limpiar();
+  devSoporte.modoEdicion(false);
   document.getElementById('dev-overlay').classList.add('show');
 }
 
@@ -1341,6 +1553,8 @@ function openEditDev(row) {
   document.getElementById('dev-edit-valor-unit').oninput = calcEdit;
 
   buildClientSearchDev();
+  devSoporte.limpiar();
+  devSoporte.modoEdicion(true);
   document.getElementById('dev-overlay').classList.add('show');
 }
 
@@ -1448,6 +1662,9 @@ async function saveDevolucion() {
   var esHistoricoDev = !!(chkHistDevSave && chkHistDevSave.checked && AUTH.isAdmin());
   var remHistDevSave = document.getElementById('dev-hist-remision');
 
+  // Los archivos de soporte van a la carpeta <empresa>/<consecutivo>_<cliente>: sin consecutivo no hay dónde ponerlos
+  if (devSoporte.archivos().length && !consecutivo) { showToast('Ingresa el consecutivo para poder adjuntar archivos de soporte', '#e74c3c'); return; }
+
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
 
@@ -1465,8 +1682,11 @@ async function saveDevolucion() {
       Fecha_Devolucion: esHistoricoDev ? fecha : undefined
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+    // La devolución ya existe: un fallo al subir el soporte no la deshace, solo se avisa (aspSubirSoporte no lanza)
+    var sop = await aspSubirSoporte(devSoporte, DEV_ADJUNTOS_BUCKET, devAdjuntoFolder(empresa, consecutivo, cliente), btn);
     closeDevModal();
-    showToast('✅ ' + result.added + ' línea(s) registradas en la nube');
+    if (sop.falla) showToast('⚠️ Devolución registrada, pero ' + sop.falla, '#e67e22', 9000);
+    else showToast('✅ ' + result.added + ' línea(s) registradas en la nube' + sop.extra);
     await loadDevoluciones();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
