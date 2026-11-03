@@ -884,12 +884,14 @@ function renderSolicitudesCompraSection(c) {
     var esc = function(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) {
       return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch];
     }); };
-    return '<div class="sol-item">' +
+    var lib = _btnLiberarOC(s.id, 'Anula la OC ' + s.Consecutivo + ' y libera esas ' + s.Cantidad + ' ud en ' + getSigla(s.Empresa_Origen) + '. La línea del pedido no se borra.');
+    return '<div class="sol-item"' + (lib ? ' style="grid-template-columns:80px 1fr 90px 110px 90px auto"' : '') + '>' +
       '<span class="sol-oc" title="Consecutivo de la OC">' + esc(s.Consecutivo) + '</span>' +
       '<span class="sol-prod">' + esc(s.Producto) + (s.Presentacion ? ' <span style="color:#718096;font-weight:400">· ' + esc(s.Presentacion) + '</span>' : '') + '</span>' +
       '<span class="sol-cant">' + esc(s.Cantidad) + ' ud</span>' +
       '<span class="sol-origen" title="Empresa origen del traslado">desde ' + esc(getSigla(s.Empresa_Origen) || s.Empresa_Origen) + '</span>' +
       '<span class="sol-estado">' + esc(s.Estado) + '</span>' +
+      lib +
     '</div>';
   }).join('');
   host.style.display = 'block';
@@ -3056,7 +3058,18 @@ function _apartadoDetalleFila(d, l) {
   return '<div style="margin-left:8px">• <b>' + escHtml(ped) + '</b>' + (cli ? ' · ' + escHtml(cli) : '') +
     ' · ' + d.cantidad + ' ud · <span style="color:#64748b">' + escHtml(tag) + '</span>' +
     (propio ? ' <span style="background:#dbeafe;color:#1d4ed8;padding:0 5px;border-radius:8px;font-weight:700">este pedido</span>' : '') +
+    (d.tipo === 'solicitud'
+      ? ' ' + _btnLiberarOC(d.oc_id, 'Anula la OC ' + d.oc_consecutivo + ' y libera esas ' + d.cantidad + ' ud en ' + getSigla(d.empresa_stock) + '. La línea del pedido no se borra.')
+      : '') +
   '</div>';
+}
+
+// Botón «Liberar» de una OC de traslado viva (ver liberarOC). Solo a quien puede descomprometer.
+function _btnLiberarOC(ocId, titulo, etiqueta) {
+  if (ocId == null || !AUTH.canDescomprometer()) return '';
+  return '<button type="button" onclick="liberarOC(' + Number(ocId) + ')" title="' + escHtml(titulo) + '" ' +
+    'style="background:#fff;color:#b45309;border:1px solid #b45309;border-radius:4px;padding:1px 7px;font-size:0.7rem;font-weight:700;cursor:pointer;white-space:nowrap">' +
+    escHtml(etiqueta || 'Liberar') + '</button>';
 }
 
 // Detalle de PARA QUÉ PEDIDOS está apartado el producto de la línea, por empresa de stock.
@@ -3340,6 +3353,11 @@ function _ocEnCaminoHtml(m, libre) {
       ? 'Ahora solo puedes asignar ' + libre + ' ud; '
       : 'Por ahora no se puede asignar ni despachar nada más de esta línea; ') +
     'esas ' + m.cant + ' ud salen cuando la OC esté aprobada y legalizada en Órdenes.' +
+    (AUTH.canDescomprometer()
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:3px">' + (m.ocs || []).map(function(o) {
+          return _btnLiberarOC(o.id, 'Anula la OC ' + o.consecutivo + ' y libera esas ' + o.cantidad + ' ud en ' + getSigla(o.origen) + '. La línea del pedido no se borra.', 'Liberar ' + o.cantidad + ' ud');
+        }).join('') + '</div>'
+      : '') +
   '</div>';
 }
 
@@ -3488,6 +3506,78 @@ async function descomprometerOtro(empresa, consecutivo, pedidoId, empresaStock, 
     if (!confirm('¿Liberar el stock apartado del pedido ' + etq + ' en ' + getSigla(empresaStock) + '?')) return;
   }
   await _liberarApartados({ Nombre_Empresa: empresa, Consecutivo: consecutivo }, pedidoId, empresaStock, motivo);
+}
+
+// Recarga la página y vuelve a abrir el pedido que estaba en el modal (consecs se reordena).
+async function _recargarYReabrirDetalle() {
+  var reopenKey = (activeIdx != null && consecs[activeIdx])
+    ? keyOf(consecs[activeIdx].Nombre_Empresa, consecs[activeIdx].Consecutivo, consecs[activeIdx].Cliente)
+    : null;
+  await loadFromAPI();
+  if (reopenKey) {
+    var ni = consecs.findIndex(function(cc) { return keyOf(cc.Nombre_Empresa, cc.Consecutivo, cc.Cliente) === reopenKey; });
+    if (ni >= 0) openDetail(ni);
+  }
+}
+
+// «Liberar» una OC de traslado viva (sin legalizar), la propia o la de otro pedido: la ANULA
+// (Estado='Anulada', como la cascada al anular un pedido y el «Descomprometer» del pedido
+// completo) y su stock en la empresa origen queda libre. La línea del pedido NO se toca: esas
+// unidades vuelven a quedar por asignar. Solo admin/editor, igual que los demás «Liberar».
+// Relee la OC antes de anular: si entre tanto se legalizó, cerró o anuló, no hace nada. Una OC
+// de OTRO pedido pide además un motivo, que queda en las Observaciones de la OC.
+async function liberarOC(ocId) {
+  if (!AUTH.canDescomprometer()) { showToast('Sin permiso para liberar stock de una OC', '#e74c3c'); return; }
+  var c = (activeIdx != null) ? consecs[activeIdx] : null;
+  try {
+    var r = await _sb.from('OrdenesCompra')
+      .select('id,Consecutivo,Tipo,Producto,Cantidad,Empresa_Origen,Empresa_Destino,Ref_Pedido,pedido_id,Estado,Estado_Aprobacion,Remision,Remision_Origen,Observaciones')
+      .eq('id', ocId).maybeSingle();
+    if (r.error) throw new Error(r.error.message);
+    var oc = r.data;
+    if (!oc || !esSolicitudCompraViva(oc) || String(oc.Remision_Origen || '').trim()) {
+      showToast('Esa OC ya no está pendiente (se legalizó, cerró o anuló). Se actualiza la pantalla.', '#e67e22', 6000);
+      await _recargarYReabrirDetalle();
+      return;
+    }
+    var cant = Number(oc.Cantidad) || 0;
+    var propias = c ? getLinesFor(c).map(function(l) { return Number(l.__row); }) : [];
+    var esPropia = oc.pedido_id != null && propias.indexOf(Number(oc.pedido_id)) >= 0;
+    var sinGuardar = (detailWorkingLines || []).some(function(dl) { return dl && (dl._asignaciones || []).length; });
+    var msg = 'Liberar el stock que retiene la OC ' + oc.Consecutivo + '.\n\n' +
+      'Se ANULA la OC: ' + cant + ' ud de ' + (oc.Producto || '') + ' (' + getSigla(oc.Empresa_Origen) + ' → ' + getSigla(oc.Empresa_Destino) + '), ' +
+      (oc.Estado_Aprobacion === 'Aprobada' ? 'aprobada, falta legalizar' : 'por aprobar') + '.\n' +
+      (esPropia
+        ? 'La línea del pedido no se modifica: esas ' + cant + ' ud vuelven a quedar por asignar.'
+        : '⚠️ Es una OC de OTRO pedido (' + (oc.Ref_Pedido || 'sin pedido') + '): su línea no se borra, pero pierde esta solicitud de compra.') +
+      (sinGuardar ? '\n\nLa pantalla se recarga: se pierden las asignaciones de este modal que aún no guardaste.' : '') +
+      '\n\n¿Confirmas?';
+    if (!confirm(msg)) return;
+    var motivo = '';
+    if (!esPropia) {
+      motivo = (window.prompt('Motivo de anular la OC de otro pedido (obligatorio):', '') || '').trim();
+      if (!motivo) { showToast('Liberación cancelada: falta el motivo', '#e67e22'); return; }
+    }
+    var perfil = AUTH.getProfile();
+    var quien = (perfil && (perfil.nombre || perfil.email)) || '';
+    var nota = 'Anulada desde Pedidos' + (c ? ' (' + getSigla(c.Nombre_Empresa) + ' #' + c.Consecutivo + ')' : '') +
+      (quien ? ' por ' + quien : '') + (motivo ? ': ' + motivo : '');
+    var obs = String(oc.Observaciones || '').trim();
+    var q = _sb.from('OrdenesCompra')
+      .update({ Estado: 'Anulada', Observaciones: (obs ? obs + ' | ' : '') + nota, modificado_por: _uid() })
+      .eq('id', oc.id);
+    if (oc.Estado) q = q.eq('Estado', oc.Estado); // si alguien la cambió desde la lectura, no pisa
+    var u = await q.select('id');
+    if (u.error) throw new Error(u.error.message);
+    if (!u.data || !u.data.length) {
+      showToast('La OC cambió mientras tanto y no se anuló. Se actualiza la pantalla.', '#e67e22', 6000);
+    } else {
+      showToast('🔓 OC ' + oc.Consecutivo + ' anulada: ' + cant + ' ud liberadas en ' + getSigla(oc.Empresa_Origen));
+    }
+    await _recargarYReabrirDetalle();
+  } catch (err) {
+    showToast('❌ ' + ((err && err.message) || err), '#e74c3c');
+  }
 }
 
 // "Liberar" en el panel de competencia cuando quien retiene el stock es una MUESTRA.

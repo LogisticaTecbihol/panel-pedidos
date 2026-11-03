@@ -254,6 +254,16 @@ podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío
   `computeApartadoPorEmpresa`, así que lo que suma por empresa es exactamente el «(n apartado)» de cada opción. Respeta las empresas visibles del usuario. `SNAPSHOT_COLS.ordenes` ahora pide
   `id,Consecutivo,pedido_id,Estado_Aprobacion` (para mostrar la OC y el cliente de la solicitud). Al elegir una empresa con apartado el desplegable se abre y resalta su grupo (`onAsignEmpresaChange`).
   Se complementa con el panel «Quién tiene este producto apartado» (`_competenciaApartadoHtml`), que solo sale cuando el neto no alcanza y trae los botones «Liberar».
+- **«Liberar» una OC desde el modal** (`liberarOC`, `pedidos.js`): una OC de traslado viva retiene stock en la empresa origen pero NO es un apartado (`apartados_pedido`), así que «Liberar» y
+  «Descomprometer» por línea no la tocaban y la única salida era Órdenes (el ✕ de la línea borra la línea del pedido, no libera nada). Cada solicitud de compra trae ahora un botón «Liberar»
+  (solo `AUTH.canDescomprometer()`: admin/editor) en el panel «🛒 solicitudes de compra pendientes», en el aviso 🛒 de la línea («Liberar N ud», uno por OC) y en las filas «solicitud de compra
+  OC …» del desplegable «Apartado …» (`getApartadoDetalle` trae `oc_id`). Relee la OC, exige que siga viva (`esSolicitudCompraViva` y sin Remisión de origen) y la ANULA (`Estado='Anulada'`, lo mismo que
+  hace la cascada de `fn_apartados_cascade_pedido` y el «Descomprometer» del pedido completo); la línea del pedido no se toca y esas unidades quedan por asignar. UPDATE directo bajo RLS
+  (`OrdenesCompra_update` admite admin/editor/contabilidad/gerente_iaso/remisionador con acceso a la empresa), sin migración; `trg_oc_traslado_no_excede` solo vigila filas en Estado 'Abierta'. Una OC de
+  OTRO pedido pide además un motivo, que queda en `Observaciones` («Anulada desde Pedidos (IASO #26) por <usuario>: <motivo>»). Si la OC cambió desde la lectura (`.eq('Estado', leído)`) no la pisa.
+  Después recarga y reabre el pedido (se pierden las asignaciones sin guardar; el confirm lo avisa). Los apartados de pedido/muestra del desplegable no llevan botón: se liberan con el panel
+  «Quién tiene este producto apartado» o con «Descomprometer». Probado con un arnés de navegador sobre el código real (38 comprobaciones: render, permisos, OC propia y ajena, OC ya legalizada /
+  cerrada / anulada, 0 filas, error, confirm cancelado); no se probó con un usuario real contra producción.
 - **Alcance elegido: control solo en pantalla.** No hay candado en la base de datos: una entrega registrada por otra vía todavía podría usar unidades reservadas para otro pedido. Tampoco
   se cubren las OC de muestras (`muestra_id`) ni las OC de IASO a PARCELAR (`oc-como-pedido.js`, solo consulta).
 - Probado con la migración dentro de una transacción revertida contra producción (regularización: 2 filas, idempotencia, legalizar una OC, tope al hueco, suma sobre un apartado existente, pedido pendiente

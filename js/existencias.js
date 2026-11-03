@@ -571,7 +571,7 @@
   //     'muestra'   → fila Activa de apartados_muestra (empresa_pedido = empresa de la muestra,
   //                   consecutivo, cliente = responsable/solicitante)
   //     'solicitud' → OC de traslado viva ligada a un pedido, apartada contra Empresa_Origen
-  //                   (ref_pedido, pedido_id, oc_consecutivo, aprobacion)
+  //                   (ref_pedido, pedido_id, oc_id, oc_consecutivo, aprobacion)
   // opts.soloGranel igual que en getPorEmpresa.
   function getApartadoDetalle(snapshot, producto, opts) {
     if (!snapshot) return [];
@@ -613,6 +613,7 @@
       out.push({
         tipo: 'solicitud', empresa_stock: emp, cantidad: n, ref_pedido: oc.Ref_Pedido,
         pedido_id: oc.pedido_id != null ? oc.pedido_id : null,
+        oc_id: oc.id != null ? oc.id : null,
         oc_consecutivo: oc.Consecutivo || '', aprobacion: oc.Estado_Aprobacion || ''
       });
     });
