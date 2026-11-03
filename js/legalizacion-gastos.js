@@ -1301,8 +1301,9 @@ function fmtHora(h) { return h ? String(h).slice(0, 5) : ''; }
 // Tabla (cuadrícula) reutilizable para las dos vistas de prorrateo.
 // rows: [{label, value, pct, html?, legs?}] — html, si viene, reemplaza el
 // texto plano de la primera columna (badge de sigla en "por empresa"); legs
-// (si viene) es [{id, consecutivo}] de las legalizaciones que aportaron a
-// esa fila, mostradas como enlaces a "Ver" debajo del label.
+// (si viene) es [{id, consecutivo, monto?}] de las legalizaciones que aportaron a
+// esa fila, mostradas como enlaces a "Ver" debajo del label; con `monto`, se muestra
+// cuánto aportó cada una (en las filas «Sin reparto asignado»).
 // conCantidades (usuario de una sola empresa, ver _prorrateoConCantidades): agrega,
 // a la derecha de Monto y %, las columnas Litros y Kilos (y Unidades si alguna fila
 // las tiene) con r.litros / r.kilos / r.unidades.
@@ -1318,7 +1319,9 @@ function lgProrrateoTable(rows, headerLabel, conCantidades) {
       var leg = legs.find(function(x) { return x.id === l.id; });
       var kmTxt = (leg && leg.Km_Salida != null && leg.Km_Llegada != null)
         ? ' <span style="color:#a0aec0">(' + (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km)</span>' : '';
-      return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + kmTxt;
+      var montoTxt = (l.monto != null)
+        ? ' <span style="color:#718096" title="Lo que esta legalización aporta a esta tabla">· ' + escHtml(fmtMoney2(l.monto)) + '</span>' : '';
+      return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + montoTxt + kmTxt;
     }).join(', ') + '</div>' : '';
     return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
@@ -1374,7 +1377,9 @@ function renderProrrateoGastos() {
 // Gastos que no se prorratean por producto (Combustible, Mantenimiento) se
 // muestran aparte, por empresa, según el reparto manual de cada legalización.
 // d = { total, porEmpresa: {emp: monto}, legs: {emp: {legId: consecutivo}},
-// sinAsignar, sinAsignarLegs: {legId: consecutivo} }.
+// sinAsignar, sinAsignarLegs: {legId: consecutivo}, sinAsignarMontos?: {legId: monto} }.
+// En «Sin reparto asignado» cada legalización muestra cuánto aporta (sinAsignarMontos): una misma
+// legalización puede estar en varias tablas (Combustible, Otros, Sin identificar) con una parte distinta.
 // El usuario de una sola empresa ve solo la fila de la suya (el % sigue siendo sobre
 // el total) y no «Sin reparto asignado», que no es de ninguna empresa.
 function _gastoAparteRows(d) {
@@ -1387,7 +1392,8 @@ function _gastoAparteRows(d) {
 
   if (d.sinAsignar > 0 && !empresaPropia) {
     var legsSin = Object.keys(d.sinAsignarLegs || {}).map(function(id) {
-      return { id: Number(id), consecutivo: d.sinAsignarLegs[id] };
+      var m = d.sinAsignarMontos ? d.sinAsignarMontos[id] : undefined;
+      return { id: Number(id), consecutivo: d.sinAsignarLegs[id], monto: m != null ? m : undefined };
     }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
     rows.push({ label: 'Sin reparto asignado', value: d.sinAsignar, legs: legsSin });
   }
@@ -1414,7 +1420,8 @@ function renderCombustiblePorEmpresa(calc) {
     porEmpresa: calc.combustiblePorEmpresa,
     legs: calc.combustibleLegs,
     sinAsignar: calc.combustibleSinAsignar,
-    sinAsignarLegs: calc.combustibleSinAsignarLegs
+    sinAsignarLegs: calc.combustibleSinAsignarLegs,
+    sinAsignarMontos: calc.combustibleSinAsignarMontos
   }, 'Sin gastos de Combustible para este período.');
 }
 

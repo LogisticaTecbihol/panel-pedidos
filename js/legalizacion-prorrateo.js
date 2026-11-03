@@ -513,7 +513,8 @@ var LegProrrateo = (function() {
     var sinIdentificar = 0;
     var sinIdentificarRemisiones = {}; // codigoRemision -> true (viajes sin producto litro/kilo resoluble)
     var sinIdentificarLegs = {};       // legId -> Consecutivo
-    var totalGeneral = 0;              // solo lo prorrateado por producto (sin "Sin identificar")
+    var sinIdentificarMontos = {};     // legId -> cuánto aporta esa legalización a «Sin identificar»
+    var totalGeneral = 0;             // solo lo prorrateado por producto (sin "Sin identificar")
     // El mismo monto prorrateado, línea por línea de remisión (sin agrupar por producto ni
     // por empresa): [{ m: línea del mapa de remisiones, codigo: remisión, monto }]. Lo usa el
     // Detalle de remisiones y productos de Legalización para mostrar el gasto de cada fila.
@@ -521,15 +522,18 @@ var LegProrrateo = (function() {
 
     // Combustible: porEmpresa = empresaSigla -> monto; legs = empresaSigla ->
     // { legId -> Consecutivo }; sinAsignar = monto de viajes/mantenimientos sin
-    // reparto manual entre empresas (sinAsignarLegs = legId -> Consecutivo).
-    var combustible = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
+    // reparto manual entre empresas (sinAsignarLegs = legId -> Consecutivo;
+    // sinAsignarMontos = legId -> lo que esa legalización aporta a sinAsignar, para
+    // mostrar el monto junto al consecutivo: una legalización puede aparecer en varias
+    // tablas —Combustible, Otros, Sin identificar— aportando una parte distinta a cada una).
+    var combustible = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, sinAsignarMontos: {}, total: 0 };
 
     // Mantenimiento: igual que el Combustible (tabla propia, sin litros/kilos).
-    var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
+    var mantenimiento = { porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, sinAsignarMontos: {}, total: 0 };
 
     // Otros (concepto "Otros" de los viajes de Ruta): misma forma que el
     // Combustible, pero porEmpresa/legs quedan siempre vacíos (ver _acumularOtros).
-    var otros ={ porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, total: 0 };
+    var otros ={ porEmpresa: {}, legs: {}, sinAsignar: 0, sinAsignarLegs: {}, sinAsignarMontos: {}, total: 0 };
 
     // Reparte subMonto (la porción de líquidos, sólidos o unidades del viaje) entre
     // las líneas de ese tipo, proporcional a sus litros/kilos/unidades movidos.
@@ -579,6 +583,7 @@ var LegProrrateo = (function() {
           combustible.sinAsignar += monto;
           combustible.total += monto;
           combustible.sinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+          combustible.sinAsignarMontos[leg.id] = (combustible.sinAsignarMontos[leg.id] || 0) + monto;
         }
         return;
       }
@@ -594,6 +599,7 @@ var LegProrrateo = (function() {
       otros.sinAsignar += monto;
       otros.total += monto;
       otros.sinAsignarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+      otros.sinAsignarMontos[leg.id] = (otros.sinAsignarMontos[leg.id] || 0) + monto;
     }
 
     // Reparte `monto` de una legalización entre las empresas de su reparto
@@ -608,6 +614,7 @@ var LegProrrateo = (function() {
           dest.sinAsignar += monto;
           dest.total += monto;
           dest.sinAsignarLegs[leg.id] = rotulo;
+          dest.sinAsignarMontos[leg.id] = (dest.sinAsignarMontos[leg.id] || 0) + monto;
         }
         return;
       }
@@ -688,6 +695,7 @@ var LegProrrateo = (function() {
         if (!fEmp) {
           sinIdentificar += totalViaje;
           sinIdentificarLegs[leg.id] = leg.Consecutivo || ('#' + leg.id);
+          sinIdentificarMontos[leg.id] = (sinIdentificarMontos[leg.id] || 0) + totalViaje;
           codigos.forEach(function(c) { sinIdentificarRemisiones[c] = true; });
         }
         return;
@@ -722,13 +730,15 @@ var LegProrrateo = (function() {
       sinIdentificarLegs: sinIdentificarLegs,
       // Misma forma que `otros`/`mantenimiento` para mostrarlo como tabla aparte:
       // un solo monto en "Sin reparto asignado", sin discriminar por empresa.
-      sinIdentificado: { porEmpresa: {}, legs: {}, sinAsignar: sinIdentificar, sinAsignarLegs: sinIdentificarLegs, total: sinIdentificar },
+      sinIdentificarMontos: sinIdentificarMontos,
+      sinIdentificado: { porEmpresa: {}, legs: {}, sinAsignar: sinIdentificar, sinAsignarLegs: sinIdentificarLegs, sinAsignarMontos: sinIdentificarMontos, total: sinIdentificar },
       totalGeneral: totalGeneral,
       lineasMonto: lineasMonto,
       combustiblePorEmpresa: combustible.porEmpresa,
       combustibleLegs: combustible.legs,
       combustibleSinAsignar: combustible.sinAsignar,
       combustibleSinAsignarLegs: combustible.sinAsignarLegs,
+      combustibleSinAsignarMontos: combustible.sinAsignarMontos,
       combustibleTotalGeneral: combustible.total,
       mantenimiento: mantenimiento,
       otros: otros
