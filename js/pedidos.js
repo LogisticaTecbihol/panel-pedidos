@@ -7648,54 +7648,46 @@ var adjuntosIndex = {};
 var adjuntosUploaders = {};
 var _usuariosNombresCache = {};
 
+// Una sola consulta (RPC get_adjuntos_pedidos_resumen) en lugar de un listado de Storage por
+// empresa + uno por carpeta (~399 por carga, saturaban la BD → "statement timeout").
+// Devuelve una fila por (sigla, carpeta del pedido, quien subió).
 async function loadAdjuntosIndex() {
-  adjuntosIndex = {};
   var siglas = EMPRESAS_HOLDING.map(function(e) { return e.sigla; });
-  var promises = siglas.map(function(sigla) {
-    return _sb.storage.from(ADJUNTOS_BUCKET).list(sigla, { limit: 1000 }).then(function(res) {
-      var folders = (res.data || []).filter(function(f) { return f.name && !f.id; });
-      folders.forEach(function(f) {
-        adjuntosIndex[sigla + '_' + f.name] = true;
-      });
-    }).catch(function() {});
+  var res = await _sb.rpc('get_adjuntos_pedidos_resumen');
+  if (res.error) {
+    // Respaldo barato (una llamada por empresa): al menos los 📎; los nombres de "Adjuntado por" quedan como estaban.
+    console.warn('get_adjuntos_pedidos_resumen:', res.error.message);
+    var nuevo = {};
+    await Promise.all(siglas.map(function(sigla) {
+      return _sb.storage.from(ADJUNTOS_BUCKET).list(sigla, { limit: 1000 }).then(function(r) {
+        (r.data || []).filter(function(f) { return f.name && !f.id; }).forEach(function(f) {
+          nuevo[sigla + '_' + f.name] = true;
+        });
+      }).catch(function() {});
+    }));
+    adjuntosIndex = nuevo;
+    updateAdjuntosBadges();
+    return;
+  }
+
+  var index = {};
+  var owners = {};   // clave del pedido → [uid de quien subió]
+  (res.data || []).forEach(function(r) {
+    if (siglas.indexOf(r.sigla) < 0) return;
+    var key = r.sigla + '_' + r.carpeta;
+    index[key] = true;
+    if (r.owner_id) (owners[key] = owners[key] || []).push(r.owner_id);
   });
-  await Promise.all(promises);
+  adjuntosIndex = index;
   updateAdjuntosBadges();
-  loadAdjuntosUploaders();
+  await loadAdjuntosUploaders(owners);
 }
 
-async function loadAdjuntosUploaders() {
-  var keys = Object.keys(adjuntosIndex);
-  if (!keys.length) return;
-
-  var folderMap = {};
-  keys.forEach(function(k) {
-    var idx = k.indexOf('_');
-    if (idx < 0) return;
-    var sigla = k.substring(0, idx);
-    var rest = k.substring(idx + 1);
-    folderMap[k] = sigla + '/' + rest;
-  });
-
+async function loadAdjuntosUploaders(owners) {
   var allOwners = {};
-  var folderEntries = Object.keys(folderMap);
-  var batchSize = 10;
-  for (var b = 0; b < folderEntries.length; b += batchSize) {
-    var batch = folderEntries.slice(b, b + batchSize);
-    var batchPromises = batch.map(function(key) {
-      var folder = folderMap[key];
-      return _sb.storage.from(ADJUNTOS_BUCKET).list(folder, { limit: 100 }).then(function(res) {
-        var files = (res.data || []).filter(function(f) { return f.name && f.id; });
-        var owners = {};
-        files.forEach(function(f) {
-          if (f.owner) owners[f.owner] = true;
-        });
-        adjuntosUploaders[key] = Object.keys(owners);
-        Object.keys(owners).forEach(function(uid) { allOwners[uid] = true; });
-      }).catch(function() {});
-    });
-    await Promise.all(batchPromises);
-  }
+  Object.keys(owners).forEach(function(key) {
+    owners[key].forEach(function(uid) { allOwners[uid] = true; });
+  });
 
   var uidsToFetch = Object.keys(allOwners).filter(function(uid) { return !_usuariosNombresCache[uid]; });
   if (uidsToFetch.length) {
@@ -7707,11 +7699,13 @@ async function loadAdjuntosUploaders() {
     }
   }
 
-  Object.keys(adjuntosUploaders).forEach(function(key) {
-    adjuntosUploaders[key] = adjuntosUploaders[key].map(function(uid) {
+  var uploaders = {};
+  Object.keys(owners).forEach(function(key) {
+    uploaders[key] = owners[key].map(function(uid) {
       return _usuariosNombresCache[uid] || uid.substring(0, 8);
     });
   });
+  adjuntosUploaders = uploaders;
 
   renderDespachos();
 }
