@@ -3955,6 +3955,46 @@ function _faltasStockLibre(snap, entregas) {
   return faltas;
 }
 
+// ── Una remisión = una sola orden ────────────────────────────────────
+// Caso IASO-RS-0171 (2026-11-03): un número escrito a mano (casilla «Auto»
+// desmarcada) se reutilizó en otra orden de OTRO cliente. Aquí se avisa ANTES
+// de gastar el consecutivo o tocar la base; el respaldo es el trigger
+// trg_pedidos_remision_unica_por_orden (supabase/migrations/
+// remision_unica_por_orden_pedidos.sql). «Misma orden» = mismo Consecutivo y
+// mismo Cliente (keyOf), igual que la agrupa este módulo y que el trigger.
+
+// Pura (sin red): de las filas de Pedidos que mencionan `rem`, devuelve la
+// primera que NO es de esta orden, o null. `idsPropios` = ids de las líneas del modal.
+function _remisionFilaOtraOrden(filas, rem, c, idsPropios) {
+  var code = String(rem || '').trim().toUpperCase();
+  if (!code) return null;
+  var propios = {};
+  (idsPropios || []).forEach(function(id) { propios[id] = true; });
+  var cons = String(c.Consecutivo || '').trim();
+  var cli = norm(c.Cliente);
+  for (var i = 0; i < (filas || []).length; i++) {
+    var f = filas[i];
+    if (propios[f.id]) continue;
+    var codes = String(f.Remisiones || '').split(',').map(function(s) { return s.split('|')[0].trim().toUpperCase(); });
+    if (codes.indexOf(code) < 0) continue;
+    if (String(f.Consecutivo || '').trim() === cons && norm(f.Cliente) === cli) continue;
+    return f;
+  }
+  return null;
+}
+
+// Devuelve la fila de otra orden de la MISMA empresa que ya usa `rem`, o null.
+// Si no se puede consultar, no frena (el trigger de la base es el respaldo).
+async function _remisionUsadaEnOtraOrden(rem, c, idsPropios) {
+  var code = String(rem || '').trim();
+  if (!code) return null;
+  var patron = '%' + code.replace(/[\\%_]/g, '\\$&') + '%';
+  var res = await _sb.from('Pedidos').select('id,Consecutivo,Cliente,Remisiones')
+    .eq('Nombre_Empresa', c.Nombre_Empresa).ilike('Remisiones', patron);
+  if (res.error) { console.warn('No se pudo verificar si la remisión ya está en otra orden:', res.error.message); return null; }
+  return _remisionFilaOtraOrden(res.data, code, c, idsPropios);
+}
+
 // ── Save all changes (edits + deliveries) ──
 async function guardarTodo() {
   if (activeIdx === null) return;
@@ -4014,6 +4054,19 @@ async function guardarTodo() {
   if (_detailBloqueadoCartera && (entregas.length > 0 || solicitudesCompra.length > 0)) {
     showToast('🚫 Pedido ' + _txtVetoTramite() + ': no se puede registrar entrega de producto ni solicitudes de compra', '#e74c3c');
     return;
+  }
+
+  // Número escrito a mano (casilla «Auto» desmarcada): no puede ser de otra
+  // orden. Antes de gastar el consecutivo y de escribir nada en la base.
+  if (rem) {
+    var _otraOrden = await _remisionUsadaEnOtraOrden(rem, c, detailWorkingLines.map(function(l) { return l && l.__row; }).filter(Boolean));
+    if (_otraOrden) {
+      var _elRem = document.getElementById('m-remision');
+      _elRem.classList.add('error');
+      showToast('🚫 La remisión ' + rem + ' ya pertenece a la orden ' + (_otraOrden.Consecutivo || '?') + ' (' + (_otraOrden.Cliente || 'sin cliente') + '). Una remisión corresponde a una sola orden: deja «Auto» para generar un número nuevo o escribe otro.', '#e74c3c', 9000);
+      _elRem.focus();
+      return;
+    }
   }
 
   // Antes de gastar el consecutivo de la remisión: las entregas no pueden usar

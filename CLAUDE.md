@@ -269,3 +269,25 @@ podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío
 - Probado con la migración dentro de una transacción revertida contra producción (regularización: 2 filas, idempotencia, legalizar una OC, tope al hueco, suma sobre un apartado existente, pedido pendiente
   de aprobación sin bloquear la OC, retoque de una OC ya legalizada, anulación del pedido) y con un arnés de navegador sobre el código real de `pedidos.js`/`existencias.js` (30 comprobaciones: panel, chip,
   `EntregasPedido`, revalidación y `apartadosOk`). El flujo completo con usuarios reales (legalizar en Órdenes y despachar después) no se probó.
+
+## Pedidos: una remisión = una sola orden
+
+Caso **IASO-RS-0171** (2026-11-03): quedó en la orden 146 (AGROPECUARIA INTERNACIONAL SAS, 5:00 p.m.) y en la 152 (HURTADO SANTANA DENIS MACIEL, 5:06 p.m.), y Reportes → Remisiones mostraba
+«Orden 146, Orden 152». El contador emitió el 0171 una sola vez: el segundo uso fue un número **escrito a mano** (rol `admin`/`remisionador`, casilla «Auto» desmarcada en `pedidos.html`; `AUTH.canAutoConsec`)
+y no había ninguna validación. De 422 remisiones de pedidos era la única que cubría más de una orden/cliente. **Reportes agrupa por empresa + número + módulo** (`reportes.js`, `_buildRemisionesInner`): no valida nada, solo refleja el dato.
+
+- **«Misma orden»** = mismo `Consecutivo` y mismo `Cliente` dentro de la misma `Nombre_Empresa` (la clave `keyOf` con la que `pedidos.js` arma cada orden). **El consecutivo NO identifica una orden por sí solo**: un mismo
+  consecutivo agrupa varios clientes (p. ej. IASO #148 = AGRONIZA y EXIAGRICOLA, cada uno con su remisión; PARCELAR #91–95 igual). Agregar líneas al MISMO pedido con su remisión sigue permitido.
+- **Dos capas** (si cambias la regla, cámbiala en las dos):
+  1. **Pantalla** (`pedidos.js`, `_remisionFilaOtraOrden` / `_remisionUsadaEnOtraOrden`, llamadas al inicio de `guardarTodo`): si hay un número escrito a mano, consulta `Pedidos` de la empresa y, si otra orden ya lo usa, **bloquea**
+     con un toast que nombra la orden y el cliente. Va ANTES de gastar el consecutivo y de escribir nada. Si la consulta falla no frena (el trigger es el respaldo).
+  2. **Base** (`supabase/migrations/remision_unica_por_orden_pedidos.sql`, migración remota `remision_unica_por_orden_pedidos` aplicada el 2026-11-04; rollback `..._rollback.sql`): trigger `trg_pedidos_remision_unica_por_orden`
+     (BEFORE UPDATE OF `Remisiones` en `Pedidos`, `WHEN` el valor cambia) → `fn_pedidos_remision_unica_por_orden` + `fn_pedidos_codigos_remision`. Va sobre `Pedidos.Remisiones` y no sobre `EntregasPedido`
+     porque el Kardex, Existencias y Reportes leen ese campo (`EntregasPedido` es un log secundario). Solo valida los números que la línea AGREGA, así que el 0171 ya repetido no bloquea otras ediciones ni su corrección.
+     Acepta el cliente anterior (`OLD`) o el nuevo (`NEW`) porque `editar_pedido_completo` actualiza línea por línea. `SECURITY DEFINER` (ve órdenes que la RLS del usuario no ve) y `pg_advisory_xact_lock`
+     por empresa+número contra guardados simultáneos. Rechazo duro (23505): `editar_pedido_completo` es una sola transacción y el mensaje llega a `pedidos.js`.
+- **Alcance**: solo Pedidos. Ingresos, OC, Muestras, Reenvases y Devoluciones comparten el contador pero no este candado. Entre empresas distintas no se compara. **No corrige datos existentes**: el borrador
+  `sql/corregir_remision_iaso_rs_0171_orden_152.sql` (NO ejecutado) deja el 0171 en la 146 y pasa la 152 a un número nuevo; antes hay que confirmar con la remisionadora qué número lleva el documento ya impreso.
+- Probado con la migración dentro de una transacción revertida contra producción (10 casos: sin cambio sobre el 0171 repetido, número de otra orden, número libre, hermana de la misma orden, mismo consecutivo con otro cliente,
+  cambio de cliente en el mismo guardado, otra empresa, minúsculas, volver a poner el 0171) y con un arnés de navegador sobre el `pedidos.js` real (15 casos: caso real, misma orden, otro cliente, minúsculas, subcadenas,
+  lista heredada sin `|`, comodines `%`/`_`, otra empresa, error de red). El flujo completo con un usuario real no se probó.
