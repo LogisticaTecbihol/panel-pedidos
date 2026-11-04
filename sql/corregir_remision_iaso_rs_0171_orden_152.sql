@@ -1,5 +1,5 @@
 -- ============================================================
--- BORRADOR — NO EJECUTAR hasta confirmar con Lady Puentes (remisionadora).
+-- EJECUTADO el 2026-11-04 — NO volver a ejecutar (ver «Resultado» más abajo).
 --
 -- Corrección de datos: IASO-RS-0171 quedó en DOS órdenes de clientes distintos.
 --
@@ -10,15 +10,21 @@
 -- vez, para la orden 146. La orden 152 lo recibió escrito a mano. Por eso este
 -- borrador deja el 0171 en la 146 y pasa la 152 a un número nuevo.
 --
--- ANTES DE EJECUTAR, confirmar con Lady:
---   1. Qué número lleva realmente el documento físico/PDF que salió con el pedido
---      de HURTADO SANTANA. Al guardar, el panel imprime el PDF con el número
---      escrito, así que lo más probable es que ese PDF diga 0171 y ya esté con el
---      cliente y/o contabilidad. Si es así, cambiar el número en el sistema deja
---      el sistema distinto del documento entregado: conviene avisar a contabilidad
---      (y, si corresponde, reemitir el PDF con el número nuevo).
---   2. Si el 0171 correcto es el de la orden 152 (y no el de la 146), intercambiar:
---      ids de Pedidos 2916 / EntregasPedido 1118 / orden '146' en lugar de los de la 152.
+-- Resultado: la orden 152 quedó en IASO-RS-0174 (el contador IASO/SALIDA pasó de 173
+-- a 174) y la 146 conserva IASO-RS-0171. Se decidió sin consultar a la remisionadora
+-- porque el propio sistema lo respondía: el contador emitió el 0171 una sola vez,
+-- para la 146 (2026-11-03 5:00 p. m.), y los avisos a contabilidad de las dos
+-- órdenes salieron titulados «Rem IASO-RS-0171» (146: Alison Vargas y Lizeth Bonilla;
+-- 152: Alison Vargas y Sharon Bajonero). Ninguna de las tres entregas tenía factura.
+--
+-- Pendiente, fuera de la base: reemitir el PDF de la 152 con el número nuevo y
+-- reenviarlo a Alison y Sharon pidiéndoles descartar el anterior. Los avisos viejos
+-- de la tabla notificaciones siguen titulados 0171 y no se tocaron (es historial).
+-- NO usar «Remisión anulada» para el 0171 de la 152: funciona por número y
+-- excluiría también la remisión de la 146 del Kardex.
+--
+-- Si hubiera que invertir el criterio (dejar el 0171 en la 152 y renumerar la 146),
+-- usar ids de Pedidos 2916 / EntregasPedido 1118 / orden '146'.
 --
 -- Qué hace (en una transacción, con guardas: si el dato ya cambió, no hace nada):
 --   · toma el siguiente número del contador IASO/SALIDA (igual que el RPC
