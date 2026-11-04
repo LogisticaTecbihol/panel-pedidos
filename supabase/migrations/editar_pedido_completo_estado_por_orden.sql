@@ -1,0 +1,194 @@
+-- ============================================================
+-- editar_pedido_completo: el recálculo de Estado_Entrega es POR ORDEN, no por consecutivo.
+--
+-- Una orden de Pedidos es Nombre_Empresa + Consecutivo + Cliente. El consecutivo lo lleva cada
+-- comercial por separado, así que el mismo número lo tienen varias órdenes de clientes distintos
+-- (p. ej. PARCELAR #95 = VALDERRAMA, AGRICOLA CADENA y JOHANA GONZALEZ).
+--
+-- Defecto: al final de la función, el UPDATE de Estado_Entrega y su CTE order_stats filtraban solo
+-- por Nombre_Empresa + Consecutivo. Guardar una orden recalculaba también las filas de OTROS
+-- clientes con el mismo número, y `any_delivery` (bool_or de Cant_Entregada > 0) se medía entre
+-- todos ellos: una línea sin entregas quedaba en «Parcial» porque otro cliente SÍ había recibido.
+-- Medido en producción el 2026-11-04: 15 filas (4 órdenes) en «Parcial» sin ninguna entrega propia.
+--
+-- Cambio: ese UPDATE y su CTE ahora también filtran por Cliente (el del header, que las líneas
+-- actualizadas ya llevan). Si el header no trae Cliente no se recalcula nada (IS NOT DISTINCT FROM NULL
+-- no empareja ninguna fila): falla del lado seguro. Todo lo demás es IDÉNTICO al cuerpo vigente en
+-- producción (copiado de pg_get_functiondef): permisos, líneas, inserciones y borrados.
+--
+-- NO corrige las filas ya contaminadas: eso va en un script de datos aparte (se revisa antes).
+-- Contraparte en el navegador: js/shared.js (acción editarPedido) filtra por Cliente sus dos UPDATE
+-- (comercial_id y marca de «modificado»). Esta migración es independiente: se puede aplicar antes
+-- de publicar ese código. Rollback: editar_pedido_completo_estado_por_orden_rollback.sql.
+--
+-- Probar sin guardar: envolver en BEGIN; … ROLLBACK;
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.editar_pedido_completo(p_header jsonb, p_lineas jsonb, p_delete_ids bigint[] DEFAULT '{}'::bigint[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  lin jsonb;
+  v_row bigint;
+  v_updated int := 0;
+  v_added int := 0;
+  v_deleted int := 0;
+  v_uid UUID := auth.uid();
+  v_role text := public.get_user_role();
+BEGIN
+  IF NOT public.user_has_company(p_header->>'Nombre_Empresa') THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
+  IF v_role = ANY(ARRAY['admin','editor','contabilidad','gerente_iaso','remisionador']) THEN
+    NULL; -- staff: acceso completo dentro de su(s) empresa(s)
+  ELSIF v_role = 'comercial' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM "Pedidos"
+      WHERE "Nombre_Empresa" = p_header->>'Nombre_Empresa'
+        AND "Consecutivo" = p_header->>'Consecutivo'
+        AND (comercial_id = v_uid OR creado_por = v_uid)
+    ) THEN
+      RAISE EXCEPTION 'No autorizado';
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM jsonb_array_elements(p_lineas) AS le(lin)
+      WHERE (le.lin->>'__row') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM "Pedidos" p
+          WHERE p.id = (le.lin->>'__row')::bigint
+            AND p."Nombre_Empresa" = p_header->>'Nombre_Empresa'
+            AND p."Consecutivo" = p_header->>'Consecutivo'
+        )
+    ) THEN
+      RAISE EXCEPTION 'No autorizado';
+    END IF;
+    IF p_delete_ids IS NOT NULL AND array_length(p_delete_ids, 1) > 0 AND EXISTS (
+      SELECT 1 FROM "Pedidos" p
+      WHERE p.id = ANY(p_delete_ids)
+        AND NOT (p."Nombre_Empresa" = p_header->>'Nombre_Empresa' AND p."Consecutivo" = p_header->>'Consecutivo')
+    ) THEN
+      RAISE EXCEPTION 'No autorizado';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
+  FOR lin IN SELECT * FROM jsonb_array_elements(p_lineas)
+  LOOP
+    v_row := (lin->>'__row')::bigint;
+    IF v_row IS NOT NULL THEN
+      UPDATE "Pedidos" SET
+        "Cliente" = COALESCE(p_header->>'Cliente', "Cliente"),
+        "NIT" = COALESCE(p_header->>'NIT', "NIT"),
+        "Fecha_Pedido" = COALESCE(p_header->>'Fecha_Pedido', "Fecha_Pedido"),
+        "Fecha_Compromiso" = COALESCE(p_header->>'Fecha_Compromiso', "Fecha_Compromiso"),
+        "Comercial" = COALESCE(p_header->>'Comercial', "Comercial"),
+        "Municipio" = COALESCE(p_header->>'Municipio', "Municipio"),
+        "Departamento" = COALESCE(p_header->>'Departamento', "Departamento"),
+        "Telefono" = COALESCE(p_header->>'Telefono', "Telefono"),
+        "Plazo_Pago" = COALESCE(p_header->>'Plazo_Pago', "Plazo_Pago"),
+        "Precio_Facturacion" = COALESCE(p_header->>'Precio_Facturacion', "Precio_Facturacion"),
+        "Facturar_A" = COALESCE(p_header->>'Facturar_A', "Facturar_A"),
+        "NIT_Adicional" = COALESCE(p_header->>'NIT_Adicional', "NIT_Adicional"),
+        "Consignacion" = COALESCE(p_header->>'Consignacion', "Consignacion"),
+        "Bodega_Facturacion" = COALESCE(p_header->>'Bodega_Facturacion', "Bodega_Facturacion"),
+        "Sucursal" = COALESCE(p_header->>'Sucursal', "Sucursal"),
+        "Bodega_Consignacion_Id" = COALESCE((p_header->>'Bodega_Consignacion_Id')::bigint, "Bodega_Consignacion_Id"),
+        "Total_Orden" = COALESCE((p_header->>'Total_Orden')::numeric, "Total_Orden"),
+        "Estado_2" = COALESCE(p_header->>'Estado_2', "Estado_2"),
+        "Producto" = COALESCE(lin->>'Producto', "Producto"),
+        "Presentacion" = COALESCE(lin->>'Presentacion', "Presentacion"),
+        "Cantidad" = COALESCE((lin->>'Cantidad')::numeric, "Cantidad"),
+        "Valor_Unitario" = COALESCE((lin->>'Valor_Unitario')::numeric, "Valor_Unitario"),
+        "Valor_Total" = COALESCE((lin->>'Valor_Total')::numeric, "Valor_Total"),
+        "Cant_Entregada" = COALESCE((lin->>'Cant_Entregada')::numeric, "Cant_Entregada"),
+        "Cant_Pendiente" = COALESCE((lin->>'Cant_Pendiente')::numeric, "Cant_Pendiente"),
+        "Estado_Entrega" = COALESCE(lin->>'Estado_Entrega', "Estado_Entrega"),
+        "Fecha_Ult_Entrega" = COALESCE(NULLIF(lin->>'Fecha_Ult_Entrega', ''), "Fecha_Ult_Entrega"),
+        "Remisiones" = COALESCE(lin->>'Remisiones', "Remisiones"),
+        "Bonificado" = COALESCE(lin->>'Bonificado', "Bonificado"),
+        modificado_por = v_uid
+      WHERE id = v_row;
+      v_updated := v_updated + 1;
+    ELSE
+      INSERT INTO "Pedidos" (
+        "Fecha_Procesamiento","Nombre_Empresa","Consecutivo","Fecha_Pedido","Fecha_Compromiso",
+        "Cliente","NIT","Telefono","Direccion_Envio","Municipio","Departamento",
+        "Comercial","Plazo_Pago","Precio_Facturacion","Producto","Presentacion",
+        "Cantidad","Valor_Unitario","Valor_Total","Total_Orden","Archivo_Fuente",
+        "Estado","Observaciones","Estado_2","Bonificado",
+        "Facturar_A","NIT_Adicional","Consignacion","Bodega_Facturacion","Sucursal",
+        "Bodega_Consignacion_Id",
+        creado_por
+      ) VALUES (
+        COALESCE(lin->>'Fecha_Procesamiento', p_header->>'Fecha_Procesamiento', ''),
+        COALESCE(lin->>'Nombre_Empresa', p_header->>'Nombre_Empresa', ''),
+        COALESCE(lin->>'Consecutivo', p_header->>'Consecutivo', ''),
+        COALESCE(lin->>'Fecha_Pedido', p_header->>'Fecha_Pedido', ''),
+        COALESCE(lin->>'Fecha_Compromiso', p_header->>'Fecha_Compromiso', ''),
+        COALESCE(lin->>'Cliente', p_header->>'Cliente', ''),
+        COALESCE(lin->>'NIT', p_header->>'NIT', ''),
+        COALESCE(lin->>'Telefono', p_header->>'Telefono', ''),
+        COALESCE(lin->>'Direccion_Envio', p_header->>'Direccion_Envio', ''),
+        COALESCE(lin->>'Municipio', p_header->>'Municipio', ''),
+        COALESCE(lin->>'Departamento', p_header->>'Departamento', ''),
+        COALESCE(lin->>'Comercial', p_header->>'Comercial', ''),
+        COALESCE(lin->>'Plazo_Pago', p_header->>'Plazo_Pago', ''),
+        COALESCE(lin->>'Precio_Facturacion', p_header->>'Precio_Facturacion', ''),
+        COALESCE(lin->>'Producto', ''),
+        COALESCE(lin->>'Presentacion', ''),
+        COALESCE((lin->>'Cantidad')::numeric, 0),
+        COALESCE((lin->>'Valor_Unitario')::numeric, 0),
+        COALESCE((lin->>'Valor_Total')::numeric, 0),
+        COALESCE((p_header->>'Total_Orden')::numeric, 0),
+        COALESCE(lin->>'Archivo_Fuente', p_header->>'Archivo_Fuente', ''),
+        'recibido',
+        COALESCE(lin->>'Observaciones', p_header->>'Observaciones', ''),
+        'Abierto',
+        COALESCE(lin->>'Bonificado', ''),
+        COALESCE(p_header->>'Facturar_A', ''),
+        COALESCE(p_header->>'NIT_Adicional', ''),
+        COALESCE(p_header->>'Consignacion', 'No'),
+        COALESCE(p_header->>'Bodega_Facturacion', ''),
+        COALESCE(p_header->>'Sucursal', ''),
+        NULLIF(p_header->>'Bodega_Consignacion_Id','')::bigint,
+        v_uid
+      );
+      v_added := v_added + 1;
+    END IF;
+  END LOOP;
+
+  -- Estado_Entrega de las filas de ESTA orden (Nombre_Empresa + Consecutivo + Cliente).
+  -- Antes se filtraba solo por empresa + consecutivo y tocaba también a otros clientes.
+  IF p_header->>'Nombre_Empresa' IS NOT NULL AND p_header->>'Consecutivo' IS NOT NULL THEN
+    WITH order_stats AS (
+      SELECT bool_or(COALESCE("Cant_Entregada", 0) > 0) AS any_delivery
+      FROM "Pedidos"
+      WHERE "Nombre_Empresa" = p_header->>'Nombre_Empresa'
+        AND "Consecutivo" = p_header->>'Consecutivo'
+        AND "Cliente" IS NOT DISTINCT FROM p_header->>'Cliente'
+    )
+    UPDATE "Pedidos" p SET
+      "Estado_Entrega" = CASE
+        WHEN COALESCE(p."Cantidad", 0) > 0 AND COALESCE(p."Cant_Entregada", 0) >= p."Cantidad" THEN 'Entregado'
+        WHEN COALESCE(p."Cant_Entregada", 0) > 0 THEN 'Parcial'
+        WHEN os.any_delivery THEN 'Parcial'
+        ELSE 'Recibido'
+      END
+    FROM order_stats os
+    WHERE p."Nombre_Empresa" = p_header->>'Nombre_Empresa'
+      AND p."Consecutivo" = p_header->>'Consecutivo'
+      AND p."Cliente" IS NOT DISTINCT FROM p_header->>'Cliente';
+  END IF;
+
+  IF array_length(p_delete_ids, 1) > 0 THEN
+    DELETE FROM "Pedidos" WHERE id = ANY(p_delete_ids);
+    GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'updated', v_updated, 'added', v_added, 'deleted', v_deleted);
+END;
+$function$;

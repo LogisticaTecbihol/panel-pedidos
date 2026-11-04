@@ -1,0 +1,90 @@
+empresa,consecutivo,cliente,codigo_comercial,hoy_figura_con,deberia_ser,lineas
+IAS,1,"San Miguel",ISO-C15,(vacío),Yeison Arias,4
+IAS,124,"AGROINSUMOS SAN MIGUEL SAS",ISO-C15,(vacío),Yeison Arias,2
+IASO,11,"AGROMAX",ISO-C15,(vacío),Yeison Arias,2
+IASO,12,"AGROMAX",ISO-C15,Michael Hernandez,Yeison Arias,3
+IASO,13,"AGROMAX",ISO-C15,Michael Hernandez,Yeison Arias,1
+IASO,14,"vitalcrop",ISO-C15,Michael Hernandez,Yeison Arias,2
+IASO,15,"Agrícola Cadena",ISO-C14,Michael Hernandez,Andrea Zabala,6
+IASO,15,"Los pinos",ISO-C15,Michael Hernandez,Yeison Arias,2
+IASO,16,"Agrícola Cadena",ISO-C14,Michael Hernandez,Andrea Zabala,4
+IASO,16,"AGRICOLA LOS PINOS S.A.S.",ISO-C15,Michael Hernandez,Yeison Arias,2
+IASO,17,"Agrícola Cadena",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,18,"Agrícola Cadena",ISO-C14,Michael Hernandez,Andrea Zabala,4
+IASO,19,"Agrícola Cadena",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,20,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,4
+IASO,21,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,22,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,22,"EFREN EMIRO MOYA GARZON",ISO-C04,Michael Hernandez,David Sanchez,3
+IASO,23,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,24,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,6
+IASO,24,"Agroinsumos MAG",ISO-C04,Michael Hernandez,David Sanchez,1
+IASO,25,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,25,"Agrícola Coterra",ISO-C04,Michael Hernandez,David Sanchez,1
+IASO,26,"Andrea Johanna Hastamorir",ISO-C04,Andrea Zabala,David Sanchez,2
+IASO,27,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,27,"Agroinsumos A&M",ISO-C04,Michael Hernandez,David Sanchez,2
+IASO,28,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,6
+IASO,28,"Agroexport de Colombia",ISO-C04,Michael Hernandez,David Sanchez,1
+IASO,29,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,4
+IASO,29,"Omega y Construcciones",ISO-C04,Michael Hernandez,David Sanchez,1
+IASO,30,"AGRICOLA CADENA SAS",ISO-C14,Michael Hernandez,Andrea Zabala,2
+IASO,30,"Agrícola Coterra",ISO-C04,Michael Hernandez,David Sanchez,1
+IASO,31,"Omega y Construcciones",ISO-C04,Andrea Zabala,David Sanchez,2
+IASO,32,"AGROSURTIVET S.A.S.",ISO-C04,Andrea Zabala,David Sanchez,2
+IASO,62,"FERRE TURRYS",ISO-C13,David Sanchez,Antonio Gomez,1
+IASO,63,"PARDO ACOSTA ALCIRA",ISO-C13,David Sanchez,Antonio Gomez,2
+IASO,64,"FERRE TURRYS",ISO-C13,David Sanchez,Antonio Gomez,1
+IASO,65,"Alejandra ruiz",ISO-C13,David Sanchez,Antonio Gomez,4
+IASO,99,"AGRINTER",ISO-C13,Yeison Arias,Antonio Gomez,3
+IASO,106,"Ana Rita Hernández  LA AGROPECUARIA",ISO-C13,(vacío),Antonio Gomez,6
+IASO,115,"QUEVEDO FERNANDO ANTONIO",ISO-C13,Yeison Arias,Antonio Gomez,2
+IASO,125,"ALMACENES AGROMAX SAS",ISO-C15,Antonio Gomez,Yeison Arias,2
+IASO,126,"ALMACENES AGROMAX SAS",ISO-C15,Antonio Gomez,Yeison Arias,3
+IASO,127,"ALMACENES AGROMAX SAS",ISO-C15,Antonio Gomez,Yeison Arias,2
+IASO,128,"ENCISO AVILA MARINA",ISO-C15,Antonio Gomez,Yeison Arias,2
+IASO,129,"AGRICOLA LOS PINOS S.A.S.",ISO-C15,Antonio Gomez,Yeison Arias,2
+IASO,132,"AGRICOLA LOS PINOS S.A.S.",ISO-C15,Antonio Gomez,Yeison Arias,4
+IASO,133,"MISAKGRO SAS",ISO-C15,Antonio Gomez,Yeison Arias,4
+IASO,134,"AGRICOLA PC SAS",ISO-C13,Yeison Arias,Antonio Gomez,5
+IASO,135,"SERVICIOS AGROPECUARIOS LV",ISO-C13,Yeison Arias,Antonio Gomez,3
+IASO,137,"AGROINSUMOS DEL ORIENTE SAS",ISO-C13,Yeison Arias,Antonio Gomez,2
+IASO,138,"AGROPECUARIA INTERNACIONAL SAS",ISO-C13,Yeison Arias,Antonio Gomez,2
+IASO,139,"ALMACENES AGROMAX SAS",ISO-C15,Antonio Gomez,Yeison Arias,8
+IASO,140,"ALMACENES AGROMAX SAS",ISO-C15,Antonio Gomez,Yeison Arias,8
+IASO,144,"ALMACEN DEL CAMPESINO",ISO-C13,(vacío),Antonio Gomez,4
+PARCELAR,18,"AGRICOLA CADENA SAS",PDC-C08,Jorge Castellanos,Lucero Linares,4
+PARCELAR,20,"TODO RIEGO LA VILLA INGRIT JHOANA VARGAS",PDC-C09,Lucero Linares,Jorge Castellanos,2
+PARCELAR,21,"TODO RIEGO LA VILLA INGRIT JHOANA VARGAS",PDC-C09,Lucero Linares,Jorge Castellanos,2
+PARCELAR,22,"TODO RIEGO LA VILLA  INGRIT JHOANA  VARGAS",PDC-C09,Lucero Linares,Jorge Castellanos,9
+PARCELAR,23,"GALINDO GARCIA JORGE ELIECER",PDC-C08,Jorge Castellanos,Lucero Linares,3
+PARCELAR,24,"GALINDO GARCIA JORGE ELIECER",PDC-C08,Jorge Castellanos,Lucero Linares,3
+PARCELAR,25,"COMERCIALIZADORA AGROPECUARIA AMIAGRO",PDC-C09,Lucero Linares,Jorge Castellanos,5
+PARCELAR,27,"TODO RIEGO LA VILLA",PDC-C09,Lucero Linares,Jorge Castellanos,2
+PARCELAR,27,"TODO RIEGO LA VILLA  INGRIT JHOANA  VARGAS",PDC-C09,Lucero Linares,Jorge Castellanos,5
+PARCELAR,28,"AGRICOLA EL MERCHANERO",PDC-C09,Lucero Linares,Jorge Castellanos,19
+PARCELAR,58,"AGROPECUARIA INTERNACIONAL SAS ""AGROINTER""",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,59,"AGROPECUARIA INTERNACIONAL SAS ""AGROINTER""",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,60,"AGROPECUARIA INTERNACIONAL SAS ""AGROINTER""",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,61,"AGROPECUARIA INTERNACIONAL SAS ""AGROINTER""",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,62,"AGROPECUARIA INTERNACIONAL SAS ""AGROINTER""",PDC-C07,Jorge Castellanos,Didimo Cubillos,3
+PARCELAR,63,"AGROPECUARIA INTERNACIONAL SAS ""AGROINTER""",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,64,"CUBILLOS JIMENEZ DIDIMO ALEXANDER",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,65,"AGROPECUARIA CARUPA SU ALIADO SAS",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,66,"AGROMOCHUELO SAS",PDC-C07,Jorge Castellanos,Didimo Cubillos,1
+PARCELAR,67,"AGROMOCHUELO SAS",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,69,"CUBILLOS JIMENEZ DIDIMO ALEXANDER",PDC-C07,Jorge Castellanos,Didimo Cubillos,2
+PARCELAR,81,"AGROMOCHUELO SAS",PDC-C07,Lucero Linares,Didimo Cubillos,2
+PARCELAR,83,"SERVIAGRO PASCA",PDC-C07,Lucero Linares,Didimo Cubillos,2
+PARCELAR,84,"AGROMOCHUELO SAS",PDC-C07,Lucero Linares,Didimo Cubillos,2
+PARCELAR,85,"DIANA PEDRAZA",PDC-C07,Lucero Linares,Didimo Cubillos,2
+PARCELAR,86,"DIANA PEDRAZA",PDC-C07,Lucero Linares,Didimo Cubillos,5
+PARCELAR,87,"AGROMOCHUELO SAS",PDC-C07,Lucero Linares,Didimo Cubillos,10
+PARCELAR,88,"AGRINTER",PDC-C07,Lucero Linares,Didimo Cubillos,2
+PARCELAR,89,"AGROMOCHUELO SAS",PDC-C07,Lucero Linares,Didimo Cubillos,2
+PARCELAR,90,"SERVIAGRO PASCA",PDC-C07,Lucero Linares,Didimo Cubillos,4
+PARCELAR,91,"AGROPECUARIA DEL CAMPO ZG ZULMA DIAZ",PDC-C07,Lucero Linares,Didimo Cubillos,14
+PARCELAR,92,"AGROPECUARIA DEL CAMPO ZG ZULMA DIAZ",PDC-C07,Lucero Linares,Didimo Cubillos,3
+PARCELAR,93,"DIDIMO CUBILLOS",PDC-C07,Lucero Linares,Didimo Cubillos,3
+PARCELAR,94,"JOHANA GONZALEZ LANCHEROS",PDC-C07,Lucero Linares,Didimo Cubillos,1
+PARCELAR,95,"JOHANA GONZALEZ LANCHEROS",PDC-C07,Lucero Linares,Didimo Cubillos,4

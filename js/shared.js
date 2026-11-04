@@ -618,6 +618,22 @@ function _uid() {
   return (typeof AUTH !== 'undefined' && AUTH.getUser()) ? AUTH.getUser().id : null;
 }
 
+// Una ORDEN de Pedidos se identifica por Nombre_Empresa + Consecutivo + Cliente (la misma
+// clave de pedidos.js → keyOf). El consecutivo solo NO basta: cada comercial lleva su propia
+// numeración, así que el mismo número lo tienen varias órdenes de clientes distintos.
+// _hdrIdentificaOrden dice si el header trae los tres datos; _filtrarOrdenPedido limita una
+// consulta (update/select) a esa orden. Toda escritura masiva «por orden» debe pasar por aquí.
+function _hdrIdentificaOrden(hdr) {
+  return !!(hdr && hdr.Nombre_Empresa
+    && hdr.Consecutivo !== null && hdr.Consecutivo !== undefined && hdr.Consecutivo !== ''
+    && hdr.Cliente !== null && hdr.Cliente !== undefined && String(hdr.Cliente) !== '');
+}
+function _filtrarOrdenPedido(q, hdr) {
+  return q.eq('Nombre_Empresa', hdr.Nombre_Empresa)
+          .eq('Consecutivo', String(hdr.Consecutivo))
+          .eq('Cliente', String(hdr.Cliente));
+}
+
 // Cantidad VIGENTE ya devuelta (tipo 'Ingreso') o ya repuesta (tipo 'Salida') de
 // una línea de devolución: la de la línea original más la de sus remisiones
 // adicionales (filas con Tipo_Adicional y Linea_Origen_Id = id de la original),
@@ -704,27 +720,35 @@ async function _apiPostCore(body) {
       // vista principal. La marca "vista" es local por usuario.
       var modTipo = body.modificacionTipo;
       var hdr = body.header || {};
-      if (modTipo && hdr.Nombre_Empresa && (hdr.Consecutivo !== null && hdr.Consecutivo !== undefined && hdr.Consecutivo !== '')) {
+      // Una orden es Nombre_Empresa + Consecutivo + CLIENTE: el consecutivo se repite entre
+      // comerciales y clientes (PARCELAR #95 = VALDERRAMA, AGRICOLA CADENA y JOHANA GONZALEZ).
+      // Las dos escrituras de abajo se limitan a ESA orden (_filtrarOrdenPedido). Sin el
+      // Cliente pisaban comercial_id y la marca de «modificado» de las órdenes de otros
+      // clientes con el mismo número. La RPC ya dejó el Cliente del header en las líneas.
+      if (modTipo && _hdrIdentificaOrden(hdr)) {
         try {
-          await _sb.from('Pedidos')
-            .update({
+          await _filtrarOrdenPedido(
+            _sb.from('Pedidos').update({
               Fecha_Modificacion_Cant: new Date().toISOString(),
               Tipo_Modificacion_Cant: modTipo,
               modificado_por: _uid()
-            })
-            .eq('Nombre_Empresa', hdr.Nombre_Empresa)
-            .eq('Consecutivo', String(hdr.Consecutivo));
+            }), hdr);
         } catch (e) { /* no bloquea la operación principal */ }
       }
       // La RPC editar_pedido_completo no conoce la columna comercial_id;
       // la seteamos aparte cuando el cliente la envía en el header.
-      if (hdr.comercial_id !== undefined && hdr.Nombre_Empresa && (hdr.Consecutivo !== null && hdr.Consecutivo !== undefined && hdr.Consecutivo !== '')) {
-        try {
-          await _sb.from('Pedidos')
-            .update({ comercial_id: hdr.comercial_id || null })
-            .eq('Nombre_Empresa', hdr.Nombre_Empresa)
-            .eq('Consecutivo', String(hdr.Consecutivo));
-        } catch (e) { /* no bloquea */ }
+      //  · con id resuelto → se escribe (solo en esta orden);
+      //  · campo Comercial vacío → se limpia (null): decisión explícita del usuario;
+      //  · Comercial con texto pero sin usuario encontrado (directorio que no cargó, texto
+      //    libre) → NO se toca: antes se escribía null y se perdía el comercial que la orden ya tenía.
+      if (hdr.comercial_id !== undefined && _hdrIdentificaOrden(hdr)) {
+        var _cidEdit = hdr.comercial_id || null;
+        var _comercialVacio = hdr.Comercial !== undefined && !String(hdr.Comercial || '').trim();
+        if (_cidEdit || _comercialVacio) {
+          try {
+            await _filtrarOrdenPedido(_sb.from('Pedidos').update({ comercial_id: _cidEdit }), hdr);
+          } catch (e) { /* no bloquea */ }
+        }
       }
       return res.data;
     }
