@@ -1,6 +1,15 @@
 -- ============================================================
--- PENDIENTE DE EJECUTAR (preparado el 2026-11-04). Revisar primero la lista:
+-- EJECUTADO el 2026-11-04 — NO volver a ejecutar (ver «Resultado» más abajo).
+-- Lista revisada antes de ejecutar:
 --   sql/reparar_comercial_id_por_orden_lista.csv  (89 órdenes · 286 líneas)
+--
+-- Resultado (ejecutado después de publicar el código nuevo de js/shared.js): comercial_id corregido en
+-- 286 líneas (89 órdenes) y Estado_Entrega en 15 líneas (4 órdenes). Verificado: 0 líneas con comercial
+-- desalineado, 0 «Parcial» falsos, 0 filas con comercial_id NULL cuyo código resuelve, y 301 entradas en
+-- audit_log (286 de comercial_id + 15 de Estado_Entrega; ninguna otra columna). #95 de PARCELAR: JOHANA
+-- GONZALEZ → Didimo Cubillos; VALDERRAMA y AGRICOLA CADENA → Lucero Linares (Estado_Entrega de
+-- AGRICOLA CADENA sigue «Recibido»). Quedan sin tocar ~953 líneas sin comercial_id cuyo texto de Comercial
+-- no corresponde a ningún usuario del directorio (GREEN, RESO, históricas): no se pueden resolver.
 --
 -- Reparación de datos contaminados por el defecto «guardar una orden pisa a las demás órdenes que
 -- comparten consecutivo» (Cliente ausente en el filtro de js/shared.js → editarPedido y de la RPC
