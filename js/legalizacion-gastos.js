@@ -146,6 +146,9 @@ var prorrateoGrupo = null; // { legs, items, empresas } de TODAS las legalizacio
 // js/legalizacion-prorrateo.js, compartido con el Dashboard.)
 var EMPRESA_ABAGO = LegProrrateo.EMPRESA_ABAGO;
 var EMPRESA_MP = LegProrrateo.EMPRESA_MP;
+// Tecbihol: grupo externo que solo se elige a mano en el reparto (no tiene remisiones
+// externas, así que NO entra en esEmpresaExterna, que es de las remisiones).
+var EMPRESA_TECBIHOL = LegProrrateo.EMPRESA_TECBIHOL;
 var remisionesExternas = {};
 
 // Tipos de remisión externa. Abago: unidades por presentación (el nombre del
@@ -469,10 +472,14 @@ function conceptoOptionsHtml(selected) { return conceptoOptionsHtmlFor(CONCEPTO_
 async function loadLegalizaciones() {
   await _authReady;
   empresaPropia = detectarEmpresaPropia();
-  populateEmpresaSelect('f-emp', 'Todas');
-  populateEmpresaSelect('pf-emp', 'Todas');
-  populateEmpresaSelect('df-emp', 'Todas');
-  populateEmpresaSelect('ef-emp', 'Todas');
+  // Tecbihol (grupo externo) también se puede filtrar, pero solo para quien puede elegirla
+  // en el reparto; el usuario de una sola empresa queda fijo en la suya (ver
+  // aplicarRestriccionEmpresaPropia).
+  var extrasFiltro = empresaPropia ? [] : [EMPRESA_TECBIHOL];
+  populateEmpresaSelect('f-emp', 'Todas', extrasFiltro);
+  populateEmpresaSelect('pf-emp', 'Todas', extrasFiltro);
+  populateEmpresaSelect('df-emp', 'Todas', extrasFiltro);
+  populateEmpresaSelect('ef-emp', 'Todas', extrasFiltro);
   aplicarRestriccionEmpresaPropia();
   aplicarPermisosEscritura(); // oculta los «+ Nueva…» al rol de solo lectura
   aplicarVisibilidadHistorial(); // pestaña Historial: solo quien concilia y no es de una sola empresa
@@ -1141,7 +1148,7 @@ function empresasVisiblesOf(legId) {
   return empresaPropia ? empresasOf(legId).filter(function(e) { return esEmpresaPropia(e.Empresa); }) : empresasOf(legId);
 }
 // Viaje cuyo reparto incluye alguna empresa distinta a la del usuario (o un grupo
-// externo como Chia Abago / Materias primas). Solo aplica a quien tiene una empresa.
+// externo como Chia Abago / Materias primas / Tecbihol). Solo aplica a quien tiene una empresa.
 function legEsCompartida(legId) {
   return !!empresaPropia && empresasOf(legId).some(function(e) { return !esEmpresaPropia(e.Empresa); });
 }
@@ -2639,10 +2646,11 @@ function empresaRowOptionsHtml(selected) {
   base.forEach(function(e) {
     opts += '<option value="' + escHtml(e.value) + '"' + (e.value === selected ? ' selected' : '') + '>' + escHtml(e.sigla) + '</option>';
   });
-  // Chia Abago y Materias primas no son del holding: filas propias del reparto
-  // para sus remisiones externas.
+  // Tecbihol, Chia Abago y Materias primas no son del holding: filas propias del reparto
+  // (las dos últimas, para sus remisiones externas). Solo las ve quien no es de una
+  // sola empresa.
   if (!empresaPropia) {
-    [EMPRESA_ABAGO, EMPRESA_MP].forEach(function(ext) {
+    [EMPRESA_TECBIHOL, EMPRESA_ABAGO, EMPRESA_MP].forEach(function(ext) {
       opts += '<option value="' + ext + '"' + (selected === ext ? ' selected' : '') + '>' + ext + '</option>';
     });
   }

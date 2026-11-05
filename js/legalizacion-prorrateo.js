@@ -16,6 +16,12 @@ var LegProrrateo = (function() {
   // holding: en el reparto son filas propias y en Prorrateo grupos aparte.
   var EMPRESA_ABAGO = 'CHIA ABAGO';
   var EMPRESA_MP = 'MATERIAS PRIMAS';
+  // Tecbihol: tercer grupo externo del reparto entre empresas. No es del holding (no está
+  // en `empresas` ni se asigna a usuarios) y, a diferencia de los otros dos, no sale de
+  // una remisión externa: solo se elige a mano en la tabla «Reparto entre empresas». Se
+  // guarda como el texto 'TECBIHOL'; la BD lo trata como grupo externo en
+  // legalizacion_gastos_visible (ver legalizacion_gastos_tecbihol_grupo_externo.sql).
+  var EMPRESA_TECBIHOL = 'TECBIHOL';
 
   // Tipo de la remisión de la que sale cada línea del Prorrateo (columna "Tipo de
   // remisión" del Excel): las remisiones externas de materia prima y las de Chia
@@ -361,12 +367,12 @@ var LegProrrateo = (function() {
   // ¿Se le muestra esta empresa (sigla de un resultado del cálculo) a este usuario?
   // El cálculo usa todas las empresas, pero un usuario restringido solo ve las suyas
   // (AUTH.hasCompany; admin y cartera ven todo). Los grupos externos (Chia Abago /
-  // Materias primas) no son empresas del holding: los ve quien ve TODAS las del
-  // holding (p. ej. un lector con las seis), no quien tiene solo algunas.
+  // Materias primas / Tecbihol) no son empresas del holding: los ve quien ve TODAS las
+  // del holding (p. ej. un lector con las seis), no quien tiene solo algunas.
   // `auth` = el objeto AUTH de auth.js.
   function empresaVisible(emp, auth) {
     if (!auth || !auth.hasCompany) return true;
-    if (emp === EMPRESA_ABAGO || emp === EMPRESA_MP) {
+    if (emp === EMPRESA_ABAGO || emp === EMPRESA_MP || emp === EMPRESA_TECBIHOL) {
       return EMPRESAS_HOLDING.every(function(e) { return auth.hasCompany(e.value); });
     }
     return auth.hasCompany(emp);
@@ -774,6 +780,7 @@ var LegProrrateo = (function() {
     cobertura: cobertura,
     EMPRESA_ABAGO: EMPRESA_ABAGO,
     EMPRESA_MP: EMPRESA_MP,
+    EMPRESA_TECBIHOL: EMPRESA_TECBIHOL,
     PLANTAS_MP: PLANTAS_MP,
     PLANTAS_MP_ORDEN: PLANTAS_MP_ORDEN,
     plantasDe: plantasDe,
