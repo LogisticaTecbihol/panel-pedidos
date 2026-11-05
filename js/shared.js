@@ -618,6 +618,105 @@ function _uid() {
   return (typeof AUTH !== 'undefined' && AUTH.getUser()) ? AUTH.getUser().id : null;
 }
 
+// ── Anular una OC que ya tenía remisión: no perder el número ──
+// Caso PARCELAR-RS-0217 (OC 622, 2026-11-03): la OC se cerró (PARCELAR-RS-0217 / IASO-RE-0221) y 48 s
+// después se guardó como Anulada con Remision y Remision_Origen en blanco. editarOrdenCompra escribe
+// esos campos tal cual, así que los números se borraron sin dejar rastro (ni en la OC ni en
+// RemisionesAnuladas) y Reportes → Remisiones no los mostró. Ahora, tras guardar una OC como
+// Anulada, cada número que la OC tenía y el guardado quitó se registra en RemisionesAnuladas
+// (lo mismo que el botón «Remisión anulada» hace a mano).
+// RemisionesAnuladas actúa POR NÚMERO (Existencias descarta todo movimiento que lo lleve), así que
+// NO se registra un número que otro registro siga usando (p. ej. otra línea de la misma OC, que
+// comparte la remisión). Si no se puede comprobar, tampoco se registra y se avisa.
+
+// Números que el guardado le quita a la OC: [{ num, empresa }]. `prev` = la fila leída ANTES del
+// update; `upd` = el payload del update (solo trae Remision / Remision_Origen si el formulario los mandó).
+function _ocRemisionesQuitadas(prev, upd) {
+  var out = [], vistos = {};
+  [['Remision', 'Empresa_Destino'], ['Remision_Origen', 'Empresa_Origen']].forEach(function(par) {
+    if (upd[par[0]] === undefined) return;
+    var antes = String(prev[par[0]] || '').trim();
+    if (!antes || antes === String(upd[par[0]] || '').trim() || vistos[antes]) return;
+    vistos[antes] = true;
+    out.push({ num: antes, empresa: String(prev[par[1]] || '').trim() });
+  });
+  return out;
+}
+
+// Dónde puede figurar un número de remisión. like = el campo guarda una lista «num|cant|fecha,…»
+// (Pedidos.Remisiones). Los Movs_Ingreso / Movs_Salida (jsonb) de CambiosMercancia no se consultan.
+var _REM_USOS = [
+  { t: 'OrdenesCompra',     cols: ['Remision', 'Remision_Origen'] },
+  { t: 'Ingresos',          cols: ['Remision_Origen', 'Remision_Destino'] },
+  { t: 'Pedidos',           cols: ['Remisiones'], like: true },
+  { t: 'SolicitudMuestras', cols: ['Remision'] },
+  { t: 'Reenvases',         cols: ['Remision', 'Remision_Destino'] },
+  { t: 'Devoluciones',      cols: ['Remision_Ingreso', 'Remision', 'Remision_Salida'] },
+  { t: 'CambiosMercancia',  cols: ['Remision_Ingreso', 'Remision_Salida'] },
+  { t: 'KardexNC',          cols: ['Remision'] }
+];
+
+// ¿Algún otro registro (sin contar la OC `ocId`) usa este número? Devuelve el nombre de la tabla,
+// '' si nadie lo usa, o null si no se pudo comprobar (en ese caso NO se debe registrar como anulada).
+async function _remisionSigueEnUso(num, ocId) {
+  var v = String(num || '').replace(/["\\]/g, '');
+  if (!v) return null;
+  var res;
+  try {
+    res = await Promise.all(_REM_USOS.map(function(u) {
+      var filtro = u.cols.map(function(c) {
+        return u.like ? c + '.ilike."*' + v + '*"' : c + '.eq."' + v + '"';
+      }).join(',');
+      var q = _sb.from(u.t).select('id').or(filtro);
+      if (u.t === 'OrdenesCompra') q = q.neq('id', ocId);
+      return q.limit(1);
+    }));
+  } catch (e) { return null; }
+  for (var i = 0; i < res.length; i++) {
+    if (!res[i] || res[i].error) return null;
+    if ((res[i].data || []).length) return _REM_USOS[i].t;
+  }
+  return '';
+}
+
+// Registra en RemisionesAnuladas los números que una OC perdió al anularse. Devuelve
+// { registradas: [num], avisos: [texto] }. Nunca lanza: el guardado de la OC ya se hizo y un fallo
+// aquí no debe presentarse como si hubiera fallado.
+async function _ocRegistrarRemisionesAnuladas(prev, quitadas) {
+  var out = { registradas: [], avisos: [] };
+  var ahora = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  for (var i = 0; i < quitadas.length; i++) {
+    var q = quitadas[i];
+    try {
+      var uso = await _remisionSigueEnUso(q.num, prev.id);
+      if (uso === null) {
+        out.avisos.push(q.num + ': no se pudo comprobar si otro registro la usa; regístrala en «Remisión anulada»');
+        continue;
+      }
+      if (uso) {
+        // Otra línea de la misma OC comparte el número: sigue vigente, no se anula.
+        if (uso !== 'OrdenesCompra') out.avisos.push(q.num + ' sigue en uso en ' + uso + ': no se registró como anulada');
+        continue;
+      }
+      var ya = await _sb.from('RemisionesAnuladas').select('id').eq('Remision', q.num).limit(1);
+      if (ya.error) { out.avisos.push(q.num + ': ' + ya.error.message); continue; }
+      if ((ya.data || []).length) continue;
+      var ins = await _sb.from('RemisionesAnuladas').insert([{
+        Empresa: q.empresa, Remision: q.num,
+        Producto: prev.Producto || '', Presentacion: prev.Presentacion || '',
+        Cantidad: Number(prev.Cantidad) || 0, Fecha: today(),
+        Observaciones: 'OC ' + (prev.Consecutivo || prev.id) + ' anulada: al anular se quitó el número de remisión de la orden (registro automático).',
+        Fecha_Registro: ahora, creado_por: _uid()
+      }]);
+      if (ins.error) { out.avisos.push(q.num + ': ' + ins.error.message); continue; }
+      out.registradas.push(q.num);
+    } catch (e) {
+      out.avisos.push(q.num + ': ' + ((e && e.message) ? e.message : e));
+    }
+  }
+  return out;
+}
+
 // Una ORDEN de Pedidos se identifica por Nombre_Empresa + Consecutivo + Cliente (la misma
 // clave de pedidos.js → keyOf). El consecutivo solo NO basta: cada comercial lleva su propia
 // numeración, así que el mismo número lo tienen varias órdenes de clientes distintos.
@@ -1775,8 +1874,27 @@ async function _apiPostCore(body) {
       if (remOC !== undefined) upd.Remision = remOC;
       if (remOrigenOC !== undefined) upd.Remision_Origen = remOrigenOC;
       upd.modificado_por = _uid();
+      // Al ANULAR se lee antes cómo estaba la OC (el update pisa Remision / Remision_Origen) para no
+      // perder sus números: ver _ocRegistrarRemisionesAnuladas.
+      var ocPrev = null, avisosAnul = [];
+      if (upd.Estado === 'Anulada') {
+        var rPrev = await _sb.from('OrdenesCompra')
+          .select('id,Consecutivo,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Producto,Presentacion,Cantidad')
+          .eq('id', body.row).maybeSingle();
+        if (rPrev.error || !rPrev.data) avisosAnul.push('no se pudo leer la OC antes de anularla; si tenía remisiones, regístralas en «Remisión anulada»');
+        else ocPrev = rPrev.data;
+      }
       var res = await _sb.from('OrdenesCompra').update(upd).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
+      var remAnuladas = [];
+      if (ocPrev) {
+        var quitadas = _ocRemisionesQuitadas(ocPrev, upd);
+        if (quitadas.length) {
+          var regAnul = await _ocRegistrarRemisionesAnuladas(ocPrev, quitadas);
+          remAnuladas = regAnul.registradas;
+          avisosAnul = avisosAnul.concat(regAnul.avisos);
+        }
+      }
       // Propaga la remisión (y el cierre) al resto de líneas de la misma orden
       // para que toda la OC quede legalizada de una sola vez.
       if (body._legalizar && hermanasOC.length && (remOC || remOrigenOC)) {
@@ -1787,7 +1905,10 @@ async function _apiPostCore(body) {
           .eq('Empresa_Destino', empDestOC).eq('Empresa_Origen', empOrigOC).eq('Consecutivo', consecOC)
           .neq('id', body.row);
       }
-      return Object.assign({ ok: true, updated: 1 }, generatedRemOC);
+      return Object.assign({ ok: true, updated: 1 }, generatedRemOC, {
+        remisiones_anuladas: remAnuladas,
+        aviso_remisiones: avisosAnul.join(' · ')
+      });
     }
 
     if (action === 'eliminarOrdenCompra') {

@@ -975,12 +975,16 @@ async function saveOC() {
       var toastOC = ['✅ Orden actualizada'];
       if (result.remision_destino) toastOC.push('RE: ' + result.remision_destino);
       if (result.remision_origen) toastOC.push('RS: ' + result.remision_origen);
-      showToast(toastOC.join(' · '));
-      var _avisoRow = editOrden.__row;
-      var _avisoPedidoId = (esLegalizar && String(editOrden.Tipo || '').toLowerCase() === 'traslado')
-        ? editOrden.pedido_id : null;
+      // Al anular una OC con remisión, el número queda registrado en «Remisiones anuladas».
+      if (result.remisiones_anuladas && result.remisiones_anuladas.length) toastOC.push('Registrada como anulada: ' + result.remisiones_anuladas.join(', '));
+      if (result.aviso_remisiones) showToast(toastOC.join(' · ') + ' · ⚠️ ' + result.aviso_remisiones, '#e67e22', 10000);
+      else showToast(toastOC.join(' · '));
+      // closeOCModal() deja editOrden en null, así que aquí ya no se lee. Antes se leía editOrden.__row
+      // en este punto y lanzaba TypeError en cada guardado (desde 82c006e, 2026-09-15): tras el «✅» salía
+      // «❌ Error» y loadOrdenes() no corría, dejando la lista vieja.
+      // _avisarContabilidadTrasladoTardio (PDF complementario a contabilidad) NO se llama a propósito:
+      // con ese error nunca llegó a ejecutarse, y activarlo es una decisión aparte.
       await loadOrdenes();
-      if (_avisoPedidoId) _avisarContabilidadTrasladoTardio(_avisoPedidoId, _avisoRow);
     } catch (err) {
       showToast('❌ Error: ' + err.message, '#e74c3c');
       btn.disabled = false;
