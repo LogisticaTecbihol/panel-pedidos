@@ -66,6 +66,22 @@
 .gpp-group:last-child{padding-bottom:20px}
 .gpp-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e2e8f0}
 .gpp-group-total{font-size:.85rem;font-weight:700;color:#2d3748}
+
+/* ── Legalizaciones que componen una fila del prorrateo (tabla dentro de un desplegable) ── */
+tbody tr.lg-row-legs>td{vertical-align:top}
+.lg-legs{margin-top:8px}
+.lg-legs>summary{cursor:pointer;display:inline-block;font-size:.76rem;font-weight:600;color:#1a5276;background:#ebf5fb;border-radius:12px;padding:2px 12px;list-style:none;user-select:none}
+.lg-legs>summary::-webkit-details-marker{display:none}
+.lg-legs>summary::before{content:"▸ ";color:#718096}
+.lg-legs[open]>summary::before{content:"▾ "}
+.lg-legs>summary:hover{background:#d6eaf8}
+.lg-legs-scroll{margin-top:6px;max-width:520px;max-height:320px;overflow:auto;border:1px solid #cbd5e0;border-radius:6px;background:#fff}
+.lg-legs-table{border:none;font-size:.78rem}
+.lg-legs-table thead th{position:sticky;top:0;z-index:1;padding:6px 12px;font-size:.7rem;border-right:none;border-bottom:none;box-shadow:inset 0 -2px 0 #cbd5e0}
+.lg-legs-table tbody td{padding:4px 12px;border-right:none;border-bottom:1px solid #edf2f7}
+.lg-legs-table tbody tr:last-child td{border-bottom:none}
+.lg-legs-table tbody tr:nth-child(even){background:#fafcfd}
+.lg-legs-table .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
@@ -937,6 +953,6 @@
 <script src="js/pdf-remision.js?v=20261019a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261103a"></script>
 <script src="js/legalizacion-historial.js?v=20261028c"></script>
-<script src="js/legalizacion-gastos.js?v=20261103a"></script>
+<script src="js/legalizacion-gastos.js?v=20261105a"></script>
 </body>
 </html>

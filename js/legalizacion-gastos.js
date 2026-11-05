@@ -1241,10 +1241,10 @@ function renderNoProrrateado() {
   var info = calcularNoProrrateado();
   document.getElementById('gpn-total').textContent = 'Total: ' + fmtMoney2(info.total);
   var body = info.filas.map(function(f) {
-    var legsHtml = Object.keys(f.legs).map(function(id) { return { id: Number(id), consecutivo: f.legs[id] }; })
-      .sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); })
-      .map(function(l) { return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>'; }).join(', ');
-    return '<tr><td>' + escHtml(f.label) + (legsHtml ? '<div class="ac-sub">' + legsHtml + '</div>' : '') + '</td>' +
+    var legsFila = Object.keys(f.legs).map(function(id) { return { id: Number(id), consecutivo: f.legs[id] }; })
+      .sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
+    return '<tr' + (legsFila.length ? ' class="lg-row-legs"' : '') + '><td>' + escHtml(f.label) +
+      (legsFila.length ? _lgLegsDetalleHtml(legsFila, legsFila.length <= 8) : '') + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney2(f.monto)) + '</td></tr>';
   }).join('');
   box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead>' +
@@ -1298,12 +1298,45 @@ function fmtMoney2(v) {
 // "08:30:00" (columna time de Postgres) -> "08:30"
 function fmtHora(h) { return h ? String(h).slice(0, 5) : ''; }
 
+// Legalizaciones que componen una fila de prorrateo, como tabla compacta dentro de un
+// desplegable «N legalizaciones»: Legalización (enlace a «Ver») · Monto · Km. legsFila es
+// [{id, consecutivo, monto?}]: la columna Monto (lo que esa legalización aporta a la tabla)
+// solo sale si alguna trae `monto` (filas «Sin reparto asignado») y la de Km solo si alguna
+// tiene km (piloto KM_PILOTO_PLACAS: Km_Llegada − Km_Salida). El km es una referencia: no
+// cambia el monto ni el %, que siguen siendo el reparto manual entre empresas de siempre.
+// Las tablas largas se desplazan dentro de su propio recuadro (CSS .lg-legs-*).
+function _lgLegsDetalleHtml(legsFila, abierto) {
+  var legPorId = {};
+  legs.forEach(function(x) { legPorId[x.id] = x; });
+  var filas = legsFila.map(function(l) {
+    var leg = legPorId[l.id];
+    var km = (leg && leg.Km_Salida != null && leg.Km_Llegada != null)
+      ? Number(leg.Km_Llegada) - Number(leg.Km_Salida) : null;
+    return { id: l.id, consecutivo: l.consecutivo, monto: l.monto, km: km };
+  });
+  var hayMonto = filas.some(function(f) { return f.monto != null; });
+  var hayKm = filas.some(function(f) { return f.km != null; });
+  var body = filas.map(function(f) {
+    return '<tr><td><a href="javascript:void(0)" onclick="openVer(' + f.id + ')" style="color:#1a5276">' + escHtml(f.consecutivo) + '</a></td>' +
+      (hayMonto ? '<td class="num">' + (f.monto != null ? escHtml(fmtMoney2(f.monto)) : '—') + '</td>' : '') +
+      (hayKm ? '<td class="num">' + (f.km != null ? escHtml(f.km.toLocaleString('es-CO')) + ' km' : '—') + '</td>' : '') +
+      '</tr>';
+  }).join('');
+  return '<details class="lg-legs"' + (abierto ? ' open' : '') + '>' +
+    '<summary>' + filas.length + (filas.length === 1 ? ' legalización' : ' legalizaciones') + '</summary>' +
+    '<div class="lg-legs-scroll"><table class="lg-legs-table"><thead><tr><th>Legalización</th>' +
+      (hayMonto ? '<th class="num" title="Lo que esta legalización aporta a esta tabla">Monto</th>' : '') +
+      (hayKm ? '<th class="num" title="Km recorridos (llegada − salida)">Km</th>' : '') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div></details>';
+}
+
 // Tabla (cuadrícula) reutilizable para las dos vistas de prorrateo.
-// rows: [{label, value, pct, html?, legs?}] — html, si viene, reemplaza el
+// rows: [{label, value, pct, html?, legs?, legsAbiertas?}] — html, si viene, reemplaza el
 // texto plano de la primera columna (badge de sigla en "por empresa"); legs
 // (si viene) es [{id, consecutivo, monto?}] de las legalizaciones que aportaron a
-// esa fila, mostradas como enlaces a "Ver" debajo del label; con `monto`, se muestra
-// cuánto aportó cada una (en las filas «Sin reparto asignado»).
+// esa fila, mostradas como tabla (_lgLegsDetalleHtml) debajo del label; con `monto`, se muestra
+// cuánto aportó cada una (en las filas «Sin reparto asignado»). legsAbiertas fuerza
+// el desplegable abierto/cerrado (por defecto, abierto si son 8 o menos).
 // conCantidades (usuario de una sola empresa, ver _prorrateoConCantidades): agrega,
 // a la derecha de Monto y %, las columnas Litros y Kilos (y Unidades si alguna fila
 // las tiene) con r.litros / r.kilos / r.unidades.
@@ -1312,18 +1345,12 @@ function lgProrrateoTable(rows, headerLabel, conCantidades) {
   var hayUnid = conCantidades && rows.some(function(r) { return r.unidades > 0; });
   function celdaCant(v, fmt) { return '<td style="text-align:right">' + (v > 0 ? escHtml(fmt(v)) : '—') + '</td>'; }
   var body = rows.map(function(r) {
-    // El km recorridos (piloto KM_PILOTO_PLACAS) se muestra como referencia
-    // junto al enlace de cada legalización — no cambia el monto ni el %,
-    // que siguen siendo el reparto manual entre empresas de siempre.
-    var legsHtml = (r.legs && r.legs.length) ? '<div class="ac-sub">' + r.legs.map(function(l) {
-      var leg = legs.find(function(x) { return x.id === l.id; });
-      var kmTxt = (leg && leg.Km_Salida != null && leg.Km_Llegada != null)
-        ? ' <span style="color:#a0aec0">(' + (Number(leg.Km_Llegada) - Number(leg.Km_Salida)).toLocaleString('es-CO') + ' km)</span>' : '';
-      var montoTxt = (l.monto != null)
-        ? ' <span style="color:#718096" title="Lo que esta legalización aporta a esta tabla">· ' + escHtml(fmtMoney2(l.monto)) + '</span>' : '';
-      return '<a href="javascript:void(0)" onclick="openVer(' + l.id + ')" style="color:#1a5276">' + escHtml(l.consecutivo) + '</a>' + montoTxt + kmTxt;
-    }).join(', ') + '</div>' : '';
-    return '<tr><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
+    var tieneLegs = !!(r.legs && r.legs.length);
+    // Las legalizaciones de la fila van en una tabla (Legalización · Monto · Km) dentro de
+    // un desplegable; ver _lgLegsDetalleHtml. Abierto por defecto: siempre en las tablas de
+    // gasto aparte (r.legsAbiertas, donde son lo principal) y, en las demás, si son pocas.
+    var legsHtml = tieneLegs ? _lgLegsDetalleHtml(r.legs, r.legsAbiertas != null ? r.legsAbiertas : r.legs.length <= 8) : '';
+    return '<tr' + (tieneLegs ? ' class="lg-row-legs"' : '') + '><td>' + (r.html || escHtml(r.label)) + legsHtml + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney2(r.value)) + '</td>' +
       '<td style="text-align:right">' + r.pct.toFixed(2) + '%</td>' +
       (conCantidades
@@ -1387,7 +1414,7 @@ function _gastoAparteRows(d) {
     var legs = Object.keys(d.legs[emp] || {}).map(function(id) {
       return { id: Number(id), consecutivo: d.legs[emp][id] };
     }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
-    return { label: emp, value: d.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>', legs: legs };
+    return { label: emp, value: d.porEmpresa[emp], html: '<span class="sigla-badge ' + getSiglaClass(emp) + '">' + escHtml(emp) + '</span>', legs: legs, legsAbiertas: true };
   }).sort(function(a, b) { return b.value - a.value; });
 
   if (d.sinAsignar > 0 && !empresaPropia) {
@@ -1395,7 +1422,7 @@ function _gastoAparteRows(d) {
       var m = d.sinAsignarMontos ? d.sinAsignarMontos[id] : undefined;
       return { id: Number(id), consecutivo: d.sinAsignarLegs[id], monto: m != null ? m : undefined };
     }).sort(function(a, b) { return a.consecutivo.localeCompare(b.consecutivo); });
-    rows.push({ label: 'Sin reparto asignado', value: d.sinAsignar, legs: legsSin });
+    rows.push({ label: 'Sin reparto asignado', value: d.sinAsignar, legs: legsSin, legsAbiertas: true });
   }
 
   rows.forEach(function(r) { r.pct = d.total > 0 ? (r.value / d.total * 100) : 0; });
