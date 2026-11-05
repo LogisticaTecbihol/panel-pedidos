@@ -1847,7 +1847,7 @@ function estadoBadgeHtml(leg) {
 // Otros (que no se prorratean), el total sin Combustible y/o sin Otros. Detecta
 // el reparto que quedó desactualizado al editar los gastos después de
 // calcularlo. Solo aplica a lo que aún se puede editar ('Por conciliar'); en
-// Mantenimiento el reparto es opcional, así que sin montos no hay descuadre.
+// Mantenimiento y en cualquier legalización sin reparto (es opcional) no hay descuadre.
 // Devuelve null si cuadra o { reparto, esperado, dif, sin } (sin = texto de lo
 // que deja por fuera el esperado: 'Combustible', 'Otros', 'Combustible y Otros' o '').
 function repartoDescuadre(leg) {
@@ -1856,7 +1856,7 @@ function repartoDescuadre(leg) {
   var esMant = leg.Tipo === 'Mantenimiento';
   var total = Math.round(totalGastosOf(leg.id));
   var reparto = Math.round(totalRepartoOf(leg.id));
-  if (esMant && reparto <= 0) return null;
+  if (reparto <= 0 && (esMant || !empresasOf(leg.id).length)) return null;
   var noEsRuta = esMant || esEnvio(leg);
   var comb = noEsRuta ? 0 : Math.round(totalGastosConceptoOf(leg.id, 'Combustible'));
   var otros = noEsRuta ? 0 : Math.round(totalGastosOtrosOf(leg.id));
@@ -3728,8 +3728,10 @@ function recalcTotals() {
   var comb = totalCombustibleLista(formGastos);
   var otros = totalOtrosLista(formGastos);
   var cob = LegProrrateo.cobertura(totalGastos, totalReparto, comb, otros);
-  var excluye = repartoExcluyeNombres(cob);
-  document.getElementById('lg-reparto-warn').style.display = !cob.cuadra ? 'block' : 'none';
+  // Reparto opcional: sin ninguna empresa elegida no hay descuadre ni exclusión que avisar.
+  var conReparto = formEmpresas.some(function(e) { return e.Empresa; });
+  var excluye = conReparto ? repartoExcluyeNombres(cob) : '';
+  document.getElementById('lg-reparto-warn').style.display = (conReparto && !cob.cuadra) ? 'block' : 'none';
   var info = document.getElementById('lg-reparto-info');
   info.textContent = 'ℹ El reparto no incluye ' + [cob.comb ? 'el Combustible (' + fmtMoney(comb) + ')' : '', cob.otros ? 'Otros (' + fmtMoney(otros) + ')' : ''].filter(Boolean).join(' ni ');
   info.style.display = excluye ? 'block' : 'none';
@@ -3845,17 +3847,21 @@ async function saveForm() {
   var gastosValidos = gastosConValor
     .map(function(g) { return { Concepto: g.Concepto, Proveedor: g.Proveedor, NIT: joinNitDv(g.NIT, g.DV), Valor: Number(g.Valor) || 0, Galones: g.Concepto === 'Combustible' ? g.Galones : null }; });
   if (!gastosValidos.length) { showToast('Agrega al menos una línea de gasto válida', '#e67e22'); return; }
+  // El reparto entre empresas es opcional (como en Mantenimiento): sin reparto, el
+  // Combustible queda en "Sin reparto asignado" en la pestaña Prorrateo.
   var empresasValidas = formEmpresas.filter(function(e) { return e.Empresa; });
-  if (!empresasValidas.length) { showToast('Agrega al menos una empresa en el reparto', '#e67e22'); return; }
 
   var totalGastos = gastosValidos.reduce(function(s, g) { return s + (Number(g.Valor) || 0); }, 0);
   var totalReparto = empresasValidas.reduce(function(s, e) { return s + (Number(e.Monto) || 0); }, 0);
   // Guardar en $0 es válido, pero se confirma para no registrar sin querer una
   // legalización a la que se le olvidó digitar el valor.
   if (totalGastos === 0 && !confirm('El total de gastos es ' + fmtMoney(0) + '. ¿Registrar la legalización sin gastos?')) return;
-  var cobGuardar = LegProrrateo.cobertura(totalGastos, totalReparto, totalCombustibleLista(gastosValidos), totalOtrosLista(gastosValidos));
-  if (!cobGuardar.cuadra) {
-    if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
+  // Solo se compara el reparto si se eligió alguna empresa: sin reparto no hay descuadre.
+  if (empresasValidas.length) {
+    var cobGuardar = LegProrrateo.cobertura(totalGastos, totalReparto, totalCombustibleLista(gastosValidos), totalOtrosLista(gastosValidos));
+    if (!cobGuardar.cuadra) {
+      if (!confirm('El reparto entre empresas (' + fmtMoney(totalReparto) + ') no coincide con el total de gastos (' + fmtMoney(totalGastos) + '). ¿Guardar de todas formas?')) return;
+    }
   }
 
   // Alta automática de la placa en el catálogo si el usuario escribió una
@@ -4762,7 +4768,7 @@ function renderVerBody(leg) {
   var combVer = totalCombustibleLista(items);
   var otrosVer = (esMant || esEnv) ? 0 : totalOtrosLista(items);
   var cobVer = (esMant || esEnv) ? { comb: false, otros: false } : LegProrrateo.cobertura(totalGastos, totalReparto, combVer, otrosVer);
-  var excluyeVerTxt = compartida ? '' : [cobVer.comb ? 'el Combustible (' + fmtMoney(combVer) + ')' : '', cobVer.otros ? 'Otros (' + fmtMoney(otrosVer) + ')' : ''].filter(Boolean).join(' ni ');
+  var excluyeVerTxt = (compartida || !empresasOf(leg.id).length) ? '' : [cobVer.comb ? 'el Combustible (' + fmtMoney(combVer) + ')' : '', cobVer.otros ? 'Otros (' + fmtMoney(otrosVer) + ')' : ''].filter(Boolean).join(' ni ');
   var descVer = repartoDescuadre(leg);
 
   // Mantenimiento: cada línea muestra su placa (una legalización puede cubrir

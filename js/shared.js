@@ -2609,9 +2609,9 @@ async function _apiPostCore(body) {
       var itemsLG = (body.items || []).filter(function(it) { return (it.Concepto || '').trim() || Number(it.Valor) > 0; });
       if (!itemsLG.length) return { ok: false, error: 'Agrega al menos una línea de gasto' };
       var empresasLG = (body.empresas || []).filter(function(e) { return (e.Empresa || '').trim(); });
-      // El reparto entre empresas es obligatorio salvo en Mantenimiento (se maneja
-      // como el Combustible en Prorrateo: sin reparto queda "Sin reparto asignado").
-      if (!empresasLG.length && (body.header || {}).Tipo !== 'Mantenimiento') return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
+      // El reparto entre empresas es opcional en Ruta y Mantenimiento (se maneja como el
+      // Combustible en Prorrateo: sin reparto queda "Sin reparto asignado"); solo el Envío lo exige.
+      if (!empresasLG.length && (body.header || {}).Tipo === 'Envio') return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
       var hdrLG = body.header || {};
       var payloadLG = {
         Fecha: hdrLG.Fecha || today(),
@@ -2655,7 +2655,7 @@ async function _apiPostCore(body) {
       var itemsLGe = (body.items || []).filter(function(it) { return (it.Concepto || '').trim() || Number(it.Valor) > 0; });
       if (!itemsLGe.length) return { ok: false, error: 'Agrega al menos una línea de gasto' };
       var empresasLGe = (body.empresas || []).filter(function(e) { return (e.Empresa || '').trim(); });
-      if (!empresasLGe.length && (body.header || {}).Tipo !== 'Mantenimiento') return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
+      if (!empresasLGe.length && (body.header || {}).Tipo === 'Envio') return { ok: false, error: 'Agrega al menos una empresa en el reparto' };
       var hdrLGe = body.header || {};
       var updLG = {
         Fecha: hdrLGe.Fecha || today(),
