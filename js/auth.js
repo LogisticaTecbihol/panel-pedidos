@@ -314,6 +314,14 @@ var AUTH = (function() {
     return _companies.length === 1 && _companies[0].sigla === 'PARCELAR';
   }
 
+  // Pestaña «Cotizaciones» de Pedidos (js/cotizaciones.js): ven las cotizaciones los
+  // mismos roles que la RLS de "Cotizaciones" deja leer (canEdit + lector). El comercial
+  // solo ve las suyas (lo hace cumplir la base); despachador, cartera y producción no
+  // tienen acceso. Quién puede CREAR/EDITAR es canEdit().
+  function verCotizaciones() {
+    return !!_profile && (canEdit() || _profile.rol === 'lector');
+  }
+
   // Quién puede poner/quitar el estado "Bloqueado por cartera"
   // (Pedidos.Estado_2 y ClientesUnicos.Estado). El backend lo hace cumplir
   // con dos triggers + la RPC set_bloqueo_cartera_pedido.
@@ -496,6 +504,7 @@ var AUTH = (function() {
     isDespachador: isDespachador,
     isCartera: isCartera,
     verPedidosIASO: verPedidosIASO,
+    verCotizaciones: verCotizaciones,
     canToggleBloqueoCartera: canToggleBloqueoCartera,
     canApproveNuevoCliente: canApproveNuevoCliente,
     canDescomprometer: canDescomprometer,

@@ -84,6 +84,29 @@
 .ms-no-results{padding:10px;text-align:center;color:#a0aec0;font-size:0.8rem}
 /* ── Pestañas Activos / Histórico ── */
 #panel-ordenes.solo-lectura .accion-escritura{display:none!important}
+/* ── Cotizaciones (js/cotizaciones.js) ──
+   El modal de Nuevo Pedido se reutiliza en «modo cotización»: se ocultan por CSS los campos
+   que no aplican (por CSS y no por JS: _toggleBodegaField y otros los vuelven a mostrar). */
+#nuevo-overlay.modo-cot #nv-consecutivo-wrap,
+#nuevo-overlay.modo-cot #nv-facturar-a-wrap,
+#nuevo-overlay.modo-cot #nv-nit-adicional-wrap,
+#nuevo-overlay.modo-cot #nv-consignacion-wrap,
+#nuevo-overlay.modo-cot #nv-bodega-wrap,
+#nuevo-overlay.modo-cot #nv-historico-block,
+#nuevo-overlay.modo-cot #nv-dup-warn{display:none!important}
+.b-cot-abierta{background:#e3f2fd;color:#1565c0}
+.b-cot-vencida{background:#fff3e0;color:#e65100}
+.b-cot-aceptada{background:#e8f5e9;color:#2e7d32}
+.b-cot-convertida{background:#f3e5f5;color:#7b1fa2}
+.b-cot-rechazada{background:#fce4ec;color:#c62828}
+#cot-f-buscar{width:230px}
+.cot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 18px;margin-bottom:14px}
+.cot-grid .k{font-size:.7rem;font-weight:700;color:#718096;text-transform:uppercase;letter-spacing:.3px}
+.cot-grid .v{font-size:.88rem;color:#2d3748;word-break:break-word}
+@media (max-width:700px){
+  #cot-f-buscar{flex:1 1 100%;width:auto;min-width:0}
+  .cot-grid{grid-template-columns:1fr 1fr}
+}
 </style>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -248,6 +271,7 @@
     <button class="btn-export" id="tab-despachos" onclick="switchPedidoTab('despachos')" style="background:#718096;display:none">🚚 Despachos</button>
     <button class="btn-export" id="tab-cargashist" onclick="switchPedidoTab('cargashist')" style="background:#718096;display:none" title="Solo admin — pedidos de carga histórica (anteriores al 2026-07-01) para validarlos">📜 Cargas históricas</button>
     <button class="btn-export" id="tab-iaso" onclick="switchPedidoTab('iaso')" style="background:#718096;display:none" title="Órdenes de compra que IASO le hace a PARCELAR, vistas como pedidos de un cliente — solo consulta">🏭 Pedidos IASO</button>
+    <button class="btn-export" id="tab-cotizaciones" onclick="switchPedidoTab('cotizaciones')" style="background:#718096;display:none" title="Propuestas de precios para presentar al cliente; si las acepta se convierten en pedido">📝 Cotizaciones</button>
   </div>
 
   <div id="panel-ordenes">
@@ -257,6 +281,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <button id="btn-clear-sort" onclick="clearSort()" title="Quitar todos los ordenamientos">✕ Limpiar orden</button>
         <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevoPedido()" style="background:#1a5276">✏️ Nuevo Pedido</button>
+        <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevaCotizacion()" style="background:#7d3c98" title="Prepara una cotización para presentar al cliente; si la acepta se convierte en pedido">📝 Nueva Cotización</button>
         <button class="btn-dl auth-edit-only accion-escritura" onclick="openNuevoTraslado()" style="background:#d35400" title="Registra el envío de mercancía a una bodega propia en consignación (no se factura a un tercero)">🚚 Nuevo Traslado</button>
         <button class="btn-dl auth-admin-only accion-escritura" onclick="document.getElementById('file-upload').click()" style="background:#27ae60;display:none">📥 Cargar Pedido</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
@@ -365,6 +390,42 @@
             <tr id="iaso-det-head"></tr>
           </thead>
           <tbody id="iaso-det-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel Cotizaciones. Lógica en js/cotizaciones.js -->
+  <div id="panel-cotizaciones" style="display:none">
+    <div class="card">
+      <div class="card-head desp-head">
+        <h3>📝 Cotizaciones <span id="cot-count" style="font-weight:400;color:#718096"></span></h3>
+        <div class="desp-filtros">
+          <select id="cot-f-empresa" title="Empresa" onchange="cotRender()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+            <option value="">— Todas —</option>
+          </select>
+          <select id="cot-f-estado" title="Estado" onchange="cotRender()" style="padding:5px 8px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+            <option value="">Estado: todos</option>
+            <option value="Abierta">Abiertas</option>
+            <option value="Vencida">Vencidas</option>
+            <option value="Aceptada">Aceptadas</option>
+            <option value="Convertida">Convertidas</option>
+            <option value="Rechazada">Rechazadas</option>
+          </select>
+          <input type="text" id="cot-f-buscar" placeholder="Buscar N°, cliente, NIT, comercial…" oninput="cotRender()" style="padding:5px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem">
+          <button class="btn-dl auth-edit-only" onclick="openNuevaCotizacion()" style="background:#7d3c98">📝 Nueva Cotización</button>
+          <button class="btn-dl" onclick="cotCargar(true)">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="padding:8px 18px;font-size:0.78rem;color:#718096;border-bottom:1px solid #edf2f7">
+        Una cotización vale 8 días calendario (se puede ajustar). Si el cliente la acepta, se corrige si hace falta y se convierte en pedido: el pedido se guarda desde «Nuevo Pedido» con todas sus validaciones.
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr id="cot-head"></tr>
+          </thead>
+          <tbody id="cot-body"></tbody>
         </table>
       </div>
     </div>
@@ -847,16 +908,16 @@
             <option value="">— Seleccionar —</option>
           </select>
         </div>
-        <div>
+        <div id="nv-consecutivo-wrap">
           <label class="ef-label">Consecutivo *</label>
           <input class="ef" id="nv-consecutivo" type="text" placeholder="Automático al seleccionar comercial" readonly style="background:#f0f0f0">
         </div>
         <div>
-          <label class="ef-label">Fecha Pedido *</label>
+          <label class="ef-label" id="nv-fecha-lbl">Fecha Pedido *</label>
           <input class="ef" id="nv-fecha" type="date">
         </div>
         <div>
-          <label class="ef-label">Fecha Compromiso *</label>
+          <label class="ef-label" id="nv-compromiso-lbl">Fecha Compromiso *</label>
           <input class="ef" id="nv-compromiso" type="date" title="Fecha prometida de entrega al cliente — se calcula automáticamente, puedes ajustarla">
         </div>
         <div id="nv-cliente-wrap">
@@ -944,7 +1005,7 @@
         </div>
       </div>
       <div style="background:#fef9e7;border:1px solid #f9e79f;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:0.84rem">
-        <label style="font-weight:700;color:#7d6608;font-size:0.76rem;text-transform:uppercase;display:block;margin-bottom:6px">Observaciones</label>
+        <label style="font-weight:700;color:#7d6608;font-size:0.76rem;text-transform:uppercase;display:block;margin-bottom:6px" id="nv-obs-lbl">Observaciones</label>
         <textarea id="nv-observaciones" rows="2" placeholder="Observaciones del pedido (opcional)" style="width:100%;border:1px solid #f9e79f;border-radius:6px;padding:8px 10px;font-size:0.84rem;font-family:inherit;resize:vertical;background:white;outline:none;color:#4a5568;transition:border-color 0.2s" onfocus="this.style.borderColor='#d4ac0d'" onblur="this.style.borderColor='#f9e79f'"></textarea>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -973,7 +1034,7 @@
           Total calculado: <strong id="nv-total-calc">$0</strong>
         </div>
       </div>
-      <div class="auth-admin-only" data-display="block" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">
+      <div class="auth-admin-only" id="nv-historico-block" data-display="block" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">
         <label style="font-size:0.8rem;cursor:pointer;user-select:none;color:#7c2d12">
           <input type="checkbox" id="nv-chk-historico" onchange="toggleCargaHistoricaPed(this.checked)">
           📜 Carga histórica (registro anterior al 2026-07-01, no afecta existencias/Kardex)
@@ -1002,6 +1063,24 @@
         <button class="btn-cancel" onclick="closeNuevo()">Cancelar</button>
         <button class="btn-confirm" id="btn-guardar-nuevo" onclick="guardarNuevoPedido()" style="background:#1a5276">✏️ Guardar pedido</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- COTIZACIÓN: DETALLE (js/cotizaciones.js) -->
+<div class="overlay" id="cot-det-overlay">
+  <div class="modal-box" style="max-width:980px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#6c3483,#8e44ad)">
+      <div style="flex:1">
+        <h2 id="cot-det-titulo">—</h2>
+        <div class="meta" id="cot-det-meta"></div>
+      </div>
+      <button class="btn-close" onclick="cotCerrarDetalle()">✕</button>
+    </div>
+    <div class="mbody" id="cot-det-body"></div>
+    <div class="mftr">
+      <div id="cot-det-aviso" style="font-size:0.8rem;color:#718096;flex:1"></div>
+      <div class="mftr-btns" id="cot-det-acciones" style="flex-wrap:wrap;justify-content:flex-end"></div>
     </div>
   </div>
 </div>
@@ -1049,13 +1128,14 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261104a"></script>
-<script src="js/auth.js?v=20261029a"></script>
+<script src="js/shared.js?v=20261105a"></script>
+<script src="js/auth.js?v=20261105a"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/colombia-geo.js?v=20260826a"></script>
 <script src="js/existencias.js?v=20261103a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
 <script src="js/oc-como-pedido.js?v=20261029b"></script>
-<script src="js/pedidos.js?v=20261104b"></script>
+<script src="js/pedidos.js?v=20261105a"></script>
+<script src="js/cotizaciones.js?v=20261105a"></script>
 </body>
 </html>

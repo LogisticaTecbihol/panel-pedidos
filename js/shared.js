@@ -608,6 +608,25 @@ async function apiGet(action, opts) {
       return { ok: true, items: _addRow(res.data) };
     }
 
+    // ── COTIZACIONES (pedidos.html → pestaña «Cotizaciones»; js/cotizaciones.js) ──
+    // getCotizaciones: solo cabeceras (una fila por cotización). Las líneas se piden
+    // con getCotizacion al abrir el detalle, la edición, el PDF o la conversión.
+    if (action === 'getCotizaciones') {
+      var res = await _fetchAllRows('Cotizaciones', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, cotizaciones: _addRow(_filterGerenteIaso(res.data, 'Nombre_Empresa')) };
+    }
+    if (action === 'getCotizacion') {
+      if (!opts || !opts.id) return { ok: false, error: 'Falta el id de la cotización' };
+      var resCot = await _sb.from('Cotizaciones').select('*, CotizacionLineas(*)').eq('id', opts.id).maybeSingle();
+      if (resCot.error) return { ok: false, error: resCot.error.message };
+      if (!resCot.data) return { ok: false, error: 'No se encontró la cotización o no tienes acceso a ella' };
+      var cotRow = resCot.data;
+      cotRow.lineas = (cotRow.CotizacionLineas || []).slice().sort(function(a, b) { return (a.Orden || 0) - (b.Orden || 0); });
+      delete cotRow.CotizacionLineas;
+      return { ok: true, cotizacion: cotRow };
+    }
+
     return { error: 'Accion no reconocida: ' + action };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -2835,6 +2854,32 @@ async function _apiPostCore(body) {
       var resNd = await _sb.from('LegalizacionGastosConsecutivoNotas').delete().eq('id', body.id);
       if (resNd.error) return { ok: false, error: resNd.error.message };
       return { ok: true, deleted: 1 };
+    }
+
+    // ── COTIZACIONES ──
+    // Todo se escribe por RPC (atómico, con las RLS de quien llama): ver
+    // supabase/migrations/create_cotizaciones.sql. El consecutivo COT-<SIGLA>-<n> y el
+    // total los calcula la base; el navegador solo manda los datos.
+    if (action === 'guardarCotizacion') {
+      var resGc = await _sb.rpc('guardar_cotizacion', {
+        p_id: body.id || null, p_cab: body.cab || {}, p_lineas: body.lineas || []
+      });
+      if (resGc.error) return { ok: false, error: resGc.error.message };
+      return { ok: true, id: resGc.data && resGc.data.id, consecutivo: resGc.data && resGc.data.consecutivo };
+    }
+    if (action === 'cambiarEstadoCotizacion') {
+      var resEc = await _sb.rpc('cambiar_estado_cotizacion', {
+        p_id: body.id, p_estado: body.estado, p_nota: body.nota || null, p_vigente_hasta: body.vigente_hasta || null
+      });
+      if (resEc.error) return { ok: false, error: resEc.error.message };
+      return { ok: true, estado: resEc.data && resEc.data.estado };
+    }
+    if (action === 'marcarCotizacionConvertida') {
+      var resMc = await _sb.rpc('marcar_cotizacion_convertida', {
+        p_id: body.id, p_pedido_consecutivo: String(body.pedido_consecutivo || ''), p_pedido_cliente: body.pedido_cliente || ''
+      });
+      if (resMc.error) return { ok: false, error: resMc.error.message };
+      return { ok: true, estado: resMc.data && resMc.data.estado };
     }
 
     return { error: 'Accion POST no reconocida: ' + action };

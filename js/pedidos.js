@@ -1195,6 +1195,7 @@ async function loadFromAPI() {
     initDespachosTab();
     initCargasHistTab();
     initIasoTab();
+    if (typeof initCotizacionesTab === 'function') initCotizacionesTab();
 
     // La mayoría de los pedidos de gerente_iaso (IASO) terminan en Histórico
     // (ya entregados/cerrados); abrir ahí por defecto en la primera carga
@@ -5623,6 +5624,9 @@ function _lookupPrecio(empresa, tipoPrecio, productoNombre) {
 
 function _reapplyPreciosNuevo() {
   syncNuevoFromDOM();
+  // Cambiar lista, empresa o cliente es un pedido explícito de re-precio: suelta la
+  // marca de «precio de la cotización» (ver js/cotizaciones.js).
+  nuevoProductos.forEach(function(p) { p.precio_fijo = false; });
   var prodInputs = document.querySelectorAll('.nv-prod');
   for (var j = 0; j < prodInputs.length; j++) {
     if (prodInputs[j].value.trim()) _applyPrecioToLine(j);
@@ -5675,6 +5679,8 @@ function setupProductoAutocomplete() {
         var presInputs = document.querySelectorAll('.nv-pres');
         if (presInputs[i]) presInputs[i].value = p.presentacion || '';
         syncNuevoFromDOM();
+        // Eligió otro producto: el precio ya no es el negociado en la cotización.
+        if (nuevoProductos[i]) nuevoProductos[i].precio_fijo = false;
         _applyPrecioToLine(i);
       }
     }));
@@ -5688,7 +5694,10 @@ function setupProductoAutocomplete() {
           if (pres) presInput.value = pres;
           syncNuevoFromDOM();
         }
-        _applyPrecioToLine(idx);
+        // Línea precargada desde una cotización (js/cotizaciones.js): conserva el precio
+        // cotizado aunque la persona solo pase por el campo (cambiar lista, empresa o
+        // cliente sí lo reaplica: ver _reapplyPreciosNuevo).
+        if (!(nuevoProductos[idx] && nuevoProductos[idx].precio_fijo)) _applyPrecioToLine(idx);
       }
     });
   });
@@ -5878,6 +5887,14 @@ function _toggleBodegaField(prefix, empresa) {
 // js/bodegas-consignacion.js siga detectándolo sin cambios.
 var _nvEsTraslado = false;
 
+// Cotizaciones (js/cotizaciones.js): el mismo modal en «modo cotización»
+// (_nvEsCotizacion), editando una cotización ya guardada (_nvCotizacionId) o
+// precargado desde una cotización ACEPTADA para convertirla en pedido
+// (_nvCotizacionOrigen = { id, numero }). openNuevoPedido y closeNuevo las apagan.
+var _nvEsCotizacion = false;
+var _nvCotizacionId = null;
+var _nvCotizacionOrigen = null;
+
 // El catálogo cambia (se agregan bodegas desde otra sesión), así que
 // populateBodegaDestinoSelect lo pide de nuevo cada vez (forzar). Si la
 // consulta falla se conserva la última lista buena en vez de vaciarla.
@@ -6000,6 +6017,8 @@ async function openNuevoPedido() {
   document.getElementById('btn-guardar-nuevo').disabled = false;
   document.getElementById('btn-guardar-nuevo').textContent = '✏️ Guardar pedido';
   _nvEsTraslado = false;
+  _nvEsCotizacion = false; _nvCotizacionId = null; _nvCotizacionOrigen = null;
+  if (typeof cotAplicarModo === 'function') cotAplicarModo(false);
   document.getElementById('nv-titulo').textContent = '✏️ Nuevo Pedido Manual';
   document.getElementById('nv-subtitulo').textContent = 'Ingresa los datos del pedido directamente';
   document.getElementById('nv-bodega-destino').innerHTML = '<option value="">— Seleccionar —</option>';
@@ -6238,6 +6257,8 @@ async function openNuevoPedido() {
 function closeNuevo() {
   document.getElementById('nuevo-overlay').classList.remove('show');
   nuevoProductos = [];
+  _nvEsCotizacion = false; _nvCotizacionId = null; _nvCotizacionOrigen = null;
+  if (typeof cotAplicarModo === 'function') cotAplicarModo(false);
   if (clienteAC) { clienteAC.destroy(); clienteAC = null; }
   if (nitAC) { nitAC.destroy(); nitAC = null; }
   destroyProductoACs();
@@ -6375,6 +6396,8 @@ function _avisarCompromisoMismoDia(fecha, compromiso, original) {
 }
 
 async function guardarNuevoPedido() {
+  // «Modo cotización»: el mismo botón guarda una cotización (js/cotizaciones.js), no un pedido.
+  if (_nvEsCotizacion) return guardarCotizacion();
   syncNuevoFromDOM();
 
   var empresa = document.getElementById('nv-empresa').value;
@@ -6515,6 +6538,13 @@ async function guardarNuevoPedido() {
       } catch (e) { /* no bloquea la creación del pedido */ }
     }
 
+    // Pedido creado desde una cotización ACEPTADA (js/cotizaciones.js): deja el vínculo
+    // y la marca «Convertida». Si falla, el pedido ya existe: solo se avisa (ver el toast final).
+    var _cotVinculo = null;
+    if (_nvCotizacionOrigen && typeof cotMarcarConvertida === 'function') {
+      _cotVinculo = await cotMarcarConvertida(_nvCotizacionOrigen, consecutivo, cliente);
+    }
+
     // Si el pedido queda "Pendiente de aprobación" lo decide el trigger de la BD (no
     // depende de que el cliente sea nuevo: PARCELAR está exceptuada y un cliente ya
     // cargado sin pedidos previos sí queda pendiente), así que se lee el estado real.
@@ -6555,9 +6585,19 @@ async function guardarNuevoPedido() {
       archivo: 'Ingreso manual'
     });
     closeNuevo();
-    showToast(_pendAprob
+    var _msgPedido = _pendAprob
       ? '⏳ Cliente nuevo: pedido creado y PENDIENTE DE APROBACIÓN de Cartera'
-      : '✅ Pedido creado: ' + (result.added||0) + ' línea(s) agregadas' + (_cliCreado ? ' · cliente nuevo registrado en Clientes' : ''), _pendAprob ? '#d97706' : undefined);
+      : '✅ Pedido creado: ' + (result.added||0) + ' línea(s) agregadas' + (_cliCreado ? ' · cliente nuevo registrado en Clientes' : '');
+    var _colorPedido = _pendAprob ? '#d97706' : undefined;
+    var _msPedido;
+    if (_cotVinculo && _cotVinculo.ok) {
+      _msgPedido += ' · ' + _cotVinculo.numero + ' convertida';
+    } else if (_cotVinculo) {
+      _msgPedido += ' ⚠️ PERO ' + _cotVinculo.numero + ' no quedó marcada como convertida (' + _cotVinculo.error + '). Avisa a un administrador para no duplicar el pedido.';
+      _colorPedido = '#e67e22';
+      _msPedido = 15000;
+    }
+    showToast(_msgPedido, _colorPedido, _msPedido);
     await loadFromAPI();
   } catch (err) {
     showToast('❌ Error: ' + err.message, '#e74c3c');
@@ -6569,19 +6609,32 @@ async function guardarNuevoPedido() {
 // ── Tab switching ──
 // 'activos' e 'historico' comparten el panel de órdenes (cambian el ámbito de filtrado);
 // 'detalle', 'despachos' y 'cargashist' son paneles propios.
+var _filtrosOcultosPorCot = false;
 function switchPedidoTab(tab) {
   if (tab === 'cargashist' && !AUTH.isAdmin()) return;
   if (tab === 'iaso' && !AUTH.verPedidosIASO()) return;
+  if (tab === 'cotizaciones' && !(AUTH.verCotizaciones && AUTH.verCotizaciones())) return;
   var scopeTab = (tab === 'activos' || tab === 'historico');
   if (scopeTab) {
     if (pedidoScope !== tab) currentPage = 1;
     pedidoScope = tab;
   }
 
-  ['activos', 'historico', 'detalle', 'despachos', 'cargashist', 'iaso'].forEach(function(t) {
+  ['activos', 'historico', 'detalle', 'despachos', 'cargashist', 'iaso', 'cotizaciones'].forEach(function(t) {
     var btn = document.getElementById('tab-' + t);
     if (btn) btn.style.background = t === tab ? '#1a5276' : '#718096';
   });
+
+  // Las estadísticas y los filtros de arriba son de pedidos: en Cotizaciones se ocultan
+  // (y solo se restauran al salir de ahí, para no pisar lo que ya oculta el despachador).
+  var _enCot = tab === 'cotizaciones';
+  if (_enCot !== _filtrosOcultosPorCot) {
+    _filtrosOcultosPorCot = _enCot;
+    ['.stats', '.filters'].forEach(function(sel) {
+      var el = document.querySelector(sel);
+      if (el) el.style.display = _enCot ? 'none' : '';
+    });
+  }
 
   var panelOrd = document.getElementById('panel-ordenes');
   if (panelOrd) {
@@ -6596,7 +6649,10 @@ function switchPedidoTab(tab) {
   if (panelCh) panelCh.style.display = tab === 'cargashist' ? 'block' : 'none';
   var panelIaso = document.getElementById('panel-iaso');
   if (panelIaso) panelIaso.style.display = tab === 'iaso' ? 'block' : 'none';
+  var panelCot = document.getElementById('panel-cotizaciones');
+  if (panelCot) panelCot.style.display = _enCot ? 'block' : 'none';
 
+  if (_enCot && typeof cotMostrar === 'function') cotMostrar();
   if (scopeTab) renderTable();
   if (tab === 'detalle') renderDetalle();
   if (tab === 'despachos') buildDespachos();

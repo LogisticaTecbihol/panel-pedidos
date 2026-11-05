@@ -291,3 +291,50 @@ y no había ninguna validación. De 422 remisiones de pedidos era la única que 
 - Probado con la migración dentro de una transacción revertida contra producción (10 casos: sin cambio sobre el 0171 repetido, número de otra orden, número libre, hermana de la misma orden, mismo consecutivo con otro cliente,
   cambio de cliente en el mismo guardado, otra empresa, minúsculas, volver a poner el 0171) y con un arnés de navegador sobre el `pedidos.js` real (15 casos: caso real, misma orden, otro cliente, minúsculas, subcadenas,
   lista heredada sin `|`, comodines `%`/`_`, otra empresa, error de red). El flujo completo con un usuario real no se probó.
+
+## Cotizaciones (`pedidos.html` → pestaña «Cotizaciones»)
+
+Propuesta de precios para un cliente **o prospecto**. Si el cliente la acepta, se ajusta si hace falta y se convierte en pedido. Vive dentro de Pedidos (botón «📝 Nueva Cotización» junto a
+«Nuevo Pedido» y pestaña «📝 Cotizaciones»); **no hay módulo ni permiso nuevo en `usuario_modulos`**. Todo el código nuevo está en `js/cotizaciones.js`, que carga DESPUÉS de `pedidos.js` y usa sus
+funciones globales.
+
+- **Modelo** (`supabase/migrations/create_cotizaciones.sql`, migración remota `create_cotizaciones`; aplicar ANTES de publicar el código): cabecera `Cotizaciones` (una fila por cotización) +
+  `CotizacionLineas` (se reemplazan completas en cada edición). Número visible **`COT-<SIGLA>-<Consecutivo>`**, consecutivo **por empresa** (no por comercial: el de pedidos, por comercial, ya duplicó
+  números). Estados guardados: `Abierta` → `Aceptada` → `Convertida`; `Abierta/Aceptada` → `Rechazada` (con motivo) → `Abierta` (reabrir con vigencia nueva). **«Vencida» no se guarda**: es una `Abierta`
+  con `Vigente_Hasta < hoy` (`cotEstadoEfectivo`). Editable: Abierta y Aceptada. Convertible: solo Aceptada. Sin versiones: lo editado queda en `audit_log` (ambas tablas lo tienen).
+- **Vigencia**: `COT_VIGENCIA_DIAS = 8` días **calendario** (corridos, no hábiles; el pedido sí usa 8 hábiles para el compromiso) desde la fecha de la cotización; «Válida hasta» se puede ajustar. No se acepta
+  una vencida (hay que editarla y extender la vigencia) ni se guarda una Abierta con vigencia pasada.
+- **Sin IVA ni descuentos**: los productos no manejan IVA, así que ni el formulario ni el PDF lo mencionan. Valores como en el pedido: producto, cantidad, valor unitario, total.
+- **Escritura SOLO por RPC** (atómicas, `SECURITY INVOKER` → aplican las RLS): `guardar_cotizacion(id, cab, lineas)` (crea o edita; recalcula `Valor_Total` y `Total` en el servidor), `cambiar_estado_cotizacion`,
+  `marcar_cotizacion_convertida`. `generar_consecutivo_cotizacion` es `SECURITY DEFINER` a propósito (con RLS un comercial solo ve lo suyo y el `MAX()+1` saldría repetido; lock por empresa).
+  El trigger `trg_cotizaciones_guard` hace cumplir las transiciones aunque alguien escriba directo a la tabla (Convertida inmutable, Rechazada no se edita, empresa/número no cambian, no se acepta vencida).
+  Desde JS: `apiPost({action:'guardarCotizacion'|'cambiarEstadoCotizacion'|'marcarCotizacionConvertida'})` y `apiGet('getCotizaciones'|'getCotizacion',{id})` (shared.js). La lista se carga **al abrir la pestaña**
+  (no en `loadFromAPI`, que ya es lenta).
+- **Permisos** (RLS calcada de `Pedidos`): admin, editor, contabilidad, gerente_iaso y remisionador crean/editan en sus empresas; `lector` solo consulta; `comercial` solo ve/edita las suyas
+  (`comercial_id` o `creado_por = auth.uid()`; al crear exige `comercial_id = auth.uid()`); borrar: solo admin (no hay botón). Despachador, cartera y producción no tienen acceso. En JS:
+  `AUTH.verCotizaciones()` (canEdit + lector) para la pestaña y `AUTH.canEdit()` para escribir.
+- **El formulario es el modal de «Nuevo Pedido» en «modo cotización»** (mismo patrón que «Nuevo Traslado»): clase `.modo-cot` en `#nuevo-overlay` (el CSS oculta consecutivo, Facturar a, NIT adicional, Consignación,
+  Bodega de facturación y Carga histórica; por CSS y no por JS porque `_toggleBodegaField` los vuelve a mostrar) + banderas `_nvEsCotizacion` / `_nvCotizacionId` / `_nvCotizacionOrigen` (declaradas en `pedidos.js`;
+  `openNuevoPedido` y `closeNuevo` las apagan con `cotAplicarModo(false)`). Ganchos en `pedidos.js`: `guardarNuevoPedido` delega en `guardarCotizacion` si `_nvEsCotizacion`; `switchPedidoTab` conoce la pestaña
+  (y oculta `.stats`/`.filters`, que son de pedidos). **Si cambias el modal de Nuevo Pedido (ids `nv-*`), revisa también `cotAplicarModo` y `cotPrecargarModal`.**
+- **Cliente o prospecto**: no se exige NIT y la cotización NO crea nada en Clientes ni agrega productos al maestro; eso ocurre solo al convertir, por el flujo normal del pedido
+  (`registrarClienteNuevoDesdePedido` + aprobación de Cartera si es cliente nuevo). Se puede cotizar a un cliente bloqueado/inactivo (solo avisa al elegirlo); al convertir, el servidor rechaza el pedido como siempre.
+- **Conversión**: «🛒 Convertir en pedido» (solo Aceptada) abre **Nuevo Pedido precargado** (`cotPrecargarModal(cot,'pedido')`): el comercial revisa, completa (p. ej. Bodega de facturación en PARCELAR, comercial
+  si la cotización no lo traía) y guarda con `guardarNuevoPedido` de siempre, con todas sus validaciones. Al guardarse bien el pedido, `cotMarcarConvertida` deja la cotización `Convertida` con `Pedido_Consecutivo` y
+  `Pedido_Cliente`. El pedido lleva `Archivo_Fuente = 'Ingreso manual'` **a propósito** (el trigger de aprobación de cliente nuevo compara esa cadena exacta; con otro valor se saltaría la aprobación) y las
+  observaciones empiezan con «Cotización COT-…». **Los precios cotizados no se pisan con la lista**: las líneas precargadas llevan `precio_fijo` y el `blur` del producto (que reaplica el precio de lista) las respeta;
+  cambiar lista, empresa o cliente sí reprecia (`_reapplyPreciosNuevo` suelta la marca), igual que elegir otro producto del autocompletado.
+- **Riesgo conocido**: no hay transacción entre crear el pedido (JS, `agregarPedido`) y marcar la cotización. Si `marcar_cotizacion_convertida` falla después de crear el pedido (red), la cotización queda
+  «Aceptada» y se avisa con un toast largo («PERO COT-… no quedó marcada como convertida… no dupliques el pedido»); hay que avisar a un administrador (se corrige en la base).
+- **PDF** (`generarCotizacionPDF`, media carta apaisada con `_nuevoPdfDoc()`): membrete con logo, razón social, NIT, dirección y contacto de la empresa (`_pdfRemisionHeaderInfoFor`), «COTIZACIÓN COT-…», fecha y
+  «Válida hasta», datos del cliente, asesor (nombre, no el código: `cotNombreComercial`), plazo de pago, tabla (columna «Bonif.» solo si hay línea bonificada), total, observaciones y pie paginado. **No muestra el tipo
+  de lista de precios** (Dealer/Mayorista, dato interno) ni IVA. Al crear una cotización se descarga solo; después, desde el detalle o el 📄 de la lista (se genera siempre con lo guardado).
+- **Se ve en**: lista (N°, fechas, empresa, cliente, NIT, comercial, total, estado con el pedido enlazado; filtros de empresa, estado —incluye «Vencida»— y búsqueda), detalle (banner por estado, líneas, auditoría y botones
+  según estado y rol; rechazar y reabrir piden su dato en un recuadro dentro del detalle), `js/backup.js` (`BACKUP_TABLES`) y el filtro de tablas de `auditoria.html`.
+- **Fuera de alcance** (por decisión): correo desde el panel (solo PDF descargable), descuentos, versiones/revisiones, revisión de stock al cotizar, notificaciones en la campanita, Dashboard/Reportes y el alcance de
+  Contabilidad en Auditoría (`audit_tablas_documentales`).
+- Probado con la migración dentro de una transacción revertida contra producción (consecutivo por empresa independiente de la visibilidad de cada rol, RLS por rol —admin, comerciales A/B, lector, gerente, contabilidad de
+  otra empresa, despachador, cartera, anon—, edición atómica con línea inválida, transiciones, vencimiento, bloqueo de lo convertido, borrado solo admin, unicidad, totales y auditoría) y con un arnés de navegador sobre
+  la página real `pedidos.html` con Supabase simulado (alta de prospecto sin NIT, PDF de 1 y de 4 páginas, edición con precio conservado, rechazar/reabrir/aceptar, vencida, conversión con precio intacto y vínculo, falla
+  del vínculo, regresión de «Nuevo Pedido» y «Nuevo Traslado», roles lector/comercial/despachador, HTML malicioso en nombres y errores de carga). **El flujo con usuarios reales (permisos reales de cada rol y el envío del PDF al
+  cliente) no se probó.**
