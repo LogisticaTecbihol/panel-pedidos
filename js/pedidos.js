@@ -7625,7 +7625,10 @@ function generarPedidoPDF(data) {
     ['Cliente', data.cliente],
     ['Sucursal', data.sucursal],
     ['NIT', data.nit],
-    ['Facturar a', data.facturar_a && data.facturar_a !== data.cliente ? data.facturar_a : ''],
+    // Siempre se muestra lo mismo que el campo «Facturar a nombre de» del formulario
+    // (que cae al cliente cuando no hay otro nombre). Antes se ocultaba si era igual
+    // al cliente y el PDF decía «—» aunque el campo tuviera el nombre.
+    ['Facturar a', String(data.facturar_a || '').trim() || data.cliente],
     ['NIT Adicional', data.nit_adicional],
     ['Teléfono', data.telefono],
     ['Municipio', data.municipio],
