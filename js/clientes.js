@@ -168,25 +168,44 @@ function _estadoNorm(e) {
 // está en uno de esos dos estados se deshabilita el <select>.
 var _EST_RESTRINGIDOS = ['Bloqueado por cartera', 'Suspendido'];
 
+// El rol «editor» solo puede bloquear/suspender/liberar clientes (y editar las observaciones
+// de cartera) de las empresas que tiene asignadas: AUTH.canToggleBloqueoClienteEn(empresa)
+// mira la empresa que está elegida en el formulario; el backend lo hace cumplir
+// (guard_bloqueo_cartera_cliente). La documentación depende solo del rol.
+// Devuelve true si el usuario puede cambiar el estado de este registro.
+var _edEstadoActual = 'Activo';   // estado guardado del registro que se está abriendo
+
 function _gateEstadoClienteSelect(actual) {
   var sel = document.getElementById('ed-estado');
-  if (!sel) return;
-  var puede = (typeof AUTH !== 'undefined' && AUTH.canToggleBloqueoCartera)
+  if (!sel) return true;
+  _edEstadoActual = actual;
+  var rolPuede = (typeof AUTH !== 'undefined' && AUTH.canToggleBloqueoCartera)
     ? AUTH.canToggleBloqueoCartera() : true;
+  var empEl = document.getElementById('ed-empresa');
+  var puede = rolPuede && ((typeof AUTH !== 'undefined' && AUTH.canToggleBloqueoClienteEn)
+    ? AUTH.canToggleBloqueoClienteEn(empEl ? empEl.value : '') : true);
   var hint = document.getElementById('ed-estado-hint');
+  var hintEmp = document.getElementById('ed-estado-hint-empresa');
   var obsEl = document.getElementById('ed-obs-cartera');
   if (obsEl) obsEl.disabled = !puede;
   ['ed-doc-estado', 'ed-doc-obs'].forEach(function(id) {
     var el = document.getElementById(id);
-    if (el) el.disabled = !puede;
+    if (el) el.disabled = !rolPuede;
   });
+  if (hintEmp) {
+    var misEmpresas = (typeof AUTH !== 'undefined' && AUTH.getCompanies)
+      ? AUTH.getCompanies().map(function(c) { return c.sigla; }).join(', ') : '';
+    hintEmp.textContent = (rolPuede && !puede)
+      ? 'Como editor solo puedes bloquear, suspender o liberar clientes de tus empresas' + (misEmpresas ? ' (' + misEmpresas + ')' : '') + '.'
+      : '';
+  }
   if (puede) {
     _EST_RESTRINGIDOS.forEach(function(v) {
       var opt = sel.querySelector('option[value="' + v + '"]');
       if (opt) { opt.hidden = false; opt.disabled = false; }
     });
     sel.disabled = false;
-    return;
+    return true;
   }
   if (_EST_RESTRINGIDOS.indexOf(actual) >= 0) {
     _EST_RESTRINGIDOS.forEach(function(v) {
@@ -194,7 +213,7 @@ function _gateEstadoClienteSelect(actual) {
       if (opt) { opt.hidden = (v !== actual); opt.disabled = (v !== actual); }
     });
     sel.disabled = true;
-    if (hint) hint.textContent = 'Solo Cartera o Administración pueden cambiar este estado.';
+    if (hint && !rolPuede) hint.textContent = 'Solo Cartera o Administración pueden cambiar este estado.';
   } else {
     _EST_RESTRINGIDOS.forEach(function(v) {
       var opt = sel.querySelector('option[value="' + v + '"]');
@@ -202,6 +221,7 @@ function _gateEstadoClienteSelect(actual) {
     });
     sel.disabled = false;
   }
+  return false;
 }
 
 // Estado unificado de un grupo (mismo NIT). Si difieren, devuelve el más
@@ -1032,6 +1052,21 @@ document.getElementById('ed-empresa').addEventListener('change', function() {
   var recs = _sedeCtx.conEmpresa.filter(function(r) { return r.Nombre_Empresa.trim() === emp; });
   if (!recs.length) return;
   _fillSedeForm(_refRecordSede(recs), _sedeCtx.records, true);
+});
+
+// Al cambiar la empresa del formulario se vuelve a evaluar si el usuario puede cambiar el
+// estado: un editor solo bloquea/libera clientes de sus empresas. Si ya no puede y lo
+// elegido toca «Bloqueado por cartera»/«Suspendido» (lo pone o lo quita respecto al estado
+// guardado), el selector vuelve al estado guardado: el backend rechazaría ese guardado.
+// Los cambios entre estados no restringidos (Activo ↔ Inactivo) no se tocan.
+document.getElementById('ed-empresa').addEventListener('change', function() {
+  var sel = document.getElementById('ed-estado');
+  if (!sel) return;
+  var puede = _gateEstadoClienteSelect(_edEstadoActual);
+  if (!puede && sel.value !== _edEstadoActual &&
+      (_EST_RESTRINGIDOS.indexOf(sel.value) >= 0 || _EST_RESTRINGIDOS.indexOf(_edEstadoActual) >= 0)) {
+    sel.value = _edEstadoActual;
+  }
 });
 
 // Tras guardar una sede, vuelve a abrir el detalle del mismo cliente.

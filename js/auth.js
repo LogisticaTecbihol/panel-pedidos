@@ -330,6 +330,18 @@ var AUTH = (function() {
     return _profile.rol === 'admin' || _profile.rol === 'editor' || _profile.rol === 'cartera';
   }
 
+  // Lo mismo que canToggleBloqueoCartera() pero para UN registro de cliente (según su
+  // empresa): admin y cartera, en cualquier empresa; el editor, SOLO en las empresas que
+  // tiene asignadas (p. ej. PARCELAR). Un registro sin empresa no cuenta para el editor.
+  // El backend lo hace cumplir en guard_bloqueo_cartera_cliente (migración
+  // bloqueo_cartera_cliente_editor_por_empresa); si cambias una regla, cambia la otra.
+  function canToggleBloqueoClienteEn(empresa) {
+    if (!canToggleBloqueoCartera()) return false;
+    if (_profile.rol !== 'editor') return true;
+    var n = (empresa || '').trim();
+    return n !== '' && hasCompany(n);
+  }
+
   // Quién puede aprobar/rechazar el pedido de un cliente nuevo
   // (Estado_2 = 'Pendiente de aprobación'). Solo Cartera y administración; el
   // backend lo hace cumplir con la RPC resolver_aprobacion_pedido + un trigger.
@@ -506,6 +518,7 @@ var AUTH = (function() {
     verPedidosIASO: verPedidosIASO,
     verCotizaciones: verCotizaciones,
     canToggleBloqueoCartera: canToggleBloqueoCartera,
+    canToggleBloqueoClienteEn: canToggleBloqueoClienteEn,
     canApproveNuevoCliente: canApproveNuevoCliente,
     canDescomprometer: canDescomprometer,
     canReabrirEntrega: canReabrirEntrega,

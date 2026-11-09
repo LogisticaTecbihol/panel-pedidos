@@ -39,6 +39,12 @@ function carKey(emp, con, cli) { return (emp || '') + '||' + String(con || '').t
 
 function carPuedeAprobar() { return typeof AUTH !== 'undefined' && AUTH.canApproveNuevoCliente(); }
 function carPuedeBloquear() { return typeof AUTH !== 'undefined' && AUTH.canToggleBloqueoCartera(); }
+// Liberar/reactivar un CLIENTE de una empresa: admin y cartera, en todas; el editor, solo en las
+// suyas (guard_bloqueo_cartera_cliente lo hace cumplir en la base).
+function carPuedeBloquearEn(empresa) {
+  if (typeof AUTH === 'undefined') return false;
+  return AUTH.canToggleBloqueoClienteEn ? AUTH.canToggleBloqueoClienteEn(empresa) : AUTH.canToggleBloqueoCartera();
+}
 
 // Mismo criterio que pedidos.js:derivedEstado2.
 function carDerivedEstado2(lines) {
@@ -533,7 +539,6 @@ function carRenderClibloq(all) {
 
   document.getElementById('clibloq-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
 
-  var puedeLib = carPuedeBloquear();
   if (!lista.length) {
     document.getElementById('clibloq-body').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:26px">' +
       (all.length ? 'Ningún cliente bloqueado coincide con los filtros.' : 'No hay clientes bloqueados por cartera. 🎉') + '</td></tr>';
@@ -542,6 +547,7 @@ function carRenderClibloq(all) {
 
   document.getElementById('clibloq-body').innerHTML = lista.map(function(x) {
     var k = escHtml(x.key);
+    var puedeLib = carPuedeBloquearEn(x.empresa);
     var cupoTxt = x.cupo.tipo === 'numero' ? fmtMoney(x.cupo.valor) : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? escHtml(x.cupo.texto) : '—';
     var vigTxt = x.pedidosVigentes
       ? x.pedidosVigentes + (x.pedidosVigentes === 1 ? ' pedido · ' : ' pedidos · ') + fmtMoney(x.valorVigente)
@@ -561,6 +567,7 @@ async function carLiberarCliente(key) {
   var x = carCliBloqByKey[key];
   if (!x) return;
   if (!carPuedeBloquear()) { showToast('Solo Cartera, editor o administración pueden liberar clientes', '#e74c3c'); return; }
+  if (!carPuedeBloquearEn(x.empresa)) { showToast('Como editor solo puedes liberar clientes de tus empresas', '#e74c3c'); return; }
   if (!confirm('¿LIBERAR a ' + x.cliente + (x.nit ? ' — NIT ' + x.nit : '') + ' del bloqueo por cartera en ' + x.empresa + '?\n\nQuedará como cliente Activo en ' + x.empresa + ' y podrá volver a generar pedidos ahí. No afecta su relación con las demás empresas del holding.')) return;
   var ids = x.regs.map(function(r) { return r.id; }).filter(function(v) { return v != null; });
   if (!ids.length) return;
@@ -637,7 +644,6 @@ function carRenderClisus(all) {
 
   document.getElementById('clisus-ct').textContent = '(' + lista.length + (lista.length !== all.length ? ' de ' + all.length : '') + ')';
 
-  var puedeLib = carPuedeBloquear();
   if (!lista.length) {
     document.getElementById('clisus-body').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#a0aec0;padding:26px">' +
       (all.length ? 'Ningún cliente suspendido coincide con los filtros.' : 'No hay clientes suspendidos. 🎉') + '</td></tr>';
@@ -646,6 +652,7 @@ function carRenderClisus(all) {
 
   document.getElementById('clisus-body').innerHTML = lista.map(function(x) {
     var k = escHtml(x.key);
+    var puedeLib = carPuedeBloquearEn(x.empresa);
     var cupoTxt = x.cupo.tipo === 'numero' ? fmtMoney(x.cupo.valor) : x.cupo.tipo === 'na' ? 'No aplica' : x.cupo.tipo === 'texto' ? escHtml(x.cupo.texto) : '—';
     var vigTxt = x.pedidosVigentes
       ? x.pedidosVigentes + (x.pedidosVigentes === 1 ? ' pedido · ' : ' pedidos · ') + fmtMoney(x.valorVigente)
@@ -666,6 +673,7 @@ async function carReactivarCliente(key) {
   var x = carCliSusByKey[key];
   if (!x) return;
   if (!carPuedeBloquear()) { showToast('Solo Cartera, editor o administración pueden reactivar clientes', '#e74c3c'); return; }
+  if (!carPuedeBloquearEn(x.empresa)) { showToast('Como editor solo puedes reactivar clientes de tus empresas', '#e74c3c'); return; }
   if (!confirm('¿REACTIVAR a ' + x.cliente + (x.nit ? ' — NIT ' + x.nit : '') + ' en ' + x.empresa + '?\n\nQuedará como cliente Activo en ' + x.empresa + ' y podrá volver a generar pedidos ahí. No afecta su relación con las demás empresas del holding.')) return;
   var ids = x.regs.map(function(r) { return r.id; }).filter(function(v) { return v != null; });
   if (!ids.length) return;
