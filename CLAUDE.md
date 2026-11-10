@@ -374,3 +374,30 @@ funciones globales.
   la página real `pedidos.html` con Supabase simulado (alta de prospecto sin NIT, PDF de 1 y de 4 páginas, edición con precio conservado, rechazar/reabrir/aceptar, vencida, conversión con precio intacto y vínculo, falla
   del vínculo, regresión de «Nuevo Pedido» y «Nuevo Traslado», roles lector/comercial/despachador, HTML malicioso en nombres y errores de carga). **El flujo con usuarios reales (permisos reales de cada rol y el envío del PDF al
   cliente) no se probó.**
+
+## Órdenes de compra: Contabilidad se entera al aprobarse, rechazarse o legalizarse la OC
+
+Antes, al aprobar una OC `ordenes.js` solo avisaba a quien la creó (`_notifyCreadorAprobacionOC`) y al crearla, a los aprobadores de la empresa ORIGEN (`find_oc_approvers`): la contabilidad de la
+empresa DESTINO (la que recibe el stock) no sabía nada hasta que se despachaba el pedido (paquete de remisiones de `pedidos.js`) o, ya despachado, el «complemento tardío»
+(`_avisarContabilidadTrasladoTardio`). Caso real: OC 621 (IASO ← PARCELAR), aprobada el 29/10 y legalizada el 05/11 sin que la contabilidad de IASO lo supiera. Contabilidad = 1 usuario activo por empresa
+(rol `contabilidad` + `usuario_empresas`); todos tienen `ordenes_aprobar`, por eso la de la empresa origen ya veía y aprobaba la OC, y la de destino no.
+
+- **Dónde vive**: un trigger en la base, no en el navegador (`supabase/migrations/avisar_contabilidad_oc.sql`, migración remota `avisar_contabilidad_oc` aplicada el 2026-11-10; rollback `..._rollback.sql`, que no borra los
+  avisos ya enviados). `trg_oc_avisar_contabilidad` (AFTER INSERT OR UPDATE OF `Estado_Aprobacion`, `Remision`, `Remision_Origen` en `OrdenesCompra`) → `fn_oc_avisar_contabilidad` → `_oc_avisar_contabilidad`
+  (arma y guarda el aviso) + `_oc_contabilidad_destinatarios` (contabilidad activa de la empresa destino Y de la origen). Funciona sin importar quién ni desde qué pantalla se apruebe, y **no hay cambios en el
+  frontend**: es una fila en `notificaciones` (módulo `ordenes`, referencia = consecutivo) y la campanita ya la recibe por Realtime con sonido y contador; el clic abre `ordenes.html?buscar=<consecutivo>` (`NOTIF.destino`).
+  Solo llega en vivo si contabilidad tiene el panel abierto (y, para que suene, si hizo clic en la página); si no, lo ve al entrar.
+- **Eventos** (uno por OC, no por línea): `aprobada` (✅, `Estado_Aprobacion` pasa a «Aprobada» o la OC nace ya aprobada), `rechazada` (❌, con el motivo) y `legalizada` (📦, `Remision` o `Remision_Origen`
+  pasa de vacío a lleno en una OC aprobada y no anulada; el mensaje trae las remisiones de entrada y salida). El título usa el mismo formato que los avisos de `ordenes.js`: `<evento> OC …: <sigla destino> ← <sigla origen> #<consecutivo>`.
+- **Reglas**: no se avisa a quien ejecutó la acción (`auth.uid()`); en aprobada/rechazada tampoco al creador de la OC (ya recibe el suyo desde `ordenes.js`). Sin duplicados: aprobada/rechazada no repiten el mismo aviso
+  dentro de 10 min (aprobar actualiza todas las líneas de golpe); legalizada y pendiente, una sola vez por OC y persona (legalizar actualiza línea por línea). OC sin consecutivo (filas históricas) no avisan; una empresa
+  fuera del holding (CHIA ABAGO) no tiene contabilidad, así que solo se avisa a la de la otra empresa. **Nunca bloquea** aprobar/rechazar/legalizar: un fallo queda como WARNING. Las tres funciones no son llamables por
+  clientes (REVOKE a `public/anon/authenticated`, comprobado en producción).
+- **Aviso único** (al aplicar la migración): las OC aprobadas y aún sin legalizar (con consecutivo y `Fecha_Aprobacion`) avisaron una vez con el evento `pendiente` (⏳). Fueron 4 avisos: las dos OC IASO ← GREEN del
+  09/11 (T-20261109-102347-GREEN y T-20261109-104711-GREEN) a Alison (IASO) y Sharon (GREEN). Las filas históricas sin consecutivo ni fecha de aprobación se omiten a propósito. Repetir la migración no repite avisos.
+- **Convive con lo anterior**: el aviso es de TEXTO (no lleva PDF; el PDF de remisiones sigue saliendo por el paquete del despacho y el complemento tardío) y no reemplaza el aviso al creador ni el de «por aprobar» a los aprobadores.
+  Si cambias el formato de los títulos, revisa `NOTIF.destino` (usa `referencia`) y el dedupe, que compara `titulo` exacto.
+- Probado contra producción con transacciones revertidas (usuarios reales simulados con `request.jwt.claims`): crear no avisa; aprobar 2 líneas de golpe → 1 aviso a Alison, sin Lizeth (la aprobadora); reaprobar en 10 min no duplica;
+  legalizar línea por línea → 1 aviso a cada contabilidad; aprueba un gerente → Alison y Lizeth; rechazo con motivo; OC que nace aprobada; consecutivo vacío no avisa; sin sesión (script SQL) avisa con `de_usuario_id` nulo;
+  creador contabilidad no recibe duplicado; destino CHIA ABAGO → solo la origen; OC anulada no avisa al poner remisión; sobre una OC REAL ligada a un pedido el trigger de reserva de stock y este conviven (apartado
+  creado y avisos a Alison y Sharon). Todo revertido y verificado. El flujo completo con usuarios reales (aprobar en Órdenes y ver la campanita de contabilidad) no se probó.
