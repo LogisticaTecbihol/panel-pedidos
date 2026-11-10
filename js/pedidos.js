@@ -3964,11 +3964,27 @@ function _faltasStockLibre(snap, entregas) {
 // remision_unica_por_orden_pedidos.sql). «Misma orden» = mismo Consecutivo y
 // mismo Cliente (keyOf), igual que la agrupa este módulo y que el trigger.
 
-// Pura (sin red): de las filas de Pedidos que mencionan `rem`, devuelve la
-// primera que NO es de esta orden, o null. `idsPropios` = ids de las líneas del modal.
+// Clave canónica de UN número de remisión. Debe dar lo mismo que fn_remision_clave en la base
+// (supabase/migrations/remision_unica_por_orden_pedidos_variantes.sql): si cambias una, cambia la otra.
+//   · «IASO-RS-0171», «iaso rs 171», «IASO_RS_171», «IASORS171» → «IASO-RS-171» (RS y RE no se mezclan)
+//   · número suelto (solo dígitos): sin ceros a la izquierda («0090» = «90»); NUNCA se iguala a uno
+//     estándar («171» ≠ «IASO-RS-171»): hay cientos de números sueltos históricos que chocarían por azar
+//   · cualquier otro texto: tal cual, con los espacios compactados
+function _remisionClave(cod) {
+  var s = String(cod == null ? '' : cod).trim().toUpperCase();
+  if (!s) return '';
+  var m = s.replace(/[^A-Z0-9]/g, '').match(/^([A-Z]+?)(RS|RE)([0-9]+)$/);
+  if (m) return m[1] + '-' + m[2] + '-' + (m[3].replace(/^0+/, '') || '0');
+  if (/^[0-9]+$/.test(s)) return s.replace(/^0+/, '') || '0';
+  return s.replace(/\s+/g, ' ');
+}
+
+// Pura (sin red): de las filas de Pedidos que mencionan `rem` (o una variante suya, por clave
+// canónica), devuelve la primera que NO es de esta orden —con `_cod` = cómo figura allí—, o null.
+// `idsPropios` = ids de las líneas del modal.
 function _remisionFilaOtraOrden(filas, rem, c, idsPropios) {
-  var code = String(rem || '').trim().toUpperCase();
-  if (!code) return null;
+  var clave = _remisionClave(rem);
+  if (!clave) return null;
   var propios = {};
   (idsPropios || []).forEach(function(id) { propios[id] = true; });
   var cons = String(c.Consecutivo || '').trim();
@@ -3976,20 +3992,29 @@ function _remisionFilaOtraOrden(filas, rem, c, idsPropios) {
   for (var i = 0; i < (filas || []).length; i++) {
     var f = filas[i];
     if (propios[f.id]) continue;
-    var codes = String(f.Remisiones || '').split(',').map(function(s) { return s.split('|')[0].trim().toUpperCase(); });
-    if (codes.indexOf(code) < 0) continue;
+    var cods = String(f.Remisiones || '').split(',').map(function(s) { return s.split('|')[0].trim(); });
+    var hallado = null;
+    for (var k = 0; k < cods.length; k++) {
+      if (cods[k] && _remisionClave(cods[k]) === clave) { hallado = cods[k]; break; }
+    }
+    if (hallado === null) continue;
     if (String(f.Consecutivo || '').trim() === cons && norm(f.Cliente) === cli) continue;
-    return f;
+    return Object.assign({}, f, { _cod: hallado });
   }
   return null;
 }
 
-// Devuelve la fila de otra orden de la MISMA empresa que ya usa `rem`, o null.
+// Devuelve la fila de otra orden de la MISMA empresa que ya usa `rem` (o una variante), o null.
 // Si no se puede consultar, no frena (el trigger de la base es el respaldo).
 async function _remisionUsadaEnOtraOrden(rem, c, idsPropios) {
   var code = String(rem || '').trim();
-  if (!code) return null;
-  var patron = '%' + code.replace(/[\\%_]/g, '\\$&') + '%';
+  var clave = _remisionClave(code);
+  if (!clave) return null;
+  // Prefiltro en el servidor: las variantes se escriben distinto, pero el número sin ceros a la
+  // izquierda aparece en todas («171» está en «IASO-RS-0171»). La comparación exacta es por clave, aquí.
+  // (PostgREST devuelve a lo sumo ~1000 filas: con un número muy corto puede quedar incompleto; el trigger cubre.)
+  var dig = /^[A-Z]+-R[SE]-[0-9]+$/.test(clave) ? clave.match(/([0-9]+)$/)[1] : (/^[0-9]+$/.test(clave) ? clave : null);
+  var patron = '%' + (dig !== null ? dig : code.replace(/[\\%_]/g, '\\$&')) + '%';
   var res = await _sb.from('Pedidos').select('id,Consecutivo,Cliente,Remisiones')
     .eq('Nombre_Empresa', c.Nombre_Empresa).ilike('Remisiones', patron);
   if (res.error) { console.warn('No se pudo verificar si la remisión ya está en otra orden:', res.error.message); return null; }
@@ -4064,7 +4089,8 @@ async function guardarTodo() {
     if (_otraOrden) {
       var _elRem = document.getElementById('m-remision');
       _elRem.classList.add('error');
-      showToast('🚫 La remisión ' + rem + ' ya pertenece a la orden ' + (_otraOrden.Consecutivo || '?') + ' (' + (_otraOrden.Cliente || 'sin cliente') + '). Una remisión corresponde a una sola orden: deja «Auto» para generar un número nuevo o escribe otro.', '#e74c3c', 9000);
+      var _figura = String(_otraOrden._cod || '').toUpperCase() !== rem.toUpperCase() ? ' (allí figura como ' + _otraOrden._cod + ')' : '';
+      showToast('🚫 La remisión ' + rem + ' ya pertenece a la orden ' + (_otraOrden.Consecutivo || '?') + ' (' + (_otraOrden.Cliente || 'sin cliente') + ')' + _figura + '. Una remisión corresponde a una sola orden: deja «Auto» para generar un número nuevo o escribe otro.', '#e74c3c', 9000);
       _elRem.focus();
       return;
     }
@@ -4404,7 +4430,11 @@ async function guardarTodo() {
     // Si la remisión se generó en este intento y el guardado no llegó a
     // ningún registro, devolvemos el consecutivo al contador (best-effort;
     // el RPC no la libera si ya quedó en algún registro).
-    if (remGenerada) await liberarRemisionConsecutivo(c.Nombre_Empresa, 'SALIDA', remGenerada);
+    // Excepción: si el rechazo fue «la remisión ya pertenece a otra orden» NO se devuelve el consecutivo.
+    // liberar_remision solo compara texto exacto; si el choque es por una variante (p. ej. «IASO-RS-200»
+    // escrito antes de que el contador llegue a 0200) lo devolvería y cada intento generaría el mismo número.
+    var _esRepetida = /ya pertenece a la orden/.test(String((err && err.message) || ''));
+    if (remGenerada && !_esRepetida) await liberarRemisionConsecutivo(c.Nombre_Empresa, 'SALIDA', remGenerada);
     btn.disabled = false;
     btn.textContent = '✓ Guardar cambios y enviar';
     _pendingContab = null;

@@ -298,23 +298,35 @@ A diferencia de los otros dos, **no sale de una remisión externa**: solo se eli
 
 Caso **IASO-RS-0171** (2026-11-03): quedó en la orden 146 (AGROPECUARIA INTERNACIONAL SAS, 5:00 p.m.) y en la 152 (HURTADO SANTANA DENIS MACIEL, 5:06 p.m.), y Reportes → Remisiones mostraba
 «Orden 146, Orden 152». El contador emitió el 0171 una sola vez: el segundo uso fue un número **escrito a mano** (rol `admin`/`remisionador`, casilla «Auto» desmarcada en `pedidos.html`; `AUTH.canAutoConsec`)
-y no había ninguna validación. De 422 remisiones de pedidos era la única que cubría más de una orden/cliente. **Reportes agrupa por empresa + número + módulo** (`reportes.js`, `_buildRemisionesInner`): no valida nada, solo refleja el dato.
+y no había ninguna validación. De las 371 remisiones de formato estándar (SIGLA-RS/RE-0000, vigente desde 2026-08-19) era la única que cubría más de una orden/cliente; en `Pedidos.Remisiones` hay además 6 números sueltos
+históricos (1415, 1417, 189, 0090, 152, 1047; el último uso fue el 2026-09-03) compartidos por varias órdenes, casi todos de un mismo cliente. **Reportes agrupa por empresa + número + módulo** (`reportes.js`, `_buildRemisionesInner`): no valida nada, solo refleja el dato.
 
 - **«Misma orden»** = mismo `Consecutivo` y mismo `Cliente` dentro de la misma `Nombre_Empresa` (la clave `keyOf` con la que `pedidos.js` arma cada orden). **El consecutivo NO identifica una orden por sí solo**: un mismo
   consecutivo agrupa varios clientes (p. ej. IASO #148 = AGRONIZA y EXIAGRICOLA, cada uno con su remisión; PARCELAR #91–95 igual). Agregar líneas al MISMO pedido con su remisión sigue permitido.
 - **Dos capas** (si cambias la regla, cámbiala en las dos):
-  1. **Pantalla** (`pedidos.js`, `_remisionFilaOtraOrden` / `_remisionUsadaEnOtraOrden`, llamadas al inicio de `guardarTodo`): si hay un número escrito a mano, consulta `Pedidos` de la empresa y, si otra orden ya lo usa, **bloquea**
-     con un toast que nombra la orden y el cliente. Va ANTES de gastar el consecutivo y de escribir nada. Si la consulta falla no frena (el trigger es el respaldo).
-  2. **Base** (`supabase/migrations/remision_unica_por_orden_pedidos.sql`, migración remota `remision_unica_por_orden_pedidos` aplicada el 2026-11-04; rollback `..._rollback.sql`): trigger `trg_pedidos_remision_unica_por_orden`
+  1. **Pantalla** (`pedidos.js`, `_remisionClave` / `_remisionFilaOtraOrden` / `_remisionUsadaEnOtraOrden`, llamadas al inicio de `guardarTodo`): si hay un número escrito a mano, consulta `Pedidos` de la empresa y, si otra orden ya lo usa
+     (o usa una variante suya, ver «Clave canónica»), **bloquea** con un toast que nombra la orden y el cliente («allí figura como …» si lo escribió distinto). Va ANTES de gastar el consecutivo y de escribir nada.
+     Si la consulta falla no frena (el trigger es el respaldo).
+  2. **Base** (`supabase/migrations/remision_unica_por_orden_pedidos.sql`, migración remota `remision_unica_por_orden_pedidos` aplicada el 2026-11-04; rollback `..._rollback.sql`. La 2.ª,
+     `remision_unica_por_orden_pedidos_variantes.sql` + `..._variantes_rollback.sql`, reemplaza el cuerpo del trigger por la comparación por clave canónica: **aplicar ANTES de publicar el código**): trigger `trg_pedidos_remision_unica_por_orden`
      (BEFORE UPDATE OF `Remisiones` en `Pedidos`, `WHEN` el valor cambia) → `fn_pedidos_remision_unica_por_orden` + `fn_pedidos_codigos_remision`. Va sobre `Pedidos.Remisiones` y no sobre `EntregasPedido`
      porque el Kardex, Existencias y Reportes leen ese campo (`EntregasPedido` es un log secundario). Solo valida los números que la línea AGREGA, así que el 0171 ya repetido no bloquea otras ediciones ni su corrección.
      Acepta el cliente anterior (`OLD`) o el nuevo (`NEW`) porque `editar_pedido_completo` actualiza línea por línea. `SECURITY DEFINER` (ve órdenes que la RLS del usuario no ve) y `pg_advisory_xact_lock`
      por empresa+número contra guardados simultáneos. Rechazo duro (23505): `editar_pedido_completo` es una sola transacción y el mensaje llega a `pedidos.js`.
-- **Alcance**: solo Pedidos. Ingresos, OC, Muestras, Reenvases y Devoluciones comparten el contador pero no este candado. Entre empresas distintas no se compara. **No corrige datos existentes**: el caso del 0171 se corrigió aparte con
+- **Clave canónica** (`fn_remision_clave` en SQL, `_remisionClave` en JS: deben dar lo mismo; paridad comprobada en 46 entradas): «IASO-RS-0171», «iaso rs 171», «IASO_RS_171» e «IASORS171» son el mismo número
+  (`IASO-RS-171`); RS (salida) y RE (entrada) no se mezclan; un número suelto («0090» = «90») solo se iguala a otro suelto, **nunca a uno estándar**: hay 441 números sueltos históricos que chocarían por azar con los que
+  genera el contador y bloquearían guardados normales con «Auto». Consecuencia conocida: escribir «0171» a secas en una orden de IASO NO se detecta como repetición de IASO-RS-0171. El trigger lleva un prefiltro (el número
+  sin ceros a la izquierda debe aparecer en el texto de la otra orden): sin él cada evaluación tardaba ~180 ms por línea; con él, 4–17 ms.
+- **Rechazo y contador**: si el guardado falla por «ya pertenece a la orden…», `guardarTodo` NO devuelve el consecutivo al contador. `liberar_remision` solo compara texto exacto: un choque por variante (p. ej. «IASO-RS-200»
+  escrito antes de que el contador llegue a 0200) se devolvería y cada intento volvería a generar el mismo número. Hoy los 12 contadores coinciden con el mayor número usado (nadie escribió números por delante).
+- **Alcance**: solo Pedidos. Ingresos, OC, Muestras, Reenvases y Devoluciones comparten el contador pero no este candado (hoy hay un número estándar repetido entre módulos, PARCELAR-RE-0015 en Ingresos y OC; no se investigó si es legítimo). Entre empresas
+  distintas no se compara. El candado también rechaza que dos órdenes del MISMO cliente salgan en una sola remisión (pasaba con números sueltos antes del 2026-09-03); no hay forma de saltarlo sin cambiar el trigger. **No corrige datos existentes**: el caso del 0171 se corrigió aparte con
   `sql/corregir_remision_iaso_rs_0171_orden_152.sql` (ejecutado el 2026-11-04: la 152 pasó a IASO-RS-0174, la 146 conserva el 0171; el PDF de la 152 con el número nuevo se reemite desde el panel). No usar «Remisión anulada» para estos casos: funciona por número y anularía también la remisión legítima.
 - Probado con la migración dentro de una transacción revertida contra producción (10 casos: sin cambio sobre el 0171 repetido, número de otra orden, número libre, hermana de la misma orden, mismo consecutivo con otro cliente,
   cambio de cliente en el mismo guardado, otra empresa, minúsculas, volver a poner el 0171) y con un arnés de navegador sobre el `pedidos.js` real (15 casos: caso real, misma orden, otro cliente, minúsculas, subcadenas,
   lista heredada sin `|`, comodines `%`/`_`, otra empresa, error de red). El flujo completo con un usuario real no se probó.
+- La 2.ª migración se probó en una transacción revertida contra producción (20 casos de la clave, los 10 anteriores y 10 de variantes: sin ceros, con espacios, guiones bajos o sin separadores, ceros de más, suelto contra estándar,
+  RS contra RE, «90» contra el «0090» histórico, variante en la misma orden) y `pedidos.js` con un arnés de navegador (paridad SQL↔JS en 46 entradas y 24 casos de comportamiento). Con un usuario real no se probó.
 
 ## Cotizaciones (`pedidos.html` → pestaña «Cotizaciones»)
 
