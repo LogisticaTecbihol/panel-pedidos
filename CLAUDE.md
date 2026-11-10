@@ -270,6 +270,30 @@ podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío
   de aprobación sin bloquear la OC, retoque de una OC ya legalizada, anulación del pedido) y con un arnés de navegador sobre el código real de `pedidos.js`/`existencias.js` (30 comprobaciones: panel, chip,
   `EntregasPedido`, revalidación y `apartadosOk`). El flujo completo con usuarios reales (legalizar en Órdenes y despachar después) no se probó.
 
+## Legalización de gastos: «TECBIHOL» en el reparto entre empresas
+
+`legalizacion-gastos.html` + `js/legalizacion-gastos.js`: la tabla «Reparto entre empresas» (formularios de ruta, mantenimiento y envío; todos usan `empresaRowOptionsHtml`) ofrece, además de las 5 empresas del
+holding, tres **grupos externos**: `TECBIHOL`, `CHIA ABAGO` y `MATERIAS PRIMAS`. Tecbihol sigue el patrón de «Chia Abago», no el de una empresa real: se guarda como el texto `'TECBIHOL'` en
+`LegalizacionGastosEmpresas.Empresa` (columna de texto libre, sin CHECK), no está en `empresas` ni en `usuario_empresas`, no se asigna a usuarios y no toca Pedidos, Kardex ni el resto del panel.
+A diferencia de los otros dos, **no sale de una remisión externa**: solo se elige a mano (por eso NO entra en `esEmpresaExterna`, que es de las remisiones).
+
+- **Quién la elige**: igual que Chia Abago, todo el que NO sea de una sola empresa (admin, cartera y los de varias empresas). El usuario de una sola empresa (p. ej. PARCELAR) no la ve en el listado,
+  ve en un viaje compartido solo su parte («PARCELAR + otras») y no lo edita (`legEsCompartida` ya cuenta a Tecbihol como «otra empresa»). Los cuatro filtros «Empresa» (Legalizaciones, Envíos, Prorrateo,
+  Vista detallada) la ofrecen a quien puede elegirla (`populateEmpresaSelect(..., extras)`); hoy son los únicos que filtran por un grupo externo (Chia Abago y Materias primas no se filtran).
+- **Quién la ve** (BD, `supabase/migrations/legalizacion_gastos_tecbihol_grupo_externo.sql`; rollback en `..._rollback.sql`; **aplicar ANTES de publicar el código**): `legalizacion_gastos_visible` ignora la fila
+  `TECBIHOL` como ignora las de los otros dos grupos. Sin eso `'TECBIHOL'` contaba como una empresa del holding sin acceso (`user_has_company` es false salvo admin/cartera) y una legalización repartida
+  solo a Tecbihol quedaba invisible hasta para el editor que la creó. Reparto solo de grupos externos → lo ve todo el que tiene el módulo; reparto mixto (PARCELAR + TECBIHOL) → decide por las empresas del holding.
+- **La lista `('CHIA ABAGO', 'MATERIAS PRIMAS', 'TECBIHOL')` vive en CUATRO sitios que hay que mantener iguales**: `legalizacion_gastos_visible`, `get_historial_legalizacion_gastos` y
+  `get_cambios_legalizacion_gastos` (cada una con su copia de la regla para la legalización eliminada) y `LegProrrateo.empresaVisible` / `EMPRESA_*` (`js/legalizacion-prorrateo.js`, que también carga
+  `dashboard.html`: subir su `?v=` en las dos páginas). Un grupo externo nuevo exige tocar los cuatro. Quien copie una de esas funciones de una migración vieja pierde la lista nueva.
+- **Prorrateo / Dashboard**: Tecbihol aparece (con el nombre `TECBIHOL`, chip gris `sigla-DEFAULT`) en «Combustible por empresa» y «Mantenimiento por empresa», porque ahí se reparte por el Monto del reparto manual. El
+  prorrateo por producto va por la empresa de cada remisión y **no hay remisiones de Tecbihol**, así que ahí no recibe nada. «⚖ Calcular reparto» tampoco le asigna monto (si la fila ya estaba, queda en $0 y hay
+  que digitarlo a mano). Lo ven en Prorrateo/Dashboard solo quienes ven TODAS las empresas del holding (misma regla que Chia Abago). El filtro «Empresa» del Dashboard no la ofrece.
+- Probado con la migración dentro de una transacción revertida contra producción (usuarios reales simulados bajo RLS: antes del cambio una legalización solo-Tecbihol era invisible para el editor creador, su
+  Historial por consecutivo fallaba y «Cambios desde una fecha» la omitía; después las tres la ven/incluyen, las mixtas y las de Chia Abago no cambian, permisos EXECUTE intactos, sin gastar consecutivos `LEG-`)
+  y con un arnés de navegador sobre la página real con Supabase simulado (listado y filtros según perfil, guardado, detalle, Prorrateo con y sin filtro, usuario de una sola empresa). Con usuarios reales de
+  producción no se probó.
+
 ## Pedidos: una remisión = una sola orden
 
 Caso **IASO-RS-0171** (2026-11-03): quedó en la orden 146 (AGROPECUARIA INTERNACIONAL SAS, 5:00 p.m.) y en la 152 (HURTADO SANTANA DENIS MACIEL, 5:06 p.m.), y Reportes → Remisiones mostraba
