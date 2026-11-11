@@ -461,3 +461,32 @@ empresa DESTINO (la que recibe el stock) no sabía nada hasta que se despachaba 
   legalizar línea por línea → 1 aviso a cada contabilidad; aprueba un gerente → Alison y Lizeth; rechazo con motivo; OC que nace aprobada; consecutivo vacío no avisa; sin sesión (script SQL) avisa con `de_usuario_id` nulo;
   creador contabilidad no recibe duplicado; destino CHIA ABAGO → solo la origen; OC anulada no avisa al poner remisión; sobre una OC REAL ligada a un pedido el trigger de reserva de stock y este conviven (apartado
   creado y avisos a Alison y Sharon). Todo revertido y verificado. El flujo completo con usuarios reales (aprobar en Órdenes y ver la campanita de contabilidad) no se probó.
+
+## Legalización de gastos: cierre de mes
+
+`legalizacion-gastos.html` + `js/legalizacion-gastos.js`. Un mes **cerrado** (y todos los anteriores) solo lo toca un administrador: para cualquier otro usuario NO se puede **crear, editar ni eliminar** una
+legalización (Ruta / Mantenimiento) ni un envío cuya `Fecha` caiga en un período cerrado, ni **cambiar la fecha** de un registro para meterlo o sacarlo de él. Pedido el 2026-11-11: **octubre cerrado**
+(con septiembre, que es el mes anterior y donde empiezan los datos: 2026-09-01).
+
+- **Modelo** (`supabase/migrations/legalizacion_gastos_cierre_mes.sql`, migración remota `legalizacion_gastos_cierre_mes` aplicada el 2026-11-11; rollback `..._rollback.sql`; **aplicar ANTES de publicar el código**): tabla
+  `LegalizacionGastosCierres` (una fila por cierre; `Cerrado_Hasta` = último día cerrado, siempre un fin de mes —CHECK— y único). **Una fecha está cerrada si es ≤ al mayor `Cerrado_Hasta`**, o sea que cerrar un mes
+  cierra también los anteriores. Hoy hay una sola fila: `2026-10-31`. Lectura: quien tiene `legalizacion_gastos` o `_aprobar`; escritura: solo admin (RLS) o SQL/migración.
+  - **Cerrar noviembre**: `INSERT INTO "LegalizacionGastosCierres" ("Cerrado_Hasta","Nota") VALUES ('2026-11-30','Cierre de noviembre de 2026');` (con SQL editor o `apply_migration`; **no hay botón en pantalla**).
+  - **Reabrir**: borrar esa fila (y las posteriores). Para reabrir octubre pero dejar cerrado septiembre: borrar la de octubre e insertar `2026-09-30`. Con un solo cierre vigente, borrarlo deja TODO abierto.
+- **Cómo se hace cumplir** (BD, no se puede saltar desde la consola): triggers `trg_legalizacion_gastos_cierre_mes` (BEFORE INSERT/UPDATE/DELETE) en `LegalizacionGastos`, `LegalizacionGastosItems` y
+  `LegalizacionGastosEmpresas` (las líneas y el reparto miran la fecha de su legalización) → `fn_legalizacion_gastos_cierre_mes` / `fn_legalizacion_gastos_hijos_cierre_mes` →
+  `legalizacion_gastos_asegurar_fecha_abierta(fecha)`. Son triggers y no políticas RLS para no tocar las políticas vigentes. Error: «Período cerrado: la fecha dd/mm/aaaa pertenece a un mes cerrado (hasta el …)…».
+  - **Quién pasa**: `usuarios.rol = 'admin'` (`get_user_role()`; hoy un solo usuario) y las llamadas **sin sesión** (SQL editor, service role, migraciones: `auth.uid()` NULL). No está atado a un id: otro admin futuro también pasa.
+  - **Conciliar/rechazar sigue permitido** en meses cerrados (RPC `conciliar_legalizacion_gastos`): el trigger de la cabecera compara la fila sin `Estado_Conciliacion`, saldos, `Conciliado_Por`, `Fecha_Conciliacion`,
+    `Motivo_Rechazo` y `modificado_*`; si solo cambió eso, deja pasar. Los 64 registros de octubre estaban todos «Por conciliar». Para cerrar también la conciliación habría que quitar esa excepción.
+  - Las funciones de apoyo no son llamables por clientes (REVOKE); solo `legalizacion_gastos_cerrado_hasta()` (la usa la pantalla) tiene EXECUTE para `authenticated`.
+  - **Fuera de alcance** (por decisión): los **soportes adjuntos** (bucket `legalizacion-gastos-adjuntos`: la pantalla los oculta/rechaza en meses cerrados pero la BD no), las **Remisiones externas** (Chia Abago /
+    Materias primas), las notas del Consecutivo y los vehículos.
+- **Pantalla** (`js/legalizacion-gastos.js`, bloque «Cierre de mes» junto a `puedeEditarLeg`): `loadCierreLeg()` lee el cierre (RPC) dentro de `loadLegalizaciones()`; si falla queda `null` y NO oculta nada (la BD manda).
+  `puedeEditarLeg` ya no deja editar un registro de período cerrado a un no admin (esconde ✏️ y «Editar», y las tres `openForm*` avisan con `msgNoEditableLeg`); `fechaLegAbierta(inputId)` avisa al elegir la fecha y
+  frena `saveForm` / `saveFormMant` / `saveFormEnvio` antes de gastar nada; los adjuntos (subir/eliminar) se ocultan y rechazan; 🔒 junto a la fecha en las dos listas y «🔒 Período cerrado» en el detalle (también para
+  el admin, informativo). El botón 🗑️ ya era solo de admin. Si cambias la regla, cámbiala en las dos capas (trigger y `legFechaCerrada` / `legCerradaParaUsuario`).
+- Probado: la migración completa dentro de una transacción revertida contra producción con usuarios reales simulados (`request.jwt.claims`; editor, editor-conciliador y admin; 45 casos: crear/editar/mover fecha/borrar en
+  octubre, septiembre, meses muy anteriores y noviembre, líneas y reparto, conciliar y rechazar, admin con cascada, sin sesión, tabla de cierres por RLS, CHECK de fin de mes, UNIQUE, cerrar y reabrir noviembre) y después
+  de aplicarla sobre registros reales de octubre y noviembre (también revertido: 144 legalizaciones intactas, 0 de prueba). La pantalla con un arnés de navegador sobre el código real (sintaxis de todo el archivo y 20 casos de
+  los helpers: no admin, admin, rpc con error / excepción / sin cierres). **No se probó la pantalla completa con un usuario real** (crear/editar/adjuntar desde el navegador).

@@ -505,7 +505,8 @@ async function loadLegalizaciones() {
       apiGet('getLegalizacionGastos'),
       apiGet('getLegalizacionGastosItems'),
       apiGet('getLegalizacionGastosEmpresas'),
-      apiGet('getVehiculos')
+      apiGet('getVehiculos'),
+      loadCierreLeg() // nunca falla: sin lectura no se oculta nada y la BD sigue haciendo cumplir el cierre
     ]);
     if (!results[0].ok) throw new Error(results[0].error || 'Error desconocido');
     if (!results[1].ok) throw new Error(results[1].error || 'Error desconocido');
@@ -1155,7 +1156,43 @@ function legEsCompartida(legId) {
 // Editar/eliminar: una legalización compartida la edita quien ve todas las empresas
 // (el formulario reescribe el reparto completo). La BD lo hace cumplir también.
 function puedeEditarLeg(leg) {
-  return !!leg && leg.Estado_Conciliacion === 'Por conciliar' && AUTH.canWriteLegalizacion() && !legEsCompartida(leg.id);
+  return !!leg && leg.Estado_Conciliacion === 'Por conciliar' && AUTH.canWriteLegalizacion() && !legEsCompartida(leg.id) &&
+    !legCerradaParaUsuario(leg.Fecha);
+}
+
+// ── Cierre de mes ──
+// Último día cerrado ('YYYY-MM-DD') o null. Un mes cerrado (y los anteriores) solo lo toca un
+// administrador: la BD lo hace cumplir (triggers de LegalizacionGastos*; ver
+// supabase/migrations/legalizacion_gastos_cierre_mes.sql) y aquí se oculta «Editar»/adjuntar y se
+// avisa ANTES de guardar. Si la lectura falla queda null: la pantalla no oculta nada y la BD manda.
+var cierreHasta = null;
+async function loadCierreLeg() {
+  try {
+    var r = await _sb.rpc('legalizacion_gastos_cerrado_hasta');
+    cierreHasta = (!r.error && r.data) ? String(r.data).slice(0, 10) : null;
+  } catch (e) { cierreHasta = null; }
+}
+function legFechaCerrada(fecha) {
+  return !!cierreHasta && !!fecha && String(fecha).slice(0, 10) <= cierreHasta;
+}
+// Cerrada y el usuario no es admin (el admin sí puede escribir en meses cerrados).
+function legCerradaParaUsuario(fecha) { return legFechaCerrada(fecha) && !AUTH.isAdmin(); }
+// Aviso antes de guardar: false (con toast) si la fecha del formulario cae en un período cerrado.
+function fechaLegAbierta(inputId) {
+  var f = document.getElementById(inputId).value || today();
+  if (!legCerradaParaUsuario(f)) return true;
+  showToast('Período cerrado (hasta el ' + fmtDate(cierreHasta) + '): solo un administrador puede registrar o modificar legalizaciones y envíos con fecha de ese período', '#e67e22', 6000);
+  return false;
+}
+// Motivo por el que no se abre la edición (la BD la rechazaría igual).
+function msgNoEditableLeg(leg, que) {
+  if (legCerradaParaUsuario(leg.Fecha)) {
+    return 'Este ' + que + ' es de un período cerrado (hasta el ' + fmtDate(cierreHasta) + '): solo un administrador puede editarlo';
+  }
+  return 'Este ' + que + ' se reparte con otras empresas: solo un administrador puede editarlo';
+}
+function legLockHtml(leg) {
+  return legFechaCerrada(leg.Fecha) ? ' <span title="Período cerrado: solo un administrador puede modificarlo">🔒</span>' : '';
 }
 
 // Los botones que crean algo (+ Nueva legalización / mantenimiento / envío) quedan
@@ -2194,7 +2231,7 @@ function renderLegTable() {
     }
     return '<tr>' +
       '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
-      '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
+      '<td>' + escHtml(fmtDate(leg.Fecha)) + legLockHtml(leg) + '</td>' +
       '<td>' + escHtml(leg.Responsable || '') + '</td>' +
       '<td>' + tipoBadgeHtml(leg) + '</td>' +
       '<td>' + escHtml(leg.Recorrido_Ruta || '') + '</td>' +
@@ -2440,7 +2477,7 @@ function renderEnviosTable() {
     }
     return '<tr>' +
       '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
-      '<td>' + escHtml(fmtDate(leg.Fecha)) + '</td>' +
+      '<td>' + escHtml(fmtDate(leg.Fecha)) + legLockHtml(leg) + '</td>' +
       '<td>' + escHtml(proveedoresTexto(leg.id) || '—') + '</td>' +
       '<td>' + escHtml(nitEnvioDe(leg) || '—') + '</td>' +
       '<td style="max-width:280px;white-space:normal;font-size:0.8rem">' + escHtml(leg.Remisiones_Relacionadas || '—') + '</td>' +
@@ -3744,7 +3781,7 @@ function openForm(id) {
   if (editingLegId) {
     var leg = legs.find(function(l) { return l.id === editingLegId; });
     if (!leg) return;
-    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast('Este viaje se reparte con otras empresas: solo un administrador puede editarlo', '#e67e22'); return; }
+    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast(msgNoEditableLeg(leg, 'viaje'), '#e67e22'); return; }
     document.getElementById('form-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
     document.getElementById('lg-fecha').value = (leg.Fecha || '').slice(0, 10);
     setResponsableField(leg.Responsable || '');
@@ -3830,6 +3867,7 @@ function readHeaderForm() {
 }
 
 async function saveForm() {
+  if (!fechaLegAbierta('lg-fecha')) return; // período cerrado: solo admin
   readLgGastos();
   readLgEmpresas();
   var header = readHeaderForm();
@@ -4330,7 +4368,7 @@ function openFormMant(id) {
   if (editingLegId) {
     var leg = legs.find(function(l) { return l.id === editingLegId; });
     if (!leg) return;
-    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast('Este mantenimiento se reparte con otras empresas: solo un administrador puede editarlo', '#e67e22'); return; }
+    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast(msgNoEditableLeg(leg, 'mantenimiento'), '#e67e22'); return; }
     document.getElementById('form-mant-titulo').textContent = 'Editar ' + (leg.Consecutivo || '');
     document.getElementById('mant-fecha').value = (leg.Fecha || '').slice(0, 10);
     setResponsableFieldMant(leg.Responsable || '');
@@ -4372,6 +4410,7 @@ function closeFormMant() {
 }
 
 async function saveFormMant() {
+  if (!fechaLegAbierta('mant-fecha')) return; // período cerrado: solo admin
   readMantPlacas();
   readMantEmpresas();
 
@@ -4596,7 +4635,7 @@ function openFormEnvio(id) {
   if (editingLegId) {
     leg = legs.find(function(l) { return l.id === editingLegId; });
     if (!leg) return;
-    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast('Este envío se reparte con otras empresas: solo un administrador puede editarlo', '#e67e22'); return; }
+    if (!puedeEditarLeg(leg)) { editingLegId = null; showToast(msgNoEditableLeg(leg, 'envío'), '#e67e22'); return; }
   }
   var it = leg ? (itemsOf(leg.id)[0] || {}) : {};
   var nd = splitNitDv(it.NIT);
@@ -4621,6 +4660,7 @@ function closeFormEnvio() {
 }
 
 async function saveFormEnvio() {
+  if (!fechaLegAbierta('env-fecha')) return; // período cerrado: solo admin
   readEnvEmpresas();
   var proveedor = document.getElementById('env-proveedor').value.trim();
   var valor = valorEnvio();
@@ -4713,7 +4753,8 @@ function openVer(id) {
   var leg = legs.find(function(l) { return l.id === id; });
   if (!leg) return;
 
-  document.getElementById('ver-titulo').innerHTML = escHtml(leg.Consecutivo || '') + ' ' + tipoBadgeHtml(leg);
+  document.getElementById('ver-titulo').innerHTML = escHtml(leg.Consecutivo || '') + ' ' + tipoBadgeHtml(leg) +
+    (legFechaCerrada(leg.Fecha) ? ' <span class="badge" style="background:#edf2f7;color:#4a5568" title="Solo un administrador puede modificarlo">🔒 Período cerrado</span>' : '');
   document.getElementById('ver-meta').textContent = esEnvio(leg)
     ? 'Fecha: ' + fmtDate(leg.Fecha)
     : 'Responsable: ' + (leg.Responsable || '—') + ' · Fecha: ' + fmtDate(leg.Fecha);
@@ -4880,7 +4921,7 @@ function renderVerBody(leg) {
     // Los envíos no se concilian: sin bloque de conciliación.
     (esEnv ? '' : '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Conciliación</h3>' + conciliacionHtml) +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:16px 0 6px">Soportes adjuntos <span id="lg-adj-count"></span></h3>' +
-    (AUTH.canWriteLegalizacion() && leg.Estado_Conciliacion === 'Por conciliar' ?
+    (AUTH.canWriteLegalizacion() && leg.Estado_Conciliacion === 'Por conciliar' && !legCerradaParaUsuario(leg.Fecha) ?
       '<input type="file" id="lg-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleAdjuntoUploadLG(this)" style="margin-bottom:8px">' : '') +
     '<div id="lg-adjuntos-list"></div>' +
     _auditoriaHtml(legAuditoria(leg), false);
@@ -4937,7 +4978,7 @@ async function loadAdjuntosLG(legId) {
     var nameEsc = escHtml(f.name);
     var pathEsc = escHtml(path);
     var leg = legs.find(function(l) { return l.id === legId; });
-    var puedeBorrar = AUTH.canWriteLegalizacion() && leg && leg.Estado_Conciliacion === 'Por conciliar';
+    var puedeBorrar = AUTH.canWriteLegalizacion() && leg && leg.Estado_Conciliacion === 'Por conciliar' && !legCerradaParaUsuario(leg.Fecha);
     return '<div class="adjunto-item">' +
       '<div class="adjunto-icon">' + icon + '</div>' +
       '<div class="adjunto-info">' +
@@ -4958,6 +4999,8 @@ async function handleAdjuntoUploadLG(input) {
   if (!file) return;
   input.value = '';
   if (!verLegId) return;
+  var legAdj = legs.find(function(l) { return l.id === verLegId; });
+  if (legAdj && legCerradaParaUsuario(legAdj.Fecha)) { showToast('Período cerrado: solo un administrador puede adjuntar soportes', '#e67e22'); return; }
 
   var maxSize = 5 * 1024 * 1024;
   if (file.size > maxSize) { showToast('El archivo excede 5 MB.', '#e74c3c'); return; }
@@ -4996,6 +5039,8 @@ async function downloadAdjuntoLG(path, filename) {
 }
 
 async function deleteAdjuntoLG(path) {
+  var legDel = legs.find(function(l) { return l.id === verLegId; });
+  if (legDel && legCerradaParaUsuario(legDel.Fecha)) { showToast('Período cerrado: solo un administrador puede eliminar soportes', '#e67e22'); return; }
   if (!confirm('¿Eliminar este archivo adjunto?')) return;
   var res = await _sb.storage.from(LEG_BUCKET).remove([path]);
   if (res.error) { showToast('Error al eliminar: ' + res.error.message, '#e74c3c'); return; }
@@ -5156,6 +5201,12 @@ initAutocomplete(document.getElementById('env-proveedor'), {
     document.getElementById('env-nit').value = nd.nit;
     document.getElementById('env-dv').value = nd.dv;
   }
+});
+
+// Aviso apenas se elige una fecha de un período cerrado (el guardado también lo revisa).
+['lg-fecha', 'mant-fecha', 'env-fecha'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('change', function() { fechaLegAbierta(id); });
 });
 
 loadLegalizaciones();
