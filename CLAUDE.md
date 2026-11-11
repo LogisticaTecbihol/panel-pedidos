@@ -134,6 +134,9 @@ Mismo patrón que «Solicitudes a Mercadeo» (`solicitudes-mercadeo.*`): aprobac
   `listar`, `pendientes`, `aprobadas`, `observar`, `aprobar`, `rechazar`, `archivo_url`) y `solicitud-evento-aviso` (`verify_jwt=false`, la llama pqrs
   con `PQRS_BRIDGE_SECRET`; eventos `estado`, `respuesta`, `rechazo`). El puente hacia pqrs es `solicitud-evento-pedidos` (URL por defecto en el código;
   `PQRS_EVENTO_BRIDGE_URL` opcional); mismo secreto `PQRS_BRIDGE_SECRET` que ya usa Solicitudes a Mercadeo.
+  **`ventas-evento-resumen`** (`verify_jwt=false`, mismo secreto; archivos `index.ts` + `calculo.js`): SOLO LECTURA. La llama la función `impacto-evento` de pqrs (Eventos > «Impacto en ventas») y le devuelve las
+  ventas de `Pedidos` AGREGADAS (sumas, conteos y fechas; nunca nombres de clientes ni líneas) antes/después de un evento, por distribuidor (NIT sin DV), municipio y productos, contra el resto de la empresa.
+  No escribe nada ni toca el esquema. Se despliega a mano (`supabase functions deploy ventas-evento-resumen --no-verify-jwt` o desde el dashboard).
 - **Empresas adicionales** (`supabase/add_solicitudes_eventos_empresas.sql`, migración remota `add_solicitudes_eventos_empresas`): además de las 5 del
   holding, el campo Empresa ofrece `CHIA_ABAGO` («Chía Abagó»), `TECBIHOL` («Tecbihol») y `OTROS` (exige escribir el nombre, 3–100 car., en
   `datos.empresa_otra`). No son del holding, así que NO dependen de `usuario_empresas`: la función las devuelve en `contexto.empresas_extra` y las
@@ -216,6 +219,9 @@ solo componente, `js/productos-solicitud.js` (`psCrear`, lo cargan las dos pági
 
 ## Pedidos: el stock que trae una OC de traslado queda apartado para SU pedido
 
+> **Actualización 2026-11-11:** las OC de traslado de un pedido ahora son «diferidas» (ver la sección «OC de traslado diferidas»): ya no se legalizan a mano ni mueven inventario al legalizarse, y el trigger
+> `reservar_stock_oc_traslado` **se salta** las diferidas. Lo de abajo describe el modelo anterior, que sigue valiendo solo para las OC que **no** son diferidas (las ya legalizadas antes del cambio).
+
 Cuando un pedido pide stock a otra empresa se crea una OC `Tipo='Traslado'` ligada a la línea (`OrdenesCompra.pedido_id`, `Ref_Pedido`). Mientras está abierta, esas unidades cuentan
 como apartadas contra la empresa ORIGEN. **Al legalizarse la OC esa reserva desaparecía** y las unidades entraban a la empresa destino como existencia común: cualquier otro pedido
 podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío en las 1.046 filas, así que tampoco quedaba rastro de qué OC respaldaba cada despacho).
@@ -269,6 +275,60 @@ podía tomarlas en «+ Añadir» (`EntregasPedido.orden_compra_id` estaba vacío
 - Probado con la migración dentro de una transacción revertida contra producción (regularización: 2 filas, idempotencia, legalizar una OC, tope al hueco, suma sobre un apartado existente, pedido pendiente
   de aprobación sin bloquear la OC, retoque de una OC ya legalizada, anulación del pedido) y con un arnés de navegador sobre el código real de `pedidos.js`/`existencias.js` (30 comprobaciones: panel, chip,
   `EntregasPedido`, revalidación y `apartadosOk`). El flujo completo con usuarios reales (legalizar en Órdenes y despachar después) no se probó.
+
+## OC de traslado «diferidas»: el inventario solo se mueve al remisionar el pedido
+
+Antes, legalizar una OC de traslado de un pedido (Órdenes → Cerrada, que genera RE destino / RS origen) movía la existencia en el acto (Salida en origen, Entrada en destino) aunque el pedido no se
+hubiera remisionado; aprobarla nunca movió nada. Ahora las OC `Tipo='Traslado'` con `pedido_id` son **diferidas** (`OrdenesCompra."Traslado_Diferido" = true`): aprobarlas **no mueve nada** y **no se
+legalizan a mano**; mientras tanto siguen **apartando** stock en el origen (siguen «vivas» para `esSolicitudCompraViva` / `computeApartadoPorEmpresa`, que NO cambiaron). El inventario real se mueve
+cuando el pedido se remisiona: la OC se legaliza sola (RE/RS) **en proporción a lo remisionado** y con la **fecha de esa remisión** (antes el Kardex usaba la fecha de creación de la OC).
+Efecto neto de una pasada: origen −N, destino +N−N = 0. Decisiones del usuario (2026-11-11): existencia intacta pero apartada; RE/RS al remisionar el pedido; movimiento proporcional; aplica a OC nuevas y a
+las aprobadas sin legalizar (las ya legalizadas no se tocaron; al activar eran 2 filas: ids 667 y 668, GREEN → IASO, 150 y 60 ud).
+
+- **Modelo: se divide la fila** (`supabase/migrations/oc_traslado_diferido.sql`, `tramitar_traslado_oc.sql`, `oc_traslado_diferido_activar.sql`, cada una con su `_rollback.sql`). Una pasada que cubre toda la fila
+  la actualiza en sitio (`Fecha` = día de la remisión, `Remision`, `Remision_Origen`, `Estado='Cerrada'`); una pasada parcial baja la `Cantidad` del remanente (que sigue Abierta y apartando) e **inserta una pieza
+  Cerrada** con las remisiones, mismo `Consecutivo`/`Ref_Pedido`/`pedido_id`/aprobación y `Traslado_Padre_Id` = la fila de la que salió (60 = 20 + 40). Así cada pieza es una fila de OC legalizada normal y **Kardex,
+  Existencias, `_kx_movs`, reportes, facturación por remisión y el paquete PDF no cambian** (se descartó un jsonb tipo `Movs_*` de Cambios: habría que tocar todos los lectores). Un mismo `Consecutivo` puede
+  tener entonces piezas Cerradas con pares RE/RS distintos y un remanente Abierto. La `Cantidad` original ya no está en una sola fila.
+- **Un solo lugar escribe**: RPC `tramitar_traslado_oc(jsonb)` (SECURITY DEFINER, **no ejecutable por clientes**; sola movería inventario sin remisión del pedido) llamada por **`guardar_pedido_con_traslados(p_header,
+  p_lineas, p_delete_ids, p_tramite)`** (DEFINER, la usa el navegador vía `apiPost({action:'editarPedido', tramites:{fecha, remision_pedido, lineas:[{pedido_id,cantidad}]}})`, shared.js). El envoltorio tramita y luego
+  llama a `editar_pedido_completo`, **todo en una transacción** (si algo falla se revierten también los consecutivos RE/RS, que se generan en SQL con `_remision_siguiente` —copia de `generar_remision` sin el guard
+  `user_has_company(origen)`, porque un editor de una sola empresa no podría remisionar con una OC de otra—), y comprueba que `Cant_Entregada` subió al menos lo tramitado. Devuelve el resultado de
+  `editar_pedido_completo` más `tramite: {pares, piezas, por_linea}`. La RPC reparte la cantidad entre las OC diferidas **Aprobadas**, Abiertas y sin remisiones de cada línea (FIFO por id), con
+  `pg_advisory_xact_lock` por línea y `FOR UPDATE ORDER BY id`; valida rol (admin/editor/contabilidad/gerente_iaso/remisionador), `user_has_company(empresa del pedido)`, pedido no Anulado/Cerrado/Pendiente de
+  aprobación/GRANEL, cantidades **enteras** y ≤ lo pendiente de la línea y ≤ lo entregable por las OC. Un par RE/RS por pasada y por `(Consecutivo, origen, destino)`.
+- **Candados** (`trg_oc_diferida_guard`, INVOKER a propósito para ver `current_user`): una diferida pendiente no admite `Remision`/`Remision_Origen`/`Estado='Cerrada'` fuera de la RPC (`app.oc_tramite='on'`, que ningún
+  cliente PostgREST puede fijar); una pieza ya tramitada es inmutable (cantidad, producto, empresas, estado, remisiones; ni DELETE) salvo para un admin o SQL directo; una diferida **Rechazada pasa sola a
+  `Anulada`** (si no seguiría «viva» apartando). `trg_oc_diferida_alta` (BEFORE INSERT, parte 3) marca `Traslado_Diferido = (Tipo='Traslado' AND pedido_id IS NOT NULL)` en toda fila nueva (el cliente no decide).
+  **Salida de emergencia**: un admin o el SQL directo pueden poner `Traslado_Diferido=false` a una diferida pendiente y entonces se legaliza a mano como una OC común.
+- **Ajustes a lo anterior** (reescritos sobre el cuerpo VIGENTE en producción): `reservar_stock_oc_traslado` / `fn_oc_traslado_reserva_pedido` se saltan las diferidas (no hay stock que apartar en el destino);
+  `fn_apartados_cascade_pedido` anula las diferidas pendientes también al **cerrar** el pedido y al **borrar** la línea (antes solo al anular: quedarían apartando para siempre) y bajar la `Cantidad` de la línea
+  cuenta lo pendiente en diferidas; `fn_oc_avisar_contabilidad` se calla mientras corre la RPC (esta avisa por su cuenta: `_oc_avisar_tramite`, «📦 OC legalizada … · <RE>», uno por pasada y por contabilidad de
+  origen y destino; el trigger habría dado un «aprobada» espurio en el INSERT de la pieza y deduplicado la 2.ª pasada por título).
+- **Pedidos** (`pedidos.js`): `ocEnCaminoPorLinea[id]` ahora trae `{cant, entregable, bloqueada}`: **entregable** = OC diferidas ya Aprobadas, **bloqueada** = el resto (por aprobar / no diferidas). En el modal, el aviso
+  de la línea ofrece **«🚚 Entregar N ud con OC»** (`entregarConOC`): un chip `_fromOC` a nombre de la empresa del pedido que **no consume stock ni apartados del destino** (se excluye de `_asignadoEnSesion`,
+  `_faltasStockLibre`, `apartarSinRemisionar` y del agregado de `consumirApartados`). `_pendienteLibre` = restante − bloqueada − (entregable aún sin chip). `_validarEntregasContraStockFresco` valida los `_fromOC` contra lo
+  entregable releído (no contra existencias). `guardarTodo` manda `tramites` en `editarPedido`; justo después de que el guardado salga bien consolida `dl._entregas` y limpia los chips de la misma empresa (un reintento no
+  debe entregar ni tramitar dos veces) y, si algo falla después, el toast avisa que el pedido **YA quedó remisionado**. `persistirEntregasYTraslados` deja **una fila de `EntregasPedido` por pieza** con `orden_compra_id` = la OC.
+  El paquete PDF no necesitó cambios (la RPC ya hizo commit antes de leer las OC; `oc_fecha_legalizacion` cuenta también los INSERT).
+- **Órdenes** (`ordenes.js`): insignias «🚚 En espera de remisión del pedido» / «🚚 Tramitada con el pedido»; el editor bloquea `Cerrada`, las remisiones y la casilla Auto en una diferida pendiente, y bloquea cantidad/
+  producto/empresas/estado en una pieza tramitada (salvo admin) (`_applyDiferidaLockOC`); `editarOrdenCompra` (shared.js) rechaza legalizar una diferida **antes** de `_genRem` (no gasta consecutivos). `_grupoOC` ignora la
+  `Fecha` para diferidas; los PDF de remisiones salen **uno por par RE/RS** (`_paresRemisionOC`, `_remisionesDeFila`) y la Solicitud suma las partes de cada producto con la fecha más antigua (`_grupoSolicitudOC`). La
+  facturación por remisión ya iba por número de remisión, así que cada pasada se factura aparte.
+- **Orden de despliegue**: (1) `oc_traslado_diferido.sql` y `tramitar_traslado_oc.sql` (inertes: ninguna fila está marcada) → (2) publicar el código (los `select` piden `Traslado_Diferido`, por eso la migración 1 va antes;
+  subir los `?v=` de `pedidos.html` y `ordenes.html`) → (3) **`oc_traslado_diferido_activar.sql` justo después** (trigger de alta + backfill). Entre (2) y (3) todo sigue como antes; activar sin el código nuevo dejaría esas OC
+  sin poder legalizarse ni despacharse. Rollback: activar → tramitar → diferido (cada `_rollback.sql`; no deshacen trámites ya hechos: las piezas son OC normales).
+- **Fuera de alcance**: OC de muestras/cambios (`muestra_id`), OC de IASO a PARCELAR (`oc-como-pedido.js`, solo consulta, muestra cada pasada como un «pedido»), OC ya legalizadas, candado en la base contra entregas hechas por otra
+  vía (el control de stock libre sigue siendo en pantalla), «Programación de planta» (ya contaba doble los traslados pendientes; preexistente). Los avisos «aprobada sin legalizar» del 10/11 sobre las OC 667/668 (⏳ «falta
+  legalizarla») quedan desactualizados. Para **deshacer** un trámite hecho por error hay que anular la remisión con «Remisión anulada» (no se puede borrar ni editar la pieza).
+- Probado contra producción con **transacciones revertidas** (`DO` que termina en excepción; usuarios reales simulados con `request.jwt.claims`): migraciones aplicadas dos veces sin error; `_kx_movs` idéntico antes y después
+  (4701 filas, suma 11520); privilegios (el RPC interno no es ejecutable por `authenticated`); legalizar a mano una diferida rechazado; rechazar → Anulada; remisión completa de la OC 668 (60 de 60: RE/RS, OC Cerrada, sin
+  `apartados_pedido`, avisos, contadores +1); envoltorio sin entrega del pedido → falla y revierte; tres pasadas sobre la OC 667 (20, 50 y 80, la última en sitio: suma 150, Kardex GREEN −150 / IASO +150); FIFO con dos OC
+  aprobadas y una por aprobar a nombre de un **editor de una sola empresa** (genera el RS del origen sin error, un solo par); exceso, cantidad fraccionaria y fecha inválida; pieza inmutable y no borrable para un
+  remisionador; cascada al cerrar/anular/borrar y bajar cantidad; OC sin `pedido_id` se sigue legalizando a mano; el rollback de la parte 1 deja las 4 funciones **idénticas** a producción (mismo md5). En el navegador, con las
+  funciones reales extraídas y datos simulados: mapa de OC, topes, chips, validación fresca, `persistirEntregasYTraslados` (una fila por pieza), `editarPedido` con/sin trámite, `editarOrdenCompra` sobre diferida/común/sin
+  columna, agrupación por pasada, PDF por par, bloqueos del editor. **No se probó**: el flujo completo `guardarTodo` en la página real (solo sus piezas), con usuarios reales (permisos de cada rol, PDF y avisos en vivo), ni las
+  migraciones aplicadas de verdad en producción.
 
 ## Legalización de gastos: «TECBIHOL» en el reparto entre empresas
 

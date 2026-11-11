@@ -382,7 +382,7 @@
   var SNAPSHOT_COLS = {
     pedidos:          'Nombre_Empresa,Cant_Entregada,Estado_2,Producto,Presentacion,Remisiones,Fecha_Ult_Entrega,Fecha_Pedido,Historico',
     ingresos:         'Cantidad,Origen,Empresa_Destino,Empresa_Origen,Fecha,Remision_Destino,Remision_Origen,Producto,Presentacion,Historico',
-    ordenes:          'id,Consecutivo,pedido_id,Estado_Aprobacion,Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido',
+    ordenes:          'id,Consecutivo,pedido_id,Estado_Aprobacion,Cantidad,Remision,Remision_Origen,Empresa_Destino,Empresa_Origen,Fecha,Producto,Presentacion,Estado,Tipo,Bodega,Ref_Pedido,Traslado_Diferido',
     muestras:         'Cant_Entregada,Remision,Fecha_Despacho,Fecha_Entrega,Fecha_Solicitud,Empresa,Producto,Presentacion,Tipo_Solicitud,Historico',
     reenvases:        'Empresa,Empresa_Destino,Bodega,Cantidad,Remision,Remision_Destino,Fecha,Producto,Presentacion,Historico',
     devoluciones:     'Cant_Entregada,Cantidad,Estado,Bodega_Ingreso,Bodega_Salida,Fecha_Devolucion,Fecha,Fecha_Salida,Remision,Remision_Ingreso,Remision_Salida,Empresa,Producto,Presentacion,Historico',
@@ -614,7 +614,9 @@
         tipo: 'solicitud', empresa_stock: emp, cantidad: n, ref_pedido: oc.Ref_Pedido,
         pedido_id: oc.pedido_id != null ? oc.pedido_id : null,
         oc_id: oc.id != null ? oc.id : null,
-        oc_consecutivo: oc.Consecutivo || '', aprobacion: oc.Estado_Aprobacion || ''
+        oc_consecutivo: oc.Consecutivo || '', aprobacion: oc.Estado_Aprobacion || '',
+        // OC «diferida»: su existencia solo se mueve al remisionar el pedido (sigue apartando en el origen)
+        diferida: !!oc.Traslado_Diferido
       });
     });
     return out;

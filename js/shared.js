@@ -827,11 +827,23 @@ async function _apiPostCore(body) {
 
     if (action === 'editarPedido') {
       var deleteIds = (body.deleteRows || []);
-      var res = await _sb.rpc('editar_pedido_completo', {
-        p_header: body.header || {},
-        p_lineas: body.lineas || [],
-        p_delete_ids: deleteIds
-      });
+      // OC de traslado «diferidas»: si la entrega se cubre con ellas (chips _fromOC), la RPC envoltorio
+      // las tramita (genera RE/RS, divide la fila si la remisión es parcial) y escribe el pedido en UNA
+      // transacción. body.tramites = {fecha:'YYYY-MM-DD', remision_pedido, lineas:[{pedido_id, cantidad}]}.
+      // El resultado trae .tramite = {pares, piezas, por_linea}. Sin tramites es igual que antes.
+      var usaTramite = !!(body.tramites && Array.isArray(body.tramites.lineas) && body.tramites.lineas.length);
+      var res = usaTramite
+        ? await _sb.rpc('guardar_pedido_con_traslados', {
+            p_header: body.header || {},
+            p_lineas: body.lineas || [],
+            p_delete_ids: deleteIds,
+            p_tramite: body.tramites
+          })
+        : await _sb.rpc('editar_pedido_completo', {
+            p_header: body.header || {},
+            p_lineas: body.lineas || [],
+            p_delete_ids: deleteIds
+          });
       if (res.error) return { ok: false, error: res.error.message };
       // Marca la modificación (cantidad cambiada o línea nueva) en todas las
       // filas del pedido, para que otros usuarios la vean resaltada en la
@@ -1868,6 +1880,19 @@ async function _apiPostCore(body) {
       var empOrigOC = (body.Empresa_Origen || '').trim();
       var consecOC = (body.Consecutivo || '').trim();
       var generatedRemOC = {};
+      // DIFERIDAS: una OC de traslado de un pedido se legaliza SOLA al remisionar el pedido (RPC
+      // tramitar_traslado_oc). Se rechaza aquí ANTES de _genRem para no gastar consecutivos de
+      // remisión; la base también lo impide (trigger trg_oc_diferida_guard). Si la columna aún no
+      // existe (migración sin aplicar) la lectura falla y se sigue como siempre.
+      if (body._legalizar || upd.Estado === 'Cerrada' || remOC || remOrigenOC) {
+        var rDif = await _sb.from('OrdenesCompra')
+          .select('Traslado_Diferido,Estado,Remision,Remision_Origen').eq('id', body.row).maybeSingle();
+        var difOC = rDif.error ? null : rDif.data;
+        if (difOC && difOC.Traslado_Diferido && difOC.Estado !== 'Cerrada'
+            && !(difOC.Remision || '').trim() && !(difOC.Remision_Origen || '').trim()) {
+          return { ok: false, error: 'Esta OC se legaliza sola al remisionar el pedido: no se puede cerrar ni poner remisiones a mano.' };
+        }
+      }
       // Una orden de compra puede tener varias líneas (una fila por producto)
       // que comparten Empresa_Destino+Empresa_Origen+Consecutivo. Al legalizar
       // la primera línea deben reutilizarse las remisiones ya asignadas a sus

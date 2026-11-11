@@ -636,7 +636,8 @@ var apartadosPorLinea = {};
 // de destino y no anulada): ya se pidieron a otra empresa, así que NO se pueden despachar
 // del stock de la empresa ni volver a pedir; salen cuando la OC se legalice y esas
 // unidades queden apartadas para la línea (migración reservar_stock_oc_traslado).
-//   ocEnCaminoPorLinea[Pedidos.id] = { cant, ocs: [{id, consecutivo, cantidad, aprobacion, origen}] }
+//   ocEnCaminoPorLinea[Pedidos.id] = { cant, entregable, bloqueada, ocs: [{id, consecutivo, cantidad, aprobacion, origen, diferida}] }
+//   (entregable = unidades en OC diferidas ya aprobadas: se entregan con «Entregar con OC»; bloqueada = el resto)
 var ocEnCaminoPorLinea = {};
 
 // Remisiones anuladas (registro manual en Reportes → "Registrar remisión
@@ -900,8 +901,8 @@ function renderSolicitudesCompraSection(c) {
     '<label class="sol-title">🛒 ' + list.length + ' solicitud' + (list.length === 1 ? '' : 'es') +
       ' de compra pendiente' + (list.length === 1 ? '' : 's') + ' para este pedido</label>' +
     '<div style="font-size:0.76rem;color:#7d2820;margin-bottom:8px">' +
-      'Estas OC deben legalizarse en el módulo <strong>Órdenes de Compra</strong> (cargar Remisión Destino y Origen) ' +
-      'para que el producto entre como existencia en <strong>' + escHtml(c.Nombre_Empresa || '') + '</strong> y se pueda emitir la remisión al cliente.' +
+      'Estas OC deben <strong>aprobarse</strong> en el módulo Órdenes de Compra. Una vez aprobadas, usa «Entregar con OC» en la línea al remisionar el pedido: ' +
+      'la OC se legaliza sola y el producto sale de la empresa origen <strong>en ese momento</strong> (antes no se mueve el inventario de <strong>' + escHtml(c.Nombre_Empresa || '') + '</strong> ni el del origen).' +
     '</div>' +
     '<div class="sol-list">' + items + '</div>';
 }
@@ -939,17 +940,24 @@ function _buildSolicitudesMap(ordenes) {
 // OC de traslado vivas (esSolicitudCompraViva) agrupadas por la línea de pedido que las
 // originó (OrdenesCompra.pedido_id). Las OC históricas sin pedido_id no se pueden atar a
 // una línea y no restringen nada.
+// OC «diferidas» (Traslado_Diferido): su existencia se mueve SOLO al remisionar el pedido. Una
+// diferida ya APROBADA es entregable con «Entregar con OC» (entregable); la que sigue «Por aprobar»
+// (o cualquier OC viva que no sea diferida) sigue bloqueando esas unidades (bloqueada).
 function _buildOCEnCaminoMap(ordenes) {
   var map = {};
   (ordenes || []).forEach(function(oc) {
     if (!esSolicitudCompraViva(oc) || oc.pedido_id == null) return;
     var cant = Number(oc.Cantidad) || 0;
     if (cant <= 0) return;
-    var m = map[oc.pedido_id] || (map[oc.pedido_id] = { cant: 0, ocs: [] });
+    var m = map[oc.pedido_id] || (map[oc.pedido_id] = { cant: 0, entregable: 0, bloqueada: 0, ocs: [] });
+    var diferida = !!oc.Traslado_Diferido;
+    var aprobada = oc.Estado_Aprobacion === 'Aprobada';
     m.cant += cant;
+    if (diferida && aprobada) m.entregable += cant; else m.bloqueada += cant;
     m.ocs.push({
       id: oc.id, consecutivo: oc.Consecutivo || '', cantidad: cant,
-      aprobacion: oc.Estado_Aprobacion || '', origen: oc.Empresa_Origen || ''
+      aprobacion: oc.Estado_Aprobacion || '', origen: oc.Empresa_Origen || '',
+      diferida: diferida
     });
   });
   return map;
@@ -962,7 +970,7 @@ async function _leerOCEnCamino(lineIds) {
   if (!lineIds || !lineIds.length) return {};
   try {
     var res = await _sb.from('OrdenesCompra')
-      .select('id,Consecutivo,Tipo,Estado,Estado_Aprobacion,Remision,Cantidad,Empresa_Origen,pedido_id')
+      .select('id,Consecutivo,Tipo,Estado,Estado_Aprobacion,Remision,Cantidad,Empresa_Origen,pedido_id,Traslado_Diferido')
       .eq('Tipo', 'Traslado')
       .in('pedido_id', lineIds);
     if (res.error) throw new Error(res.error.message);
@@ -997,12 +1005,15 @@ async function _leerEntregadas(lineIds) {
 
 function _ocEnCaminoLinea(l) {
   var m = (l && l.__row != null) ? ocEnCaminoPorLinea[l.__row] : null;
-  return m || { cant: 0, ocs: [] };
+  return m || { cant: 0, entregable: 0, bloqueada: 0, ocs: [] };
 }
 
 function _ocEnCaminoTxt(m) {
   return (m.ocs || []).map(function(o) {
-    return o.consecutivo + ' (' + o.cantidad + ' ud, ' + (o.aprobacion === 'Aprobada' ? 'aprobada, falta legalizar' : 'por aprobar') + ')';
+    var est = o.aprobacion === 'Aprobada'
+      ? (o.diferida ? 'aprobada, se traslada al remisionar' : 'aprobada, falta legalizar')
+      : 'por aprobar';
+    return o.consecutivo + ' (' + o.cantidad + ' ud, ' + est + ')';
   }).join(', ');
 }
 
@@ -1071,7 +1082,7 @@ async function loadFromAPI() {
     // sin badges (los pedidos siguen cargando).
     var pedidosPromise = apiGet('getPedidos');
     var ordenesPromise = apiGet('getOrdenesCompra', {
-      columns: 'id,Consecutivo,Tipo,Estado,Estado_Aprobacion,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id'
+      columns: 'id,Consecutivo,Tipo,Estado,Estado_Aprobacion,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Fecha,Ref_Pedido,pedido_id,Traslado_Diferido'
     }).catch(function() { return { ok: true, ordenes: [] }; });
     var apartadosPromise = apiGet('getApartadosPedido', {
       columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,presentacion,empresa_stock,cantidad,estado,bonificado,orden_compra_id,notas'
@@ -3049,7 +3060,7 @@ function _apartadoDetalleFila(d, l) {
     var p = d.pedido_id != null ? _pedidoPorId[d.pedido_id] : null;
     ped = ref ? getSigla(ref.empresa) + ' #' + ref.consecutivo : String(d.ref_pedido || '');
     cli = p ? (p.Cliente || '') : '';
-    tag = 'solicitud de compra OC ' + d.oc_consecutivo + ' (' + (d.aprobacion === 'Aprobada' ? 'aprobada, falta legalizar' : 'por aprobar') + ')';
+    tag = 'solicitud de compra OC ' + d.oc_consecutivo + ' (' + (d.aprobacion === 'Aprobada' ? (d.diferida ? 'aprobada, se traslada al remisionar el pedido' : 'aprobada, falta legalizar') : 'por aprobar') + ')';
   } else {
     var oc = _apartadoOrigenOC(d);
     ped = getSigla(d.empresa_pedido) + ' #' + d.consecutivo;
@@ -3175,16 +3186,16 @@ function renderAsignacionCell(i, l, empresaPedido) {
     '<span style="color:#b0bec5">|</span>' +
     '<span>Pend: <b style="color:' + (pendienteBase > 0 ? '#e67e22' : '#27ae60') + '">' + pendienteBase + '</b></span>' +
     (ocLinea.cant > 0
-      ? '<span style="color:#b0bec5">|</span><span title="Unidades en una OC de traslado sin legalizar">En OC: <b style="color:#c0392b">' + ocLinea.cant + '</b></span>'
+      ? '<span style="color:#b0bec5">|</span><span title="Unidades en una OC de traslado pendiente (el inventario se mueve al remisionar el pedido)">En OC: <b style="color:#c0392b">' + ocLinea.cant + '</b></span>'
       : '') +
   '</div>';
   // Todo lo pendiente está en OC: solo queda lo que ya esté apartado (Emitir entrega).
   if (ocLinea.cant > 0 && libreBase <= 0) {
-    return refBar + _apartadoLineaHtml(i, l, empresaPedido) + _ocEnCaminoHtml(ocLinea, 0) +
+    return refBar + _apartadoLineaHtml(i, l, empresaPedido) + _ocEnCaminoHtml(ocLinea, 0, i) +
       '<div class="asig-chips" data-i="' + i + '" style="margin-top:4px"></div>';
   }
   return refBar + _apartadoLineaHtml(i, l, empresaPedido) +
-    (ocLinea.cant > 0 ? _ocEnCaminoHtml(ocLinea, libreBase) : '') +
+    (ocLinea.cant > 0 ? _ocEnCaminoHtml(ocLinea, libreBase, i) : '') +
     _competenciaApartadoHtml(l, empresaPedido) + selectHTML +
     _apartadoDetalleHtml(i, l, empresaPedido) +
     '<div style="display:flex;gap:4px;margin-top:3px">' +
@@ -3294,7 +3305,7 @@ function validateAsignCant(i, _skipPropagate) {
     inp.max = tope;
     var motivo = (tope === pendiente && pendiente <= libre)
       ? (enOC > 0
-          ? 'Ajustado a lo que no está en una OC sin legalizar (' + pendiente + '): las ' + enOC + ' ud en OC salen cuando se legalice'
+          ? 'Ajustado a lo que no está en una OC de traslado (' + pendiente + '): las ' + enOC + ' ud en OC se entregan con «Entregar con OC» cuando estén aprobadas'
           : 'Ajustado al pendiente por entregar (' + pendiente + ')')
       : 'Ajustado al disponible en esa empresa (' + libre + ')';
     inp.title = motivo;
@@ -3343,17 +3354,49 @@ function _pendienteRestante(i) {
 function _pendienteLibre(i) {
   var dl = detailWorkingLines[i];
   if (!dl) return 0;
-  return Math.max(0, _pendienteRestante(i) - _ocEnCaminoLinea(dl).cant);
+  var m = _ocEnCaminoLinea(dl);
+  // Lo entregable por OC que aún no tiene chip sigue reservado para «Entregar con OC»: no es libre.
+  var sinChip = Math.max(0, (m.entregable || 0) - _chipsOCLinea(i));
+  return Math.max(0, _pendienteRestante(i) - (m.bloqueada || 0) - sinChip);
 }
 
-// Aviso del modal para una línea con unidades en OC sin legalizar.
-function _ocEnCaminoHtml(m, libre) {
+// Unidades de la línea i que ya tienen un chip «Entregar con OC» en esta sesión.
+function _chipsOCLinea(i) {
+  var dl = detailWorkingLines[i];
+  return ((dl && dl._asignaciones) || []).reduce(function(s, a) {
+    return a._fromOC ? s + (Number(a.cantidad) || 0) : s;
+  }, 0);
+}
+
+// Cuánto se puede entregar AHORA con las OC diferidas aprobadas de la línea i.
+function _ocEntregableAhora(i) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return 0;
+  var m = _ocEnCaminoLinea(dl);
+  return Math.max(0, Math.min((m.entregable || 0) - _chipsOCLinea(i), _pendienteRestante(i)));
+}
+
+// Aviso del modal para una línea con unidades en OC sin legalizar. Si hay OC diferidas ya
+// aprobadas ofrece «Entregar con OC»: al remisionar el pedido la OC se legaliza sola y el stock
+// sale de la empresa origen en ese momento (no antes).
+function _ocEnCaminoHtml(m, libre, i) {
+  var entAhora = (i != null) ? _ocEntregableAhora(i) : 0;
+  var entregable = m.entregable || 0;
+  var bloqueada = m.bloqueada || 0;
   return '<div style="font-size:0.72rem;color:#7d2820;background:#fdf2f0;border:1px solid #f5c2c0;padding:4px 6px;border-radius:4px;margin-bottom:4px">' +
-    '🛒 <b>' + m.cant + ' ud</b> de esta línea están en una orden de compra sin legalizar: ' + escHtml(_ocEnCaminoTxt(m)) + '. ' +
+    '🛒 <b>' + m.cant + ' ud</b> de esta línea están en una orden de compra de traslado: ' + escHtml(_ocEnCaminoTxt(m)) + '. ' +
     (libre > 0
-      ? 'Ahora solo puedes asignar ' + libre + ' ud; '
-      : 'Por ahora no se puede asignar ni despachar nada más de esta línea; ') +
-    'esas ' + m.cant + ' ud salen cuando la OC esté aprobada y legalizada en Órdenes.' +
+      ? 'Ahora solo puedes asignar ' + libre + ' ud de otro stock; '
+      : 'Por ahora no se puede asignar nada más de esta línea de otro stock; ') +
+    (entregable > 0
+      ? 'las ' + entregable + ' ud de OC aprobadas se entregan con «Entregar con OC» (el stock sale de la empresa origen al remisionar el pedido, no antes)'
+        + (bloqueada > 0 ? '; las ' + bloqueada + ' ud restantes se pueden entregar cuando se aprueben en Órdenes.' : '.')
+      : 'esas ' + m.cant + ' ud se pueden entregar cuando la OC esté aprobada en Órdenes.') +
+    (entAhora > 0
+      ? '<div style="margin-top:3px"><button type="button" onclick="entregarConOC(' + i + ',' + entAhora + ')" ' +
+        'style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;cursor:pointer" ' +
+        'title="Agrega a esta entrega las unidades de la OC aprobada. Al guardar con remisión, la OC se legaliza sola (RE/RS) y el inventario se mueve en ese momento.">🚚 Entregar ' + entAhora + ' ud con OC</button></div>'
+      : '') +
     (AUTH.canDescomprometer()
       ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:3px">' + (m.ocs || []).map(function(o) {
           return _btnLiberarOC(o.id, 'Anula la OC ' + o.consecutivo + ' y libera esas ' + o.cantidad + ' ud en ' + getSigla(o.origen) + '. La línea del pedido no se borra.', 'Liberar ' + o.cantidad + ' ud');
@@ -3391,6 +3434,9 @@ function _asignadoEnSesion(empresa, producto, excludeLineIdx) {
     if (dl._asignaciones) {
       dl._asignaciones.forEach(function(a) {
         if (a._fromApartado) return;
+        // «Entregar con OC»: el stock viene de la OC (se traslada al remisionar), no del disponible
+        // del destino: tampoco cuenta contra el pool de esa empresa.
+        if (a._fromOC) return;
         if (norm(a.empresa_stock) === empN) total += (Number(a.cantidad) || 0);
       });
     }
@@ -3478,6 +3524,33 @@ function emitirEntregaApartado(i, empresaStock, cant) {
   showToast('Añadida entrega de ' + n + ' ud desde ' + getSigla(empresaStock) + ' (apartado). Guarda con «✓ Guardar cambios y enviar».');
 }
 
+// «Entregar con OC»: agrega a esta entrega unidades que cubre una OC de traslado DIFERIDA ya aprobada
+// (OrdenesCompra.Traslado_Diferido). El chip va a nombre de la empresa del pedido (sale con su remisión
+// de siempre) pero NO consume stock ni apartados del destino: al guardar, guardarTodo manda `tramites`
+// y la RPC guardar_pedido_con_traslados legaliza la OC (RE/RS, dividiéndola si la entrega es parcial)
+// y escribe el pedido en una sola transacción. Recién ahí sale la existencia del origen.
+function entregarConOC(i, cant) {
+  var dl = detailWorkingLines[i];
+  if (!dl) return;
+  if (_detailBloqueadoCartera) { showToast('🚫 Pedido ' + _txtVetoTramite(), '#e74c3c'); return; }
+  var c = (activeIdx != null) ? consecs[activeIdx] : null;
+  if (!c) return;
+  var tope = _ocEntregableAhora(i);
+  var n = Math.floor(Math.min(Number(cant) || 0, tope));
+  if (n <= 0) { showToast('No hay unidades de OC aprobadas por entregar en esta línea', '#e67e22'); return; }
+  if (!dl._asignaciones) dl._asignaciones = [];
+  var m = _ocEnCaminoLinea(dl);
+  var orig = (m.ocs || []).filter(function(o) { return o.diferida && o.aprobacion === 'Aprobada'; });
+  dl._asignaciones.push({
+    empresa_stock: c.Nombre_Empresa, cantidad: n, _fromOC: true,
+    _origenOC: orig.map(function(o) { return o.consecutivo; }).join(', '),
+    _origenEmpresa: orig.length ? orig[0].origen : ''
+  });
+  refreshAsignacionCell(i);
+  _refreshSameProductoCells(i);
+  showToast('Añadida entrega de ' + n + ' ud con OC aprobada. Guarda con «✓ Guardar cambios y enviar»: ahí se legaliza la OC y sale el inventario del origen.');
+}
+
 // Liberar el apartado de UNA línea/empresa desde el modal.
 async function descomprometerLinea(i, empresaStock, cant, protegido) {
   if (activeIdx == null) return;
@@ -3532,7 +3605,7 @@ async function liberarOC(ocId) {
   var c = (activeIdx != null) ? consecs[activeIdx] : null;
   try {
     var r = await _sb.from('OrdenesCompra')
-      .select('id,Consecutivo,Tipo,Producto,Cantidad,Empresa_Origen,Empresa_Destino,Ref_Pedido,pedido_id,Estado,Estado_Aprobacion,Remision,Remision_Origen,Observaciones')
+      .select('id,Consecutivo,Tipo,Producto,Cantidad,Empresa_Origen,Empresa_Destino,Ref_Pedido,pedido_id,Estado,Estado_Aprobacion,Remision,Remision_Origen,Observaciones,Traslado_Diferido')
       .eq('id', ocId).maybeSingle();
     if (r.error) throw new Error(r.error.message);
     var oc = r.data;
@@ -3547,7 +3620,7 @@ async function liberarOC(ocId) {
     var sinGuardar = (detailWorkingLines || []).some(function(dl) { return dl && (dl._asignaciones || []).length; });
     var msg = 'Liberar el stock que retiene la OC ' + oc.Consecutivo + '.\n\n' +
       'Se ANULA la OC: ' + cant + ' ud de ' + (oc.Producto || '') + ' (' + getSigla(oc.Empresa_Origen) + ' → ' + getSigla(oc.Empresa_Destino) + '), ' +
-      (oc.Estado_Aprobacion === 'Aprobada' ? 'aprobada, falta legalizar' : 'por aprobar') + '.\n' +
+      (oc.Estado_Aprobacion === 'Aprobada' ? (oc.Traslado_Diferido ? 'aprobada, se traslada al remisionar el pedido' : 'aprobada, falta legalizar') : 'por aprobar') + '.\n' +
       (esPropia
         ? 'La línea del pedido no se modifica: esas ' + cant + ' ud vuelven a quedar por asignar.'
         : '⚠️ Es una OC de OTRO pedido (' + (oc.Ref_Pedido || 'sin pedido') + '): su línea no se borra, pero pierde esta solicitud de compra.') +
@@ -3637,6 +3710,7 @@ function renderAsignacionChips(i) {
       ? '<span title="Genera SOLO una solicitud de compra (OC de traslado, Estado Abierta). La remisión al cliente NO se emite ahora: primero hay que legalizar la OC en Órdenes para que el stock quede en la empresa del pedido." style="color:#c0392b;font-weight:700">🛒 solicitud de compra (remisión pendiente)</span>'
       : '<span style="color:#27ae60;font-weight:700">✓ mismo origen — genera remisión</span>';
     if (a._fromApartado) tag = '<span style="color:#16a34a;font-weight:700">🔒→✓ desde apartado' + (a._origenOC ? ' (OC ' + escHtml(a._origenOC) + ')' : '') + '</span> · ' + tag;
+    if (a._fromOC) tag = '<span title="Al guardar con remisión, la OC se legaliza sola (RE/RS) y el inventario sale de ' + escHtml(a._origenEmpresa ? getSigla(a._origenEmpresa) : 'la empresa origen') + ' en ese momento." style="color:#16a34a;font-weight:700">🚚→✓ con OC ' + escHtml(a._origenOC || '') + ' (se traslada al remisionar)</span>';
     return '<div style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.7rem;background:#eef5ff;padding:2px 6px;border-radius:4px;border:1px solid #cfe1ff">' +
       '<span style="flex:1"><strong>' + escHtml(a.cantidad) + '</strong> ud · ' + escHtml(sigla) + ' · ' + tag + '</span>' +
       '<button type="button" onclick="removeAsignacion(' + i + ',' + k + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.72rem;padding:0 2px" title="Quitar asignación">✕</button>' +
@@ -3765,7 +3839,7 @@ async function apartarSinRemisionar() {
   var solicitudesCompra = []; // traslados otra empresa
   detailWorkingLines.forEach(function(dl, i) {
     ((dl && dl._asignaciones) || []).forEach(function(a) {
-      if (a._fromApartado) return; // esos son para entregar, no re-apartar
+      if (a._fromApartado || a._fromOC) return; // esos son para entregar, no re-apartar
       var cant = Number(a.cantidad) || 0;
       if (cant <= 0 || !dl.__row) return;
       if (norm(a.empresa_stock) === empPedidoN) {
@@ -3801,7 +3875,7 @@ async function apartarSinRemisionar() {
     }
     // limpiar los chips consumidos
     detailWorkingLines.forEach(function(dl) {
-      if (dl && dl._asignaciones) dl._asignaciones = dl._asignaciones.filter(function(a) { return a._fromApartado; });
+      if (dl && dl._asignaciones) dl._asignaciones = dl._asignaciones.filter(function(a) { return a._fromApartado || a._fromOC; });
     });
     showToast('🔒 Stock apartado' + (solicitudesCompra.length ? ' · solicitud(es) de compra creada(s)' : '') + '. El pedido sigue en Activos.');
 
@@ -3845,6 +3919,9 @@ async function _validarEntregasContraStockFresco(entregas, solicitudes) {
   entregas = entregas || [];
   solicitudes = solicitudes || [];
   if (!entregas.length && !solicitudes.length) return true;
+  // Los chips «Entregar con OC» (_fromOC) no salen del stock del destino: se validan contra lo que
+  // las OC diferidas aprobadas pueden entregar, no contra existencias libres.
+  var entregasStock = entregas.filter(function(e) { return !e._fromOC; });
   var btn = document.getElementById('btn-confirmar');
   var txtBtn = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando existencias...'; }
@@ -3855,7 +3932,7 @@ async function _validarEntregasContraStockFresco(entregas, solicitudes) {
   var snap = null, ocFresco = null, entregadasFresco = null;
   try {
     var lecturas = await Promise.all([
-      (entregas.length && typeof Existencias !== 'undefined')
+      (entregasStock.length && typeof Existencias !== 'undefined')
         ? Existencias.loadSnapshot().catch(function(e) { console.warn('No se pudo releer las existencias antes de guardar:', e); return null; })
         : null,
       _leerOCEnCamino(rowIds),
@@ -3868,24 +3945,32 @@ async function _validarEntregasContraStockFresco(entregas, solicitudes) {
   var porOC = [];
   if (ocFresco) {
     rowIds.forEach(function(row) {
-      var m = ocFresco[row];
-      if (!m || !(m.cant > 0)) return;
+      var m = ocFresco[row] || { cant: 0, entregable: 0, bloqueada: 0, ocs: [] };
       var dl = detailWorkingLines.filter(function(l) { return l && Number(l.__row) === row; })[0];
       if (!dl) return;
       var yaEnt = (entregadasFresco && entregadasFresco[row] != null)
         ? entregadasFresco[row]
         : (dl._entregas || []).reduce(function(s, e) { return s + (e.cantidad || 0); }, 0);
-      var ahora = todas.reduce(function(s, x) { return Number(x.row) === row ? s + (Number(x.cantidad) || 0) : s; }, 0);
-      var cabe = Math.max(0, (Number(dl.Cantidad) || 0) - yaEnt - m.cant);
-      if (ahora > cabe + 1e-6) {
-        porOC.push('«' + (dl.Producto || '') + '»: ' + m.cant + ' ud están en la OC ' + _ocEnCaminoTxt(m) +
-          ' y salen cuando se legalice; ahora solo puedes asignar ' + cabe + ' y asignaste ' + ahora);
+      var ahoraOC = todas.reduce(function(s, x) { return (Number(x.row) === row && x._fromOC) ? s + (Number(x.cantidad) || 0) : s; }, 0);
+      var ahora = todas.reduce(function(s, x) { return (Number(x.row) === row && !x._fromOC) ? s + (Number(x.cantidad) || 0) : s; }, 0);
+      // 1a. Entregas con OC: no pueden pasar de lo que las OC diferidas aprobadas cubren hoy.
+      if (ahoraOC > (m.entregable || 0) + 1e-6) {
+        porOC.push('«' + (dl.Producto || '') + '»: quieres entregar ' + ahoraOC + ' ud con OC y solo hay ' + (m.entregable || 0) +
+          ' ud en OC aprobadas pendientes' + (m.ocs && m.ocs.length ? ' (' + _ocEnCaminoTxt(m) + ')' : ''));
+      }
+      // 1b. Lo demás: lo que está en una OC (por aprobar o aprobada, menos lo que se entrega con OC) no sale del stock.
+      if (m.cant > 0) {
+        var cabe = Math.max(0, (Number(dl.Cantidad) || 0) - yaEnt - m.cant);
+        if (ahora > cabe + 1e-6) {
+          porOC.push('«' + (dl.Producto || '') + '»: ' + m.cant + ' ud están en la OC ' + _ocEnCaminoTxt(m) +
+            '; ahora solo puedes asignar ' + cabe + ' de otro stock y asignaste ' + ahora);
+        }
       }
     });
   }
 
   // 2. Stock libre.
-  var faltas = (snap && snap.apartadosOk) ? _faltasStockLibre(snap, entregas) : [];
+  var faltas = (snap && snap.apartadosOk) ? _faltasStockLibre(snap, entregasStock) : [];
   if (!porOC.length && !faltas.length) return true;
 
   // Datos viejos en pantalla: se actualizan para que el usuario vea el tope real.
@@ -3896,7 +3981,7 @@ async function _validarEntregasContraStockFresco(entregas, solicitudes) {
   }
   detailWorkingLines.forEach(function(_, i) { refreshAsignacionCell(i); });
   var partes = [];
-  if (porOC.length) partes.push('Hay unidades en OC sin legalizar: ' + porOC.join(' · '));
+  if (porOC.length) partes.push('Hay unidades en OC de traslado: ' + porOC.join(' · '));
   if (faltas.length) partes.push('Otro pedido apartó o despachó ese stock mientras tenías este abierto: ' + faltas.join(' · '));
   showToast('🚫 ' + partes.join('. ') + '. Ajusta las cantidades y vuelve a guardar.', '#e74c3c', 12000);
   return false;
@@ -4067,7 +4152,9 @@ async function guardarTodo() {
         remision: rem,
         fecha: fecha,
         // OC de traslado que respalda la reserva de la que sale esta entrega (si la hay)
-        orden_compra_id: a.orden_compra_id != null ? a.orden_compra_id : null
+        orden_compra_id: a.orden_compra_id != null ? a.orden_compra_id : null,
+        // «Entregar con OC»: la OC diferida se legaliza en este mismo guardado (RPC con `tramites`)
+        _fromOC: !!a._fromOC
       };
       if (norm(a.empresa_stock) === empPedidoN) entregas.push(item);
       else solicitudesCompra.push(item);
@@ -4234,6 +4321,20 @@ async function guardarTodo() {
   hdr.Departamento = _geo.departamento || normalizarDepartamento(hdr.Departamento);
   hdr.comercial_id = await _resolveComercialId(hdr.Comercial);
 
+  // OC de traslado diferidas que cubren parte de esta entrega («Entregar con OC»): por línea de pedido,
+  // cuántas unidades. La RPC las reparte entre las OC aprobadas de la línea, genera RE/RS y escribe el
+  // pedido en la misma transacción (si algo falla no queda nada a medias).
+  var _tramPorLinea = {};
+  entregas.forEach(function(ent) {
+    if (ent._fromOC && ent.row != null) _tramPorLinea[ent.row] = (_tramPorLinea[ent.row] || 0) + (Number(ent.cantidad) || 0);
+  });
+  var tramites = Object.keys(_tramPorLinea).length ? {
+    fecha: fecha,
+    remision_pedido: rem,
+    lineas: Object.keys(_tramPorLinea).map(function(k) { return { pedido_id: Number(k), cantidad: _tramPorLinea[k] }; })
+  } : null;
+  var _tramiteHecho = false;
+
   var btn = document.getElementById('btn-confirmar');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
@@ -4244,9 +4345,22 @@ async function guardarTodo() {
       action: 'editarPedido',
       header: hdr,
       lineas: detailWorkingLines.map(function(l) { var c = Object.assign({}, l); delete c._entregas; return c; }),
-      deleteRows: []
+      deleteRows: [],
+      tramites: tramites
     });
     if (!editResult.ok) throw new Error(editResult.error || 'Error al guardar edición');
+    var _tramiteRes = editResult.tramite || null;
+    if (tramites) {
+      // El pedido y las OC ya quedaron escritos (una sola transacción). Se consolida YA el buffer local
+      // y se descartan los chips de la misma empresa (los de traslado, que aún no se crearon, se
+      // conservan): si algo falla más abajo, un reintento NO debe volver a entregar ni a tramitar.
+      _tramiteHecho = true;
+      detailWorkingLines.forEach(function(dl, i) {
+        if (!dl) return;
+        dl._entregas = _mergePorIdx[i];
+        dl._asignaciones = (dl._asignaciones || []).filter(function(a) { return norm(a.empresa_stock) !== empPedidoN; });
+      });
+    }
 
     for (var di = 0; di < detailWorkingLines.length; di++) {
       var dl = detailWorkingLines[di];
@@ -4269,7 +4383,7 @@ async function guardarTodo() {
     // "solicitud de compra" para los traslados. Ver la regla en el
     // encabezado del bucket splitting arriba.
     if (entregas.length > 0 || solicitudesCompra.length > 0) {
-      await persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs);
+      await persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs, _tramiteRes);
     }
 
     // Persistido OK: recién ahora se consolida el buffer local en dl._entregas
@@ -4291,6 +4405,9 @@ async function guardarTodo() {
       var _consAgg = {};
       entregas.forEach(function(ent) {
         if (!ent.row || !ent.empresa_stock) return;
+        // «Entregar con OC»: no hay apartado del destino que consumir (el stock viene de la OC).
+        // Mezclarlo en este agregado consumiría de más el apartado propio de la línea.
+        if (ent._fromOC) return;
         var k = ent.row + '||' + ent.empresa_stock;
         _consAgg[k] = (_consAgg[k] || 0) + (Number(ent.cantidad) || 0);
       });
@@ -4413,20 +4530,28 @@ async function guardarTodo() {
     closeModal();
     var partes = [];
     if (entregas.length > 0) partes.push(entregas.length + ' entrega(s) registrada(s)');
+    if (tramites && _tramiteRes && (_tramiteRes.pares || []).length) {
+      partes.push('OC de traslado legalizada(s) al remisionar (' + _tramiteRes.pares.map(function(p) { return p.re + (p.rs ? ' / ' + p.rs : ''); }).join(', ') + ')');
+    }
     if (solicitudesCompra.length > 0) partes.push(solicitudesCompra.length + ' solicitud(es) de compra creada(s)');
     var msg = partes.length > 0
       ? '✅ Cambios guardados + ' + partes.join(' + ')
       : '✅ Cambios guardados en la nube';
     showToast(msg);
     if (solicitudesCompra.length > 0) {
-      showToast('⚠ ' + solicitudesCompra.length + ' solicitud(es) de compra pendiente(s) — legalizar la OC en Órdenes para que el stock quede en ' + c.Nombre_Empresa + ' y poder emitir la remisión', '#e67e22');
+      showToast('⚠ ' + solicitudesCompra.length + ' solicitud(es) de compra pendiente(s) — cuando se aprueben en Órdenes, vuelve a este pedido y usa «Entregar con OC»: la OC se legaliza sola al remisionar y el inventario se mueve en ese momento', '#e67e22');
     }
     if (_consFallos.length > 0) {
       showToast('⚠ La entrega quedó registrada, pero no se pudo descontar el apartado del pedido (' + _consFallos[0] + '). Revisa el apartado del pedido y libéralo con «Descomprometer» para que no reste dos veces del disponible.', '#e67e22', 12000);
     }
     await loadFromAPI();
   } catch (err) {
-    showToast('❌ Error: ' + err.message, '#e74c3c');
+    if (_tramiteHecho) {
+      // La transacción del pedido + OC ya se confirmó: lo que falló es un registro posterior.
+      showToast('❌ Error: ' + err.message + ' — OJO: el pedido YA quedó remisionado (remisión ' + rem + ') y las OC de traslado ya se legalizaron. NO repitas la entrega: cierra el modal y revisa el pedido.', '#e74c3c', 15000);
+    } else {
+      showToast('❌ Error: ' + err.message, '#e74c3c');
+    }
     // Si la remisión se generó en este intento y el guardado no llegó a
     // ningún registro, devolvemos el consecutivo al contador (best-effort;
     // el RPC no la libera si ya quedó en algún registro).
@@ -4454,26 +4579,60 @@ async function guardarTodo() {
 //     Se crea SOLO una OC con Tipo='Traslado', Estado='Abierta' y
 //     Remision='' — es una "solicitud de compra". NO se crea
 //     EntregasPedido y NO se toca el pedido (Cant_Entregada,
-//     Remisiones, Estado_Entrega). La OC no afecta inventario
-//     hasta que un usuario la abra en el módulo Órdenes y cargue
-//     Remisión Destino + Remisión Origen — recién ahí Existencias
-//     y Kardex la cuentan como movimiento bilateral y el producto
-//     queda como existencia en la empresa del pedido. Sólo
-//     entonces el usuario puede volver a este pedido y registrar
-//     la entrega al cliente desde esa empresa para emitir la
-//     remisión correspondiente.
-async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs) {
+//     Remisiones, Estado_Entrega). La OC nace «diferida»
+//     (OrdenesCompra.Traslado_Diferido): NO afecta la existencia
+//     al aprobarse (solo sigue apartando stock en el origen). Una
+//     vez aprobada en Órdenes, el usuario vuelve a este pedido y
+//     usa «Entregar con OC»: al remisionar el pedido, la RPC
+//     guardar_pedido_con_traslados legaliza la OC (RE/RS) en la
+//     cantidad despachada y recién ahí Existencias y Kardex la
+//     cuentan (Salida en el origen, Entrada y Salida en el destino).
+//
+//   • entregas «con OC» (_fromOC): ya las trató la RPC guardar_pedido_con_traslados (legalizó las OC
+//     diferidas aprobadas de la línea). Aquí solo se deja el rastro en EntregasPedido: UNA fila por pieza
+//     tramitada (tramite.por_linea[<pedido_id>] = [{oc_id, cantidad, remision_re, remision_rs}]) con
+//     orden_compra_id = esa OC, para ver de qué OC salió cada despacho.
+async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, fecha, obs, tramite) {
   var uid = _uid();
   var stamp = new Date();
   var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
   var ymd = stamp.getFullYear() + pad(stamp.getMonth() + 1) + pad(stamp.getDate());
   var hms = pad(stamp.getHours()) + pad(stamp.getMinutes()) + pad(stamp.getSeconds());
   var counter = 0;
+  var _filasOCHechas = {};
 
   // 1) Entregas directas → sólo EntregasPedido, sin OC.
   for (var e = 0; e < entregas.length; e++) {
     var ent = entregas[e];
     var dl = detailWorkingLines[ent._idx] || {};
+    if (ent._fromOC) {
+      // Todas las unidades «con OC» de esta línea se registran de una vez, una fila por pieza.
+      var kRow = String(ent.row);
+      if (_filasOCHechas[kRow]) continue;
+      _filasOCHechas[kRow] = true;
+      var piezasL = (tramite && tramite.por_linea && tramite.por_linea[kRow]) || [];
+      if (piezasL.length) {
+        for (var pi = 0; pi < piezasL.length; pi++) {
+          var epPieza = {
+            pedido_id: ent.row,
+            empresa_pedido: c.Nombre_Empresa,
+            empresa_stock: ent.empresa_stock,
+            producto: dl.Producto || '',
+            presentacion: dl.Presentacion || '',
+            cantidad: Number(piezasL[pi].cantidad) || 0,
+            remision: rem,
+            fecha: fecha || null,
+            orden_compra_id: piezasL[pi].oc_id != null ? piezasL[pi].oc_id : null,
+            observaciones: obs || '',
+            creado_por: uid
+          };
+          var epPRes = await _sb.from('EntregasPedido').insert(epPieza);
+          if (epPRes.error) throw new Error('EntregasPedido: ' + epPRes.error.message);
+        }
+        continue;
+      }
+      // Sin detalle de piezas (no debería pasar): se registra la entrega normal, sin OC.
+    }
     var epRow = {
       pedido_id: ent.row,
       empresa_pedido: c.Nombre_Empresa,
@@ -4515,9 +4674,8 @@ async function persistirEntregasYTraslados(entregas, solicitudesCompra, c, rem, 
                      (counter > 1 && !siglaOrig ? '-' + counter : '');
     var obsGrupo = 'Solicitud de compra automática por pedido ' +
       c.Nombre_Empresa + ' #' + c.Consecutivo +
-      ' — legalizar en Órdenes (Remisión Destino + Origen) para ' +
-      'que el stock entre a ' + c.Nombre_Empresa + ' y poder emitir ' +
-      'la remisión al cliente.';
+      ' — una vez aprobada, se legaliza sola (RE/RS) cuando se remisione el pedido ' +
+      '(«Entregar con OC»): el inventario del origen no se mueve antes.';
     for (var li = 0; li < grupo.items.length; li++) {
       var sol = grupo.items[li];
       var dls = detailWorkingLines[sol._idx] || {};

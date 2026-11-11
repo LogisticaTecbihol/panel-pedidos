@@ -80,7 +80,7 @@ async function loadOrdenes() {
   }
 
   try {
-    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,Bonificado,creado_por,num_factura_destino,fecha_factura_destino,num_factura_origen,fecha_factura_origen,pedido_id' });
+    var data = await apiGet('getOrdenesCompra', { columns: 'id,Fecha,Empresa_Destino,Empresa_Origen,Consecutivo,Producto,Presentacion,Cantidad,Valor_Unitario,Valor_Total,Remision,Remision_Origen,Estado,Observaciones,Municipio,Bodega,Direccion,Tipo,Ref_Pedido,Estado_Aprobacion,Aprobada_Por,Fecha_Aprobacion,Motivo_Rechazo,Bonificado,creado_por,num_factura_destino,fecha_factura_destino,num_factura_origen,fecha_factura_origen,pedido_id,Traslado_Diferido,Traslado_Padre_Id' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ordenes = (data.ordenes || []).map(function(r) {
@@ -227,6 +227,11 @@ function estadoBadge(estado) {
 // forman una única solicitud/orden — comparten Consecutivo,
 // Empresa_Origen, Empresa_Destino, Fecha y (si aplica) Ref_Pedido.
 // Todos los PDFs (solicitud + remisiones) operan sobre este grupo.
+//
+// OC «diferidas» (Traslado_Diferido: traslados de un pedido que se legalizan solos al remisionar el
+// pedido): cada pasada deja una pieza Cerrada con la Fecha de esa remisión y su propio par RE/RS, y el
+// remanente conserva la fecha original. Para ellas la Fecha NO identifica al grupo (si no, cada pieza
+// quedaría suelta). Quién va en cada documento de remisiones lo decide _paresRemisionOC.
 function _grupoOC(row) {
   if (!row) return [];
   var conse = String(row.Consecutivo || '').trim();
@@ -234,14 +239,68 @@ function _grupoOC(row) {
   var eOrig = String(row.Empresa_Origen || '').trim();
   var fecha = String(row.Fecha || '').slice(0, 10);
   var refPed = String(row.Ref_Pedido || '').trim();
+  var dif = !!row.Traslado_Diferido;
   return ordenes.filter(function(r) {
     if (String(r.Consecutivo || '').trim() !== conse) return false;
     if (String(r.Empresa_Destino || '').trim() !== eDest) return false;
     if (String(r.Empresa_Origen || '').trim() !== eOrig) return false;
-    if (String(r.Fecha || '').slice(0, 10) !== fecha) return false;
+    if (!!r.Traslado_Diferido !== dif) return false;
+    if (!dif && String(r.Fecha || '').slice(0, 10) !== fecha) return false;
     if (String(r.Ref_Pedido || '').trim() !== refPed) return false;
     return true;
   });
+}
+
+// Una OC diferida con varias pasadas tiene, por producto, varias filas (piezas + remanente). La Solicitud
+// de OC es del pedido original: se muestra UNA línea por producto con la suma de las partes, y la fecha
+// más antigua (la de la solicitud; las piezas llevan la fecha de cada remisión). Las demás OC no cambian.
+function _grupoSolicitudOC(grupo) {
+  if (!grupo || !grupo.length || !grupo[0].Traslado_Diferido) return grupo;
+  var minFecha = grupo.reduce(function(m, r) {
+    var f = String(r.Fecha || '').slice(0, 10);
+    return (f && (!m || f < m)) ? f : m;
+  }, '');
+  var porClave = {}, out = [];
+  grupo.forEach(function(r) {
+    var k = [r.Producto, r.Presentacion, r.Bonificado, r.pedido_id].join('|');
+    if (!porClave[k]) {
+      porClave[k] = Object.assign({}, r, { Fecha: minFecha || r.Fecha });
+      out.push(porClave[k]);
+    } else {
+      porClave[k].Cantidad = (Number(porClave[k].Cantidad) || 0) + (Number(r.Cantidad) || 0);
+      porClave[k].Valor_Total = (Number(porClave[k].Valor_Total) || 0) + (Number(r.Valor_Total) || 0);
+    }
+  });
+  return out;
+}
+
+// Documentos de remisiones (RE destino + RS origen) de un grupo: uno por par de remisiones. Una OC común
+// tiene un solo par (cabecera primero, como siempre); una diferida, uno por pasada. Cada documento lleva
+// SOLO las filas de su par. Devuelve [] si nada se ha legalizado.
+function _paresRemisionOC(grupo) {
+  var conRem = (grupo || []).filter(function(o) { return String(o.Remision || '').trim() || String(o.Remision_Origen || '').trim(); });
+  if (!conRem.length) return [];
+  if (!grupo[0].Traslado_Diferido) {
+    var cab = conRem[0];
+    return [[cab].concat(grupo.filter(function(o) { return o !== cab; }))];
+  }
+  var pares = {}, orden = [];
+  conRem.forEach(function(o) {
+    var k = String(o.Remision || '').trim() + '|' + String(o.Remision_Origen || '').trim();
+    if (!pares[k]) { pares[k] = []; orden.push(k); }
+    pares[k].push(o);
+  });
+  return orden.map(function(k) { return pares[k]; });
+}
+
+// El documento de remisiones que corresponde a la fila r (o el único si solo hay uno). null = no hay.
+function _remisionesDeFila(r) {
+  var pares = _paresRemisionOC(_grupoOC(r));
+  if (!pares.length) return null;
+  if (!r.Traslado_Diferido) return pares[0];
+  var mio = pares.filter(function(p) { return p.indexOf(r) >= 0; })[0];
+  if (mio) return mio;
+  return pares.length === 1 ? pares[0] : null;
 }
 
 // Si una OC de traslado se legaliza DESPUÉS de que el pedido que la
@@ -303,15 +362,28 @@ function exportarSolicitudOC(row) {
   for (var i = 0; i < ordenes.length; i++) if (ordenes[i].__row === row) { r = ordenes[i]; break; }
   if (!r) { showToast('OC no encontrada', '#e74c3c'); return; }
   if (typeof generarSolicitudOCPDF !== 'function') { showToast('PDF no disponible (jsPDF no cargó)', '#e74c3c'); return; }
-  generarSolicitudOCPDF(_grupoOC(r));
+  generarSolicitudOCPDF(_grupoSolicitudOC(_grupoOC(r)));
+}
+
+// PDF de remisiones de la fila r. OC común: igual que siempre (todo el grupo). OC diferida: el documento
+// RE/RS de la pasada a la que pertenece la fila (cada pasada tiene su par); el remanente aún sin
+// legalizar no tiene documento.
+function _generarRemisionesDeFila(r) {
+  if (typeof generarRemisionesTrasladoPDF !== 'function') { showToast('PDF no disponible (jsPDF no cargó)', '#e74c3c'); return; }
+  if (!r.Traslado_Diferido) { generarRemisionesTrasladoPDF(_grupoOC(r)); return; }
+  var doc = _remisionesDeFila(r);
+  if (!doc) {
+    showToast('Esta parte de la OC aún no se legalizó: sus remisiones se generan solas cuando se remisione el pedido.', '#e67e22', 6000);
+    return;
+  }
+  generarRemisionesTrasladoPDF(doc);
 }
 
 function exportarRemisionesOC(row) {
   var r = null;
   for (var i = 0; i < ordenes.length; i++) if (ordenes[i].__row === row) { r = ordenes[i]; break; }
   if (!r) { showToast('OC no encontrada', '#e74c3c'); return; }
-  if (typeof generarRemisionesTrasladoPDF !== 'function') { showToast('PDF no disponible (jsPDF no cargó)', '#e74c3c'); return; }
-  generarRemisionesTrasladoPDF(_grupoOC(r));
+  _generarRemisionesDeFila(r);
 }
 
 // Envía la OC a otros usuarios del panel (bandeja 🔔): siempre la Solicitud
@@ -326,24 +398,24 @@ function _enviarGrupoOC(r) {
 
   // generarRemisionesTrasladoPDF toma las remisiones de grupo[0]; si esa línea
   // no está legalizada pero otra hermana sí, la que tiene remisión va primero.
-  var conRem = grupo.filter(function(o) { return String(o.Remision || '').trim() || String(o.Remision_Origen || '').trim(); })[0];
-  var grupoRem = conRem ? [conRem].concat(grupo.filter(function(o) { return o !== conRem; })) : null;
+  // Una OC diferida tiene un documento por pasada (par RE/RS): _paresRemisionOC.
+  var paresRem = _paresRemisionOC(grupo);
 
-  var extras = [];
-  if (grupoRem) {
-    extras.push({
-      meta: { modulo: 'ordenes', referencia: cons, titulo: 'Remisiones de traslado OC ' + cons },
+  var extras = paresRem.map(function(grupoRem) {
+    var tit = 'Remisiones de traslado OC ' + cons + (paresRem.length > 1 ? ' · ' + (String(grupoRem[0].Remision || '').trim() || String(grupoRem[0].Remision_Origen || '').trim()) : '');
+    return {
+      meta: { modulo: 'ordenes', referencia: cons, titulo: tit },
       buildDoc: function() {
         var b = generarRemisionesTrasladoPDF(grupoRem, { return_doc: true });
         return b ? b.doc : null;
       }
-    });
-  }
+    };
+  });
 
   // Contabilidad: si ya hay remisiones de traslado, reciben copia las de las
   // empresas dueñas de esos consecutivos (RE = destino, RS = origen). El PDF de
-  // remisiones imprime solo las de la fila cabecera (grupoRem[0]).
-  var refs = NOTIF.refsDeOCs(grupoRem ? grupoRem[0] : null);
+  // remisiones imprime solo las de la fila cabecera de cada documento.
+  var refs = NOTIF.refsDeOCs(paresRem.map(function(p) { return p[0]; }));
 
   NOTIF.openModalEnviar({
     modulo: 'ordenes',
@@ -352,7 +424,7 @@ function _enviarGrupoOC(r) {
     empresas: refs.empresas,
     remisiones: refs.remisiones,
     buildDoc: function() {
-      var b = generarSolicitudOCPDF(grupo, { return_doc: true });
+      var b = generarSolicitudOCPDF(_grupoSolicitudOC(grupo), { return_doc: true });
       return b ? b.doc : null;
     },
     extras: extras
@@ -432,11 +504,13 @@ function renderOCTable() {
     var solBadge = '';
     if (esSol) {
       var refEsc = escHtml(String(r.Ref_Pedido || ''));
-      solBadge = ' <span class="sol-pend-badge" title="Solicitud de compra pendiente por legalizar. Origen: pedido ' + refEsc + '. Cargar Remisión Destino + Remisión Origen para que el stock entre a ' + escHtml(r.Empresa_Destino || '') + ' y se pueda emitir la remisión al cliente.">🛒 SOL. PEDIDO</span>';
+      solBadge = r.Traslado_Diferido
+        ? ' <span class="sol-pend-badge" title="Solicitud de compra del pedido ' + refEsc + '. Una vez aprobada, se legaliza sola (RE/RS) cuando se remisione el pedido: el inventario de ' + escHtml(r.Empresa_Origen || '') + ' no se mueve antes (mientras tanto sigue apartado).">🛒 SOL. PEDIDO</span>'
+        : ' <span class="sol-pend-badge" title="Solicitud de compra pendiente por legalizar. Origen: pedido ' + refEsc + '. Cargar Remisión Destino + Remisión Origen para que el stock entre a ' + escHtml(r.Empresa_Destino || '') + ' y se pueda emitir la remisión al cliente.">🛒 SOL. PEDIDO</span>';
     }
     var tieneRems = String(r.Remision || '').trim() || String(r.Remision_Origen || '').trim();
     var btnPdfSol = '<button class="btn-pdf-oc" onclick="exportarSolicitudOC(' + (r.__row||0) + ')" title="Descargar Solicitud de OC (PDF, agrupa todos los productos)">📄</button>';
-    var btnPdfRem = '<button class="btn-pdf-oc" onclick="exportarRemisionesOC(' + (r.__row||0) + ')" title="' + (tieneRems ? 'Descargar Remisiones Destino y Origen (PDF)' : 'Aún no hay remisiones cargadas — legalizar primero') + '"' + (tieneRems ? '' : ' style="opacity:0.4"') + '>📦</button>';
+    var btnPdfRem = '<button class="btn-pdf-oc" onclick="exportarRemisionesOC(' + (r.__row||0) + ')" title="' + (tieneRems ? 'Descargar Remisiones Destino y Origen (PDF)' : (r.Traslado_Diferido ? 'Aún no hay remisiones: se generan solas al remisionar el pedido' : 'Aún no hay remisiones cargadas — legalizar primero')) + '"' + (tieneRems ? '' : ' style="opacity:0.4"') + '>📦</button>';
 
     var btnEnviar = '<button class="btn-pdf-oc" onclick="enviarOC(' + (r.__row||0) + ')" title="Enviar a un usuario del panel: Solicitud de OC (+ Remisiones si ya están cargadas)">📨</button>';
 
@@ -448,6 +522,14 @@ function renderOCTable() {
       aprBadge = '<span class="badge b-anulado" title="' + escapeAttr(r.Motivo_Rechazo || '') + '">❌ Rechazada</span>';
     } else {
       aprBadge = '<span class="badge b-par">⏳ Por aprobar</span>';
+    }
+    // OC de traslado «diferida»: se legaliza sola al remisionar el pedido (RPC tramitar_traslado_oc).
+    if (r.Traslado_Diferido) {
+      if (tieneRems) {
+        aprBadge += '<br><span class="badge b-ent" title="' + escapeAttr('Se legalizó sola al remisionar el pedido' + (r.Traslado_Padre_Id != null ? ' (parte de una OC mayor)' : '') + '.') + '">🚚 Tramitada con el pedido</span>';
+      } else if (apr === 'Aprobada' && (r.Estado || 'Abierta') === 'Abierta') {
+        aprBadge += '<br><span class="badge b-par" title="Se legaliza sola (RE/RS) cuando se remisione el pedido. Mientras tanto el inventario no se mueve: solo sigue apartado en el origen.">🚚 En espera de remisión del pedido</span>';
+      }
     }
 
     var aprBtns = '';
@@ -748,6 +830,7 @@ function openNewOC() {
   if (btnRem) btnRem.style.display = 'none';
   if (btnEnv) btnEnv.style.display = 'none';
   _applyAprobacionLockOC({ Estado_Aprobacion: 'Aprobada' });
+  _applyDiferidaLockOC(null);
   _previewConsecutivoOC();
   document.getElementById('oc-overlay').classList.add('show');
 }
@@ -775,6 +858,72 @@ function _applyAprobacionLockOC(r) {
     var optCerrada = est.querySelector('option[value="Cerrada"]');
     if (optCerrada) optCerrada.disabled = locked;
     if (locked && est.value === 'Cerrada') est.value = 'Abierta';
+  }
+}
+
+// OC de traslado «diferida» (Traslado_Diferido): se legaliza SOLA al remisionar el pedido, así que en el
+// editor no se puede cerrar ni poner remisiones a mano (la base también lo impide: trigger
+// trg_oc_diferida_guard). Una pieza ya tramitada tampoco cambia de cantidad, producto, empresas ni estado
+// (el Kardex la cuenta con su remisión); solo un admin puede, y a su cargo. r = null deja el editor libre
+// (alta de una OC nueva). Se llama DESPUÉS de _applyAprobacionLockOC.
+function _applyDiferidaLockOC(r) {
+  var ids = ['oc-edit-producto', 'oc-edit-presentacion', 'oc-edit-cantidad', 'oc-edit-valorunit', 'oc-edit-valortotal', 'oc-emp-dest', 'oc-emp-orig'];
+  var est = document.getElementById('oc-estado');
+  var host = est || document.getElementById('oc-observaciones');
+  var av = document.getElementById('oc-diferida-aviso');
+  var dif = !!(r && r.Traslado_Diferido);
+  var tieneRems = !!(r && (String(r.Remision || '').trim() || String(r.Remision_Origen || '').trim() || r.Estado === 'Cerrada'));
+  var tramitada = dif && tieneRems;
+  var pendiente = dif && !tieneRems;
+  // Reinicia lo que esta función bloquea (el editor se reutiliza para altas y ediciones).
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = false;
+    if (el.dataset && el.dataset.difLock) { el.style.background = ''; el.title = ''; delete el.dataset.difLock; }
+  });
+  if (est) { est.disabled = false; est.title = ''; }
+  if (pendiente) {
+    ['oc-remision', 'oc-remision-origen'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) { el.disabled = true; el.style.background = '#f1f5f9'; el.title = 'Se genera sola al remisionar el pedido'; }
+    });
+    if (est) {
+      var optC = est.querySelector('option[value="Cerrada"]');
+      if (optC) optC.disabled = true;
+      if (est.value === 'Cerrada') est.value = 'Abierta';
+    }
+  }
+  // (el bloqueo de «Cerrada» por falta de aprobación lo maneja _applyAprobacionLockOC en cada apertura)
+  if (tramitada && !(typeof AUTH !== 'undefined' && AUTH.isAdmin && AUTH.isAdmin())) {
+    ids.concat(['oc-estado']).forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = true;
+      el.style.background = '#f1f5f9';
+      el.title = 'Esta OC ya se tramitó al remisionar el pedido: no se puede cambiar';
+      if (el.dataset) el.dataset.difLock = '1';
+    });
+  }
+  if (!host || !host.parentNode) return;
+  if ((pendiente || tramitada) && !av) {
+    av = document.createElement('div');
+    av.id = 'oc-diferida-aviso';
+    av.style.cssText = 'font-size:0.78rem;border-radius:6px;padding:6px 10px;margin:6px 0';
+    host.parentNode.insertBefore(av, host);
+  }
+  if (av) {
+    if (pendiente) {
+      av.style.display = 'block';
+      av.style.cssText += ';background:#fff7e6;border:1px solid #f5d28a;color:#7a4b00';
+      av.textContent = '🚚 Esta OC se legaliza sola cuando se remisione el pedido (se emiten sus RE/RS en ese momento). Mientras tanto el inventario no se mueve: solo sigue apartado en la empresa origen. No se puede cerrar ni poner remisiones a mano.';
+    } else if (tramitada) {
+      av.style.display = 'block';
+      av.style.cssText += ';background:#ecfdf5;border:1px solid #9ae6b4;color:#22543d';
+      av.textContent = '🚚 Esta OC (o esta parte) se legalizó sola al remisionar el pedido: ya movió inventario con sus remisiones.';
+    } else {
+      av.style.display = 'none';
+    }
   }
 }
 
@@ -867,6 +1016,7 @@ function openEditOC(row) {
   document.getElementById('btn-save-oc').disabled = false;
   document.getElementById('btn-save-oc').textContent = '✓ Guardar cambios';
   _applyAprobacionLockOC(r);
+  _applyDiferidaLockOC(r);
 
   document.getElementById('oc-multi-lines').style.display = 'none';
   var _ocUpE = document.getElementById('oc-upload-section');
@@ -894,7 +1044,9 @@ function openEditOC(row) {
     btnRem.style.cursor = tieneRems ? 'pointer' : 'not-allowed';
     btnRem.title = tieneRems
       ? 'Descargar las Remisiones (Destino y Origen) en PDF'
-      : 'Aún no hay remisiones cargadas — legalizar primero (cargar Remisión Destino y/o Origen)';
+      : (r.Traslado_Diferido
+          ? 'Aún no hay remisiones: se generan solas al remisionar el pedido'
+          : 'Aún no hay remisiones cargadas — legalizar primero (cargar Remisión Destino y/o Origen)');
   }
 
   var _ocA = document.getElementById('oc-audit');
@@ -914,12 +1066,11 @@ function openEditOC(row) {
 function exportarSolicitudOCDesdeModal() {
   if (!editOrden) { showToast('Abre una OC primero', '#e67e22'); return; }
   if (typeof generarSolicitudOCPDF !== 'function') { showToast('PDF no disponible (jsPDF no cargó)', '#e74c3c'); return; }
-  generarSolicitudOCPDF(_grupoOC(editOrden));
+  generarSolicitudOCPDF(_grupoSolicitudOC(_grupoOC(editOrden)));
 }
 function exportarRemisionesOCDesdeModal() {
   if (!editOrden) { showToast('Abre una OC primero', '#e67e22'); return; }
-  if (typeof generarRemisionesTrasladoPDF !== 'function') { showToast('PDF no disponible (jsPDF no cargó)', '#e74c3c'); return; }
-  generarRemisionesTrasladoPDF(_grupoOC(editOrden));
+  _generarRemisionesDeFila(editOrden);
 }
 function enviarOCDesdeModal() {
   if (!editOrden) { showToast('Abre una OC primero', '#e67e22'); return; }
@@ -1114,8 +1265,10 @@ async function approveOC(empresaDest, empresaOrig, consecutivo) {
     ids: ids
   });
   if (!res.ok) { showToast('❌ ' + (res.error || 'Error al aprobar'), '#e74c3c'); return; }
-  showToast('✅ OC aprobada');
   var creatorRow = ordenes.filter(function(r) { return ids.indexOf(r.id) >= 0; })[0];
+  showToast(creatorRow && creatorRow.Traslado_Diferido
+    ? '✅ OC aprobada — se legalizará sola al remisionar el pedido (el inventario no se mueve antes)'
+    : '✅ OC aprobada');
   _notifyCreadorAprobacionOC(creatorRow, 'Aprobada', '');
   await loadOrdenes();
 }
@@ -1198,7 +1351,9 @@ async function _notifyCreadorAprobacionOC(row, estado, motivo) {
     var titulo, mensaje;
     if (estado === 'Aprobada') {
       titulo = '✅ OC aprobada: ' + siglaD + ' ← ' + siglaO + ' #' + ref;
-      mensaje = 'Tu OC fue aprobada y ya puede legalizarse.';
+      mensaje = row.Traslado_Diferido
+        ? 'Tu OC fue aprobada: se legalizará sola cuando se remisione el pedido (el inventario no se mueve antes).'
+        : 'Tu OC fue aprobada y ya puede legalizarse.';
     } else {
       titulo = '❌ OC rechazada: ' + siglaD + ' ← ' + siglaO + ' #' + ref;
       mensaje = 'Motivo: ' + (motivo || 'sin motivo');
