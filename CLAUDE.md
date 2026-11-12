@@ -41,6 +41,34 @@ ve estos productos también en cero (y la opción «Solo sin existencia» se le 
 reglas de siempre. Los nombres deben ser los del maestro/movimientos: «CLEAN CROP X 20 LITROS» (el Excel decía «BIDON DE 20 LITROS»). Para agregar o quitar un
 producto se edita el arreglo; no hay tabla en BD. Solo aplica a la pestaña Existencias por Empresa (no a Existencias NC ni al Comparativo).
 
+## Kardex → Existencias por Empresa: apartados y cierre de mes
+
+Pedido 2026-11-12: que al cambiar de mes ningún apartado pueda alterar lo que maneja contabilidad. Un apartado (`apartados_pedido`, `apartados_muestra`, OC de traslado viva ligada a un pedido) **no es un
+movimiento**: solo baja el «disponible neto». Lo que contabilidad usa para el cierre (existencia a fecha de corte, valorizado del Dashboard, Reportes/remisiones, borrador de inventario físico) sale
+solo de movimientos (`_kx_movs`, `get_saldos_holding`, `_computeExistenciasParaEmpresa`) y **no lee apartados**. El único sitio donde se mezclaban era Existencias por Empresa con **fecha de corte**.
+
+- **Corte pasado** (`_existCortePasado()`, `js/kardex.js`): con `ex-f-corte` anterior a hoy (fecha local, `today()`) se ocultan **APARTADO y DISP. NETO** en la tabla, el pie y el Excel, y sale el aviso
+  `#ex-nota-corte` (en el Excel, en la 3.ª fila). Antes la existencia era la de esa fecha pero el apartado el de HOY (el 12-nov, un corte al 31-oct restaba 443 ud de hoy cuando al cierre de octubre
+  había 39 vigentes). Corte de hoy, futuro o vacío: todo como siempre. `calcularExistencias` sigue calculando `_apa` (no se dejó de calcular, solo de mostrar). **No se reconstruye** el apartado a una fecha
+  pasada (un consumo parcial resta la cantidad en la misma fila; haría falta `audit_log`).
+- **«🔒 Apartados vigentes»** (botón junto a «Exportar Excel»; modal `#apv-overlay` en `kardex.html`, código `openApartadosVigentes` / `_apvConstruir` / `renderApartadosVigentes` /
+  `exportApartadosVigentesExcel` en `js/kardex.js`): **solo consulta**, no libera nada (eso sigue en Pedidos / Muestras / Órdenes). Relee de la base cada vez que se abre (no usa el snapshot de Kardex ni el
+  corte de la tabla). Lista las MISMAS tres fuentes y criterios que `Existencias.computeApartadoPorEmpresa` (pedido Activo, muestra Activa, OC `esSolicitudCompraViva` con `Ref_Pedido` y sin
+  `Remision_Origen`), así que **suma lo mismo que la columna APARTADO** (comprobado con la función real). **Si cambias esos criterios, cambia `_apvConstruir`.**
+  - Columnas: tipo, empresa del stock, producto, cantidad, referencia (OC = consecutivo de la OC), cliente/responsable (OC: «Para el pedido SIGLA #n» + aprobación/diferida/destino), compromiso, días,
+    existencia **actual** de esa empresa (mismos cubos de PARCELAR que `calcularExistencias`, sin corte), apartado total del producto en esa empresa, neto y alertas. «Creado» solo va en el Excel (tooltip de «Días»).
+  - **Alertas** (`APV_DIAS_ALERTA = 7`, `APV_UMBRAL_STOCK = 0.8`): ⏳ más de 7 días apartado sin remisionarse (en OC, desde su creación); 🔒 el apartado total de ese producto en esa empresa cubre el 80 % o más de la
+    existencia («sin stock libre» si el neto es ≤ 0). El compromiso vencido **no** se resalta (se decidió así; la columna sí se muestra).
+  - **Visibilidad**: solo las empresas de `EMPRESAS_EXIST` (más GRANEL si `_granelVisibleKx()`); un usuario de una sola empresa ve solo lo suyo. Filtros: tipo, empresa, «Solo con alertas». Excel `Apartados_vigentes_<fecha>.xlsx`.
+  - **Si falla la lectura de cualquiera de las tres fuentes no muestra nada parcial**: mensaje «El listado NO es confiable» y no exporta (un listado de control incompleto engaña).
+- **Hallazgos al 2026-11-12** (consultas de solo lectura): 10 apartados de pedido activos (214 ud), 8 de muestra (19 ud) y 2 OC diferidas GREEN → IASO (210 ud, Oxicloruro de cobre); ningún apartado creado antes de
+  noviembre sigue activo (las únicas reservas que cruzaron octubre → noviembre fueron 4 de IASO, 39 ud, ya liberadas el 9-nov). Casos a vigilar: GREEN MOLUS-KILL X GALON 4 de 4; Oxicloruro GREEN 210 de 250;
+  YODO X 250 ML (RESO #1) apartado con compromiso del 2-nov. Las OC diferidas de un pedido que cruzan de mes mueven el inventario con la **fecha de la remisión del pedido**, no la de la OC.
+- **Nota aparte** (no es de apartados): el borrador de inventario físico guarda «Cant. Sistema» al crearse; una remisión con fecha dentro del conteo pero registrada después no lo actualiza.
+- Probado con un arnés de navegador sobre el código real de `kardex.js` (Existencias por Empresa completa + el listado) y `existencias.js`, con Supabase simulado y los datos de producción del 12-nov: 51 comprobaciones
+  (corte vacío/ayer/hoy/futuro, tabla y Excel con y sin corte, conciliación producto por producto con `computeApartadoPorEmpresa`, alertas, filtros, usuario de una sola empresa, fallas de lectura, escape de HTML,
+  1366 px sin scroll horizontal). **No se probó con un usuario real ni con Supabase real.** Sin migración: no toca la base.
+
 ## Cambios de mercancía: trámite parcial (`devoluciones.html` → pestaña «Cambios de Mercancía»)
 
 «Gestionar» ya no registra cada lado de una sola vez: cada pasada guarda lo que **realmente** ingresó y/o salió (cantidad por línea) con su propia remisión,

@@ -301,8 +301,12 @@
       <h3>📊 Existencias de Producto Bueno por Empresa <span id="row-ct-ex" style="font-weight:400;color:#718096"></span></h3>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn-dl" onclick="exportExistExcel()">📥 Exportar Excel</button>
+        <button class="btn-dl" onclick="openApartadosVigentes()" title="Qué hay apartado hoy (pedidos, muestras y OC de traslado) para revisar antes de cerrar el mes">🔒 Apartados vigentes</button>
         <button class="btn-dl" onclick="loadKardex()">🔄 Actualizar datos</button>
       </div>
+    </div>
+    <div id="ex-nota-corte" style="display:none;margin:0 16px 12px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:0.8rem;color:#1e40af">
+      ℹ️ Con una <strong>fecha de corte anterior a hoy</strong> no se muestran <strong>APARTADO</strong> ni <strong>DISP. NETO</strong>: los apartados que existen son los de hoy y no se puede saber cuánto había apartado en esa fecha. Las existencias sí son las de la fecha de corte.
     </div>
     <div id="ex-nota-empresa" style="display:none;margin:0 16px 12px;padding:8px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;font-size:0.8rem;color:#9a5b13">
       ℹ️ Las columnas <strong>APARTADO</strong> y <strong>DISP. NETO</strong> siempre muestran el total de <strong>todo el holding</strong> para ese producto, no solo de la empresa filtrada — porque un mismo producto puede tener stock repartido entre varias empresas.
@@ -659,6 +663,58 @@
   </div>
 </div>
 
+<!-- APARTADOS VIGENTES (solo consulta; revisión previa al cierre de mes) -->
+<div class="overlay" id="apv-overlay">
+  <div class="modal-box" style="max-width:1400px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#b45309,#d97706)">
+      <div style="flex:1">
+        <h2>🔒 Apartados vigentes</h2>
+        <div id="apv-sub" style="font-size:0.78rem;opacity:0.92;margin-top:4px"></div>
+      </div>
+      <button class="btn-close" onclick="closeApartadosVigentes()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;font-size:0.8rem;color:#9a5b13;margin-bottom:12px">
+        Lo que hoy tiene stock reservado <strong>sin remisionar</strong>: apartados de pedidos, de muestras y OC de traslado vivas (reservan en la empresa origen). <strong>No mueven la existencia</strong>: solo bajan el disponible. Es la misma suma de la columna APARTADO. Para liberarlos usa Pedidos, Muestras u Órdenes.
+      </div>
+      <div id="apv-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <div class="fg"><label>Tipo</label>
+          <select id="apv-f-tipo" onchange="renderApartadosVigentes()" style="padding:6px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem;background:#fff;color:#2d3748">
+            <option value="">— Todos —</option>
+            <option value="pedido">Pedido</option>
+            <option value="muestra">Muestra</option>
+            <option value="oc">OC de traslado</option>
+          </select>
+        </div>
+        <div class="fg"><label>Empresa del stock</label>
+          <select id="apv-f-empresa" onchange="renderApartadosVigentes()" style="padding:6px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:0.82rem;background:#fff;color:#2d3748">
+            <option value="">— Todas —</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;font-weight:600;color:#4a5568;cursor:pointer">
+          <input type="checkbox" id="apv-f-alerta" onchange="renderApartadosVigentes()"> Solo con alertas
+        </label>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn-dl" onclick="exportApartadosVigentesExcel()">📥 Exportar Excel</button>
+          <button class="btn-dl" onclick="openApartadosVigentes()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div id="apv-msg" style="display:none"></div>
+      <div id="apv-wrap" style="overflow:auto;max-height:52vh;border:1px solid #e2e8f0;border-radius:8px">
+        <table id="tbl-apv" style="font-size:0.8rem;margin:0;width:100%">
+          <thead id="apv-head"></thead>
+          <tbody id="apv-body"></tbody>
+        </table>
+      </div>
+      <div style="font-size:0.74rem;color:#718096;margin-top:10px;line-height:1.5">
+        <strong>Alertas:</strong> ⏳ lleva más de 7 días apartado sin remisionarse · 🔒 el apartado total de ese producto en esa empresa cubre el 80 % o más de su existencia (o la supera).
+        «Existencia» y «Neto» son de esa empresa y de hoy, sin importar la fecha de corte de la tabla. Los días se cuentan desde que se creó el apartado (en OC, desde que se creó la OC).
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- NC SALDO INICIAL MODAL -->
 <div class="overlay" id="nc-saldo-overlay">
   <div class="modal-box" style="max-width:720px">
@@ -951,6 +1007,6 @@
 <script src="js/notificaciones.js?v=20261112a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/kardex.js?v=20261112a"></script>
+<script src="js/kardex.js?v=20261112b"></script>
 </body>
 </html>

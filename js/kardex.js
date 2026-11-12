@@ -3029,6 +3029,16 @@ var existData = [];
 var existFiltered = [];
 var existFiltersAttached = false;
 
+// ── Fecha de corte pasada → sin APARTADO ni DISP. NETO ──
+// La existencia se calcula a la fecha de corte, pero los apartados son los de HOY (la tabla
+// no guarda cuánto había apartado en una fecha anterior). Con un corte anterior a hoy esas dos
+// columnas mezclarían fechas, así que no se muestran (ni en pantalla ni en el Excel).
+// Un corte de hoy o futuro, o sin corte, las deja como siempre.
+function _existCortePasado() {
+  var c = (document.getElementById('ex-f-corte') || {}).value || '';
+  return !!c && c < today();
+}
+
 // ── Columna GRANEL (bodega de bidones de segunda) en Existencias por Empresa ──
 // Va aparte: NO entra en TOTAL / APARTADO / DISP. NETO (esos son de las 5 empresas
 // del holding). Solo se ve con "Todas las empresas" y para quien tenga GRANEL.
@@ -3226,8 +3236,11 @@ function renderExistencias() {
   var soloGranel = empresaSel === 'GRANEL' && _granelVisibleKx();
   existSoloGranel = soloGranel;
 
+  var cortePasado = _existCortePasado();
   var notaEmp = document.getElementById('ex-nota-empresa');
-  if (notaEmp) notaEmp.style.display = (empresaSel && !soloGranel) ? 'block' : 'none';
+  if (notaEmp) notaEmp.style.display = (empresaSel && !soloGranel && !cortePasado) ? 'block' : 'none';
+  var notaCorte = document.getElementById('ex-nota-corte');
+  if (notaCorte) notaCorte.style.display = (cortePasado && !soloGranel) ? 'block' : 'none';
 
   var empresasAll = _empresasExistView();
   var empresasView = soloGranel ? [] : (empresaSel
@@ -3366,7 +3379,7 @@ function _existSectionRow(colSpan, label, txtColor, bgColor) {
 function renderExistTable(empresasView) {
   empresasView = empresasView || _empresasExistView();
   var showTotal = empresasView.length > 1;
-  var showApartado = !existSoloGranel;
+  var showApartado = !existSoloGranel && !_existCortePasado();
   var hasParcelarCol = empresasView.some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
   var tbl = document.getElementById('tbl-ex');
   if (tbl) tbl.classList.toggle('single', empresasView.length === 1 || existSoloGranel);
@@ -3518,7 +3531,8 @@ function exportExistExcel() {
     : empresasAll);
 
   var showTotal = empresasView.length > 1;
-  var showApartado = !soloGranel;
+  var cortePasado = _existCortePasado();
+  var showApartado = !soloGranel && !cortePasado;
   var hasParcelarCol = empresasView.some(function(e) { return e.value === PARCELAR_EMPRESA_VAL; });
   var data = [];
   var num = 1;
@@ -3611,7 +3625,9 @@ function exportExistExcel() {
   var ws = XLSX.utils.aoa_to_sheet([
     ['Existencias de Producto Bueno por Empresa'],
     ['Empresa: ' + empresaLabel + '   ·   Fecha de corte: ' + corteLabel],
-    []
+    (cortePasado && !soloGranel)
+      ? ['Corte anterior a hoy: no se incluyen APARTADO ni DISP. NETO (los apartados que hay son los de hoy, no los de esa fecha).']
+      : []
   ]);
   XLSX.utils.sheet_add_json(ws, data, { origin: 'A4' });
   ws['!merges'] = [
@@ -3629,6 +3645,326 @@ function exportExistExcel() {
     : ('Existencias_por_Empresa_' + today() + '.xlsx');
   XLSX.writeFile(wb, fnameEx);
   showToast('Excel exportado: ' + existFiltered.length + ' productos');
+}
+
+// ══════════════════════════════════════════
+// ── Apartados vigentes (solo consulta; revisión previa al cierre de mes) ──
+// ══════════════════════════════════════════
+// Lista lo que HOY tiene stock reservado sin remisionar, con las MISMAS tres fuentes y criterios
+// de Existencias.computeApartadoPorEmpresa (la columna APARTADO de la tabla):
+//   · apartados_pedido  con estado 'Activo'
+//   · apartados_muestra con estado 'Activo'
+//   · OC Tipo='Traslado' viva (esSolicitudCompraViva), ligada a un pedido (Ref_Pedido) y sin
+//     Remision_Origen → reserva contra Empresa_Origen
+// No libera ni escribe nada. Relee de la base cada vez que se abre (no depende del corte de la tabla).
+// La existencia es la ACTUAL de esa empresa (sin fecha de corte), con el mismo cálculo y los
+// mismos cubos de PARCELAR que calcularExistencias.
+var APV_DIAS_ALERTA = 7;       // alerta ⏳: más de 7 días apartado sin remisionarse
+var APV_UMBRAL_STOCK = 0.8;    // alerta 🔒: el apartado cubre el 80 % o más de la existencia
+var apvRows = [];
+var apvFiltered = [];
+var apvCargadoEn = null;
+var apvCargando = false;
+
+var APV_TIPOS = {
+  pedido:  { label: 'Pedido',      color: '#1a5276', bg: '#ebf5fb' },
+  muestra: { label: 'Muestra',     color: '#0e6655', bg: '#e8f6f3' },
+  oc:      { label: 'OC traslado', color: '#6c3483', bg: '#f4ecf7' }
+};
+
+function _apvIsoLocal(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Días calendario (hora local) desde la fecha del apartado hasta hoy; null si no hay fecha.
+function _apvDias(iso) {
+  if (!iso) return null;
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  var a = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  var n = new Date();
+  var b = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  return Math.round((b - a) / 86400000);
+}
+
+function _apvRef(empresa, consecutivo) {
+  var s = getSiglaKx(empresa) || String(empresa || '');
+  return s + ' #' + String(consecutivo || '');
+}
+
+// Ref_Pedido de una OC de traslado es «NOMBRE DE EMPRESA #consecutivo».
+function _apvRefPedidoOC(refPedido) {
+  var t = String(refPedido || '').trim();
+  var i = t.lastIndexOf(' #');
+  if (i < 0) return t;
+  return _apvRef(t.slice(0, i), t.slice(i + 2));
+}
+
+// Existencia ACTUAL por producto y cubo de empresa (igual que calcularExistencias, sin corte).
+function _apvSaldosActuales() {
+  var fechaCorte = null;
+  kxMovimientos.forEach(function(m) {
+    if (m.modulo === 'Saldo Inicial' && m.fecha && !_esGranel(m.empresa)) {
+      if (!fechaCorte || m.fecha < fechaCorte) fechaCorte = m.fecha;
+    }
+  });
+  var out = {};
+  kxMovimientos.forEach(function(m) {
+    if (!m.producto || !m.empresa) return;
+    if (fechaCorte && m.fecha < fechaCorte) return;
+    var p = _normProd(m.producto);
+    var b = _empresaExistKey(m.empresa, m.producto);
+    if (!out[p]) out[p] = {};
+    out[p][b] = (out[p][b] || 0) + (m.tipo === 'Entrada' ? m.cantidad : -m.cantidad);
+  });
+  return out;
+}
+
+// Arma las filas unificadas (pedido / muestra / OC) con existencia, neto y alertas.
+function _apvConstruir(pedidos, muestras, ordenes) {
+  var vis = {};
+  EMPRESAS_EXIST.forEach(function(e) { vis[e.value] = true; });
+  if (_granelVisibleKx()) vis['GRANEL'] = true;
+  var rows = [];
+
+  (pedidos || []).forEach(function(a) {
+    if (String(a.estado || '') !== 'Activo') return;
+    var emp = String(a.empresa_stock || '').trim();
+    var n = Number(a.cantidad) || 0;
+    if (!emp || n <= 0 || !vis[emp]) return;
+    rows.push({
+      tipo: 'pedido', empresa: emp, producto: _normProd(a.producto), cantidad: n,
+      ref: _apvRef(a.empresa_pedido, a.consecutivo), cliente: a.cliente || '',
+      detalle: a.empresa_pedido && a.empresa_pedido !== emp ? ('Pedido de ' + (getSiglaKx(a.empresa_pedido) || a.empresa_pedido)) : '',
+      compromiso: a.fecha_compromiso || '', creado: a.creado_en || ''
+    });
+  });
+
+  (muestras || []).forEach(function(a) {
+    if (String(a.estado || '') !== 'Activo') return;
+    var emp = String(a.empresa_stock || '').trim();
+    var n = Number(a.cantidad) || 0;
+    if (!emp || n <= 0 || !vis[emp]) return;
+    rows.push({
+      tipo: 'muestra', empresa: emp, producto: _normProd(a.producto), cantidad: n,
+      ref: 'Muestra ' + _apvRef(a.empresa_muestra, a.consecutivo), cliente: a.responsable || a.solicitante || '',
+      detalle: '', compromiso: '', creado: a.creado_en || ''
+    });
+  });
+
+  (ordenes || []).forEach(function(oc) {
+    if (!esSolicitudCompraViva(oc)) return;
+    if (String(oc.Remision_Origen || '').trim()) return;   // ya salió del origen
+    if (!String(oc.Ref_Pedido || '').trim()) return;       // solo traslados ligados a un pedido
+    var emp = String(oc.Empresa_Origen || '').trim();
+    var n = Number(oc.Cantidad) || 0;
+    if (!emp || n <= 0 || !vis[emp]) return;
+    var det = (oc.Estado_Aprobacion || 'Sin estado');
+    if (oc.Traslado_Diferido) det += ' · el inventario se mueve al remisionar el pedido';
+    if (oc.Empresa_Destino) det += ' · destino ' + (getSiglaKx(oc.Empresa_Destino) || oc.Empresa_Destino);
+    rows.push({
+      tipo: 'oc', empresa: emp, producto: _normProd(oc.Producto), cantidad: n,
+      ref: oc.Consecutivo || '', cliente: 'Para el pedido ' + _apvRefPedidoOC(oc.Ref_Pedido),
+      detalle: det, compromiso: '', creado: oc.creado_en || oc.Fecha || ''
+    });
+  });
+
+  var apaTot = {};
+  rows.forEach(function(r) {
+    r.bucket = _empresaExistKey(r.empresa, r.producto);
+    r.key = r.producto + '||' + r.bucket;
+    apaTot[r.key] = (apaTot[r.key] || 0) + r.cantidad;
+  });
+  var saldos = _apvSaldosActuales();
+  rows.forEach(function(r) {
+    r.existencia = (saldos[r.producto] && saldos[r.producto][r.bucket]) || 0;
+    r.apartadoTotal = apaTot[r.key];
+    r.neto = r.existencia - r.apartadoTotal;
+    r.dias = _apvDias(r.creado);
+    r.alertaViejo = r.dias != null && r.dias > APV_DIAS_ALERTA;
+    // También cubre existencia ≤ 0 (cualquier apartado supera 0,8 × existencia).
+    r.alertaStock = r.apartadoTotal >= APV_UMBRAL_STOCK * r.existencia;
+    var al = [];
+    if (r.alertaViejo) al.push('⏳ ' + r.dias + ' días');
+    if (r.alertaStock) al.push(r.neto <= 0 ? '🔒 sin stock libre' : '🔒 casi todo el stock');
+    r.alertas = al;
+    r.creadoTxt = r.creado ? (isNaN(new Date(r.creado).getTime()) ? String(r.creado) : _apvIsoLocal(new Date(r.creado))) : '';
+  });
+  rows.sort(function(a, b) {
+    var ea = getSiglaKx(a.empresa) || a.empresa, eb = getSiglaKx(b.empresa) || b.empresa;
+    if (ea !== eb) return ea < eb ? -1 : 1;
+    if (a.producto !== b.producto) return a.producto < b.producto ? -1 : 1;
+    return a.tipo < b.tipo ? -1 : a.tipo > b.tipo ? 1 : 0;
+  });
+  return rows;
+}
+
+function _apvMensaje(txt, tipo) {
+  var el = document.getElementById('apv-msg');
+  if (!el) return;
+  if (!txt) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  var c = tipo === 'error' ? ['#fdecea', '#f5b7b1', '#c0392b'] : ['#ebf5fb', '#aed6f1', '#1a5276'];
+  el.style.cssText = 'display:block;margin-bottom:12px;padding:9px 12px;border-radius:8px;font-size:0.82rem;font-weight:600;background:' + c[0] + ';border:1px solid ' + c[1] + ';color:' + c[2];
+  el.textContent = txt;
+}
+
+async function openApartadosVigentes() {
+  document.getElementById('apv-overlay').classList.add('show');
+  if (apvCargando) return;
+  apvCargando = true;
+  _apvMensaje('Leyendo apartados vigentes…', 'info');
+  try {
+    var r = await Promise.all([
+      apiGet('getApartadosPedido', { columns: 'id,pedido_id,empresa_pedido,consecutivo,cliente,producto,empresa_stock,cantidad,estado,fecha_compromiso,creado_en' }).catch(function(e) { return { ok: false, error: e && e.message }; }),
+      apiGet('getApartadosMuestra', { columns: 'id,muestra_id,empresa_muestra,consecutivo,responsable,solicitante,producto,empresa_stock,cantidad,estado,creado_en' }).catch(function(e) { return { ok: false, error: e && e.message }; }),
+      apiGet('getOrdenesCompra', { columns: 'id,Consecutivo,Producto,Cantidad,Tipo,Estado,Estado_Aprobacion,Traslado_Diferido,Remision,Remision_Origen,Empresa_Origen,Empresa_Destino,Ref_Pedido,Fecha,creado_en' }).catch(function(e) { return { ok: false, error: e && e.message }; })
+    ]);
+    var fallo = [];
+    if (!r[0] || r[0].ok === false) fallo.push('apartados de pedidos');
+    if (!r[1] || r[1].ok === false) fallo.push('apartados de muestras');
+    if (!r[2] || r[2].ok === false) fallo.push('órdenes de compra');
+    if (fallo.length) {
+      // Un listado de control incompleto engaña: no se muestra nada parcial.
+      apvRows = []; apvFiltered = []; apvCargadoEn = null;
+      _apvMensaje('No se pudo leer: ' + fallo.join(', ') + '. El listado NO es confiable; usa «Actualizar» para reintentar.', 'error');
+      renderApartadosVigentes();
+      return;
+    }
+    apvRows = _apvConstruir(r[0].apartados, r[1].apartados, r[2].ordenes);
+    apvCargadoEn = new Date();
+    var selE = document.getElementById('apv-f-empresa');
+    var prev = selE.value;
+    var vistas = {};
+    apvRows.forEach(function(x) { vistas[x.empresa] = true; });
+    selE.innerHTML = '<option value="">— Todas —</option>' + Object.keys(vistas).sort(function(a, b) {
+      return (getSiglaKx(a) || a) < (getSiglaKx(b) || b) ? -1 : 1;
+    }).map(function(e) { return '<option value="' + escHtml(e) + '">' + escHtml(getSiglaKx(e) || e) + '</option>'; }).join('');
+    selE.value = vistas[prev] ? prev : '';
+    _apvMensaje('', '');
+    renderApartadosVigentes();
+  } catch (e) {
+    apvRows = []; apvFiltered = [];
+    _apvMensaje('Error al leer los apartados: ' + (e && e.message ? e.message : e) + '. El listado NO es confiable.', 'error');
+    renderApartadosVigentes();
+  } finally {
+    apvCargando = false;
+  }
+}
+
+function closeApartadosVigentes() {
+  document.getElementById('apv-overlay').classList.remove('show');
+}
+document.getElementById('apv-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeApartadosVigentes(); });
+
+function renderApartadosVigentes() {
+  var fTipo = document.getElementById('apv-f-tipo').value;
+  var fEmp = document.getElementById('apv-f-empresa').value;
+  var soloAl = document.getElementById('apv-f-alerta').checked;
+  apvFiltered = apvRows.filter(function(r) {
+    if (fTipo && r.tipo !== fTipo) return false;
+    if (fEmp && r.empresa !== fEmp) return false;
+    if (soloAl && !r.alertas.length) return false;
+    return true;
+  });
+
+  var sub = document.getElementById('apv-sub');
+  if (sub) sub.textContent = apvCargadoEn
+    ? ('Leído hoy a las ' + apvCargadoEn.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) + ' · solo consulta: no libera ni cambia nada')
+    : 'Solo consulta';
+
+  var porTipo = { pedido: 0, muestra: 0, oc: 0 };
+  var unid = 0, conAlerta = 0;
+  apvFiltered.forEach(function(r) {
+    porTipo[r.tipo] += r.cantidad; unid += r.cantidad;
+    if (r.alertas.length) conAlerta++;
+  });
+  function kpi(lbl, val, color) {
+    return '<div style="flex:1;min-width:120px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid ' + color + ';border-radius:8px;padding:8px 12px">' +
+      '<div style="font-size:1.25rem;font-weight:800;color:' + color + '">' + val + '</div>' +
+      '<div style="font-size:0.72rem;color:#718096;font-weight:600;text-transform:uppercase">' + lbl + '</div></div>';
+  }
+  document.getElementById('apv-kpis').innerHTML =
+    kpi('Apartados', _fmtNum.format(apvFiltered.length), '#2c3e50') +
+    kpi('Unidades', _fmtNum.format(unid), '#b45309') +
+    kpi('Pedidos (ud)', _fmtNum.format(porTipo.pedido), APV_TIPOS.pedido.color) +
+    kpi('Muestras (ud)', _fmtNum.format(porTipo.muestra), APV_TIPOS.muestra.color) +
+    kpi('OC traslado (ud)', _fmtNum.format(porTipo.oc), APV_TIPOS.oc.color) +
+    kpi('Con alerta', _fmtNum.format(conAlerta), conAlerta ? '#c0392b' : '#27ae60');
+
+  // «Creado» no va en pantalla (el tooltip de «Días» trae la fecha); sí en el Excel.
+  var cols = ['#', 'Tipo', 'Empresa del stock', 'Producto', 'Cant.', 'Referencia', 'Cliente / Responsable', 'Compromiso', 'Días', 'Existencia', 'Apartado total', 'Neto', 'Alertas'];
+  var right = { 4: 1, 8: 1, 9: 1, 10: 1, 11: 1 };
+  document.getElementById('apv-head').innerHTML = '<tr>' + cols.map(function(c, i) {
+    return '<th style="position:sticky;top:0;z-index:1;background:#f0f4f8;white-space:normal;line-height:1.15;vertical-align:bottom;padding:8px 8px;' + (right[i] ? 'text-align:right' : '') + '">' + c + '</th>';
+  }).join('') + '</tr>';
+
+  var body = document.getElementById('apv-body');
+  if (!apvFiltered.length) {
+    body.innerHTML = '<tr><td colspan="' + cols.length + '" style="text-align:center;padding:28px;color:#718096">' +
+      (apvCargadoEn && !apvRows.length ? '✅ No hay apartados vigentes.' : (apvCargadoEn ? 'No hay apartados con estos filtros.' : '—')) + '</td></tr>';
+    return;
+  }
+  body.innerHTML = apvFiltered.map(function(r, i) {
+    var t = APV_TIPOS[r.tipo];
+    var sig = getSiglaKx(r.empresa) || r.empresa;
+    var td = 'padding:6px 8px;vertical-align:top;';
+    var netoColor = r.neto < 0 ? '#e74c3c' : r.neto === 0 ? '#c0392b' : '#15803d';
+    return '<tr style="border-top:1px solid #edf2f7;' + (r.alertas.length ? 'background:#fffbeb' : '') + '">' +
+      '<td style="' + td + 'color:#a0aec0">' + (i + 1) + '</td>' +
+      '<td style="' + td + '"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:700;color:' + t.color + ';background:' + t.bg + ';white-space:nowrap">' + t.label + '</span></td>' +
+      '<td style="' + td + 'font-weight:700;white-space:nowrap">' + escHtml(sig) + '</td>' +
+      '<td style="' + td + 'font-weight:600;min-width:170px">' + escHtml(r.producto) + '</td>' +
+      '<td style="' + td + 'text-align:right;font-weight:800;color:#b45309">' + _fmtNum.format(r.cantidad) + '</td>' +
+      '<td style="' + td + 'min-width:110px">' + escHtml(r.ref) + '</td>' +
+      '<td style="' + td + 'min-width:150px">' + escHtml(r.cliente || '—') +
+        (r.detalle ? '<div style="font-size:0.72rem;color:#718096;margin-top:2px">' + escHtml(r.detalle) + '</div>' : '') + '</td>' +
+      '<td style="' + td + 'white-space:nowrap">' + escHtml(r.compromiso || '—') + '</td>' +
+      '<td style="' + td + 'text-align:right;' + (r.alertaViejo ? 'font-weight:800;color:#b45309' : '') + '" title="' + (r.creadoTxt ? 'Creado ' + escHtml(r.creadoTxt) : '') + '">' + (r.dias == null ? '—' : r.dias) + '</td>' +
+      '<td style="' + td + 'text-align:right">' + _fmtNum.format(r.existencia) + '</td>' +
+      '<td style="' + td + 'text-align:right">' + _fmtNum.format(r.apartadoTotal) + '</td>' +
+      '<td style="' + td + 'text-align:right;font-weight:700;color:' + netoColor + '">' + _fmtNum.format(r.neto) + '</td>' +
+      '<td style="' + td + 'min-width:120px;font-size:0.76rem;font-weight:700;color:#b45309">' + (r.alertas.length ? r.alertas.map(function(a) { return escHtml(a); }).join('<br>') : '') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function exportApartadosVigentesExcel() {
+  if (!apvFiltered.length) { showToast('No hay datos para exportar.', '#e74c3c'); return; }
+  var data = apvFiltered.map(function(r, i) {
+    return {
+      '#': i + 1,
+      'Tipo': APV_TIPOS[r.tipo].label,
+      'Empresa del stock': getSiglaKx(r.empresa) || r.empresa,
+      'Producto': r.producto,
+      'Cantidad apartada': r.cantidad,
+      'Referencia': r.ref,
+      'Cliente / Responsable': r.cliente,
+      'Detalle': r.detalle,
+      'Fecha compromiso': r.compromiso,
+      'Creado': r.creadoTxt,
+      'Días apartado': r.dias == null ? '' : r.dias,
+      'Existencia (hoy)': r.existencia,
+      'Apartado total producto-empresa': r.apartadoTotal,
+      'Neto': r.neto,
+      'Alertas': r.alertas.join(' · ')
+    };
+  });
+  var fTipo = document.getElementById('apv-f-tipo').value;
+  var fEmp = document.getElementById('apv-f-empresa').value;
+  var filtros = [fTipo ? ('Tipo: ' + APV_TIPOS[fTipo].label) : '', fEmp ? ('Empresa: ' + (getSiglaKx(fEmp) || fEmp)) : '',
+    document.getElementById('apv-f-alerta').checked ? 'Solo con alertas' : ''].filter(Boolean).join(' · ');
+  var leido = apvCargadoEn ? apvCargadoEn.toLocaleString('es-CO') : today();
+  var ws = XLSX.utils.aoa_to_sheet([
+    ['Apartados vigentes (stock reservado sin remisionar)'],
+    ['Leído: ' + leido + (filtros ? '   ·   ' + filtros : '')],
+    ['Alertas: más de ' + APV_DIAS_ALERTA + ' días apartado · el apartado cubre el ' + Math.round(APV_UMBRAL_STOCK * 100) + ' % o más de la existencia de la empresa. No mueven la existencia.']
+  ]);
+  XLSX.utils.sheet_add_json(ws, data, { origin: 'A5' });
+  ws['!cols'] = [{ wch: 5 }, { wch: 13 }, { wch: 12 }, { wch: 36 }, { wch: 10 }, { wch: 24 }, { wch: 36 }, { wch: 40 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 28 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Apartados vigentes');
+  XLSX.writeFile(wb, 'Apartados_vigentes_' + today() + '.xlsx');
+  showToast('Excel exportado: ' + apvFiltered.length + ' apartados');
 }
 
 // ══════════════════════════════════════════
