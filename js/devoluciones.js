@@ -2319,7 +2319,7 @@ async function saveTramitarDev() {
     if (!result.ok) throw new Error(result.error || 'Error al tramitar');
     var _finalRemIng = result.remision_ingreso || remIngreso;
     var _finalRemSal = result.remision_salida || remSalida;
-    if (_pendingContabDev && _pendingContabDev.contabIds && _pendingContabDev.contabIds.length && (_finalRemIng || _finalRemSal) && typeof NOTIF !== 'undefined') {
+    if (_pendingContabDev && (_finalRemIng || _finalRemSal) && typeof NOTIF !== 'undefined') {
       try {
         var head = devLines.length ? devLines[0] : {};
         var _allLines = tramitarDevLines.concat(validNewLines.map(function(l) {
@@ -2350,11 +2350,13 @@ async function saveTramitarDev() {
           await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
             modulo: 'devoluciones', referencia: refP.join(' · '),
             titulo: 'Remisión devolución — ' + (head.Cliente||''),
-            docLabel: 'Remisión',
+            docLabel: 'Remisión', accionManual: 'Enviar', empresa: empresaDev,
             contabIds: _pendingContabDev.contabIds, contabNames: _pendingContabDev.contabNames
           });
+        } else {
+          throw new Error('no se pudo armar el PDF de la remisión');
         }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar'); }
     }
     _pendingContabDev = null;
     closeTramitarDev();
@@ -2534,7 +2536,7 @@ async function guardarReabrirDev() {
     var remIng = result.remision_ingreso || '';
     var remSal = result.remision_salida || '';
 
-    if (_pendingContabDev && _pendingContabDev.contabIds && _pendingContabDev.contabIds.length && (remIng || remSal) && typeof NOTIF !== 'undefined') {
+    if (_pendingContabDev && (remIng || remSal) && typeof NOTIF !== 'undefined') {
       try {
         var left = [['Cliente', head.Cliente||''], ['NIT', head.NIT||''], ['Vendedor', head.Vendedor||''], ['Telefono', head.Telefono||'']];
         var right = [['Direccion', head.Direccion||''], ['Municipio', head.Municipio||''], ['Departamento', head.Departamento||''], ['Bodega', '']];
@@ -2563,11 +2565,13 @@ async function guardarReabrirDev() {
           await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
             modulo: 'devoluciones', referencia: refP.join(' · '),
             titulo: 'Remisión adicional devolución — ' + (head.Cliente||''),
-            docLabel: 'Remisión',
+            docLabel: 'Remisión', accionManual: 'Enviar', empresa: empresaDev,
             contabIds: _pendingContabDev.contabIds, contabNames: _pendingContabDev.contabNames
           });
+        } else {
+          throw new Error('no se pudo armar el PDF de la remisión');
         }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar'); }
     }
     _pendingContabDev = null;
     closeReabrirDev();
@@ -3064,7 +3068,7 @@ function bulkTramitarNext() {
   if (_chkBSalEn) { _chkBSalEn.checked = true; toggleBulkTramitarSeccion('salida', true); }
 
   document.getElementById('btn-bulk-tramitar-dev').disabled = false;
-  document.getElementById('btn-bulk-tramitar-dev').textContent = '✓ Tramitar ' + bulkTramitarData.keys.length + ' devolución(es)';
+  document.getElementById('btn-bulk-tramitar-dev').textContent = '✓ Tramitar ' + bulkTramitarData.keys.length + ' devolución(es) y enviar';
 }
 
 function bulkTramitarBack() {
@@ -3082,6 +3086,41 @@ function closeBulkTramitarDev() {
 }
 
 document.getElementById('bulk-tramitar-dev-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeBulkTramitarDev(); });
+
+// PDF de las remisiones de UNA devolución (ingreso y/o salida) a la contabilidad de su empresa.
+// Mismo formato que el envío de «Tramitar y enviar»; lo usa el trámite masivo.
+// o: { empresa, head, lineas:[{Producto,Presentacion,Cant_Entregada}], ingreso:{rem,bodega,fecha}|null, salida:{rem,bodega,fecha}|null }
+async function _devEnviarContabilidad(o) {
+  var head = o.head || {};
+  var entregas = o.lineas.map(function(l) {
+    return { producto: l.Producto || '', presentacion: l.Presentacion || '', cantidad: Number(l.Cant_Entregada) || 0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+  }).filter(function(p) { return p.cantidad > 0; });
+  var left = [['Cliente', head.Cliente || ''], ['NIT', head.NIT || ''], ['Vendedor', head.Vendedor || ''], ['Telefono', head.Telefono || '']];
+  var right = [['Direccion', head.Direccion || ''], ['Municipio', head.Municipio || ''], ['Departamento', head.Departamento || ''], ['Bodega', '']];
+  var doc = null;
+  if (o.ingreso && o.ingreso.rem) {
+    right[3] = ['Bodega', o.ingreso.bodega || ''];
+    var rI = generarRemisionPDF({ empresa: o.empresa, consecutivo: head.Consecutivo || '', doc_title: 'REMISION DE INGRESO', ref_label: 'Devolucion', date_label: 'Fecha remision', fecha_entrega: o.ingreso.fecha, remision: o.ingreso.rem, left_fields: left, right_fields: right, entregas: entregas, qty_header: 'Cant. Devuelta', file_prefix: 'Remision_Ingreso_Devolucion', return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+    if (rI && rI.doc) doc = rI.doc;
+  }
+  if (o.salida && o.salida.rem) {
+    right[3] = ['Bodega', o.salida.bodega || ''];
+    var optsS = { empresa: o.empresa, consecutivo: head.Consecutivo || '', doc_title: 'REMISION DE SALIDA', ref_label: 'Devolucion', date_label: 'Fecha remision', fecha_entrega: o.salida.fecha, remision: o.salida.rem, left_fields: left, right_fields: right, entregas: entregas, qty_header: 'Cant. Devuelta', file_prefix: 'Remision_Salida_Devolucion', return_doc: true, copies: ['COPIA - CONTABILIDAD'] };
+    if (doc) optsS._doc = doc;
+    var rS = generarRemisionPDF(optsS);
+    if (rS && rS.doc) doc = rS.doc;
+  }
+  if (!doc) throw new Error('no se pudo armar el PDF de la remisión');
+  var refP = [(head.Consecutivo || '')];
+  if (o.ingreso && o.ingreso.rem) refP.push('RE ' + o.ingreso.rem);
+  if (o.salida && o.salida.rem) refP.push('RS ' + o.salida.rem);
+  await NOTIF.enviarPDFContabilidad(doc, {
+    modulo: 'devoluciones', referencia: refP.join(' · '),
+    titulo: 'Remisión devolución — ' + (head.Cliente || ''),
+    docLabel: 'Remisión', accionManual: 'Enviar', empresa: o.empresa,
+    remisiones: [o.ingreso && o.ingreso.rem, o.salida && o.salida.rem]
+  });
+}
 
 async function saveBulkTramitarDev() {
   var ingresoEnabled = document.getElementById('bulk-tramitar-ingreso-enabled').checked;
@@ -3104,12 +3143,31 @@ async function saveBulkTramitarDev() {
   var keys = bulkTramitarData.keys;
   if (!keys.length) return;
 
+  // Igual que «Tramitar y enviar» de una sola devolución: cada remisión nueva sale a la contabilidad de
+  // su empresa. Antes el trámite masivo generaba las remisiones y no avisaba a nadie. Se confirma una
+  // sola vez para todas (con las empresas que intervienen); cada PDF va a la contabilidad de SU empresa.
+  var _hayContabBulk = false;
+  if ((ingresoEnabled || salidaEnabled) && typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var _empBulk = [];
+    keys.forEach(function(k) {
+      var f = devoluciones.filter(function(r) { return devGroupKey(r) === k; })[0];
+      var e = f ? (f.Empresa || '') : '';
+      if (e && _empBulk.indexOf(e) < 0) _empBulk.push(e);
+    });
+    if (_empBulk.length) {
+      var _confBulk = await NOTIF.confirmarEnvioContabilidad(_empBulk, 'devoluciones');
+      if (!_confBulk.confirmed) return;
+      _hayContabBulk = true;
+    }
+  }
+
   var btn = document.getElementById('btn-bulk-tramitar-dev');
   btn.disabled = true;
   btn.textContent = '⏳ Tramitando...';
 
   var totalUpdated = 0;
   var errors = [];
+  var enviosFallidos = [];
 
   for (var ki = 0; ki < keys.length; ki++) {
     var key = keys[ki];
@@ -3143,6 +3201,22 @@ async function saveBulkTramitarDev() {
         errors.push((lines[0].Consecutivo || key) + ': ' + (result.error || 'Error'));
       } else {
         totalUpdated += result.updated || lineas.length;
+        // La devolución ya quedó tramitada: un fallo al avisar NO la marca como error, se reporta aparte.
+        var _remIngB = result.remision_ingreso || remIngreso;
+        var _remSalB = result.remision_salida || remSalida;
+        if (_hayContabBulk && (_remIngB || _remSalB) && typeof NOTIF !== 'undefined') {
+          try {
+            await _devEnviarContabilidad({
+              empresa: lines[0].Empresa || '', head: lines[0],
+              lineas: lines.map(function(l, i) { return { Producto: l.Producto, Presentacion: l.Presentacion, Cant_Entregada: lineas[i].Cant_Entregada }; }),
+              ingreso: (ingresoEnabled && _remIngB) ? { rem: _remIngB, bodega: bodegaIngreso, fecha: fechaIngreso } : null,
+              salida: (salidaEnabled && _remSalB) ? { rem: _remSalB, bodega: bodegaSalida, fecha: fechaSalida } : null
+            });
+          } catch (eEnv) {
+            console.error('Auto-send contabilidad error', eEnv);
+            enviosFallidos.push((lines[0].Consecutivo || key) + ' (' + (eEnv && eEnv.message ? eEnv.message : eEnv) + ')');
+          }
+        }
       }
     } catch (err) {
       errors.push((lines[0].Consecutivo || key) + ': ' + err.message);
@@ -3152,6 +3226,9 @@ async function saveBulkTramitarDev() {
   closeBulkTramitarDev();
   selectedDevKeys = {};
 
+  if (enviosFallidos.length && typeof NOTIF !== 'undefined') {
+    NOTIF.falloEnvio(new Error('devoluciones sin aviso: ' + enviosFallidos.join('; ')), 'Enviar');
+  }
   if (errors.length) {
     showToast('⚠️ Tramitadas con errores: ' + errors.join('; '), '#e67e22');
   } else {

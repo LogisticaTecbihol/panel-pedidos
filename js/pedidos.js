@@ -4518,9 +4518,13 @@ async function guardarTodo() {
             contabIds: _pendingContab.contabIds || [], contabNames: _pendingContab.contabNames
           });
         } catch (e) {
-          console.error('Auto-send contabilidad error', e);
-          showToast('⚠ Contabilidad NO notificada (' + (_pendingContab.contabNames || '') + ') · Paquete: ' +
-                    (e && e.message ? e.message : e) + '. Reenvíalo manualmente con "📨 Enviar Pedido".', '#e74c3c');
+          // falloEnvio deja además una franja roja que no se pierde (el toast de «guardado» lo pisaba al instante).
+          if (NOTIF.falloEnvio) NOTIF.falloEnvio(e, '📨 Enviar Pedido');
+          else {
+            console.error('Auto-send contabilidad error', e);
+            showToast('⚠ Contabilidad NO notificada (' + (_pendingContab.contabNames || '') + ') · Paquete: ' +
+                      (e && e.message ? e.message : e) + '. Reenvíalo manualmente con "📨 Enviar Pedido".', '#e74c3c');
+          }
         }
       }
       _pendingContab = null;

@@ -1408,11 +1408,37 @@ async function saveReenvase() {
         action: 'editarReenvase', row: reEditId,
         Empresa: empresa, Empresa_Destino: empresaDestino, Planta: planta, Producto: producto, Presentacion: presentacion,
         Cantidad: cantidad, Remision: remision, Fecha: fecha,
+        // Sin esto, editarReenvase guardaba '' en Remision_Destino y borraba la remisión de entrada ya existente.
+        Remision_Destino: (document.getElementById('re-remision-destino') || {}).value ? document.getElementById('re-remision-destino').value.trim() : '',
         Observaciones: observaciones, Bodega: bodegaEdit,
         _remision_existente: !!(reEditRow && (reEditRow.Remision || '').trim()),
         _remision_destino_existente: !!(reEditRow && (reEditRow.Remision_Destino || '').trim()),
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
+
+      // Si al editar se generó (o cambió) una remisión de salida/entrada, contabilidad también la recibe.
+      var _viejaRS = ((reEditRow && reEditRow.Remision) || '').trim();
+      var _viejaRE = ((reEditRow && reEditRow.Remision_Destino) || '').trim();
+      var _nuevaRS = (result.remision && result.remision !== _viejaRS) ? result.remision : '';
+      var _nuevaRE = (result.remision_destino && result.remision_destino !== _viejaRE) ? result.remision_destino : '';
+      if ((_nuevaRS || _nuevaRE) && typeof NOTIF !== 'undefined') {
+        try {
+          var _numRS = result.remision || '', _numRE = result.remision_destino || '';
+          var _mismas = allReenvases.filter(function(x) {
+            if (x.id === reEditId) return false;
+            if (_numRS) return (x.Remision || '').trim() === _numRS && (x.Empresa || '') === empresa;
+            return _numRE && (x.Remision_Destino || '').trim() === _numRE;
+          });
+          var _entregasEd = [{ producto: producto, presentacion: presentacion, cantidad: cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No', observaciones: observaciones }]
+            .concat(_mismas.map(function(x) {
+              return { producto: x.Producto || '', presentacion: x.Presentacion || '', cantidad: Number(x.Cantidad) || 0, valor_unitario: 0, valor_total: 0, bonificado: 'No', observaciones: x.Observaciones || '' };
+            }));
+          await _reEnviarContabilidad({
+            empresa: empresa, empresaDestino: (_numRE && empresaDestino && empresaDestino !== empresa) ? empresaDestino : '',
+            planta: planta, bodega: bodegaEdit, fecha: fecha, rs: _numRS, re: _numRE, entregas: _entregasEd
+          }, null);
+        } catch (eEnv) { NOTIF.falloEnvio(eEnv, 'Enviar'); }
+      }
       closeReModal();
       var toastRe = ['✅ Salida actualizada'];
       if (result.remision) toastRe.push('RS: ' + result.remision);
@@ -1463,12 +1489,72 @@ document.getElementById('confirm-re-overlay').addEventListener('click', function
 var _pendingContabRe = null;
 async function confirmarYRegistrarReenvase() {
   var empresa = document.getElementById('re-empresa').value || '';
+  var empresaDestino = (document.getElementById('re-empresa-destino') || {}).value || '';
   if (typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
-    var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'reenvases');
+    // Con empresa destino se genera además una remisión de ENTRADA de esa empresa: su contabilidad
+    // también la recibe (antes solo le llegaba la de la empresa que despacha).
+    var r = await NOTIF.confirmarEnvioContabilidad(empresa, 'reenvases', {
+      empresas: (empresaDestino && empresaDestino !== empresa) ? [empresaDestino] : null
+    });
     if (!r.confirmed) return;
     _pendingContabRe = r;
   }
   await confirmAndSaveReenvase();
+}
+
+// PDF para contabilidad: la remisión de SALIDA (empresa que despacha) y, si hay empresa destino, la de
+// ENTRADA de esa empresa en la misma hoja de envío. Mismo formato que el botón «Enviar» del detalle.
+// o: { empresa, empresaDestino, planta, bodega, fecha, rs, re, entregas }
+function _reDocContabilidad(o) {
+  if (typeof generarRemisionPDF !== 'function') return null;
+  var sig = function(e) { return (typeof EMPRESAS_SIGLA !== 'undefined' && EMPRESAS_SIGLA[e]) || e || ''; };
+  var tienePlanta = !!(o.planta && /planta/i.test(o.planta));
+  var doc = null;
+  if (o.rs) {
+    var r = generarRemisionPDF({
+      empresa: o.empresa, consecutivo: '', doc_title: tienePlanta ? 'REMISION DE SALIDA A PRODUCCION' : 'REMISION DE SALIDA',
+      doc_number: o.rs, ref_label: null, date_label: 'Fecha salida', fecha_entrega: o.fecha, remision: o.rs,
+      left_fields: [['Empresa', sig(o.empresa)], ['Bodega', o.bodega || ''], ['Planta', o.planta || '']],
+      right_fields: [['Emp. Destino', o.empresaDestino ? sig(o.empresaDestino) : ''], ['Rem. Salida', o.rs || ''], ['Rem. Entrada', o.re || '']],
+      entregas: o.entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Salida', last_col_header: 'Observaciones',
+      return_doc: true, copies: ['COPIA - CONTABILIDAD']
+    });
+    if (r && r.doc) doc = r.doc;
+  }
+  if (o.re && o.empresaDestino) {
+    var optsE = {
+      empresa: o.empresaDestino, consecutivo: '', doc_title: tienePlanta ? 'REMISION DE ENTRADA A PRODUCCION' : 'REMISION DE ENTRADA',
+      doc_number: o.re, ref_label: null, date_label: 'Fecha entrada', fecha_entrega: o.fecha, remision: o.re,
+      left_fields: [['Empresa', sig(o.empresaDestino)], ['Bodega', o.bodega || ''], ['Planta', o.planta || '']],
+      right_fields: [['Emp. Origen', sig(o.empresa)], ['Rem. Entrada', o.re], ['Rem. Salida', o.rs || '']],
+      entregas: o.entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Salida', last_col_header: 'Observaciones',
+      return_doc: true, copies: ['COPIA - CONTABILIDAD']
+    };
+    if (doc) optsE._doc = doc;
+    var r2 = generarRemisionPDF(optsE);
+    if (r2 && r2.doc) doc = r2.doc;
+  }
+  return doc;
+}
+
+// Envía a contabilidad (de la empresa que despacha y de la destino) el PDF de las remisiones de una salida.
+// Lo usan el alta y la edición. `contab` = lo confirmado al guardar (puede ser null: se resuelve por empresa).
+async function _reEnviarContabilidad(o, contab) {
+  if (typeof NOTIF === 'undefined') return;
+  var doc = _reDocContabilidad(o);
+  if (!doc) throw new Error('no se pudo armar el PDF de la remisión');
+  var sigla = (typeof EMPRESAS_SIGLA !== 'undefined' && EMPRESAS_SIGLA[o.empresa]) || '';
+  var principal = o.rs || o.re;
+  await NOTIF.enviarPDFContabilidad(doc, {
+    modulo: 'reenvases', referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + principal,
+    titulo: 'Remisión ' + (o.rs ? 'salida' : 'entrada') + ' #' + principal + (o.rs && o.re ? ' / entrada #' + o.re : ''),
+    docLabel: 'Remisión', accionManual: 'Enviar',
+    empresa: o.empresa, empresas: o.re && o.empresaDestino ? [o.empresaDestino] : null,
+    remisiones: [o.rs, o.re],
+    contabIds: contab && contab.contabIds ? contab.contabIds : [],
+    contabNames: contab ? contab.contabNames : '',
+    destinoLabel: contab ? contab.destinoLabel : undefined
+  });
 }
 
 // Carga histórica (solo admin): registro anterior al 2026-07-01 que no debe
@@ -1530,25 +1616,20 @@ async function confirmAndSaveReenvase() {
       if (!result.ok) throw new Error(result.error || 'Error al guardar línea ' + (i + 1));
       added++;
     }
-    if (_pendingContabRe && _pendingContabRe.contabIds && _pendingContabRe.contabIds.length && remAutoSalida && typeof NOTIF !== 'undefined') {
+    // Antes solo viajaba la remisión de SALIDA: la de ENTRADA de la empresa destino se generaba y se
+    // guardaba, pero su contabilidad no se enteraba. Ahora el PDF lleva las dos y llega a las dos contabilidades.
+    var _reEntrada = (empresaDestino && empresaDestino !== empresa) ? remAutoEntrada : '';
+    if (_pendingContabRe && (remAutoSalida || _reEntrada) && typeof NOTIF !== 'undefined' && !esHistoricoRe) {
       try {
         var _entregas = productosValidos.map(function(p) {
           return { producto: p.producto, presentacion: p.presentacion, cantidad: p.cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No', observaciones: p.observaciones||'' };
         });
-        var tienePlanta = !!(planta && /planta/i.test(planta));
-        var _left = [['Empresa', (typeof EMPRESAS_SIGLA!=='undefined' && EMPRESAS_SIGLA[empresa]) || empresa || ''], ['Bodega', document.getElementById('re-bodega').value || ''], ['Planta', planta || '']];
-        var _right = [['Emp. Destino', empresaDestino ? ((typeof EMPRESAS_SIGLA!=='undefined' && EMPRESAS_SIGLA[empresaDestino]) || empresaDestino) : ''], ['Rem. Salida', remAutoSalida || ''], ['Rem. Entrada', remAutoEntrada || '']];
-        var _cr = generarRemisionPDF({ empresa: empresa, consecutivo: '', doc_title: tienePlanta ? 'REMISION DE SALIDA A PRODUCCION' : 'REMISION DE SALIDA', doc_number: remAutoSalida, ref_label: null, date_label: 'Fecha salida', fecha_entrega: fecha, remision: remAutoSalida, left_fields: _left, right_fields: _right, entregas: _entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Salida', last_col_header: 'Observaciones', return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
-        if (_cr && _cr.doc) {
-          var _sigla = (typeof EMPRESAS_SIGLA!=='undefined' && EMPRESAS_SIGLA[empresa]) || '';
-          await NOTIF.enviarPDFContabilidad(_cr.doc, {
-            modulo: 'reenvases', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + remAutoSalida,
-            titulo: 'Remisión salida #' + remAutoSalida, docLabel: 'Remisión',
-            contabIds: _pendingContabRe.contabIds, contabNames: _pendingContabRe.contabNames,
-            destinoLabel: _pendingContabRe.destinoLabel
-          });
-        }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+        await _reEnviarContabilidad({
+          empresa: empresa, empresaDestino: _reEntrada ? empresaDestino : '', planta: planta,
+          bodega: document.getElementById('re-bodega').value || '', fecha: fecha,
+          rs: remAutoSalida, re: _reEntrada, entregas: _entregas
+        }, _pendingContabRe);
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar'); }
     }
     _pendingContabRe = null;
     closeConfirmRe();

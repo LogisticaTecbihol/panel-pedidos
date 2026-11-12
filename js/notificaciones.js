@@ -14,7 +14,8 @@ var NOTIF = (function() {
     ingresos:     '📦 Ingreso',
     reenvases:    '🔃 Reenvase',
     reportes:     '📈 Reporte',
-    solicitudes_mercadeo: '📣 Solicitud a Mercadeo'
+    solicitudes_mercadeo: '📣 Solicitud a Mercadeo',
+    kardex:       '📊 Kardex'
   };
 
   var _uid = null;
@@ -28,7 +29,11 @@ var NOTIF = (function() {
   var _directorioPromise = null;
   var _enviadasCache = null;
   var _contabilidadMapPromise = null;
-  var AUTO_CONTAB_MODS = ['pedidos', 'ingresos', 'devoluciones', 'cambios', 'muestras', 'reenvases'];
+  // 'kardex' = remisiones de ingreso/salida de la bodega NC (Kardex).
+  var AUTO_CONTAB_MODS = ['pedidos', 'ingresos', 'devoluciones', 'cambios', 'muestras', 'reenvases', 'kardex'];
+  // Las empresas del holding que SÍ tienen contabilidad propia. Otras siglas (GRANEL,
+  // CHIA ABAGO, nombres de terceros) no tienen, y eso no es una falla.
+  var SIGLAS_CON_CONTAB = ['PARCELAR', 'GREEN', 'RESO', 'IASO', 'IAS'];
   // true si la última consulta de contabilidad por empresa falló: el mapa queda
   // vacío y NO significa "esa empresa no tiene contabilidad".
   var _contabMapFallo = false;
@@ -926,13 +931,20 @@ var NOTIF = (function() {
   async function resolverContabilidad(empresa, opts) {
     opts = opts || {};
     var siglas = _siglasContab([].concat(empresa == null ? [] : empresa, opts.empresas || []), opts.remisiones);
-    var vacio = { contabIds: [], contabNames: '', usuarios: [], siglas: siglas, fallo: false };
+    // sinContab: siglas del holding que no tienen NINGÚN usuario de contabilidad activo (se calcula
+    // antes de excluir al propio usuario, para no confundirlo con «la contabilidad soy yo»).
+    var vacio = { contabIds: [], contabNames: '', usuarios: [], siglas: siglas, fallo: false, sinContab: [] };
     if (!siglas.length) return vacio;
     if (!_uid && typeof AUTH !== 'undefined' && AUTH.getUser) {
       var u0 = AUTH.getUser(); if (u0) _uid = u0.id;
     }
     var contabMap = await _loadContabilidadMap();
     vacio.fallo = _contabMapFallo;
+    if (!vacio.fallo) {
+      vacio.sinContab = siglas.filter(function(sg) {
+        return SIGLAS_CON_CONTAB.indexOf(sg) >= 0 && !(contabMap[sg] || []).length;
+      });
+    }
     var porUsuario = {};
     var orden = [];
     siglas.forEach(function(sg) {
@@ -955,8 +967,72 @@ var NOTIF = (function() {
       contabNames: usuarios.map(function(u) { return u.nombre; }).join(', '),
       usuarios: usuarios,
       siglas: siglas,
-      fallo: vacio.fallo
+      fallo: vacio.fallo,
+      sinContab: vacio.sinContab
     };
+  }
+
+  // Avisa en pantalla cuando una remisión se guardó pero su contabilidad no la va a recibir
+  // porque no se pudo consultar quién es, o porque la empresa no tiene contabilidad activa.
+  // Devuelve true si avisó. `accionManual` = nombre del botón para reenviarla a mano.
+  function _avisarSinDestino(resuelto, accionManual) {
+    if (!resuelto) return false;
+    var manual = accionManual ? ' Reenvíala luego con "' + accionManual + '".' : '';
+    if (resuelto.fallo) {
+      _alerta('⚠ No se pudo consultar la contabilidad' +
+              (resuelto.siglas && resuelto.siglas.length ? ' de ' + resuelto.siglas.join(' + ') : '') +
+              ': la remisión se guardará pero NO se enviará.' + manual);
+      return true;
+    }
+    if (resuelto.sinContab && resuelto.sinContab.length) {
+      _alerta('⚠ ' + resuelto.sinContab.join(' + ') + ' no tiene un usuario de contabilidad activo: ' +
+              'nadie recibirá esta remisión. Avisa a un administrador.');
+      return true;
+    }
+    return false;
+  }
+
+  // Para los `catch` de los envíos automáticos: antes el error solo quedaba en la consola y la
+  // remisión se guardaba sin que nadie supiera que contabilidad no la recibió.
+  function falloEnvio(e, accionManual) {
+    console.error('Auto-send contabilidad error', e);
+    var manual = accionManual ? ' Reenvíala con "' + accionManual + '".' : '';
+    _alerta('⚠ La remisión se guardó pero contabilidad NO fue notificada (' +
+            ((e && e.message) ? e.message : e) + ').' + manual);
+  }
+
+  // Aviso de falla que NO se pierde: showToast usa un solo recuadro y el «✅ guardado» que sale
+  // justo después lo pisaba al instante. Además del toast deja una franja roja que se cierra a mano.
+  function _alerta(msg) {
+    try { if (typeof showToast === 'function') showToast(msg, '#e74c3c', 9000); } catch (e) {}
+    try {
+      if (typeof document === 'undefined' || !document.body) return;
+      var box = document.getElementById('notif-alertas');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'notif-alertas';
+        box.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:72px;z-index:3000;display:flex;flex-direction:column;gap:8px;width:min(560px,92vw)';
+        document.body.appendChild(box);
+      }
+      // El mismo aviso no se repite (p. ej. «IAS no tiene contabilidad» al confirmar y otra vez al enviar).
+      var repetido = Array.prototype.some.call(box.children, function(c) { return c.firstChild && c.firstChild.textContent === msg; });
+      if (repetido) return;
+      var it = document.createElement('div');
+      it.setAttribute('role', 'alert');
+      it.style.cssText = 'background:#fdecea;border:1px solid #e74c3c;border-left:5px solid #c0392b;color:#7b241c;border-radius:8px;padding:10px 12px;font-size:0.84rem;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;gap:10px;align-items:flex-start';
+      var tx = document.createElement('span');
+      tx.style.flex = '1';
+      tx.textContent = msg;
+      var bt = document.createElement('button');
+      bt.type = 'button';
+      bt.textContent = '✕';
+      bt.title = 'Cerrar';
+      bt.style.cssText = 'background:none;border:none;color:#7b241c;font-weight:800;cursor:pointer;font-size:0.95rem;line-height:1;padding:0 2px';
+      bt.addEventListener('click', function() { if (it.parentElement) it.parentElement.removeChild(it); });
+      it.appendChild(tx);
+      it.appendChild(bt);
+      box.appendChild(it);
+    } catch (e) { console.error('NOTIF._alerta', e); }
   }
 
   // Usuarios activos con rol 'produccion' (destinatarios de las remisiones de la
@@ -979,6 +1055,11 @@ var NOTIF = (function() {
   async function confirmarEnvioContabilidad(empresa, modulo, opts) {
     if (!empresa || AUTO_CONTAB_MODS.indexOf(modulo) < 0) return { confirmed: true, contabIds: [] };
     var resuelto = await resolverContabilidad(empresa, opts);
+    // Si la consulta falló, se reintenta una vez (el mapa en caché se descarta al fallar).
+    if (resuelto.fallo) resuelto = await resolverContabilidad(empresa, opts);
+    // Antes, con la consulta caída o sin contabilidad activa, el guardado seguía sin decir nada y
+    // la remisión se quedaba sin avisar. Ahora se avisa ANTES de guardar (el guardado no se frena).
+    _avisarSinDestino(resuelto, 'Enviar');
     var siglasConContab = [];
     resuelto.usuarios.forEach(function(u) {
       u.siglas.forEach(function(sg) { if (siglasConContab.indexOf(sg) < 0) siglasConContab.push(sg); });
@@ -997,7 +1078,7 @@ var NOTIF = (function() {
       names = [names, prod.names].filter(Boolean).join(', ');
       if (prod.ids.length) destinoLabel = resuelto.contabIds.length ? 'Contabilidad + Producción' : 'Producción';
     }
-    if (!ids.length) return { confirmed: true, contabIds: [] };
+    if (!ids.length) return { confirmed: true, contabIds: [], fallo: !!resuelto.fallo, sinContab: resuelto.sinContab || [] };
 
     return new Promise(function(resolve) {
       _injectStyles();
@@ -1046,7 +1127,7 @@ var NOTIF = (function() {
     if (!meta) return { ok: false, error: 'sin destinatarios' };
     var ids = (meta.contabIds || []).filter(function(id) { return id !== _uid; });
     var nombres = meta.contabNames ? [meta.contabNames] : [];
-    var falloExtra = false, siglasExtra = [];
+    var falloExtra = false, siglasExtra = [], sinContabExtra = [];
     try {
       var extra = await resolverContabilidad(meta.empresa || [], {
         empresas: meta.empresas,
@@ -1054,14 +1135,20 @@ var NOTIF = (function() {
       });
       falloExtra = extra.fallo;
       siglasExtra = extra.siglas;
+      sinContabExtra = extra.sinContab || [];
       extra.usuarios.forEach(function(u) {
         if (ids.indexOf(u.id) < 0) { ids.push(u.id); nombres.push(u.nombre); }
       });
     } catch (e) { console.error('enviarPDFContabilidad: contabilidad por consecutivo', e); falloExtra = true; }
     if (falloExtra && siglasExtra.length) {
-      showToast('⚠ No se pudo verificar la contabilidad de ' + siglasExtra.join(' + ') +
-                ': revisa que le haya llegado la remisión.' +
-                (meta.accionManual ? ' Reenvíala con "' + meta.accionManual + '".' : ''), '#e67e22');
+      _alerta('⚠ No se pudo verificar la contabilidad de ' + siglasExtra.join(' + ') +
+              ': revisa que le haya llegado la remisión.' +
+              (meta.accionManual ? ' Reenvíala con "' + meta.accionManual + '".' : ''));
+    }
+    // Una empresa del holding sin contabilidad activa: antes no recibía nada y nadie se enteraba.
+    if (sinContabExtra.length) {
+      _alerta('⚠ ' + sinContabExtra.join(' + ') + ' no tiene un usuario de contabilidad activo: ' +
+              'nadie recibirá esta remisión. Avisa a un administrador.');
     }
     if (!ids.length) return { ok: false, error: 'sin destinatarios' };
     var etiqueta = meta.docLabel || 'PDF';
@@ -1077,16 +1164,22 @@ var NOTIF = (function() {
         destinatarios: ids
       });
       if (result && result.ok) {
-        showToast('📨 ' + destino + ' notificada' + quien + ' · ' + etiqueta, '#8e44ad');
+        // compartirPDF da ok si llegó al menos a uno: si alguno de los destinatarios falló, se dice.
+        if (result.errors && result.errors.length) {
+          _alerta('⚠ ' + destino + ' notificada solo a ' + result.sent + ' de ' + ids.length + ' destinatario(s)' +
+                  quien + ' · ' + etiqueta + ' — ' + result.errors[0] + '.' + manual);
+        } else {
+          showToast('📨 ' + destino + ' notificada' + quien + ' · ' + etiqueta, '#8e44ad');
+        }
         return result;
       }
       var det = (result && result.errors && result.errors[0]) ? ' — ' + result.errors[0] : '';
-      showToast('⚠ ' + destino + ' NO notificada' + quien + ' · ' + etiqueta + det + '.' + manual, '#e74c3c');
+      _alerta('⚠ ' + destino + ' NO notificada' + quien + ' · ' + etiqueta + det + '.' + manual);
       return result || { ok: false, error: 'sin enviar' };
     } catch (e) {
       console.error('enviarPDFContabilidad error', e);
-      showToast('⚠ ' + destino + ' NO notificada' + quien + ' · ' + etiqueta + ': ' +
-                (e && e.message ? e.message : e) + '.' + manual, '#e74c3c');
+      _alerta('⚠ ' + destino + ' NO notificada' + quien + ' · ' + etiqueta + ': ' +
+              (e && e.message ? e.message : e) + '.' + manual);
       return { ok: false, error: (e && e.message) ? e.message : String(e) };
     }
   }
@@ -1108,6 +1201,7 @@ var NOTIF = (function() {
     confirmarEnvioContabilidad: confirmarEnvioContabilidad,
     enviarPDFContabilidad: enviarPDFContabilidad,
     resolverContabilidad: resolverContabilidad,
+    falloEnvio: falloEnvio,
     siglasDeRemisiones: siglasDeRemisiones,
     refsDeOCs: refsDeOCs,
     resolverProduccion: resolverProduccion

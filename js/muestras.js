@@ -1224,7 +1224,7 @@ async function saveMuDevolucion() {
     if (!result.ok) throw new Error(result.error || 'Error al registrar la devolución');
     var rem = result.remision || remManual;
 
-    if (pendingContab && pendingContab.contabIds && pendingContab.contabIds.length && rem &&
+    if (pendingContab && rem &&
         typeof NOTIF !== 'undefined' && typeof generarRemisionPDF === 'function') {
       try {
         var r = generarRemisionPDF(_muDevPdfData(head, sel.map(function(l) {
@@ -1234,11 +1234,13 @@ async function saveMuDevolucion() {
           await NOTIF.enviarPDFContabilidad(r.doc, {
             modulo: 'devoluciones', referencia: 'M-' + consec + ' · RE ' + rem,
             titulo: 'Remisión devolución de muestra — Solicitud #' + consec,
-            docLabel: 'Remisión',
+            docLabel: 'Remisión', accionManual: 'Enviar', empresa: emp,
             contabIds: pendingContab.contabIds, contabNames: pendingContab.contabNames
           });
+        } else {
+          throw new Error('no se pudo armar el PDF de la remisión');
         }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar'); }
     }
 
     var idVista = muViewingId;
@@ -1549,7 +1551,7 @@ async function saveEntregas() {
       }
     }
 
-    if (pendingContabEntregas && pendingContabEntregas.contabIds && pendingContabEntregas.contabIds.length && remGenerada && typeof NOTIF !== 'undefined') {
+    if (pendingContabEntregas && remGenerada && typeof NOTIF !== 'undefined') {
       try {
         var muHeadRow = allMuestras.filter(function(r) { return r.id === muViewingId; })[0];
         var entregasPdf = Object.keys(entregasPorLinea).map(function(idx) {
@@ -1583,10 +1585,13 @@ async function saveEntregas() {
           await NOTIF.enviarPDFContabilidad(_crEnt.doc, {
             modulo: 'muestras', referencia: ((muHeadRow && muHeadRow.Consecutivo) || '') + ' · Rem ' + remision,
             titulo: 'Paquete Muestras #' + ((muHeadRow && muHeadRow.Consecutivo) || '') + ' — Rem ' + remision, docLabel: 'Paquete',
+            accionManual: 'Enviar Remisión', empresa: muViewEmpresa,
             contabIds: pendingContabEntregas.contabIds, contabNames: pendingContabEntregas.contabNames
           });
+        } else {
+          throw new Error('no se pudo armar el PDF de la remisión');
         }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar Remisión'); }
     }
 
     closeViewMu();
@@ -2610,7 +2615,7 @@ async function saveMuestra() {
         _generar_remision: generarRemMu
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
-      if (_pendingContabMu && _pendingContabMu.contabIds && _pendingContabMu.contabIds.length && result.remision && typeof NOTIF !== 'undefined') {
+      if (_pendingContabMu && result.remision && typeof NOTIF !== 'undefined') {
         try {
           var _empMu = document.getElementById('mu-empresa').value || '';
           var _consecMuEdit = document.getElementById('mu-consecutivo').value.trim();
@@ -2642,10 +2647,13 @@ async function saveMuestra() {
             await NOTIF.enviarPDFContabilidad(_cr.doc, {
               modulo: 'muestras', referencia: (document.getElementById('mu-consecutivo').value.trim()||'') + ' · Rem ' + result.remision,
               titulo: 'Paquete Muestras #' + _consecMuEdit + ' — Rem ' + result.remision, docLabel: 'Paquete',
+              accionManual: 'Enviar Remisión', empresa: _empMu,
               contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
             });
+          } else {
+            throw new Error('no se pudo armar el PDF de la remisión');
           }
-        } catch (e) { console.error('Auto-send contabilidad error', e); }
+        } catch (e) { NOTIF.falloEnvio(e, 'Enviar Remisión'); }
       }
       _pendingContabMu = null;
       closeMuModal();
@@ -2735,7 +2743,7 @@ async function saveMuestra() {
       consecutivo = String(result.consecutivo);
     }
 
-    if (_pendingContabMu && _pendingContabMu.contabIds && _pendingContabMu.contabIds.length && result.remision && typeof NOTIF !== 'undefined') {
+    if (_pendingContabMu && result.remision && typeof NOTIF !== 'undefined') {
       try {
         var _entMuN = productosValidos.map(function(p) {
           return { producto: p.producto, presentacion: p.presentacion, cantidad: p.cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
@@ -2765,10 +2773,13 @@ async function saveMuestra() {
           await NOTIF.enviarPDFContabilidad(_crN.doc, {
             modulo: 'muestras', referencia: (consecutivo||'') + ' · Rem ' + result.remision,
             titulo: 'Paquete Muestras #' + consecutivo + ' — Rem ' + result.remision, docLabel: 'Paquete',
+            accionManual: 'Enviar Remisión', empresa: empresa,
             contabIds: _pendingContabMu.contabIds, contabNames: _pendingContabMu.contabNames
           });
+        } else {
+          throw new Error('no se pudo armar el PDF de la remisión');
         }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar Remisión'); }
     }
     _pendingContabMu = null;
     closeMuModal();

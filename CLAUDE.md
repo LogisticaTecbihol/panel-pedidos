@@ -520,3 +520,29 @@ proveedores, los reenvases y el resto. Solo aplica a Ingresos (Kardex, Existenci
 - Probado: la migración dentro de una transacción revertida contra producción (corrida dos veces, auditoría y `modificado_en` intactos, 375 ingresos antes y después, ningún ingreso con tipos mezclados, 19 casos de las
   reglas, trigger con insert sin tipo / tipo explícito / update a vacío, CHECK rechaza valores inválidos) y la pantalla real con un arnés de navegador (`ingresos.html` + `shared.js` + `ingresos.js` con Supabase simulado: 30 comprobaciones
   de tarjetas, filtros, orden, detalle, Excel, formulario, alta, edición, agregar producto, retorno de reenvase y camino del JS anterior). **No se probó con un usuario real contra producción.**
+
+## Remisiones de entrada/salida: aviso SIEMPRE a la contabilidad de la empresa
+
+Toda remisión de ingreso (RE) o salida (RS) de las empresas del holding (PARCELAR, RESO, IASO, IAS, GREEN) que mueve inventario debe llegarle a la contabilidad **de la empresa dueña del consecutivo**
+(la sigla del prefijo: `GREEN-RE-0058` → contabilidad de GREEN). Hay 1 usuario `contabilidad` activo por empresa (`usuario_empresas`, RPC `list_contabilidad_por_empresa`). GRANEL no tiene contabilidad:
+su remisión va a producción (`NOTIF.resolverProduccion`). Auditoría del 2026-11-12 contra producción: los permisos de `notificaciones` y de Storage dejan enviar a cualquier rol con sesión (el remisionador también);
+los huecos estaban en el código de cada módulo.
+
+- **Mecanismo** (`js/notificaciones.js`, no hay trigger en la base salvo para OC): al guardar, el módulo llama a `NOTIF.confirmarEnvioContabilidad(empresa|[empresas], módulo, {empresas})` (diálogo «Guardar y Enviar») y, ya guardado,
+  a `NOTIF.enviarPDFContabilidad(doc, meta)`, que además suma la contabilidad de cada empresa de `meta.empresa/empresas` y de la sigla de cada consecutivo de `meta.remisiones/titulo/referencia`. Se omite al propio usuario
+  (si la contabilidad es quien guarda no se auto-avisa). El botón manual «📨 Enviar» (`openModalEnviar`) siempre agrega a esa contabilidad y no se puede desmarcar. Las **OC de traslado** avisan por trigger
+  (`trg_oc_avisar_contabilidad`, ver su sección): no pasan por aquí.
+- **Módulos con aviso al guardar** (`AUTO_CONTAB_MODS`): pedidos, ingresos, devoluciones, cambios, muestras, reenvases y **kardex** (nuevo: remisiones de la bodega NC; `modulo='kardex'` ya estaba en el CHECK de `notificaciones`).
+- **Huecos que se cerraron** (2026-11-12; en producción 17 de 19 RE de Reenvases y 3 de Bodega NC no habían llegado a su contabilidad): (1) **Reenvases**: el PDF automático solo llevaba la RS; ahora lleva RS + RE
+  (`_reDocContabilidad`) y la confirmación incluye la empresa destino. (2) **Kardex → Bodega NC** (ingreso/salida NC): antes solo descargaba el PDF; ahora confirma y envía (`_ncEnviarContabilidad`); un registro histórico
+  no avisa. (3) **Devoluciones, «Tramitar» masivo**: antes no avisaba; ahora confirma una vez y envía un PDF por devolución a la contabilidad de SU empresa (`_devEnviarContabilidad`). (4) **Editar** un Ingreso, un Reenvase o un
+  registro NC que genera o cambia una remisión: ahora envía (sin diálogo previo; el aviso lo da el toast). (5) **Fallos silenciosos**: los `catch` de los envíos solo dejaban un `console.error`.
+- **Los fallos ya no se pierden**: `NOTIF.falloEnvio(e, botón)` y las alertas de `enviarPDFContabilidad` dejan una **franja roja** fija abajo (`#notif-alertas`, se cierra a mano), porque el toast (`#toast`, uno solo) lo pisaba
+  el «✅ guardado» siguiente. Se avisa (sin frenar el guardado, la remisión ya existe) cuando: la consulta de contabilidad falla (se reintenta una vez), una empresa del holding no tiene contabilidad activa
+  (`resolverContabilidad` devuelve `sinContab`), el PDF no se puede armar, o solo llegó a parte de los destinatarios. Los módulos ya no exigen `contabIds.length` para enviar: si la consulta falló al confirmar,
+  se vuelve a resolver al enviar.
+- **Corrección de paso**: `editarReenvase` guardaba `Remision_Destino = ''` porque el formulario no la enviaba (borraba la RE existente al editar una línea); `saveReenvase` ahora manda la del formulario.
+- **Pendiente / fuera de alcance**: el aviso sigue siendo del navegador (si se cierra la pestaña entre guardar y enviar, no sale; se reenvía con «Enviar»); no se avisó retroactivamente de las ~23 remisiones que ya habían quedado sin aviso
+  (Reenvases RE, Bodega NC, algunas de Ingresos/Devoluciones anteriores al 1-oct); las cargas históricas no avisan (no afectan existencias).
+- Probado con un arnés de navegador sobre los archivos reales (`with(scope)` con Supabase, PDF y DOM simulados; 85 comprobaciones): `NOTIF` (reintento, sin contabilidad, contabilidad = quien guarda, externas, fallo parcial/total,
+  franja persistente) y el alta/edición de Reenvases, Ingresos, Bodega NC y el trámite masivo de Devoluciones (confirmación única, un PDF por devolución a su empresa, envío caído, cancelar). **No se probó con usuarios reales ni contra Storage real.**

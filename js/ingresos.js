@@ -1183,6 +1183,28 @@ async function saveIngreso() {
         _remision_destino_existente: !!(editIngreso.Remision_Destino || '').trim(),
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar');
+
+      // Si al editar se generó (o cambió) una remisión de entrada/salida, contabilidad también la recibe.
+      // Un ingreso histórico no afecta existencias: no se avisa.
+      var _viejaRE = (editIngreso.Remision_Destino || '').trim();
+      var _viejaRS = (editIngreso.Remision_Origen || '').trim();
+      var _remNueva = (result.remision_destino && result.remision_destino !== _viejaRE) ||
+                      (result.remision_origen && result.remision_origen !== _viejaRS);
+      if (_remNueva && !editIngreso.Historico && typeof NOTIF !== 'undefined') {
+        try {
+          // El PDF lleva este producto y los demás que comparten la misma remisión.
+          var _comparten = ingresos.filter(function(x) {
+            if (x === editIngreso || (x.__row != null && x.__row === editIngreso.__row)) return false;
+            return (result.remision_destino && (x.Remision_Destino || '').trim() === result.remision_destino) ||
+                   (!result.remision_destino && result.remision_origen && (x.Remision_Origen || '').trim() === result.remision_origen);
+          });
+          await _ingEnviarContabilidad({
+            fecha: fecha, origen: origen, empresaOrigen: empresa_origen, empresaDestino: empresa_destino,
+            responsable: responsable, remOrigen: result.remision_origen || '', remDestino: result.remision_destino || '',
+            lineas: [{ Producto: prod, Presentacion: pres, Cantidad: cant }].concat(_comparten)
+          }, null);
+        } catch (eEnv) { NOTIF.falloEnvio(eEnv, 'Enviar'); }
+      }
       closeIngModal();
       var toastParts = ['✅ Ingreso actualizado'];
       if (result.remision_destino) toastParts.push('RE: ' + result.remision_destino);
@@ -1230,6 +1252,42 @@ function closeConfirmIng() {
 }
 
 document.getElementById('confirm-ing-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeConfirmIng(); });
+
+// Arma el PDF de la remisión de ingreso y lo envía a la contabilidad de las dos empresas (la sigla del
+// consecutivo también cuenta). Lo usan el alta y la edición.
+// o: { fecha, origen, empresaOrigen, empresaDestino, responsable, remOrigen, remDestino, lineas:[{Producto,Presentacion,Cantidad}] }
+// contab: lo confirmado al guardar (puede ser null: entonces se resuelve por empresas y consecutivos).
+async function _ingEnviarContabilidad(o, contab) {
+  var _remIng = o.remDestino || o.remOrigen || '';
+  if (!_remIng || typeof NOTIF === 'undefined') return;
+  var _empresa = o.empresaOrigen || o.empresaDestino || '';
+  var _entregas = o.lineas.map(function(l) {
+    return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l.Cantidad)||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
+  }).filter(function(p) { return p.cantidad > 0; });
+  var _rightIng = [['Emp. Destino', o.empresaDestino], ['Rem. Origen', o.remOrigen || ''], ['Rem. Destino', o.remDestino || '']];
+  if ((_ingReenvaseRef || '').trim()) _rightIng.push(['Ref. Producción', _ingReenvaseRef]);
+  var _cr = generarRemisionPDF({
+    empresa: _empresa, consecutivo: '', doc_title: 'REMISION DE INGRESO', doc_number: _remIng,
+    ref_label: null, date_label: 'Fecha ingreso', fecha_entrega: o.fecha, remision: _remIng,
+    left_fields: [['Origen', o.origen], ['Emp. Origen', o.empresaOrigen], ['Responsable', o.responsable]],
+    right_fields: _rightIng,
+    entregas: _entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Ingreso',
+    return_doc: true, copies: ['COPIA - CONTABILIDAD']
+  });
+  if (!_cr || !_cr.doc) throw new Error('no se pudo armar el PDF de la remisión');
+  var _sigla = (typeof getSigla === 'function' ? getSigla(_empresa) : '') || '';
+  await NOTIF.enviarPDFContabilidad(_cr.doc, {
+    modulo: 'ingresos', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + _remIng,
+    titulo: 'Remisión ingreso #' + _remIng + ' — ' + (o.origen || ''),
+    docLabel: 'Remisión', accionManual: 'Enviar',
+    empresa: _empresa,
+    empresas: [o.empresaOrigen, o.empresaDestino],
+    remisiones: [o.remDestino, o.remOrigen],
+    contabIds: contab && contab.contabIds ? contab.contabIds : [],
+    contabNames: contab ? contab.contabNames : '',
+    destinoLabel: contab ? contab.destinoLabel : undefined
+  });
+}
 
 var _pendingContabIng = null;
 async function confirmarYRegistrarIngreso() {
@@ -1281,36 +1339,14 @@ async function confirmAndSaveIngreso() {
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
     var _remIng = result.remision_destino || result.remision_origen || '';
-    if (_pendingContabIng && _pendingContabIng.contabIds && _pendingContabIng.contabIds.length && _remIng && typeof NOTIF !== 'undefined') {
+    if (_pendingContabIng && _remIng && typeof NOTIF !== 'undefined' && !esHistoricoIng) {
       try {
-        var _empresa = empresa_origen || empresa_destino || '';
-        var _entregas = validLines.map(function(l) {
-          return { producto: l.Producto||'', presentacion: l.Presentacion||'', cantidad: Number(l.Cantidad)||0, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
-        }).filter(function(p) { return p.cantidad > 0; });
-        var _rightIng = [['Emp. Destino', empresa_destino], ['Rem. Origen', result.remision_origen||remision_origen], ['Rem. Destino', result.remision_destino||remision_destino]];
-        if ((_ingReenvaseRef || '').trim()) _rightIng.push(['Ref. Producción', _ingReenvaseRef]);
-        var _pdfData = {
-          empresa: _empresa, consecutivo: '', doc_title: 'REMISION DE INGRESO', doc_number: _remIng,
-          ref_label: null, date_label: 'Fecha ingreso', fecha_entrega: fecha, remision: _remIng,
-          left_fields: [['Origen', origen], ['Emp. Origen', empresa_origen], ['Responsable', responsable]],
-          right_fields: _rightIng,
-          entregas: _entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Ingreso',
-          return_doc: true, copies: ['COPIA - CONTABILIDAD']
-        };
-        var _cr = generarRemisionPDF(_pdfData);
-        if (_cr && _cr.doc) {
-          var _sigla = (typeof getSigla === 'function' ? getSigla(_empresa) : '') || '';
-          await NOTIF.enviarPDFContabilidad(_cr.doc, {
-            modulo: 'ingresos', referencia: (_sigla ? _sigla + ' · ' : '') + 'Rem ' + _remIng,
-            titulo: 'Remisión ingreso #' + _remIng + ' — ' + (origen || ''),
-            docLabel: 'Remisión',
-            empresas: [empresa_origen, empresa_destino],
-            remisiones: [result.remision_destino, result.remision_origen],
-            contabIds: _pendingContabIng.contabIds, contabNames: _pendingContabIng.contabNames,
-            destinoLabel: _pendingContabIng.destinoLabel
-          });
-        }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+        await _ingEnviarContabilidad({
+          fecha: fecha, origen: origen, empresaOrigen: empresa_origen, empresaDestino: empresa_destino,
+          responsable: responsable, remOrigen: result.remision_origen || remision_origen,
+          remDestino: result.remision_destino || remision_destino, lineas: validLines
+        }, _pendingContabIng);
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar'); }
     }
     _pendingContabIng = null;
     closeConfirmIng();

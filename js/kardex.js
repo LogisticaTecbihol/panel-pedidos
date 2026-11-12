@@ -2435,6 +2435,26 @@ function _buildNCRemisionPDFData(empresa, fecha, motivo, tipo, remision, lineas)
   };
 }
 
+// Envía a la contabilidad de la empresa el PDF de la remisión de un movimiento de Bodega NC (ingreso o
+// salida). Antes solo se descargaba en el computador de quien la registraba y contabilidad no se enteraba.
+// o: { empresa, fecha, motivo, tipo, remision, lineas }; contab: lo confirmado al guardar (o null).
+async function _ncEnviarContabilidad(o, contab) {
+  if (typeof NOTIF === 'undefined' || typeof generarRemisionPDF !== 'function') return;
+  var data = _buildNCRemisionPDFData(o.empresa, o.fecha, o.motivo, o.tipo, o.remision, o.lineas);
+  var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
+  if (!r || !r.doc) throw new Error('no se pudo armar el PDF de la remisión');
+  var esIngreso = o.tipo === 'Ingreso_NC';
+  var sigla = getSiglaKx(o.empresa) || '';
+  await NOTIF.enviarPDFContabilidad(r.doc, {
+    modulo: 'kardex', referencia: (sigla ? sigla + ' · ' : '') + 'Rem ' + o.remision,
+    titulo: 'Remisión ' + (esIngreso ? 'ingreso' : 'salida') + ' bodega NC #' + o.remision,
+    docLabel: 'Remisión', accionManual: 'Enviar',
+    empresa: o.empresa, remisiones: [o.remision],
+    contabIds: contab && contab.contabIds ? contab.contabIds : [],
+    contabNames: contab ? contab.contabNames : ''
+  });
+}
+
 async function saveNC() {
   if (editNCId) { await saveEditNC(); return; }
   var fecha = document.getElementById('nc-fecha').value;
@@ -2462,6 +2482,16 @@ async function saveNC() {
   if (!esHistorico && autoOn && !remisionManual && !esHolding) {
     showToast('Esta empresa no genera remisión automática. Desmarca "Auto" y escribe el número.', '#e74c3c');
     return;
+  }
+
+  // ¿Este guardado emite una remisión? (la manual con «Auto» apagado, o la que genera el contador en las
+  // empresas del holding). Si sí, se confirma el envío a contabilidad ANTES de guardar, como en los demás módulos.
+  var _contabNC = null;
+  var _emiteRemNC = !esHistorico && ((!autoOn && !!remisionManual) || (esHolding && (esIngreso || ncModalTipo === 'Salida_NC')));
+  if (_emiteRemNC && typeof NOTIF !== 'undefined' && NOTIF.confirmarEnvioContabilidad) {
+    var _confNC = await NOTIF.confirmarEnvioContabilidad(empresa, 'kardex');
+    if (!_confNC.confirmed) return;
+    _contabNC = _confNC;
   }
 
   var btn = document.getElementById('btn-save-nc');
@@ -2494,6 +2524,12 @@ async function saveNC() {
       try {
         generarRemisionPDF(_buildNCRemisionPDFData(empresa, fecha, motivo, ncModalTipo, remisionFinal, validLines));
       } catch (ePdf) { console.error('PDF remisión NC:', ePdf); }
+    }
+
+    if (_contabNC && remisionFinal && !esHistorico) {
+      try {
+        await _ncEnviarContabilidad({ empresa: empresa, fecha: fecha, motivo: motivo, tipo: ncModalTipo, remision: remisionFinal, lineas: validLines }, _contabNC);
+      } catch (eEnv) { NOTIF.falloEnvio(eEnv, 'Enviar'); }
     }
 
     closeNCModal();
@@ -2594,6 +2630,16 @@ async function saveEditNC() {
       Observaciones: obs
     });
     if (!result.ok) throw new Error(result.error || 'Error al guardar');
+
+    // Si al editar se generó (o cambió) la remisión, contabilidad también la recibe. Un registro histórico
+    // no afecta existencias: no se avisa.
+    var _regEdit = (typeof ncAjustes !== 'undefined' ? ncAjustes : []).find(function(a) { return (a.__row || a.id) === editNCId; });
+    if (remisionFinal && remisionFinal !== editNCRemisionOrig && !(_regEdit && _regEdit.Historico) && typeof NOTIF !== 'undefined') {
+      try {
+        await _ncEnviarContabilidad({ empresa: empresa, fecha: fecha, motivo: motivo, tipo: ncModalTipo, remision: remisionFinal, lineas: [line] }, null);
+      } catch (eEnv) { NOTIF.falloEnvio(eEnv, 'Enviar'); }
+    }
+
     editNCId = null;
     editNCRemisionOrig = '';
     closeNCModal();

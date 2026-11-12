@@ -1443,7 +1443,7 @@ async function saveGestionarCam() {
     // Remisiones PDF de ESTA pasada (con sus cantidades) a contabilidad
     var _finalRemIngC = doIng ? (result.remision_ingreso || '') : '';
     var _finalRemSalC = doSal ? (result.remision_salida || '') : '';
-    if (_pendingContabCam && _pendingContabCam.contabIds && _pendingContabCam.contabIds.length && (_finalRemIngC || _finalRemSalC) && typeof NOTIF !== 'undefined') {
+    if (_pendingContabCam && (_finalRemIngC || _finalRemSalC) && typeof NOTIF !== 'undefined') {
       try {
         var camLines = cambios.filter(function(r) { return gestionarCamIds.indexOf(r.__row || r.id) >= 0; });
         var head = camLines.length ? camLines[0] : {};
@@ -1468,11 +1468,13 @@ async function saveGestionarCam() {
           await NOTIF.enviarPDFContabilidad(jsPDFDoc, {
             modulo: 'cambios', referencia: refP.join(' · '),
             titulo: 'Remisión cambio — ' + (head.Cliente||''),
-            docLabel: 'Remisión',
+            docLabel: 'Remisión', accionManual: 'Enviar', empresa: gestionarCamEmpresa,
             contabIds: _pendingContabCam.contabIds, contabNames: _pendingContabCam.contabNames
           });
+        } else {
+          throw new Error('no se pudo armar el PDF de la remisión');
         }
-      } catch (e) { console.error('Auto-send contabilidad error', e); }
+      } catch (e) { NOTIF.falloEnvio(e, 'Enviar'); }
     }
     _pendingContabCam = null;
     var _estadoFinal = result.estado || 'Cerrado';
