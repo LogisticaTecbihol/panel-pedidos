@@ -45,6 +45,15 @@
 .adjunto-upload-progress .prog-bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
 .adjunto-upload-progress .prog-fill{height:100%;background:#27ae60;border-radius:3px;transition:width 0.3s}
 .adjunto-upload-progress .prog-text{font-size:0.72rem;color:#718096;margin-top:4px;text-align:center}
+/* Tarjetas por tipo de ingreso (cada una filtra la tabla; colores en ING_TIPOS de js/ingresos.js) */
+.stats.ing-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.sc.ing-card{border:0;border-left:4px solid var(--c,#8e44ad);text-align:left;font-family:inherit;cursor:pointer;min-width:0;padding:12px 14px;transition:box-shadow .15s,background .15s}
+.sc.ing-card:hover{box-shadow:0 3px 10px rgba(0,0,0,0.14)}
+.sc.ing-card:focus-visible{outline:2px solid #1a5276;outline-offset:2px}
+.sc.ing-card[aria-pressed="true"]{background:var(--bg,#f7fafc);box-shadow:0 0 0 2px var(--c,#8e44ad),0 3px 10px rgba(0,0,0,0.14)}
+.sc.ing-card.vacio{opacity:.55}
+.sc.ing-card .lbl{line-height:1.25;letter-spacing:.3px}
+.sc.ing-card .sub{font-size:0.74rem;color:#718096;margin-top:2px}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
@@ -116,14 +125,13 @@
     <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
   </div>
 
-  <div class="stats">
-    <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total ingresos</div></div>
-    <div class="sc entregado"><div class="num" id="s-unidades">0</div><div class="lbl">Unidades ingresadas</div></div>
-    <div class="sc parcial"><div class="num" id="s-mosquera">0</div><div class="lbl">Planta Mosquera</div></div>
-    <div class="sc recibido"><div class="num" id="s-cachipay">0</div><div class="lbl">Planta Cachipay</div></div>
-  </div>
+  <div class="stats ing-stats" id="ing-stats"></div>
 
   <div class="filters">
+    <div class="fg">
+      <label>Tipo</label>
+      <select id="f-tipo"><option value="">Todos</option></select>
+    </div>
     <div class="fg">
       <label>Origen</label>
       <select id="f-origen">
@@ -218,6 +226,7 @@
       <div style="flex:1">
         <h2 id="ing-detail-title">📥 Detalle de Ingreso</h2>
         <div style="font-size:0.78rem;opacity:0.85;margin-top:4px" id="ing-detail-sub"></div>
+        <div style="margin-top:6px" id="igd-tipo"></div>
       </div>
       <button class="btn-close" onclick="closeIngDetail()">✕</button>
     </div>
@@ -322,6 +331,13 @@
           <select class="ef" id="ing-reenvase-ref" onchange="onReenvaseRefChange()">
             <option value="">— Ninguna (ingreso no ligado) —</option>
           </select>
+        </div>
+        <div style="grid-column:1/-1">
+          <label class="ef-label">Tipo de ingreso *</label>
+          <select class="ef" id="ing-tipo" onchange="onTipoIngChange()">
+            <option value="">— Seleccionar —</option>
+          </select>
+          <div id="ing-tipo-desc" style="font-size:0.74rem;color:#718096;margin-top:3px;min-height:1em"></div>
         </div>
         <div id="ing-empresa-origen-wrap">
           <label class="ef-label">Empresa Origen *</label>
@@ -490,10 +506,10 @@
 
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261023a"></script>
+<script src="js/shared.js?v=20261112a"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261021"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/ingresos.js?v=20261001a"></script>
+<script src="js/ingresos.js?v=20261112a"></script>
 </body>
 </html>

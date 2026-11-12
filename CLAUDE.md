@@ -490,3 +490,33 @@ legalización (Ruta / Mantenimiento) ni un envío cuya `Fecha` caiga en un perí
   octubre, septiembre, meses muy anteriores y noviembre, líneas y reparto, conciliar y rechazar, admin con cascada, sin sesión, tabla de cierres por RLS, CHECK de fin de mes, UNIQUE, cerrar y reabrir noviembre) y después
   de aplicarla sobre registros reales de octubre y noviembre (también revertido: 144 legalizaciones intactas, 0 de prueba). La pantalla con un arnés de navegador sobre el código real (sintaxis de todo el archivo y 20 casos de
   los helpers: no admin, admin, rpc con error / excepción / sin cierres). **No se probó la pantalla completa con un usuario real** (crear/editar/adjuntar desde el navegador).
+
+## Ingresos: tipo de ingreso (Fabricado / PT proveedor / Reenvase / …)
+
+`ingresos.html` + `js/ingresos.js` distinguen **qué clase de ingreso es**, no solo de dónde viene. Pedido 2026-11-12: separar lo realmente fabricado del producto terminado de
+proveedores, los reenvases y el resto. Solo aplica a Ingresos (Kardex, Existencias y Reportes NO leen el tipo).
+
+- **Siete tipos** (`ING_TIPOS`, `js/ingresos.js`; mismos ids que el CHECK de la base): `FABRICADO` (planta propia: Mosquera / Cachipay), `PT_PROVEEDOR` (Carval, **Chia Abago**,
+  Germisemillas, Bodega Villeta), `REENVASE`, `REFORMULACION`, `BIDONES_USADOS`, `GRANEL` (destino GRANEL) y `OTROS` (Ecociclus, personas —p. ej. DISNEY CASTELLANOS, JOHN PAEZ—, bodegas,
+  retornos de consignación…). Decisiones del usuario: Chia Abago es proveedor de PT; bidones usados y granel son categorías separadas; reformulación tiene la suya; Ecociclus y orígenes
+  «otros» van en Otros. Nota: en `shared.js` (`_getCategoria`) Disney C. figura como proveedor de oxicloruro; aquí se dejó en Otros por decisión del usuario.
+- **Modelo** (`supabase/migrations/ingresos_tipo_ingreso.sql`, migración remota `ingresos_tipo_ingreso` **aplicada el 2026-11-12**, rollback `..._rollback.sql`; va ANTES de publicar el código, porque `getIngresos` ya pide la columna): `Ingresos."Tipo_Ingreso"`
+  (text NOT NULL, default `''`, CHECK con los siete valores). Se repite en todas las líneas del ingreso, como Origen o Responsable. `_ingreso_tipo_sugerido(origen, destino, reenvase_ref, observaciones)`
+  guarda las reglas EN LA BASE (orden: vínculo `Reenvase_Ref` → REENVASE; destino GRANEL → GRANEL; planta + «bidones usados» → BIDONES_USADOS; planta + «reformul» → REFORMULACION; planta +
+  reenvase/reembase/reempaque → REENVASE; planta → FABRICADO; origen proveedor → PT_PROVEEDOR; resto → OTROS; las reglas por texto solo miran orígenes que empiezan por «planta»). El trigger
+  `trg_ingresos_tipo_defecto` (BEFORE INSERT / UPDATE OF `Tipo_Ingreso`) las aplica si el valor llega vacío: así una pestaña con el JS anterior o cualquier otro camino de escritura nunca deja un ingreso sin tipo.
+- **Histórico**: la migración rellena lo ya guardado POR INGRESO (mismas columnas con las que agrupa `keyOfIng`, leyendo las Observaciones de todas sus líneas, para que no queden tipos mezclados dentro de un
+  ingreso) con los triggers de auditoría apagados, igual que `add_placa_por_linea_mantenimiento.sql`: no genera «modificaciones» falsas. Resultado probado contra producción (transacción revertida, 375 ingresos / 705 líneas):
+  FABRICADO 176, REENVASE 98 (68 vinculados + 30 detectados por texto), PT_PROVEEDOR 66, GRANEL 13, OTROS 10, REFORMULACION 9, BIDONES_USADOS 3. **Lo deducido por texto es una sugerencia sobre texto libre**:
+  se corrige editando el ingreso («Tipo de ingreso»).
+- **Pantalla**: tarjetas por tipo (más «Todos») que cuentan ingresos y unidades según los demás filtros (menos el de Tipo) y al hacer clic filtran la tabla (`setIngTipoFiltro`; segundo clic quita el filtro);
+  columna «Tipo» con insignia y borde de color en la primera celda (tabla agrupada y «Vista detallada»); filtro «Tipo» (`f-tipo`, también por texto en «Buscar»); insignia en el encabezado del detalle;
+  columna «Tipo» en los dos Excel. Las tarjetas «Planta Mosquera / Planta Cachipay» se quitaron (Origen sigue siendo filtro). `keyOfIng` incluye el tipo: cambiar el tipo de UNA línea la separa del ingreso
+  (igual que pasa con Origen o `Reenvase_Ref`).
+- **Formulario**: campo obligatorio «Tipo de ingreso» (`ing-tipo`) que se PROPONE solo (`ingTipoSugerido`: vínculo con salida a producción → Reenvase; destino GRANEL → Granel; planta → Fabricado; proveedor → PT proveedor;
+  resto → Otros) mientras el usuario no lo toque; al elegirlo a mano, o al editar / agregar un producto a un ingreso que ya tiene tipo, se respeta (`_ingTipoManual`). **La regla de `ingTipoSugerido` (JS) y la de
+  `_ingreso_tipo_sugerido` (SQL) deben mantenerse iguales** (el JS no mira Observaciones). `agregarIngreso` / `editarIngreso` (`shared.js`) guardan `Tipo_Ingreso`; en la edición solo si el form lo envía.
+  Los PDF de remisión de ingreso no llevan el tipo.
+- Probado: la migración dentro de una transacción revertida contra producción (corrida dos veces, auditoría y `modificado_en` intactos, 375 ingresos antes y después, ningún ingreso con tipos mezclados, 19 casos de las
+  reglas, trigger con insert sin tipo / tipo explícito / update a vacío, CHECK rechaza valores inválidos) y la pantalla real con un arnés de navegador (`ingresos.html` + `shared.js` + `ingresos.js` con Supabase simulado: 30 comprobaciones
+  de tarjetas, filtros, orden, detalle, Excel, formulario, alta, edición, agregar producto, retorno de reenvase y camino del JS anterior). **No se probó con un usuario real contra producción.**

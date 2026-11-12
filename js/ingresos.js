@@ -17,6 +17,44 @@ var ORIGENES = ['Planta Mosquera', 'Planta Cachipay', 'Proveedor Carval', 'Chia 
 function getSiglaIng(n) { return getSigla(n); }
 function getSiglaClassIng(n) { return getSiglaClass(n); }
 
+// ── Tipos de ingreso ──
+// Se guardan en Ingresos.Tipo_Ingreso (supabase/migrations/ingresos_tipo_ingreso.sql, que
+// también trae el CHECK con estos mismos siete ids). El orden es el de las tarjetas y el filtro.
+var ING_TIPOS = [
+  { id: 'FABRICADO',      label: 'Fabricado',      icon: '🏭', color: '#1e8449', bg: '#d5f5e3', desc: 'Producción de una planta propia (Mosquera / Cachipay)' },
+  { id: 'PT_PROVEEDOR',   label: 'PT proveedor',   icon: '🛒', color: '#1a5276', bg: '#d6eaf8', desc: 'Producto terminado comprado a un proveedor (Carval, Chia Abago, Germisemillas…)' },
+  { id: 'REENVASE',       label: 'Reenvase',       icon: '♻️', color: '#6c3483', bg: '#e8daef', desc: 'Retorno de una salida a producción o entrada de reenvase de la planta' },
+  { id: 'REFORMULACION',  label: 'Reformulación',  icon: '🧪', color: '#ad1457', bg: '#fce4ec', desc: 'Entrada de producto reformulado en la planta' },
+  { id: 'BIDONES_USADOS', label: 'Bidones usados', icon: '🪣', color: '#8a6d0b', bg: '#fcf3cf', desc: 'Bidones usados que llegan de la planta' },
+  { id: 'GRANEL',         label: 'Granel',         icon: '🛢️', color: '#c2410c', bg: '#ffedd5', desc: 'Ingreso con destino GRANEL (bidones de segunda de las plantas)' },
+  { id: 'OTROS',          label: 'Otros',          icon: '📎', color: '#4a5568', bg: '#e2e8f0', desc: 'Cualquier otro ingreso (Ecociclus, personas, traslados de bodega, retornos…)' }
+];
+var ING_TIPO_POR_ID = {};
+ING_TIPOS.forEach(function(t) { ING_TIPO_POR_ID[t.id] = t; });
+
+function ingTipoLabel(id) { var t = ING_TIPO_POR_ID[id]; return t ? t.label : ''; }
+
+function ingTipoBadgeHtml(id) {
+  var t = ING_TIPO_POR_ID[id];
+  if (!t) return '<span class="badge" style="background:#f7fafc;color:#a0aec0" title="Sin clasificar">—</span>';
+  return '<span class="badge" style="background:' + t.bg + ';color:' + t.color + ';white-space:nowrap" title="' + escHtml(t.desc) + '">' +
+    t.icon + ' ' + escHtml(t.label) + '</span>';
+}
+
+// Propuesta de tipo para el formulario. Es la misma regla de la base
+// (_ingreso_tipo_sugerido en ingresos_tipo_ingreso.sql) SIN mirar las
+// Observaciones: aquí el usuario ve y puede cambiar el resultado; la base,
+// que sí lee el texto, solo rellena el histórico y los ingresos que llegan sin tipo.
+var ING_ORIGENES_PT = ['proveedor carval', 'chia abago', 'germisemillas', 'bodega villeta'];
+function ingTipoSugerido(origen, empresaDestino, reenvaseRef) {
+  if ((reenvaseRef || '').trim()) return 'REENVASE';
+  if (_esGranel(empresaDestino)) return 'GRANEL';
+  var o = (origen || '').trim().toLowerCase();
+  if (/^planta/.test(o)) return 'FABRICADO';
+  if (ING_ORIGENES_PT.indexOf(o) >= 0) return 'PT_PROVEEDOR';
+  return 'OTROS';
+}
+
 // ── Sorting ──
 var sortLevelsIng = [
   { id: 'fecha', dir: 'desc' }
@@ -24,6 +62,7 @@ var sortLevelsIng = [
 
 var SORT_COLS_ING = [
   { id:'fecha',     label:'Fecha',        fn: function(g) { return +new Date(g.Fecha||0); } },
+  { id:'tipo',      label:'Tipo',         fn: function(g) { return ingTipoLabel(g.Tipo_Ingreso).toLowerCase(); } },
   { id:'origen',    label:'Origen',       fn: function(g) { return (g.Origen||'').toLowerCase(); } },
   { id:'emp_orig',   label:'Emp. Origen',  fn: function(g) { return getSiglaIng(g.Empresa_Origen); } },
   { id:'emp_dest',   label:'Emp. Destino', fn: function(g) { return getSiglaIng(g.Empresa_Destino); } },
@@ -34,7 +73,7 @@ var SORT_COLS_ING = [
 
 // ── Grouping ──
 function keyOfIng(r) {
-  return [r.Fecha||'', r.Origen||'', r.Empresa_Origen||'', r.Empresa_Destino||'', r.Responsable||'', r.Remision_Origen||'', r.Remision_Destino||'', r.Reenvase_Ref||''].join('||');
+  return [r.Fecha||'', r.Origen||'', r.Empresa_Origen||'', r.Empresa_Destino||'', r.Responsable||'', r.Remision_Origen||'', r.Remision_Destino||'', r.Reenvase_Ref||'', r.Tipo_Ingreso||''].join('||');
 }
 
 function rebuildIngGroups() {
@@ -48,10 +87,14 @@ function rebuildIngGroups() {
         Empresa_Destino: r.Empresa_Destino, Responsable: r.Responsable,
         Remision_Origen: r.Remision_Origen, Remision_Destino: r.Remision_Destino,
         Observaciones: r.Observaciones, Reenvase_Ref: r.Reenvase_Ref || '',
+        Tipo_Ingreso: r.Tipo_Ingreso || '',
         Historico: r.Historico || false,
+        _nLin: 0, _ud: 0,
       };
       order.push(k);
     }
+    seen[k]._nLin++;
+    seen[k]._ud += Number(r.Cantidad) || 0;
     if (!seen[k].Observaciones && r.Observaciones) seen[k].Observaciones = r.Observaciones;
   });
   ingGroups = order.map(function(k) { return seen[k]; });
@@ -111,7 +154,7 @@ async function loadIngresos() {
   }
 
   try {
-    var data = await apiGet('getIngresos', { columns: 'id,Fecha,Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Responsable,Remision_Origen,Remision_Destino,Observaciones,Reenvase_Ref' });
+    var data = await apiGet('getIngresos', { columns: 'id,Fecha,Origen,Empresa_Origen,Empresa_Destino,Producto,Presentacion,Cantidad,Responsable,Remision_Origen,Remision_Destino,Observaciones,Reenvase_Ref,Tipo_Ingreso' });
     if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
     ingresos = (data.ingresos || []).map(function(r) {
@@ -210,6 +253,7 @@ function openRetornoIngreso(ref, salLines) {
   if (!ingLineas.length) ingLineas = [{ Producto: '', Presentacion: '', Cantidad: '' }];
   renderIngLines();
   _syncReenvaseSelector();
+  _aplicarTipoSugerido(); // ya hay vínculo con la salida a producción → Reenvase
   showToast(
     (muRef ? 'Retorno de producción de muestras — ' : 'Registrando retorno de ') + ref +
     ' — ajusta presentación y cantidad reales de lo que ingresó', '#1a5276');
@@ -282,6 +326,42 @@ function _syncReenvaseSelector() {
 function onReenvaseRefChange() {
   var sel = document.getElementById('ing-reenvase-ref');
   _ingReenvaseRef = sel ? sel.value : '';
+  _aplicarTipoSugerido();
+}
+
+// ── Tipo de ingreso en el formulario ──
+// Mientras el usuario no lo toque, el tipo sigue a la propuesta (origen, destino y
+// salida a producción). Al editarlo o cambiarlo a mano se respeta lo elegido.
+var _ingTipoManual = false;
+
+function _pintarTipoDesc() {
+  var sel = document.getElementById('ing-tipo');
+  var el = document.getElementById('ing-tipo-desc');
+  if (!sel || !el) return;
+  var t = ING_TIPO_POR_ID[sel.value];
+  el.textContent = t ? (_ingTipoManual ? '' : 'Sugerido según el origen y el destino · ') + t.desc : '';
+}
+
+function _setTipoForm(tipo, manual) {
+  var sel = document.getElementById('ing-tipo');
+  if (!sel) return;
+  _ingTipoManual = !!manual;
+  sel.value = tipo || '';
+  _pintarTipoDesc();
+}
+
+function _aplicarTipoSugerido() {
+  var sel = document.getElementById('ing-tipo');
+  if (!sel) return;
+  if (!_ingTipoManual) {
+    sel.value = ingTipoSugerido(getOrigenValue(), document.getElementById('ing-empresa-destino').value, _ingReenvaseRef);
+  }
+  _pintarTipoDesc();
+}
+
+function onTipoIngChange() {
+  _ingTipoManual = true;
+  _pintarTipoDesc();
 }
 
 // ── Filters ──
@@ -300,9 +380,18 @@ function populateIngFilters() {
   var fr = document.getElementById('f-resp');
   fr.innerHTML = '<option value="">Todos</option>' + responsables.map(function(r) { return '<option value="' + escHtml(r) + '">' + escHtml(r) + '</option>'; }).join('');
 
+  var ftp = document.getElementById('f-tipo');
+  if (ftp) {
+    var tipoSel = ftp.value;
+    ftp.innerHTML = '<option value="">Todos</option>' + ING_TIPOS.map(function(t) {
+      return '<option value="' + t.id + '">' + t.icon + ' ' + escHtml(t.label) + '</option>';
+    }).join('');
+    ftp.value = tipoSel;
+  }
+
   if (!ingFiltersAttached) {
     var ingHandler = function() { renderIngTable(); renderDetalleIng(); };
-    ['f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta','f-mostrar-historicos'].forEach(function(id) {
+    ['f-tipo','f-origen','f-emp-orig','f-emp-dest','f-prod','f-resp','f-fec-desde','f-fec-hasta','f-mostrar-historicos'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', ingHandler);
@@ -313,7 +402,10 @@ function populateIngFilters() {
   }
 }
 
-function filteredIng() {
+// sinTipo = true: aplica todos los filtros MENOS el de Tipo (lo usan las tarjetas, que
+// reparten por tipo lo que dejan los demás filtros).
+function filteredIng(sinTipo) {
+  var ftipo = sinTipo ? '' : document.getElementById('f-tipo').value;
   var fo = document.getElementById('f-origen').value;
   var feo = document.getElementById('f-emp-orig').value;
   var fed = document.getElementById('f-emp-dest').value;
@@ -328,6 +420,7 @@ function filteredIng() {
   var mostrarHistoricosIng = !!(fMostrarHistIng && fMostrarHistIng.checked);
   return ingGroups.filter(function(g) {
     if (!mostrarHistoricosIng && g.Historico) return false;
+    if (ftipo && g.Tipo_Ingreso !== ftipo) return false;
     if (fo && g.Origen !== fo) return false;
     if (feo && g.Empresa_Origen !== feo) return false;
     if (fed && g.Empresa_Destino !== fed) return false;
@@ -341,7 +434,7 @@ function filteredIng() {
     var lines = getLinesForIng(g);
     if (fp && !lines.some(function(l) { return l.Producto === fp; })) return false;
     if (ft) {
-      var hay = [g.Origen, g.Empresa_Origen, g.Empresa_Destino, g.Responsable, g.Remision_Origen, g.Remision_Destino, g.Observaciones].join(' ');
+      var hay = [ingTipoLabel(g.Tipo_Ingreso), g.Origen, g.Empresa_Origen, g.Empresa_Destino, g.Responsable, g.Remision_Origen, g.Remision_Destino, g.Observaciones].join(' ');
       lines.forEach(function(l) { hay += ' ' + (l.Producto||'') + ' ' + (l.Presentacion||''); });
       if (hay.toLowerCase().indexOf(ft) < 0) return false;
     }
@@ -350,6 +443,7 @@ function filteredIng() {
 }
 
 function clearIngFilters() {
+  document.getElementById('f-tipo').value = '';
   document.getElementById('f-origen').value = '';
   document.getElementById('f-emp-orig').value = '';
   document.getElementById('f-emp-dest').value = '';
@@ -368,6 +462,7 @@ function renderIngHeader() {
   var cols = [
     { label:'#', id:null },
     { label:'Fecha', id:'fecha' },
+    { label:'Tipo', id:'tipo' },
     { label:'Origen', id:'origen' },
     { label:'Emp. Origen', id:'emp_orig' },
     { label:'Emp. Destino', id:'emp_dest' },
@@ -391,32 +486,75 @@ function renderIngHeader() {
   if (btn) btn.style.display = sortLevelsIng.length ? 'inline-block' : 'none';
 }
 
+// Tarjetas: una por tipo (más «Todos»), con ingresos y unidades de lo que dejan los
+// demás filtros. Al hacer clic en una se filtra la tabla por ese tipo.
+function renderIngStats() {
+  var box = document.getElementById('ing-stats');
+  if (!box) return;
+  var base = filteredIng(true);
+  var porTipo = {};
+  ING_TIPOS.forEach(function(t) { porTipo[t.id] = { n: 0, ud: 0 }; });
+  var sinTipo = { n: 0, ud: 0 };
+  var tot = { n: 0, ud: 0 };
+  base.forEach(function(g) {
+    var b = porTipo[g.Tipo_Ingreso] || sinTipo;
+    b.n++; b.ud += g._ud;
+    tot.n++; tot.ud += g._ud;
+  });
+  var sel = document.getElementById('f-tipo').value;
+  var nota = ' · Cuenta según los filtros activos (menos el de Tipo)';
+
+  var html = '<button type="button" class="sc ing-card" aria-pressed="' + (!sel) + '" onclick="setIngTipoFiltro(\'\')" ' +
+    'style="--c:#8e44ad;--bg:#f5eef8" title="Ver todos los tipos' + nota + '">' +
+    '<div class="num">' + tot.n.toLocaleString('es-CO') + '</div>' +
+    '<div class="lbl">Todos los ingresos</div>' +
+    '<div class="sub">' + tot.ud.toLocaleString('es-CO') + ' unidades</div></button>';
+
+  ING_TIPOS.forEach(function(t) {
+    var b = porTipo[t.id];
+    html += '<button type="button" class="sc ing-card' + (b.n ? '' : ' vacio') + '" aria-pressed="' + (sel === t.id) + '" ' +
+      'onclick="setIngTipoFiltro(\'' + t.id + '\')" style="--c:' + t.color + ';--bg:' + t.bg + '" ' +
+      'title="' + escHtml(t.desc + nota) + '">' +
+      '<div class="num" style="color:' + t.color + '">' + b.n.toLocaleString('es-CO') + '</div>' +
+      '<div class="lbl">' + t.icon + ' ' + escHtml(t.label) + '</div>' +
+      '<div class="sub">' + b.ud.toLocaleString('es-CO') + ' unidades</div></button>';
+  });
+
+  if (sinTipo.n) {
+    html += '<div class="sc ing-card" style="--c:#a0aec0;cursor:default" title="Ingresos sin tipo asignado">' +
+      '<div class="num">' + sinTipo.n.toLocaleString('es-CO') + '</div>' +
+      '<div class="lbl">Sin clasificar</div>' +
+      '<div class="sub">' + sinTipo.ud.toLocaleString('es-CO') + ' unidades</div></div>';
+  }
+  box.innerHTML = html;
+}
+
+function setIngTipoFiltro(id) {
+  var el = document.getElementById('f-tipo');
+  el.value = (id && el.value === id) ? '' : id;
+  renderIngTable();
+  renderDetalleIng();
+}
+
 function renderIngTable() {
   rebuildIngGroups();
   var groups = applySortIng(filteredIng());
 
-  var totalGroups = ingGroups.length;
-  var totalUnidades = ingresos.reduce(function(s, r) { return s + (Number(r.Cantidad)||0); }, 0);
-  var mosquera = ingGroups.filter(function(g) { return g.Origen === 'Planta Mosquera'; }).length;
-  var cachipay = ingGroups.filter(function(g) { return g.Origen === 'Planta Cachipay'; }).length;
-
-  document.getElementById('s-total').textContent = totalGroups;
-  document.getElementById('s-unidades').textContent = totalUnidades.toLocaleString('es-CO');
-  document.getElementById('s-mosquera').textContent = mosquera;
-  document.getElementById('s-cachipay').textContent = cachipay;
+  renderIngStats();
   document.getElementById('row-ct-ing').textContent = '(' + groups.length + ' mostrados)';
 
   renderIngHeader();
 
   var tbody = document.getElementById('t-body-ing');
   if (!groups.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="empty">No hay ingresos con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12"><div class="empty">No hay ingresos con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
   tbody.innerHTML = groups.map(function(g, i) {
     var lines = getLinesForIng(g);
     var totalQty = lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
+    var tipoInfo = ING_TIPO_POR_ID[g.Tipo_Ingreso];
     var origenBadge = g.Origen === 'Devolución'
       ? '<span class="badge b-rec">Devolución</span>'
       : '<span class="badge b-par">' + escHtml(g.Origen||'—') + '</span>';
@@ -424,8 +562,9 @@ function renderIngTable() {
       origenBadge += ' <span title="Retorno de salida a producción ' + escHtml(g.Reenvase_Ref) + '" style="background:#eafaf1;color:#1e8449;padding:1px 6px;border-radius:10px;font-size:0.68rem;font-weight:700">↩ producción</span>';
     }
     return '<tr>' +
-      '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
+      '<td style="color:#718096;font-size:0.78rem;box-shadow:inset 4px 0 0 ' + (tipoInfo ? tipoInfo.color : 'transparent') + '">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(g.Fecha) + '</td>' +
+      '<td>' + ingTipoBadgeHtml(g.Tipo_Ingreso) + '</td>' +
       '<td>' + origenBadge + '</td>' +
       '<td title="' + escHtml(g.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Origen) + '">' + escHtml(getSiglaIng(g.Empresa_Origen)) + '</span></td>' +
       '<td title="' + escHtml(g.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(g.Empresa_Destino) + '">' + escHtml(getSiglaIng(g.Empresa_Destino)) + '</span></td>' +
@@ -450,6 +589,8 @@ function openIngDetail(idx) {
   var g = activeIngGroup;
   document.getElementById('ing-detail-title').textContent = '📥 Detalle de Ingreso';
   document.getElementById('ing-detail-sub').textContent = fmtDate(g.Fecha) + ' · ' + (g.Origen||'') + ' → ' + getSiglaIng(g.Empresa_Destino);
+  var _tipoEl = document.getElementById('igd-tipo');
+  if (_tipoEl) _tipoEl.innerHTML = ingTipoBadgeHtml(g.Tipo_Ingreso);
 
   document.getElementById('igd-fecha').textContent = fmtDate(g.Fecha);
   document.getElementById('igd-origen').textContent = g.Origen || '—';
@@ -578,6 +719,8 @@ function addProductToGroup() {
   document.getElementById('ing-edit-single').style.display = 'none';
   document.getElementById('ing-multi-lines').style.display = 'block';
 
+  // La línea nueva lleva el mismo tipo que el ingreso al que se agrega.
+  _setTipoForm(g.Tipo_Ingreso, !!g.Tipo_Ingreso);
   ingLineas = [{ Producto: '', Presentacion: '', Cantidad: '' }];
   renderIngLines();
   onOrigenChange(true);
@@ -903,6 +1046,7 @@ function onOrigenChange(preserveDestino) {
     }
   }
   _syncReenvaseSelector();
+  _aplicarTipoSugerido();
 }
 
 // ── New Ingreso Modal ──
@@ -911,6 +1055,7 @@ function openNewIngreso() {
   _ingReenvaseRef = '';
   document.getElementById('ing-modal-title').textContent = '📥 Registrar Ingreso';
   document.getElementById('ing-fecha').value = today();
+  _setTipoForm('', false); // se propone al fijar origen y destino (onOrigenChange)
   setOrigenValue('Planta Mosquera');
   document.getElementById('ing-empresa-origen').value = '';
   document.getElementById('ing-empresa-destino').value = '';
@@ -954,6 +1099,7 @@ function openEditIng(row) {
   _ingReenvaseRef = r.Reenvase_Ref || '';
   document.getElementById('ing-modal-title').textContent = '✏️ Editar Ingreso';
   document.getElementById('ing-fecha').value = toDateInput(r.Fecha);
+  _setTipoForm(r.Tipo_Ingreso, !!r.Tipo_Ingreso);
   setOrigenValue(r.Origen || '');
   document.getElementById('ing-empresa-origen').value = r.Empresa_Origen || '';
   document.getElementById('ing-empresa-destino').value = r.Empresa_Destino || '';
@@ -1009,6 +1155,8 @@ async function saveIngreso() {
   var esExterno = origen === 'Proveedor Carval' || origen === 'Chia Abago' || origen === 'Bodega Villeta' || origen === 'Germisemillas';
   if (!esExterno && !_esGranel(empresa_destino) && !empresa_origen) { showToast('Selecciona la empresa origen', '#e74c3c'); return; }
   if (!responsable) { showToast('Ingresa el responsable', '#e74c3c'); return; }
+  var tipoIng = document.getElementById('ing-tipo').value;
+  if (!ING_TIPO_POR_ID[tipoIng]) { showToast('Selecciona el tipo de ingreso', '#e74c3c'); return; }
 
   var btn = document.getElementById('btn-save-ing');
 
@@ -1030,6 +1178,7 @@ async function saveIngreso() {
         Producto: prod, Presentacion: pres, Cantidad: cant,
         Responsable: responsable, Remision_Origen: remision_origen, Remision_Destino: remision_destino, Observaciones: observaciones,
         Reenvase_Ref: _ingReenvaseRef || '',
+        Tipo_Ingreso: tipoIng,
         _remision_origen_existente: !!(editIngreso.Remision_Origen || '').trim(),
         _remision_destino_existente: !!(editIngreso.Remision_Destino || '').trim(),
       });
@@ -1126,6 +1275,7 @@ async function confirmAndSaveIngreso() {
       Fecha: fecha, Origen: origen, Empresa_Origen: empresa_origen, Empresa_Destino: empresa_destino,
       Responsable: responsable, Remision_Origen: remision_origen, Remision_Destino: remision_destino, Observaciones: observaciones,
       Reenvase_Ref: _ingReenvaseRef || '',
+      Tipo_Ingreso: document.getElementById('ing-tipo').value,
       lineas: validLines,
       Historico: esHistoricoIng
     });
@@ -1431,6 +1581,7 @@ function exportIngresosExcel() {
     var totalQty = lines.reduce(function(s, l) { return s + (Number(l.Cantidad)||0); }, 0);
     return {
       'Fecha': g.Fecha || '',
+      'Tipo': ingTipoLabel(g.Tipo_Ingreso),
       'Origen': g.Origen || '',
       'Emp. Origen': getSiglaIng(g.Empresa_Origen),
       'Emp. Destino': getSiglaIng(g.Empresa_Destino),
@@ -1444,7 +1595,7 @@ function exportIngresosExcel() {
   });
 
   var ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:12},{wch:18},{wch:14},{wch:14},{wch:8},{wch:10},{wch:18},{wch:14},{wch:14},{wch:30}];
+  ws['!cols'] = [{wch:12},{wch:16},{wch:18},{wch:14},{wch:14},{wch:8},{wch:10},{wch:18},{wch:14},{wch:14},{wch:30}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ingresos');
   XLSX.writeFile(wb, 'Ingresos_' + today() + '.xlsx');
@@ -1455,6 +1606,7 @@ function exportIngresosExcel() {
 var detIngSort = [];
 
 function filteredIngLines() {
+  var ftipo = document.getElementById('f-tipo').value;
   var fo = document.getElementById('f-origen').value;
   var feo = document.getElementById('f-emp-orig').value;
   var fed = document.getElementById('f-emp-dest').value;
@@ -1467,6 +1619,7 @@ function filteredIngLines() {
   var ft = document.getElementById('f-txt').value.toLowerCase();
 
   return ingresos.filter(function(r) {
+    if (ftipo && r.Tipo_Ingreso !== ftipo) return false;
     if (fo && r.Origen !== fo) return false;
     if (feo && r.Empresa_Origen !== feo) return false;
     if (fed && r.Empresa_Destino !== fed) return false;
@@ -1479,7 +1632,7 @@ function filteredIngLines() {
       if (fhasta && fp10 > fhasta) return false;
     }
     if (ft) {
-      var hay = [r.Origen, r.Empresa_Origen, r.Empresa_Destino, r.Responsable, r.Remision_Origen, r.Remision_Destino, r.Producto, r.Presentacion, r.Observaciones].join(' ').toLowerCase();
+      var hay = [ingTipoLabel(r.Tipo_Ingreso), r.Origen, r.Empresa_Origen, r.Empresa_Destino, r.Responsable, r.Remision_Origen, r.Remision_Destino, r.Producto, r.Presentacion, r.Observaciones].join(' ').toLowerCase();
       if (hay.indexOf(ft) < 0) return false;
     }
     return true;
@@ -1509,6 +1662,7 @@ function renderDetalleIng() {
         var col = detIngSort[s].col, dir = detIngSort[s].dir;
         var va, vb;
         if (col === 'fecha') { va = +(new Date(a.Fecha||0)); vb = +(new Date(b.Fecha||0)); }
+        else if (col === 'tipo') { va = ingTipoLabel(a.Tipo_Ingreso).toLowerCase(); vb = ingTipoLabel(b.Tipo_Ingreso).toLowerCase(); }
         else if (col === 'origen') { va = (a.Origen||'').toLowerCase(); vb = (b.Origen||'').toLowerCase(); }
         else if (col === 'emp_orig') { va = getSiglaIng(a.Empresa_Origen); vb = getSiglaIng(b.Empresa_Origen); }
         else if (col === 'emp_dest') { va = getSiglaIng(a.Empresa_Destino); vb = getSiglaIng(b.Empresa_Destino); }
@@ -1530,6 +1684,7 @@ function renderDetalleIng() {
 
   var cols = [
     { id: 'fecha', label: 'Fecha' },
+    { id: 'tipo', label: 'Tipo' },
     { id: 'origen', label: 'Origen' },
     { id: 'emp_orig', label: 'Emp. Origen' },
     { id: 'emp_dest', label: 'Emp. Destino' },
@@ -1553,7 +1708,7 @@ function renderDetalleIng() {
 
   var tbody = document.getElementById('det-ing-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="10"><div class="empty">No hay líneas con los filtros seleccionados.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty">No hay líneas con los filtros seleccionados.</div></td></tr>';
     return;
   }
 
@@ -1561,8 +1716,10 @@ function renderDetalleIng() {
     var origenBadge = r.Origen === 'Devolución'
       ? '<span class="badge b-rec">Devolución</span>'
       : '<span class="badge b-par">' + escHtml(r.Origen||'—') + '</span>';
+    var tipoInfoDet = ING_TIPO_POR_ID[r.Tipo_Ingreso];
     return '<tr>' +
-      '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
+      '<td style="white-space:nowrap;font-size:0.78rem;box-shadow:inset 4px 0 0 ' + (tipoInfoDet ? tipoInfoDet.color : 'transparent') + '">' + fmtDate(r.Fecha) + '</td>' +
+      '<td>' + ingTipoBadgeHtml(r.Tipo_Ingreso) + '</td>' +
       '<td>' + origenBadge + '</td>' +
       '<td title="' + escHtml(r.Empresa_Origen||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Origen) + '">' + escHtml(getSiglaIng(r.Empresa_Origen)) + '</span></td>' +
       '<td title="' + escHtml(r.Empresa_Destino||'') + '"><span class="sigla-badge ' + getSiglaClassIng(r.Empresa_Destino) + '">' + escHtml(getSiglaIng(r.Empresa_Destino)) + '</span></td>' +
@@ -1584,6 +1741,7 @@ function exportDetalleIngExcel() {
   var data = rows.map(function(r) {
     return {
       'Fecha': r.Fecha || '',
+      'Tipo': ingTipoLabel(r.Tipo_Ingreso),
       'Origen': r.Origen || '',
       'Emp. Origen': getSiglaIng(r.Empresa_Origen),
       'Emp. Destino': getSiglaIng(r.Empresa_Destino),
@@ -1598,12 +1756,21 @@ function exportDetalleIngExcel() {
   });
 
   var ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:12},{wch:18},{wch:14},{wch:14},{wch:30},{wch:14},{wch:10},{wch:18},{wch:14},{wch:14},{wch:30}];
+  ws['!cols'] = [{wch:12},{wch:16},{wch:18},{wch:14},{wch:14},{wch:30},{wch:14},{wch:10},{wch:18},{wch:14},{wch:14},{wch:30}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Detalle Ingresos');
   XLSX.writeFile(wb, 'Ingresos_Detalle_' + today() + '.xlsx');
   showToast('Excel detalle exportado: ' + rows.length + ' líneas', '#27ae60');
 }
+
+// ── Select «Tipo de ingreso» del formulario (se arma desde ING_TIPOS) ──
+(function() {
+  var sel = document.getElementById('ing-tipo');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Seleccionar —</option>' + ING_TIPOS.map(function(t) {
+    return '<option value="' + t.id + '">' + t.icon + ' ' + escHtml(t.label) + '</option>';
+  }).join('');
+})();
 
 // ── Auto-load ──
 loadIngresos();

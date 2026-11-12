@@ -1174,6 +1174,9 @@ async function _apiPostCore(body) {
           Remision_Origen: remOrigen, Remision_Destino: remDestino,
           Observaciones: body.Observaciones || '', Fecha_Registro: now,
           Reenvase_Ref: (body.Reenvase_Ref || '').trim(),
+          // Tipo de ingreso (FABRICADO, PT_PROVEEDOR, REENVASE, ...). Si llega vacío,
+          // el trigger trg_ingresos_tipo_defecto lo deduce en la base.
+          Tipo_Ingreso: (body.Tipo_Ingreso || '').trim(),
           Historico: _histIng,
           creado_por: _uid()
         };
@@ -1208,6 +1211,8 @@ async function _apiPostCore(body) {
       };
       // Solo tocar el vínculo a la salida a producción si el form lo envía.
       if (body.Reenvase_Ref !== undefined) _updIng.Reenvase_Ref = (body.Reenvase_Ref || '').trim();
+      // Igual con el tipo: solo si el form lo envía (vacío = que la base lo deduzca).
+      if (body.Tipo_Ingreso !== undefined) _updIng.Tipo_Ingreso = (body.Tipo_Ingreso || '').trim();
       var res = await _sb.from('Ingresos').update(_updIng).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1, remision_origen: remOrigenE, remision_destino: remDestinoE };
