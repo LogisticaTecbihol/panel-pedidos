@@ -27,6 +27,16 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
 .re-view-btn:not(:last-child){border-right:1px solid #cbd5e0}
 .re-view-btn.active{background:#1a5276;color:white}
 .re-view-btn:hover:not(.active){background:#f7fafc;color:#4a5568}
+/* Tarjetas por tipo de salida (cada una filtra la tabla; colores en RE_TIPOS de js/reenvases.js) */
+.stats.re-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.sc.re-card{border:0;border-left:4px solid var(--c,#8e44ad);text-align:left;font-family:inherit;cursor:pointer;min-width:0;padding:12px 14px;transition:box-shadow .15s,background .15s}
+.sc.re-card:hover{box-shadow:0 3px 10px rgba(0,0,0,0.14)}
+.sc.re-card:focus-visible{outline:2px solid #1a5276;outline-offset:2px}
+.sc.re-card[aria-pressed="true"]{background:var(--bg,#f7fafc);box-shadow:0 0 0 2px var(--c,#8e44ad),0 3px 10px rgba(0,0,0,0.14)}
+.sc.re-card.vacio{opacity:.55}
+.sc.re-card .lbl{line-height:1.25;letter-spacing:.3px}
+.sc.re-card .sub{font-size:0.74rem;color:#718096;margin-top:2px}
+.sc.re-card .pend{font-size:0.72rem;color:#c0392b;font-weight:700;margin-top:1px}
 </style>
 </head>
 <body>
@@ -101,15 +111,13 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
     <button class="re-tab" id="tab-no-conforme" onclick="switchReTab('no_conforme')">⚠️ Bodega Producto No Conforme</button>
   </div>
 
-  <div class="stats">
-    <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total salidas</div></div>
-    <div class="sc entregado"><div class="num" id="s-con-remision">0</div><div class="lbl">Con remisión</div></div>
-    <div class="sc parcial"><div class="num" id="s-pendientes-retorno">0</div><div class="lbl">Pendientes de retorno</div></div>
-    <div class="sc recibido"><div class="num" id="s-sin-remision">0</div><div class="lbl">Sin remisión</div></div>
-    <div class="sc parcial"><div class="num" id="s-cantidad">0</div><div class="lbl">Unidades totales</div></div>
-  </div>
+  <div class="stats re-stats" id="re-stats"></div>
 
   <div class="filters">
+    <div class="fg">
+      <label>Tipo</label>
+      <select id="f-tipo"><option value="">Todos</option></select>
+    </div>
     <div class="fg">
       <label>Empresa</label>
       <select id="f-empresa"><option value="">Todas</option></select>
@@ -169,6 +177,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
       <button class="btn-close" onclick="closeReDetail()">✕</button>
     </div>
     <div class="mbody" style="flex:1;overflow-y:auto">
+      <div id="red-tipo-wrap" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px"></div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
         <div><label class="ef-label">Bodega</label><div class="ef" id="red-bodega" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
         <div><label class="ef-label">Empresa</label><div class="ef" id="red-empresa" style="background:#f7fafc;min-height:34px;display:flex;align-items:center;padding:6px 10px"></div></div>
@@ -235,6 +244,13 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
             <option value="Producto No Conforme">⚠️ Bodega Producto No Conforme</option>
           </select>
         </div>
+        <div style="grid-column:1/-1" id="re-tipo-wrap">
+          <label class="ef-label">Tipo de salida *</label>
+          <select class="ef" id="re-tipo" onchange="onTipoReChange()">
+            <option value="">— Seleccionar —</option>
+          </select>
+          <div id="re-tipo-desc" style="font-size:0.74rem;color:#718096;margin-top:3px;min-height:1em"></div>
+        </div>
         <div>
           <label class="ef-label">Empresa</label>
           <select class="ef" id="re-empresa" onchange="onReEmpresaChange()">
@@ -243,7 +259,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
         </div>
         <div>
           <label class="ef-label">Planta de destino</label>
-          <select class="ef" id="re-planta">
+          <select class="ef" id="re-planta" onchange="onRePlantaChange()">
             <option value="">— Seleccionar —</option>
             <option value="Planta Cachipay (Parcelar)">Planta Cachipay (Parcelar)</option>
             <option value="Planta Mosquera (Green)">Planta Mosquera (Green)</option>
@@ -252,7 +268,7 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
         </div>
         <div>
           <label class="ef-label">Empresa Destino <span style="font-weight:400;color:#a0aec0;font-size:0.76rem">(traslado entre empresas)</span></label>
-          <select class="ef" id="re-empresa-destino" onchange="var w=document.getElementById('re-remision-destino-wrap');if(w)w.style.display=this.value?'':'none';">
+          <select class="ef" id="re-empresa-destino" onchange="var w=document.getElementById('re-remision-destino-wrap');if(w)w.style.display=this.value?'':'none';_aplicarTipoSugeridoRe();">
             <option value="">— Sin traslado —</option>
           </select>
         </div>
@@ -406,10 +422,10 @@ button.re-tab.active-nc{color:#c0392b;border-bottom-color:#c0392b;background:#fd
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261023a"></script>
+<script src="js/shared.js?v=20261112b"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261112a"></script>
 <script src="js/pdf-remision.js?v=20261001a"></script>
-<script src="js/reenvases.js?v=20261112a"></script>
+<script src="js/reenvases.js?v=20261112b"></script>
 </body>
 </html>

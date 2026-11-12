@@ -2328,6 +2328,9 @@ async function _apiPostCore(body) {
         Remision: remReenv, Remision_Destino: remReenvDest, Fecha: body.Fecha || '',
         Observaciones: body.Observaciones || '', Bodega: body.Bodega || 'Productos Buenos',
         Muestra_Ref: (body.Muestra_Ref || '').trim(),
+        // Tipo de salida (REENVASE, REETIQUETADO, ...). Si llega vacío, el trigger
+        // trg_reenvases_tipo_defecto lo hereda de otra línea de la salida o lo deduce en la base.
+        Tipo_Salida: (body.Tipo_Salida || '').trim(),
         Fecha_Registro: now,
         Historico: _histReenv,
         creado_por: _uid()
@@ -2357,6 +2360,9 @@ async function _apiPostCore(body) {
         modificado_por: _uid()
       };
       if (body.Muestra_Ref !== undefined) _updRe.Muestra_Ref = (body.Muestra_Ref || '').trim();
+      // El tipo es de la salida completa: la edición de una línea no lo manda (se cambia con
+      // editarTipoSalidaReenvase); si llegara, se guarda tal cual.
+      if (body.Tipo_Salida !== undefined) _updRe.Tipo_Salida = (body.Tipo_Salida || '').trim();
       var res = await _sb.from('Reenvases').update(_updRe).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1, remision: remReenvEd, remision_destino: remReenvDestEd };
@@ -2381,6 +2387,29 @@ async function _apiPostCore(body) {
       var res = await _qSal;
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, estado: _estSal };
+    }
+
+    // Cambia el tipo de una salida a producción: todas sus líneas comparten Remision + Empresa (si la
+    // salida no tiene remisión se actualizan las líneas indicadas en body.ids). No acepta SIN_CLASIFICAR:
+    // ese valor es solo del histórico sin nota. En la base, un trigger mueve los ingresos de retorno
+    // entre REENVASE y REFORMULACION si todavía llevaban el tipo heredado.
+    if (action === 'editarTipoSalidaReenvase') {
+      var _tipoTs = (body.Tipo_Salida || '').trim();
+      var _remTs = (body.Remision || '').trim();
+      var _empTs = (body.Empresa || '').trim();
+      if (!_tipoTs || _tipoTs === 'SIN_CLASIFICAR') return { ok: false, error: 'Elige el tipo de salida.' };
+      var _qTs = _sb.from('Reenvases').update({ Tipo_Salida: _tipoTs, modificado_por: _uid() });
+      if (_remTs) {
+        _qTs = _qTs.eq('Remision', _remTs);
+        if (_empTs) _qTs = _qTs.eq('Empresa', _empTs);
+      } else if (Array.isArray(body.ids) && body.ids.length) {
+        _qTs = _qTs.in('id', body.ids);
+      } else {
+        return { ok: false, error: 'Falta la remisión de la salida.' };
+      }
+      var res = await _qTs;
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, tipo: _tipoTs };
     }
 
     // Cierra o reabre una orden de producción de muestras (todas sus líneas

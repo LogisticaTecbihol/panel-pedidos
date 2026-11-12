@@ -20,6 +20,41 @@ var reViewMode = 'salidas';
 // { 'GREEN-RS-0042': [ {id, Fecha, Producto, Presentacion, Cantidad, ...}, ... ] }
 var retornosByRef = {};
 
+// ── Tipos de salida ──
+// Se guardan en Reenvases.Tipo_Salida (supabase/migrations/reenvases_tipo_salida.sql, que trae el CHECK con
+// estos mismos ids y las reglas con las que se clasificó el histórico). Es un dato de la SALIDA completa: se
+// elige al registrarla y se cambia desde el detalle para todas sus líneas. El orden es el de las tarjetas.
+var RE_TIPOS = [
+  { id: 'REENVASE',            label: 'Reenvase',              icon: '♻️', color: '#6c3483', bg: '#e8daef', desc: 'Reenvase, reembase o reempaque (a litro, galón, dosis, bidón…)' },
+  { id: 'REETIQUETADO',        label: 'Reetiquetado',          icon: '🏷️', color: '#0f766e', bg: '#ccfbf1', desc: 'Cambio de etiqueta, reetiquetado o cambio de tapa' },
+  { id: 'REFORMULACION',       label: 'Reformulación',         icon: '🧪', color: '#ad1457', bg: '#fce4ec', desc: 'Producto que sale a reformular (p. ej. por calidad, desde no conformes)' },
+  { id: 'MUESTRAS',            label: 'Muestras / pruebas',    icon: '🔬', color: '#1d4ed8', bg: '#dbeafe', desc: 'Orden de producción de muestras, pruebas o laboratorio' },
+  { id: 'TRASLADO_DEVOLUCION', label: 'Traslado / devolución', icon: '🔁', color: '#b45309', bg: '#fef3c7', desc: 'Traslado o devolución entre empresas (sin planta de por medio)' },
+  { id: 'OTROS',               label: 'Otros',                 icon: '📎', color: '#4a5568', bg: '#e2e8f0', desc: 'Cualquier otra salida (baja, materia prima, pago en producto…)' },
+  { id: 'SIN_CLASIFICAR',      label: 'Sin clasificar',        icon: '❔', color: '#6b7280', bg: '#f3f4f6', desc: 'Histórico sin nota: no se sabe para qué fue. Elige el tipo desde el detalle de la salida.' }
+];
+var RE_TIPO_POR_ID = {};
+RE_TIPOS.forEach(function(t) { RE_TIPO_POR_ID[t.id] = t; });
+
+function reTipoLabel(id) { var t = RE_TIPO_POR_ID[id]; return t ? t.label : ''; }
+
+function reTipoBadgeHtml(id) {
+  var t = RE_TIPO_POR_ID[id];
+  if (!t) return '<span style="background:#f7fafc;color:#a0aec0;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700" title="Sin clasificar">—</span>';
+  return '<span style="background:' + t.bg + ';color:' + t.color + ';padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700;white-space:nowrap" title="' + escHtml(t.desc) + '">' +
+    t.icon + ' ' + escHtml(t.label) + '</span>';
+}
+
+// Propuesta de tipo para el formulario: solo lo que NO depende del texto. Con una orden de muestras → Muestras;
+// sin planta y con empresa destino → Traslado / devolución; lo demás (reenvase, reetiquetado, reformulación…) lo
+// elige el usuario. La base (_reenvase_tipo_sugerido) lee además las Observaciones, pero solo para el histórico y
+// las salidas que llegan sin tipo; si cambias estas dos reglas, cámbialas allá también.
+function reTipoSugerido(planta, empresaDestino, muestraRef) {
+  if ((muestraRef || '').trim()) return 'MUESTRAS';
+  if (!(planta || '').trim() && (empresaDestino || '').trim()) return 'TRASLADO_DEVOLUCION';
+  return '';
+}
+
 // ── Sort for productos view ──
 var reSortColsProd = [
   { id: 'Fecha', dir: 'desc' }
@@ -174,7 +209,62 @@ function onReEmpresaChange() {
   }
   bod.disabled = esG;
   dest.disabled = esG;
+  _aplicarTipoSugeridoRe();
 }
+
+// ── Tipo de salida en el formulario ──
+// Con planta (reenvase, reetiquetado, reformulación…) lo elige el usuario; mientras no lo toque se propone solo lo que
+// no depende del texto (orden de muestras o traslado entre empresas). Al agregar un producto a una salida existente el
+// campo queda fijo en el tipo de esa salida (una salida = un tipo); al editar una línea se oculta (se cambia en el detalle).
+var _reTipoManual = false;
+
+function _reTipoOpciones(conSinClasificar) {
+  var sel = document.getElementById('re-tipo');
+  sel.innerHTML = '<option value="">— Seleccionar —</option>' + RE_TIPOS.filter(function(t) {
+    return conSinClasificar || t.id !== 'SIN_CLASIFICAR';
+  }).map(function(t) {
+    return '<option value="' + t.id + '">' + t.icon + ' ' + escHtml(t.label) + '</option>';
+  }).join('');
+}
+
+function _pintarTipoDescRe() {
+  var sel = document.getElementById('re-tipo');
+  var el = document.getElementById('re-tipo-desc');
+  if (!sel || !el) return;
+  var t = RE_TIPO_POR_ID[sel.value];
+  if (!t) { el.textContent = 'Elige para qué sale esta mercancía.'; return; }
+  el.textContent = ((_reTipoManual || sel.disabled) ? '' : 'Sugerido según la planta y la empresa destino · ') + t.desc;
+}
+
+// fijo = true: el tipo no se puede cambiar (agregar un producto a una salida que ya existe).
+function _setTipoFormRe(tipo, manual, fijo) {
+  var sel = document.getElementById('re-tipo');
+  var wrap = document.getElementById('re-tipo-wrap');
+  if (!sel) return;
+  _reTipoOpciones(tipo === 'SIN_CLASIFICAR');
+  _reTipoManual = !!manual;
+  sel.value = tipo || '';
+  sel.disabled = !!fijo;
+  if (wrap) wrap.style.display = '';
+  _pintarTipoDescRe();
+}
+
+function _aplicarTipoSugeridoRe() {
+  var sel = document.getElementById('re-tipo');
+  if (!sel || _reTipoManual || sel.disabled) return;
+  sel.value = reTipoSugerido(
+    document.getElementById('re-planta').value,
+    document.getElementById('re-empresa-destino').value,
+    window._reMuestraRef);
+  _pintarTipoDescRe();
+}
+
+function onTipoReChange() {
+  _reTipoManual = true;
+  _pintarTipoDescRe();
+}
+
+function onRePlantaChange() { _aplicarTipoSugeridoRe(); }
 
 // ── Grouping ──
 
@@ -199,10 +289,15 @@ function rebuildReGroups() {
         _key: k, Fecha: r.Fecha, Empresa: r.Empresa, Empresa_Destino: r.Empresa_Destino,
         Planta: r.Planta, Remision: r.Remision, Remision_Destino: r.Remision_Destino,
         Bodega: bod, Estado: r.Estado || 'Pendiente', Muestra_Ref: r.Muestra_Ref || '',
-        Historico: r.Historico || false
+        Tipo_Salida: r.Tipo_Salida || '',
+        Historico: r.Historico || false,
+        _nLin: 0, _ud: 0
       };
       order.push(k);
     }
+    seen[k]._nLin++;
+    seen[k]._ud += Number(r.Cantidad) || 0;
+    if (!seen[k].Tipo_Salida && r.Tipo_Salida) seen[k].Tipo_Salida = r.Tipo_Salida;
     // Todas las líneas de una salida comparten Estado; si alguna viene 'Cerrada'
     // el grupo se considera cerrado.
     if (r.Estado === 'Cerrada') seen[k].Estado = 'Cerrada';
@@ -247,6 +342,7 @@ function estadoBadgeRe(estado) {
 
 var SORT_COLS_RE = [
   { id:'Fecha',     label:'Fecha',        fn: function(g) { return +new Date(g.Fecha||0); } },
+  { id:'Tipo',      label:'Tipo',         fn: function(g) { return reTipoLabel(g.Tipo_Salida).toLowerCase(); } },
   { id:'Empresa',   label:'Empresa',      fn: function(g) { return (EMPRESAS_SIGLA[g.Empresa]||g.Empresa||'').toLowerCase(); } },
   { id:'Emp_Dest',  label:'Emp. Destino', fn: function(g) { return (EMPRESAS_SIGLA[g.Empresa_Destino]||g.Empresa_Destino||'').toLowerCase(); } },
   { id:'Planta',    label:'Planta',       fn: function(g) { return (g.Planta||'').toLowerCase(); } },
@@ -351,6 +447,7 @@ async function _maybeOpenReenvaseFromMuestra() {
   var elEmpDest = document.getElementById('re-empresa-destino');
   if (elEmpDest) { elEmpDest.value = ''; var w = document.getElementById('re-remision-destino-wrap'); if (w) w.style.display = 'none'; }
 
+  _aplicarTipoSugeridoRe(); // con orden de muestras → Muestras
   var banner = document.getElementById('re-muestra-banner');
   if (banner) {
     var sig = (typeof EMPRESAS_SIGLA !== 'undefined' && EMPRESAS_SIGLA[hdr.Empresa]) || hdr.Empresa || '';
@@ -413,9 +510,21 @@ function populateReFilters() {
     sel.innerHTML += '<option value="' + escHtml(v) + '">' + escHtml(sigla) + '</option>';
   });
   sel.value = prev;
+
+  var selTipo = document.getElementById('f-tipo');
+  if (selTipo) {
+    var prevTipo = selTipo.value;
+    selTipo.innerHTML = '<option value="">Todos</option>' + RE_TIPOS.map(function(t) {
+      return '<option value="' + t.id + '">' + t.icon + ' ' + escHtml(t.label) + '</option>';
+    }).join('');
+    selTipo.value = prevTipo;
+  }
 }
 
-function applyReFilters() {
+// Grupos (salidas) de la bodega actual que pasan los filtros. sinTipo = true: aplica todos MENOS el de Tipo
+// (lo usan las tarjetas, que reparten por tipo lo que dejan los demás filtros). Requiere rebuildReGroups() previo.
+function _reGruposFiltrados(sinTipo) {
+  var fTipo = sinTipo ? '' : document.getElementById('f-tipo').value;
   var fEmp = document.getElementById('f-empresa').value;
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
   var fEstEl = document.getElementById('f-estado');
@@ -423,27 +532,36 @@ function applyReFilters() {
   var fMostrarHistEl = document.getElementById('f-mostrar-historicos');
   var mostrarHistoricosRe = !!(fMostrarHistEl && fMostrarHistEl.checked);
 
-  rebuildReGroups();
-
-  filteredRe = reGroups.filter(function(g) {
+  return reGroups.filter(function(g) {
     if (!mostrarHistoricosRe && g.Historico) return false;
+    if (fTipo && g.Tipo_Salida !== fTipo) return false;
     if (fEmp && g.Empresa !== fEmp) return false;
     if (fEst && estadoSalida(g) !== fEst) return false;
     if (fTxt) {
       var lines = getLinesForRe(g);
-      var hay = [g.Empresa, g.Empresa_Destino, g.Planta, g.Remision, g.Remision_Destino].join(' ');
+      var hay = [reTipoLabel(g.Tipo_Salida), g.Empresa, g.Empresa_Destino, g.Planta, g.Remision, g.Remision_Destino].join(' ');
       lines.forEach(function(l) { hay += ' ' + (l.Producto||'') + ' ' + (l.Presentacion||'') + ' ' + (l.Observaciones||''); });
       if (hay.toLowerCase().indexOf(fTxt) < 0) return false;
     }
     return true;
   });
+}
 
-  filteredRe = applySortRe(filteredRe);
+function applyReFilters() {
+  rebuildReGroups();
+  filteredRe = applySortRe(_reGruposFiltrados(false));
   renderReTable();
   updateReStats();
 }
 
+function setReTipoFiltro(id) {
+  var el = document.getElementById('f-tipo');
+  el.value = (id && el.value === id) ? '' : id;
+  applyReFilters();
+}
+
 function clearReenvaseFilters() {
+  document.getElementById('f-tipo').value = '';
   document.getElementById('f-empresa').value = '';
   document.getElementById('f-txt').value = '';
   var fEstEl = document.getElementById('f-estado');
@@ -456,6 +574,8 @@ function clearReenvaseFilters() {
 document.getElementById('f-empresa').addEventListener('change', applyReFilters);
 document.getElementById('f-txt').addEventListener('input', debounce(applyReFilters, 300));
 (function() {
+  var fTipoEl = document.getElementById('f-tipo');
+  if (fTipoEl) fTipoEl.addEventListener('change', applyReFilters);
   var fEstEl = document.getElementById('f-estado');
   if (fEstEl) fEstEl.addEventListener('change', applyReFilters);
   var fMostrarHistEl2 = document.getElementById('f-mostrar-historicos');
@@ -464,31 +584,52 @@ document.getElementById('f-txt').addEventListener('input', debounce(applyReFilte
 
 // ── Stats ──
 
+// Tarjetas: una por tipo (más «Todas»), con salidas, unidades y cuántas siguen pendientes de retorno, de lo que
+// dejan los demás filtros y de la bodega de la pestaña activa. Al hacer clic en una se filtra la tabla por ese tipo.
 function updateReStats() {
-  var conRem = 0, sinRem = 0, totalCant = 0, pendRetorno = 0;
-  var bodegaActual = getBodegaFromTab();
+  var box = document.getElementById('re-stats');
+  if (!box) return;
   rebuildReGroups();
-  var totalTab = reGroups.length;
-  reGroups.forEach(function(g) {
-    if (g.Remision && g.Remision.trim()) conRem++;
-    else sinRem++;
-    var est = estadoSalida(g);
-    if (est === 'Pendiente' || est === 'Parcial') pendRetorno++;
-    var lines = getLinesForRe(g);
-    lines.forEach(function(r) { totalCant += Number(r.Cantidad) || 0; });
+  var base = _reGruposFiltrados(true);
+  var porTipo = {};
+  RE_TIPOS.forEach(function(t) { porTipo[t.id] = { n: 0, ud: 0, pend: 0 }; });
+  var sinTipo = { n: 0, ud: 0, pend: 0 };
+  var tot = { n: 0, ud: 0, pend: 0 };
+  base.forEach(function(g) {
+    var b = porTipo[g.Tipo_Salida] || sinTipo;
+    var pend = estadoSalida(g) !== 'Cerrada' ? 1 : 0;
+    b.n++; b.ud += g._ud; b.pend += pend;
+    tot.n++; tot.ud += g._ud; tot.pend += pend;
   });
-  document.getElementById('s-total').textContent = totalTab;
-  document.getElementById('s-con-remision').textContent = conRem;
-  document.getElementById('s-sin-remision').textContent = sinRem;
-  document.getElementById('s-cantidad').textContent = totalCant;
-  var elPend = document.getElementById('s-pendientes-retorno');
-  if (elPend) elPend.textContent = pendRetorno;
+  var sel = document.getElementById('f-tipo').value;
+  var nota = ' · Cuenta según los filtros activos (menos el de Tipo) y la bodega de la pestaña';
+  function pendHtml(p) { return '<div class="pend">' + (p ? p.toLocaleString('es-CO') + ' pendiente' + (p === 1 ? '' : 's') + ' de retorno' : '&nbsp;') + '</div>'; }
 
-  if (reViewMode === 'productos') {
-    var prodRows = getFilteredProductos();
-    var prodTotal = prodRows.reduce(function(s, r) { return s + (Number(r.Cantidad)||0); }, 0);
-    document.getElementById('s-cantidad').textContent = prodTotal;
+  var html = '<button type="button" class="sc re-card" aria-pressed="' + (!sel) + '" onclick="setReTipoFiltro(\'\')" ' +
+    'style="--c:#8e44ad;--bg:#f5eef8" title="Ver todos los tipos' + nota + '">' +
+    '<div class="num">' + tot.n.toLocaleString('es-CO') + '</div>' +
+    '<div class="lbl">Todas las salidas</div>' +
+    '<div class="sub">' + tot.ud.toLocaleString('es-CO') + ' unidades</div>' + pendHtml(tot.pend) + '</button>';
+
+  RE_TIPOS.forEach(function(t) {
+    var b = porTipo[t.id];
+    // «Sin clasificar» solo estorba cuando ya no queda nada por clasificar: se muestra mientras haya o esté elegido.
+    if (t.id === 'SIN_CLASIFICAR' && !b.n && sel !== t.id) return;
+    html += '<button type="button" class="sc re-card' + (b.n ? '' : ' vacio') + '" aria-pressed="' + (sel === t.id) + '" ' +
+      'onclick="setReTipoFiltro(\'' + t.id + '\')" style="--c:' + t.color + ';--bg:' + t.bg + '" ' +
+      'title="' + escHtml(t.desc + nota) + '">' +
+      '<div class="num" style="color:' + t.color + '">' + b.n.toLocaleString('es-CO') + '</div>' +
+      '<div class="lbl">' + t.icon + ' ' + escHtml(t.label) + '</div>' +
+      '<div class="sub">' + b.ud.toLocaleString('es-CO') + ' unidades</div>' + pendHtml(b.pend) + '</button>';
+  });
+
+  if (sinTipo.n) {
+    html += '<div class="sc re-card" style="--c:#a0aec0;cursor:default" title="Salidas con un tipo desconocido">' +
+      '<div class="num">' + sinTipo.n.toLocaleString('es-CO') + '</div>' +
+      '<div class="lbl">Tipo desconocido</div>' +
+      '<div class="sub">' + sinTipo.ud.toLocaleString('es-CO') + ' unidades</div>' + pendHtml(sinTipo.pend) + '</div>';
   }
+  box.innerHTML = html;
 }
 
 // ── Sort ──
@@ -538,6 +679,7 @@ function switchReView(mode) {
 
 var SORT_COLS_PROD = [
   { id:'Fecha',       label:'Fecha',        fn: function(r) { return +new Date(r.Fecha||0); } },
+  { id:'Tipo',        label:'Tipo',         fn: function(r) { return reTipoLabel(r.Tipo_Salida).toLowerCase(); } },
   { id:'Empresa',     label:'Empresa',      fn: function(r) { return (EMPRESAS_SIGLA[r.Empresa]||r.Empresa||'').toLowerCase(); } },
   { id:'Emp_Dest',    label:'Emp. Destino', fn: function(r) { return (EMPRESAS_SIGLA[r.Empresa_Destino]||r.Empresa_Destino||'').toLowerCase(); } },
   { id:'Planta',      label:'Planta',       fn: function(r) { return (r.Planta||'').toLowerCase(); } },
@@ -579,6 +721,7 @@ function renderReHeader() {
   var cols = [
     { label:'#', id:null },
     { label:'Fecha', id:'Fecha' },
+    { label:'Tipo', id:'Tipo' },
     { label:'Empresa', id:'Empresa' },
     { label:'Emp. Destino', id:'Emp_Dest' },
     { label:'Planta', id:'Planta' },
@@ -618,7 +761,7 @@ function renderReTable() {
     var emptyMsg = activeTab === 'buenos'
       ? 'No hay registros en Bodega Producto Terminado'
       : 'No hay registros en Bodega Producto No Conforme';
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">' + emptyMsg + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">' + emptyMsg + '</td></tr>';
     return;
   }
 
@@ -632,10 +775,12 @@ function renderReTable() {
     var plantaShort = (g.Planta || '').replace('Planta ', '');
     var est = estadoSalida(g);
     var nRet = retornosDe(g).length;
+    var tipoInfo = RE_TIPO_POR_ID[g.Tipo_Salida];
 
     return '<tr>' +
-      '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
+      '<td style="color:#718096;font-size:0.78rem;box-shadow:inset 4px 0 0 ' + (tipoInfo ? tipoInfo.color : 'transparent') + '">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(g.Fecha) + '</td>' +
+      '<td>' + reTipoBadgeHtml(g.Tipo_Salida) + '</td>' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
       '<td>' + (siglaDestino ? '<span class="sigla-badge ' + siglaDCls + '">' + escHtml(siglaDestino) + '</span>' : '—') + '</td>' +
       '<td>' + escHtml(plantaShort || '—') + '</td>' +
@@ -654,6 +799,7 @@ function renderReTable() {
 // ── Render productos view ──
 
 function getFilteredProductos() {
+  var fTipo = document.getElementById('f-tipo').value;
   var fEmp = document.getElementById('f-empresa').value;
   var fTxt = document.getElementById('f-txt').value.toLowerCase().trim();
   var fEstEl = document.getElementById('f-estado');
@@ -665,10 +811,11 @@ function getFilteredProductos() {
   var rows = allReenvases.filter(function(r) {
     if (!mostrarHistoricosReProd && r.Historico) return false;
     if (normBodegaRe(r.Bodega) !== bodegaActual) return false;
+    if (fTipo && r.Tipo_Salida !== fTipo) return false;
     if (fEmp && r.Empresa !== fEmp) return false;
     if (fEst && estadoSalida(r) !== fEst) return false;
     if (fTxt) {
-      var hay = [r.Empresa, r.Empresa_Destino, r.Planta, r.Remision,
+      var hay = [reTipoLabel(r.Tipo_Salida), r.Empresa, r.Empresa_Destino, r.Planta, r.Remision,
                  r.Producto, r.Presentacion, r.Observaciones].join(' ').toLowerCase();
       if (hay.indexOf(fTxt) < 0) return false;
     }
@@ -682,6 +829,7 @@ function renderReHeaderProductos() {
   var cols = [
     { label:'#', id:null },
     { label:'Fecha', id:'Fecha' },
+    { label:'Tipo', id:'Tipo' },
     { label:'Empresa', id:'Empresa' },
     { label:'Emp. Destino', id:'Emp_Dest' },
     { label:'Planta', id:'Planta' },
@@ -719,7 +867,7 @@ function renderReTableProductos() {
     var emptyMsg = activeTab === 'buenos'
       ? 'No hay productos en Bodega Producto Terminado'
       : 'No hay productos en Bodega Producto No Conforme';
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">' + emptyMsg + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">' + emptyMsg + '</td></tr>';
     return;
   }
 
@@ -730,10 +878,12 @@ function renderReTableProductos() {
     var siglaDCls = r.Empresa_Destino ? 'sigla-' + (EMPRESAS_SIGLA[r.Empresa_Destino] || 'DEFAULT') : '';
     var plantaShort = (r.Planta || '').replace('Planta ', '');
     var obs = escHtml(r.Observaciones || '—');
+    var tipoInfoP = RE_TIPO_POR_ID[r.Tipo_Salida];
 
     return '<tr>' +
-      '<td style="color:#718096;font-size:0.78rem">' + (i+1) + '</td>' +
+      '<td style="color:#718096;font-size:0.78rem;box-shadow:inset 4px 0 0 ' + (tipoInfoP ? tipoInfoP.color : 'transparent') + '">' + (i+1) + '</td>' +
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha) + '</td>' +
+      '<td>' + reTipoBadgeHtml(r.Tipo_Salida) + '</td>' +
       '<td><span class="sigla-badge ' + siglaCls + '">' + escHtml(sigla) + '</span></td>' +
       '<td>' + (siglaDestino ? '<span class="sigla-badge ' + siglaDCls + '">' + escHtml(siglaDestino) + '</span>' : '—') + '</td>' +
       '<td>' + escHtml(plantaShort || '—') + '</td>' +
@@ -771,6 +921,7 @@ function openReDetail(idx) {
   var _redEst = document.getElementById('red-estado');
   if (_redEst) _redEst.innerHTML = estadoBadgeRe(estadoSalida(g));
 
+  renderReTipoWrap();
   renderReDetailProducts();
   renderReRetornos();
 
@@ -932,10 +1083,61 @@ function refreshReDetail() {
     activeReGroup = newGroup;
     var _redEst = document.getElementById('red-estado');
     if (_redEst) _redEst.innerHTML = estadoBadgeRe(estadoSalida(newGroup));
+    renderReTipoWrap();
     renderReDetailProducts();
     renderReRetornos();
   } else {
     closeReDetail();
+  }
+}
+
+// ── Tipo de la salida (en el detalle): se ve y, para quien edita, se cambia para TODAS las líneas ──
+
+function renderReTipoWrap() {
+  var g = activeReGroup;
+  var wrap = document.getElementById('red-tipo-wrap');
+  if (!g || !wrap) return;
+  var actual = g.Tipo_Salida || '';
+  var info = RE_TIPO_POR_ID[actual];
+  var puede = (typeof AUTH !== 'undefined' && AUTH.canEdit && AUTH.canEdit());
+  var opts = '<option value="">— Cambiar a… —</option>' + RE_TIPOS.filter(function(t) {
+    return t.id !== 'SIN_CLASIFICAR' && t.id !== actual;
+  }).map(function(t) {
+    return '<option value="' + t.id + '">' + t.icon + ' ' + escHtml(t.label) + '</option>';
+  }).join('');
+  wrap.innerHTML =
+    '<div style="font-weight:700;font-size:0.84rem;color:#2d3748">Tipo de salida</div>' +
+    reTipoBadgeHtml(actual) +
+    (puede
+      ? '<select id="red-tipo-sel" class="ef" style="width:auto;min-width:200px">' + opts + '</select>' +
+        '<button id="btn-red-tipo" onclick="guardarTipoSalidaReenvase()" style="background:#1a5276;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:700">Guardar tipo</button>'
+      : '') +
+    (actual === 'SIN_CLASIFICAR' && puede
+      ? '<span style="font-size:0.78rem;color:#b9770e;font-weight:600">Esta salida no tiene tipo: elige el que corresponda.</span>'
+      : '<span style="font-size:0.76rem;color:#718096">' + escHtml(info ? info.desc : '') + '</span>');
+}
+
+async function guardarTipoSalidaReenvase() {
+  var g = activeReGroup;
+  if (!g) return;
+  var sel = document.getElementById('red-tipo-sel');
+  var tipo = sel ? sel.value : '';
+  if (!RE_TIPO_POR_ID[tipo] || tipo === 'SIN_CLASIFICAR') { showToast('Elige el nuevo tipo de la salida', '#e74c3c'); return; }
+  var btn = document.getElementById('btn-red-tipo');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  try {
+    var result = await apiPost({
+      action: 'editarTipoSalidaReenvase', Remision: g.Remision || '', Empresa: g.Empresa || '',
+      ids: getLinesForRe(g).map(function(l) { return l.id; }), Tipo_Salida: tipo
+    });
+    if (!result.ok) throw new Error(result.error || 'Error al cambiar el tipo');
+    // La base reclasifica los ingresos de retorno entre Reenvase y Reformulación si seguían con el tipo heredado.
+    var mueveRetornos = retornosDe(g).length && ((tipo === 'REFORMULACION') !== (g.Tipo_Salida === 'REFORMULACION'));
+    showToast('✅ Tipo de la salida: ' + reTipoLabel(tipo) + (mueveRetornos ? ' · sus ingresos de retorno se reclasificaron' : ''));
+    await loadReenvases();
+  } catch (err) {
+    showToast('❌ Error: ' + err.message, '#e74c3c');
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar tipo'; }
   }
 }
 
@@ -974,6 +1176,7 @@ function addProductToReGroup() {
   if (_reA) _reA.innerHTML = '';
   reLines = [{ producto: '', presentacion: '', cantidad: 0, observaciones: '' }];
   renderReLines();
+  _setTipoFormRe(g.Tipo_Salida, true, true); // la línea nueva lleva el tipo de la salida
   document.getElementById('re-overlay').classList.add('show');
   loadProductosCache().then(function() { setupReProdAutocomplete(); });
 }
@@ -1234,6 +1437,7 @@ async function openNewReenvase() {
   if (_reA) _reA.innerHTML = '';
   reLines = [{ producto: '', presentacion: '', cantidad: 0, observaciones: '' }];
   renderReLines();
+  _setTipoFormRe('', false, false); // se propone solo al elegir planta / empresa destino / orden de muestras
   onReEmpresaChange();
   document.getElementById('re-overlay').classList.add('show');
   await loadProductosCache();
@@ -1271,6 +1475,9 @@ async function editReenvase(id) {
   document.getElementById('re-edit-presentacion').value = r.Presentacion || '';
   document.getElementById('re-edit-cantidad').value = r.Cantidad || 0;
   document.getElementById('re-edit-observaciones').value = r.Observaciones || '';
+  // Una línea no cambia el tipo de la salida (se cambia en el detalle, para todas sus líneas): el campo se oculta.
+  var _tipoWrapEd = document.getElementById('re-tipo-wrap');
+  if (_tipoWrapEd) _tipoWrapEd.style.display = 'none';
   onReEmpresaChange();
 
   var _reA = document.getElementById('re-audit');
@@ -1457,6 +1664,7 @@ async function saveReenvase() {
   syncReLinesFromDOM();
   var productosValidos = reLines.filter(function(p) { return p.producto && p.cantidad > 0; });
   if (!productosValidos.length) { showToast('Agrega al menos un producto con cantidad', '#e74c3c'); return; }
+  if (!RE_TIPO_POR_ID[document.getElementById('re-tipo').value]) { showToast('Selecciona el tipo de salida', '#e74c3c'); return; }
 
   showConfirmReenvase(productosValidos);
 }
@@ -1611,6 +1819,7 @@ async function confirmAndSaveReenvase() {
         Cantidad: p.cantidad, Remision: remAutoSalida, Remision_Destino: remAutoEntrada, Fecha: fecha,
         Observaciones: (p.observaciones || '').trim(), Bodega: bodegaVal,
         Muestra_Ref: window._reMuestraRef || '',
+        Tipo_Salida: document.getElementById('re-tipo').value,
         Historico: esHistoricoRe
       });
       if (!result.ok) throw new Error(result.error || 'Error al guardar línea ' + (i + 1));
@@ -1694,6 +1903,9 @@ async function confirmDeleteRe() {
     btn.textContent = '🗑️ Sí, eliminar';
   }
 }
+
+// ── Select «Tipo de salida» del formulario (se arma desde RE_TIPOS) ──
+_reTipoOpciones(false);
 
 // ── Auto-load ──
 loadReenvases();

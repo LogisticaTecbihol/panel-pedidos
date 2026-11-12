@@ -9,6 +9,10 @@ var activeIngGroup = null;
 // Vínculo del ingreso en edición/alta con una salida a producción (Reenvases).
 // Es la "Remision" de esa salida (ej. 'GREEN-RS-0042') o '' si no está ligado.
 var _ingReenvaseRef = '';
+// Tipo de esa salida (Reenvases.Tipo_Salida) cuando se conoce por el deep-link «Registrar retorno»;
+// si no, se busca en el caché de salidas abiertas (_tipoSalidaDeRef). Un retorno de una salida de
+// REFORMULACION es una Reformulación; cualquier otro retorno es un Reenvase.
+var _ingReenvaseTipoSalida = '';
 // Cache de salidas a producción abiertas (para el selector del formulario).
 var _reenvasesAbiertasCache = null;
 
@@ -46,8 +50,8 @@ function ingTipoBadgeHtml(id) {
 // Observaciones: aquí el usuario ve y puede cambiar el resultado; la base,
 // que sí lee el texto, solo rellena el histórico y los ingresos que llegan sin tipo.
 var ING_ORIGENES_PT = ['proveedor carval', 'chia abago', 'germisemillas', 'bodega villeta'];
-function ingTipoSugerido(origen, empresaDestino, reenvaseRef) {
-  if ((reenvaseRef || '').trim()) return 'REENVASE';
+function ingTipoSugerido(origen, empresaDestino, reenvaseRef, tipoSalida) {
+  if ((reenvaseRef || '').trim()) return tipoSalida === 'REFORMULACION' ? 'REFORMULACION' : 'REENVASE';
   if (_esGranel(empresaDestino)) return 'GRANEL';
   var o = (origen || '').trim().toLowerCase();
   if (/^planta/.test(o)) return 'FABRICADO';
@@ -209,7 +213,7 @@ async function _maybeOpenRetornoFromURL() {
   var salLines = null;
   try {
     var r = await apiGet('getReenvases', {
-      columns: 'id,Empresa,Empresa_Destino,Planta,Producto,Presentacion,Cantidad,Remision,Fecha,Bodega,Muestra_Ref',
+      columns: 'id,Empresa,Empresa_Destino,Planta,Producto,Presentacion,Cantidad,Remision,Fecha,Bodega,Muestra_Ref,Tipo_Salida',
       remisionEq: ref
     });
     if (r && r.ok && (r.reenvases || []).length) salLines = r.reenvases;
@@ -245,6 +249,7 @@ function openRetornoIngreso(ref, salLines) {
     document.getElementById('ing-observaciones').value = 'Retorno de salida a producción ' + ref;
   }
   _ingReenvaseRef = ref;
+  _ingReenvaseTipoSalida = hdr.Tipo_Salida || '';
   // Líneas copiadas de la salida — el usuario ajusta presentación/nombre/cantidad
   // reales de lo que efectivamente volvió.
   ingLineas = salLines.map(function(l) {
@@ -263,7 +268,7 @@ async function _loadReenvasesAbiertas() {
   if (_reenvasesAbiertasCache) return _reenvasesAbiertasCache;
   var grouped = [];
   try {
-    var r = await apiGet('getReenvases', { columns: 'Remision,Empresa,Planta,Estado,Fecha,Producto,Presentacion,Cantidad,Bodega', abiertasOnly: true });
+    var r = await apiGet('getReenvases', { columns: 'Remision,Empresa,Planta,Estado,Fecha,Producto,Presentacion,Cantidad,Bodega,Tipo_Salida', abiertasOnly: true });
     if (r && r.ok) {
       var byRem = {};
       (r.reenvases || []).forEach(function(row) {
@@ -271,7 +276,7 @@ async function _loadReenvasesAbiertas() {
         if (!rem) return;
         if ((row.Estado || 'Pendiente') === 'Cerrada') return;
         if (!byRem[rem]) {
-          byRem[rem] = { Remision: rem, Empresa: row.Empresa || '', Planta: row.Planta || '', Fecha: row.Fecha || '', nLineas: 0, unidades: 0 };
+          byRem[rem] = { Remision: rem, Empresa: row.Empresa || '', Planta: row.Planta || '', Fecha: row.Fecha || '', Tipo_Salida: row.Tipo_Salida || '', nLineas: 0, unidades: 0 };
           grouped.push(byRem[rem]);
         }
         byRem[rem].nLineas++;
@@ -326,7 +331,21 @@ function _syncReenvaseSelector() {
 function onReenvaseRefChange() {
   var sel = document.getElementById('ing-reenvase-ref');
   _ingReenvaseRef = sel ? sel.value : '';
+  _ingReenvaseTipoSalida = ''; // el de la salida elegida sale del caché de salidas abiertas
   _aplicarTipoSugerido();
+}
+
+// Tipo de la salida a producción a la que se vincula el ingreso: el del deep-link «Registrar retorno» o el
+// de la salida elegida en el selector (caché de salidas abiertas). '' si no se conoce.
+function _tipoSalidaDeRef(ref) {
+  ref = (ref || '').trim();
+  if (!ref) return '';
+  if (_ingReenvaseTipoSalida) return _ingReenvaseTipoSalida;
+  var lista = _reenvasesAbiertasCache || [];
+  for (var i = 0; i < lista.length; i++) {
+    if (lista[i].Remision === ref) return lista[i].Tipo_Salida || '';
+  }
+  return '';
 }
 
 // ── Tipo de ingreso en el formulario ──
@@ -354,7 +373,7 @@ function _aplicarTipoSugerido() {
   var sel = document.getElementById('ing-tipo');
   if (!sel) return;
   if (!_ingTipoManual) {
-    sel.value = ingTipoSugerido(getOrigenValue(), document.getElementById('ing-empresa-destino').value, _ingReenvaseRef);
+    sel.value = ingTipoSugerido(getOrigenValue(), document.getElementById('ing-empresa-destino').value, _ingReenvaseRef, _tipoSalidaDeRef(_ingReenvaseRef));
   }
   _pintarTipoDesc();
 }
@@ -699,6 +718,7 @@ function addProductToGroup() {
   var g = activeIngGroup;
   editIngreso = null;
   _ingReenvaseRef = g.Reenvase_Ref || '';
+  _ingReenvaseTipoSalida = '';
   document.getElementById('ing-modal-title').textContent = '📥 Agregar Producto';
   document.getElementById('ing-fecha').value = toDateInput(g.Fecha);
   setOrigenValue(g.Origen || '');
@@ -1053,6 +1073,7 @@ function onOrigenChange(preserveDestino) {
 function openNewIngreso() {
   editIngreso = null;
   _ingReenvaseRef = '';
+  _ingReenvaseTipoSalida = '';
   document.getElementById('ing-modal-title').textContent = '📥 Registrar Ingreso';
   document.getElementById('ing-fecha').value = today();
   _setTipoForm('', false); // se propone al fijar origen y destino (onOrigenChange)
@@ -1097,6 +1118,7 @@ function openEditIng(row) {
   if (!r) return;
   editIngreso = r;
   _ingReenvaseRef = r.Reenvase_Ref || '';
+  _ingReenvaseTipoSalida = '';
   document.getElementById('ing-modal-title').textContent = '✏️ Editar Ingreso';
   document.getElementById('ing-fecha').value = toDateInput(r.Fecha);
   _setTipoForm(r.Tipo_Ingreso, !!r.Tipo_Ingreso);

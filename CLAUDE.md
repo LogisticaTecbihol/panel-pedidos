@@ -491,6 +491,27 @@ legalización (Ruta / Mantenimiento) ni un envío cuya `Fecha` caiga en un perí
   de aplicarla sobre registros reales de octubre y noviembre (también revertido: 144 legalizaciones intactas, 0 de prueba). La pantalla con un arnés de navegador sobre el código real (sintaxis de todo el archivo y 20 casos de
   los helpers: no admin, admin, rpc con error / excepción / sin cierres). **No se probó la pantalla completa con un usuario real** (crear/editar/adjuntar desde el navegador).
 
+## Salidas a producción: tipo de salida (Reenvase / Reetiquetado / Reformulación / …)
+
+**Estado:** migración remota `reenvases_tipo_salida` (`supabase/migrations/reenvases_tipo_salida.sql`) **aplicada el 2026-11-12** y verificada en producción (452 líneas, ninguna sin tipo, sin salidas mezcladas, auditoría intacta,
+funciones no expuestas a clientes); va ANTES de publicar `reenvases.js`, `ingresos.js` y `shared.js` (ya piden/escriben `Tipo_Salida`). Rollback: `..._rollback.sql`. Mismo patrón que «Ingresos: tipo de ingreso» (abajo).
+
+- **Siete tipos** (`RE_TIPOS`, `js/reenvases.js`; mismos ids que el CHECK `reenvases_tipo_salida_check`): `REENVASE`, `REETIQUETADO` (cambio de etiqueta/tapa), `REFORMULACION`, `MUESTRAS` (Muestra_Ref o pruebas/laboratorio),
+  `TRASLADO_DEVOLUCION` (sin planta y con empresa destino, o notas de devolución/traslado), `OTROS` y `SIN_CLASIFICAR` (histórico sin nota: 43 salidas, todas pendientes; solo se corrige a mano, las nuevas exigen tipo).
+  Decisiones del usuario: Reetiquetado y Traslado/devolución con categoría propia; las sin nota quedan «Sin clasificar»; los ingresos de retorno heredan el tipo de su salida.
+- **Modelo**: `Reenvases."Tipo_Salida"` (text NOT NULL default `''`); reglas en `_reenvase_tipo_sugerido` (lee las Observaciones de TODAS las líneas de la salida, Remision + Empresa); trigger `trg_reenvases_tipo_defecto`
+  (vacío → hereda de otra línea de la misma salida o deduce); relleno del histórico con la auditoría apagada. Probado en transacción revertida contra producción (237 salidas: Reenvase 96, Reformulación 27, Reetiquetado 31,
+  Traslado/devolución 24, Muestras 7, Otros 9, Sin clasificar 43; sin tipos mezclados, auditoría intacta, migración dos veces).
+- **Herencia hacia Ingresos**: `_ingreso_tipo_sugerido` (ahora STABLE) lee la salida: retorno de una salida REFORMULACION → ingreso REFORMULACION; cualquier otra → REENVASE (Ingresos no tiene «reetiquetado»). La migración corrige
+  los ingresos ya vinculados (13 líneas) y el trigger `trg_reenvases_tipo_a_ingresos` mueve los retornos entre REENVASE y REFORMULACION cuando cambia el tipo de la salida, SOLO si seguían con el tipo heredado.
+  `ingresos.js`: `ingTipoSugerido(…, tipoSalida)`, `_tipoSalidaDeRef`, `_ingReenvaseTipoSalida`; `getReenvases` pide `Tipo_Salida`.
+- **Pantalla**: tarjetas por tipo (salidas, unidades y pendientes de retorno; según los demás filtros y la bodega activa) que filtran la tabla (`setReTipoFiltro`); columna «Tipo» y borde de color (por salidas y por productos);
+  filtro `f-tipo`; formulario con «Tipo de salida» obligatorio (`re-tipo`; solo se propone Muestras o Traslado/devolución, lo demás lo elige el usuario; fijo al agregar un producto; oculto al editar una línea);
+  **el tipo se cambia desde el detalle para TODAS las líneas** (`editarTipoSalidaReenvase`, shared.js; `guardarTipoSalidaReenvase`). Se quitaron las tarjetas «Con remisión / Sin remisión / Unidades totales».
+  La regla JS `reTipoSugerido` y la SQL deben mantenerse iguales (el JS no mira texto).
+- Probado con arnés de navegador (Supabase simulado) sobre `reenvases.html` y `ingresos.html` reales: tarjetas, filtros, orden, detalle, clasificar una salida, formulario, alta, agregar producto, edición, camino del JS anterior y herencia.
+  No se probó con usuarios reales. `js/ingresos.js`, `js/reenvases.js` y `reenvases.html` tenían además cambios AJENOS sin commit (avisos a contabilidad): separarlos al hacer commit.
+
 ## Ingresos: tipo de ingreso (Fabricado / PT proveedor / Reenvase / …)
 
 `ingresos.html` + `js/ingresos.js` distinguen **qué clase de ingreso es**, no solo de dónde viene. Pedido 2026-11-12: separar lo realmente fabricado del producto terminado de
