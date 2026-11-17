@@ -140,7 +140,7 @@ async function bsRefrescar(silencioso) {
 function bsLlenarDatalists() {
   var stock = (BS.exist && BS.exist.items) || [];
   bsEl('bs-dl-stock').innerHTML = stock.map(function (i) {
-    return '<option value="' + escHtml(i.producto) + '">existencia ' + escHtml(bsN(i.existencia)) + '</option>';
+    return '<option value="' + escHtml(i.producto) + '"></option>'; // sin texto dentro: Firefox lo muestra EN LUGAR del nombre (la existencia se ve en la tabla al agregar)
   }).join('');
   bsEl('bs-dl-all').innerHTML = BS.productos.map(function (p) {
     return '<option value="' + escHtml(p.producto) + '"></option>';
@@ -343,7 +343,7 @@ function bsLineasHtml(k, opts) {
   opts = opts || {};
   var lista = BS.listas[k];
   var dl = opts.soloStock ? 'bs-dl-stock' : 'bs-dl-all';
-  var h = '<div class="bs-row"><div style="flex:3 1 240px"><label class="ef-label">Producto</label><input class="ef" id="bs-' + k + '-prod" list="' + dl + '" autocomplete="off" placeholder="Escribe y elige de la lista"></div>' +
+  var h = '<div class="bs-row"><div style="flex:3 1 240px"><label class="ef-label">Producto</label><input class="ef" id="bs-' + k + '-prod" list="' + dl + '" autocomplete="off" placeholder="Escribe unas letras y elige de la lista"></div>' +
           '<div style="flex:0 0 110px"><label class="ef-label">' + (opts.conteo ? 'Cantidad física' : 'Cantidad') + '</label><input class="ef" id="bs-' + k + '-qty" type="number" min="' + (opts.conteo ? 0 : 1) + '" step="1" placeholder="0"></div>' +
           '<div style="flex:0 0 auto"><button class="bs-btn" type="button" data-act="ln-add" data-k="' + k + '">➕ Agregar</button></div>' +
           (opts.precarga ? '<div style="flex:0 0 auto"><button class="bs-btn bs-sec" type="button" data-act="cnt-precargar">📋 Precargar con las existencias</button></div>' : '') + '</div>';
