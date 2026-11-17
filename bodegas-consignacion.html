@@ -100,6 +100,7 @@
     <button class="btn-export tab-btn" id="bc-tab-listado" onclick="bcSwitchTab('listado')" style="background:#1a5276">📋 Listado</button>
     <button class="btn-export tab-btn" id="bc-tab-resumen" onclick="bcSwitchTab('resumen')" style="background:#718096">📦 Resumen por bodega</button>
     <button class="btn-export tab-btn auth-edit-only" id="bc-tab-admin" onclick="bcSwitchTab('admin')" style="background:#718096">🗂️ Administrar bodegas</button>
+    <button class="btn-export tab-btn auth-admin-only" id="bc-tab-gestion" onclick="bcSwitchTab('gestion')" style="background:#718096;display:none">🏬 Gestión de bodegas satélite</button>
   </div>
 
   <!-- PANEL: Listado -->
@@ -165,6 +166,40 @@
     </div>
   </div>
 
+  <!-- PANEL: Gestión de bodegas satélite (inventario propio por bodega; solo administrador) -->
+  <div id="bc-panel-gestion" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>🏬 Bodegas satélite — gestión de inventario <span id="bc-row-ct-gestion" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-dl" onclick="bcGestionCargar()">🔄 Actualizar</button>
+      </div>
+      <p style="font-size:0.76rem;color:#718096;margin:0 0 10px">Habilita una bodega del catálogo para que sus usuarios lleven su propio inventario (recibir traslados de la principal, salidas, traslados entre bodegas de la misma empresa, conteos). <strong>No afecta</strong> el inventario, los movimientos ni los reportes de la principal. El <strong>código</strong> es el prefijo de sus documentos (BOD-&lt;código&gt;-RS-0001) y la <strong>fecha de corte</strong> es la del conteo físico inicial: los traslados anteriores se asumen dentro de ese conteo.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Empresa</th><th>Bodega</th><th>Código</th><th>Fecha de corte</th><th>Estado</th><th>Conteo inicial</th><th style="text-align:right">Existencias</th><th>Usuarios</th><th></th></tr>
+          </thead>
+          <tbody id="bc-body-gestion"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>👤 Usuarios de bodega <span id="bc-row-ct-usuarios" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-dl" onclick="bcAbrirModalUsuario()">➕ Nuevo usuario de bodega</button>
+      </div>
+      <p style="font-size:0.76rem;color:#718096;margin:0 0 10px">Son cuentas aparte de los usuarios del panel: no aparecen en «Usuarios» y no ven nada del panel de la empresa. Entran por <a href="bodega-login.html" target="_blank" rel="noopener">bodega-login.html</a>.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Nombre</th><th>Correo</th><th>Bodegas</th><th>Estado</th><th></th></tr>
+          </thead>
+          <tbody id="bc-body-usuarios"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <p style="font-size:0.74rem;color:#a0aec0;margin-top:12px">
     Muestra los pedidos del módulo Pedidos con "Pedido en consignación" = Sí, más excepciones agregadas a mano aunque ese campo diga "No":
     de IASO, <strong>cualquier cliente cuyo nombre empiece con "Bodega "</strong> (ej. Bodega COATOL, Bodega Espinal); de PARCELAR, cliente <strong>Carlos Andres Ramirez</strong>, y <strong>Bodega Villeta</strong> / <strong>Bodega Didimo Cubillos</strong> / <strong>Bodega Boyaca</strong> (por su Bodega de Facturación).
@@ -218,12 +253,91 @@
   </div>
 </div>
 
+<!-- MODAL: Habilitar / editar una bodega satélite -->
+<div class="overlay" id="bg-modal-overlay">
+  <div class="modal-box" style="max-width:520px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="bg-modal-titulo">🏬 Habilitar bodega satélite</h2></div>
+      <button class="btn-close" onclick="bcCerrarModalGestionBodega()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="bg-m-id">
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Bodega</label>
+        <input class="ef" id="bg-m-nombre" type="text" disabled>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Código (prefijo de los documentos) *</label>
+        <input class="ef" id="bg-m-codigo" type="text" maxlength="25" placeholder="Ej: ESPINAL o COATOL-CHICORAL" style="text-transform:uppercase">
+        <div id="bg-m-codigo-nota" style="font-size:0.72rem;color:#a0aec0;margin-top:3px">Letras mayúsculas y números (2 a 12); opcionalmente un guion y un segundo bloque. No se puede cambiar una vez emitidos documentos.</div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Fecha de corte (conteo físico inicial) *</label>
+        <input class="ef" id="bg-m-corte" type="date">
+        <div id="bg-m-corte-nota" style="font-size:0.72rem;color:#a0aec0;margin-top:3px">No se puede cambiar una vez aplicado el conteo inicial.</div>
+      </div>
+      <div style="margin-bottom:4px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;font-weight:600;color:#4a5568">
+          <input type="checkbox" id="bg-m-habilitada" checked style="width:16px;height:16px;cursor:pointer"> Habilitada
+        </label>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="bcCerrarModalGestionBodega()">Cancelar</button>
+        <button class="btn-confirm" id="bg-m-btn-guardar" onclick="bcGuardarGestionBodega()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Nuevo / editar usuario de bodega -->
+<div class="overlay" id="bu-modal-overlay">
+  <div class="modal-box" style="max-width:520px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="bu-modal-titulo">👤 Nuevo usuario de bodega</h2></div>
+      <button class="btn-close" onclick="bcCerrarModalUsuario()">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="bu-m-id">
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Nombre *</label>
+        <input class="ef" id="bu-m-nombre" type="text" maxlength="80">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Correo *</label>
+        <input class="ef" id="bu-m-email" type="email" maxlength="120" autocomplete="off">
+      </div>
+      <div style="margin-bottom:12px" id="bu-m-pass-wrap">
+        <label class="ef-label">Contraseña temporal * (mín. 8 caracteres)</label>
+        <input class="ef" id="bu-m-pass" type="text" maxlength="72" autocomplete="off">
+        <div style="font-size:0.72rem;color:#a0aec0;margin-top:3px">Compártela con la persona por un canal seguro; puede cambiarla con «¿Olvidaste tu contraseña?» en bodega-login.html.</div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="ef-label">Bodegas asignadas</label>
+        <div id="bu-m-bodegas" style="border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;max-height:180px;overflow:auto;font-size:0.84rem"></div>
+      </div>
+      <div style="margin-bottom:4px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;font-weight:600;color:#4a5568">
+          <input type="checkbox" id="bu-m-activo" checked style="width:16px;height:16px;cursor:pointer"> Usuario activo
+        </label>
+      </div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="bcCerrarModalUsuario()">Cancelar</button>
+        <button class="btn-confirm" id="bu-m-btn-guardar" onclick="bcGuardarUsuario()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js?v=20261023a"></script>
 <script src="js/auth.js?v=20261021"></script>
-<script src="js/notificaciones.js?v=20261112a"></script>
-<script src="js/bodegas-consignacion.js?v=20261020b"></script>
+<script src="js/notificaciones.js?v=20261117a"></script>
+<script src="js/bodegas-consignacion.js?v=20261117a"></script>
 </body>
 </html>

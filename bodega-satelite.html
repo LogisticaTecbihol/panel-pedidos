@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Bodegas satélite — inventario de bodegas en consignación">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏬</text></svg>">
+<title>Bodegas satélite – Inventario</title>
+<link rel="stylesheet" href="css/panel.css?v=20260921d">
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<style>
+  .bs-user { display:flex; align-items:center; gap:10px; font-size:0.82rem; flex-wrap:wrap; justify-content:flex-end; }
+  .bs-user select { background:#fff; color:#1a5276; border:none; border-radius:6px; padding:5px 8px; font-weight:700; max-width:260px; }
+  .bs-user button { background:rgba(255,255,255,0.18); color:#fff; border:1px solid rgba(255,255,255,0.35); border-radius:6px; padding:5px 12px; cursor:pointer; font-size:0.8rem; font-weight:600; }
+  .bs-user button:hover { background:rgba(255,255,255,0.3); }
+  .navbar { overflow-x:auto; white-space:nowrap; }
+  .navbar a { cursor:pointer; flex-shrink:0; }
+  .navbar a .bs-cnt { background:#e74c3c; color:#fff; border-radius:10px; padding:0 7px; font-size:0.7rem; font-weight:800; min-width:18px; text-align:center; line-height:17px; }
+  .bs-wrap { padding:18px 28px 40px; }
+  .bs-banner { background:#fffaf0; border:1px solid #f6ad55; color:#7b341e; border-radius:9px; padding:11px 16px; margin-bottom:16px; font-size:0.86rem; display:flex; gap:12px; align-items:flex-start; }
+  .bs-banner > div { flex:1 1 auto; min-width:0; }
+  .bs-banner.bs-info { background:#ebf8ff; border-color:#90cdf4; color:#2a4365; }
+  .bs-banner button { margin-left:auto; flex:0 0 auto; }
+  .bs-card { background:#fff; border:1px solid #e2e8f0; border-radius:11px; padding:16px 18px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+  .bs-card h3 { font-size:0.98rem; color:#1a5276; margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .bs-card h3 small { font-weight:400; color:#718096; font-size:0.76rem; }
+  .bs-rem.bs-dif { background:#fffaf0; border-color:#f6ad55; }
+  .bs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin-bottom:12px; }
+  .bs-row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:10px; }
+  .bs-row > div { flex:1 1 150px; min-width:120px; }
+  .bs-badge { display:inline-block; padding:2px 9px; border-radius:12px; font-size:0.72rem; font-weight:700; white-space:nowrap; }
+  .bs-ok { background:#c6f6d5; color:#22543d; } .bs-warn { background:#feebc8; color:#7b341e; } .bs-bad { background:#fed7d7; color:#742a2a; }
+  .bs-inf { background:#bee3f8; color:#2a4365; } .bs-gry { background:#e2e8f0; color:#4a5568; }
+  .bs-num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .bs-qty { width:92px; text-align:right; }
+  .bs-act { display:flex; gap:6px; flex-wrap:wrap; }
+  .bs-btn { background:#1a5276; color:#fff; border:none; border-radius:7px; padding:8px 16px; font-size:0.84rem; font-weight:700; cursor:pointer; }
+  .bs-btn:hover { background:#154360; } .bs-btn:disabled { background:#a0aec0; cursor:not-allowed; }
+  .bs-btn.bs-sec { background:#fff; color:#1a5276; border:1px solid #1a5276; }
+  .bs-btn.bs-red { background:#c0392b; } .bs-btn.bs-red:hover { background:#a93226; }
+  .bs-btn.bs-sm { padding:4px 10px; font-size:0.76rem; }
+  .bs-muted { color:#718096; font-size:0.78rem; }
+  .bs-tblwrap { overflow-x:auto; }
+  .bs-sinacc { max-width:520px; margin:70px auto; background:#fff; border-radius:12px; padding:30px; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
+  textarea.ef { min-height:58px; resize:vertical; font-family:inherit; }
+  #bs-overlay .modal-box { max-width:760px; }
+  @media (max-width:760px) {
+    .header-top { flex-direction:column; align-items:flex-start; gap:8px; padding:12px 14px 0; }
+    .navbar { padding:0 6px; }
+    .navbar a { padding:9px 12px; }
+    .bs-banner { flex-wrap:wrap; }
+    .bs-card { padding:12px 12px; }
+    .bs-card .bs-card { padding:10px; }
+    .bs-tblwrap th, .bs-tblwrap td { padding:6px 6px; font-size:0.76rem; }
+    .bs-qty { width:64px; padding:5px 6px; }
+    .bs-rem h3 { font-size:0.9rem; }
+    .bs-wrap { padding:12px 10px 40px; }
+    table { font-size:0.78rem; }
+    .overlay { padding:10px 6px; }
+    .mbody { padding:14px; }
+  }
+</style>
+</head>
+<body data-modulo="bodega_satelite">
+
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>🏬 Bodegas satélite</h1>
+      <div class="sub" id="bs-sub">Inventario de bodegas en consignación</div>
+    </div>
+    <div class="bs-user" id="bs-user" style="display:none">
+      <select id="bs-bodega-sel" title="Bodega" style="display:none"></select>
+      <span id="bs-user-nombre"></span>
+      <button type="button" id="bs-btn-refrescar" title="Volver a leer los datos">🔄 Actualizar</button>
+      <button type="button" id="bs-btn-salir">Cerrar sesión</button>
+    </div>
+  </div>
+  <nav class="navbar" id="bs-tabs" style="display:none">
+    <a data-tab="exist" class="active">📦 Existencias</a>
+    <a data-tab="recibir">📥 Por recibir <span class="bs-cnt" id="bs-cnt-recibir" style="display:none">0</span></a>
+    <a data-tab="trasl">🚚 Traslados entre bodegas</a>
+    <a data-tab="salidas">📤 Salidas</a>
+    <a data-tab="conteos">🧮 Conteos y ajustes</a>
+    <a data-tab="kardex">📋 Movimientos</a>
+  </nav>
+</div>
+
+<!-- CARGA -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando tu bodega</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="location.reload()">Reintentar</button>
+</div>
+
+<!-- SIN ACCESO -->
+<div id="bs-sinacceso" class="bs-sinacc" style="display:none">
+  <div style="font-size:2.4rem">🔒</div>
+  <h2 style="margin:8px 0">Sin acceso a las bodegas satélite</h2>
+  <p style="color:#4a5568;font-size:0.9rem;margin-bottom:16px">Esta cuenta no está registrada como usuario de una bodega, o fue desactivada. Pide al administrador que la habilite.</p>
+  <p style="margin-bottom:14px"><a href="login.html" style="color:#2471a3;font-size:0.85rem">Ir al panel de la empresa</a></p>
+  <button class="bs-btn" onclick="bodegaCerrarSesion()">Cerrar sesión de esta app</button>
+</div>
+
+<!-- PRINCIPAL -->
+<div id="main" style="display:none">
+  <div class="bs-wrap">
+    <div id="bs-banner"></div>
+
+    <!-- EXISTENCIAS -->
+    <div id="bs-panel-exist"></div>
+    <!-- POR RECIBIR -->
+    <div id="bs-panel-recibir" style="display:none"></div>
+    <!-- TRASLADOS ENTRE BODEGAS -->
+    <div id="bs-panel-trasl" style="display:none"></div>
+    <!-- SALIDAS -->
+    <div id="bs-panel-salidas" style="display:none"></div>
+    <!-- CONTEOS -->
+    <div id="bs-panel-conteos" style="display:none"></div>
+    <!-- KARDEX -->
+    <div id="bs-panel-kardex" style="display:none"></div>
+  </div>
+</div>
+
+<!-- MODAL GENÉRICO -->
+<div class="overlay" id="bs-overlay">
+  <div class="modal-box">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="bs-modal-titulo"></h2></div>
+      <button class="btn-close" id="bs-modal-x" type="button">✕</button>
+    </div>
+    <div class="mbody" id="bs-modal-body"></div>
+    <div class="mftr">
+      <div id="bs-modal-info" class="total-tag"></div>
+      <div class="mftr-btns" id="bs-modal-btns"></div>
+    </div>
+  </div>
+</div>
+
+<datalist id="bs-dl-stock"></datalist>
+<datalist id="bs-dl-all"></datalist>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/bodega-cliente.js?v=20261117a"></script>
+<script src="js/shared.js?v=20261023a"></script>
+<script src="js/bodega-auth.js?v=20261117a"></script>
+<script src="js/pdf-remision.js?v=20261001a"></script>
+<script src="js/bodega-satelite.js?v=20261117a"></script>
+</body>
+</html>

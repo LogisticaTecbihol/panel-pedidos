@@ -524,7 +524,8 @@ var NOTIF = (function() {
     cartera:      'cartera.html',
     reabastecimiento:    'reabastecimiento.html',
     legalizacion_gastos: 'legalizacion-gastos.html',
-    solicitudes_mercadeo: 'solicitudes-mercadeo.html'
+    solicitudes_mercadeo: 'solicitudes-mercadeo.html',
+    bodegas:      'bodegas-consignacion.html'   // avisos de las bodegas satélite (bodega_satelite_avisos.sql)
   };
 
   function destino(row) {
@@ -545,6 +546,8 @@ var NOTIF = (function() {
       if (mod === 'pedidos' && /por aprobar/i.test(tit)) page = 'cartera.html';
     } else if (mod === 'ordenes') {
       if (ref) q.buscar = ref;                 // OC-<destino>-<origen>-<n> es único
+    } else if (mod === 'bodegas') {
+      q.tab = 'gestion';                       // avisos de las bodegas satélite: abre la pestaña de gestión
     } else if (mod === 'solicitudes_mercadeo') {
       // "por aprobar" -> bandeja de aprobación; aprobada/rechazada -> Mis solicitudes.
       q.tab = /por aprobar/i.test(tit) ? 'aprobar' : 'mis';

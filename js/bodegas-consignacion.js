@@ -179,12 +179,13 @@ function bcClearFilters() {
 
 function bcSwitchTab(tab) {
   bcTab = tab;
-  ['listado', 'resumen', 'admin'].forEach(function(t) {
+  ['listado', 'resumen', 'admin', 'gestion'].forEach(function(t) {
     var panel = document.getElementById('bc-panel-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
     var btn = document.getElementById('bc-tab-' + t);
     if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
   });
+  if (tab === 'gestion') bcGestionCargar();
 }
 
 // ── Render ─────────────────────────────────────────────────────
@@ -412,6 +413,223 @@ async function bcGuardarBodega() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Gestión de bodegas satélite (solo administrador)
+//
+// Cada bodega del catálogo se HABILITA para llevar su propio inventario (tablas Bodega*, ver
+// supabase/migrations/bodega_satelite_*.sql) y se le crean usuarios de bodega: cuentas de Auth SIN fila
+// en `usuarios` (no ven nada de la principal). Todo pasa por RPC bodega_admin_* (exigen rol admin).
+// Esta sección no toca el Listado/Resumen ni el catálogo de arriba.
+// ══════════════════════════════════════════════════════════════
+var bcGest = { bodegas: [], usuarios: [], cargado: false };
+
+function _bcRpc(nombre, args) {
+  return _sb.rpc(nombre, args || {}).then(function(r) {
+    if (r.error) throw new Error(r.error.message || String(r.error));
+    return r.data;
+  });
+}
+
+async function bcGestionCargar() {
+  var tbody = document.getElementById('bc-body-gestion');
+  if (!tbody) return;
+  if (!bcGest.cargado) tbody.innerHTML = '<tr><td colspan="9"><div class="empty">Cargando…</div></td></tr>';
+  try {
+    if (typeof _authReady !== 'undefined') { try { await _authReady; } catch (e) {} }
+    var d = await _bcRpc('bodega_admin_listar');
+    bcGest.bodegas = d.bodegas || [];
+    bcGest.usuarios = d.usuarios || [];
+    bcGest.cargado = true;
+    bcRenderGestion();
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty">' + escHtml((err && err.message) || String(err)) + '</div></td></tr>';
+  }
+}
+
+function bcRenderGestion() {
+  var tbody = document.getElementById('bc-body-gestion');
+  document.getElementById('bc-row-ct-gestion').textContent = '(' + bcGest.bodegas.length + ' bodega(s) del catálogo)';
+  if (!bcGest.bodegas.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty">El catálogo no tiene bodegas.</div></td></tr>';
+  } else {
+    tbody.innerHTML = bcGest.bodegas.map(function(b) {
+      var c = b.config;
+      var usrs = bcGest.usuarios.filter(function(u) { return (u.bodegas || []).indexOf(b.bodega_id) >= 0; })
+        .map(function(u) { return escHtml(u.nombre) + (u.activo ? '' : ' <span style="color:#a0aec0">(inactivo)</span>'); }).join(', ') || '<span style="color:#a0aec0">—</span>';
+      var estado = !c ? '<span style="color:#a0aec0">No habilitada</span>'
+        : (c.habilitada ? '<span style="color:#27ae60;font-weight:600">Habilitada</span>' : '<span style="color:#e74c3c;font-weight:600">Deshabilitada</span>');
+      var inicial = !c ? '—' : (c.inicial_aplicado ? '<span style="color:#27ae60">✔ Aplicado</span>' : '<span style="color:#e67e22">⏳ Pendiente</span>');
+      var exist = !c ? '—' : (c.inicial_aplicado || c.movimientos > 0
+        ? _fmtNum.format(c.productos) + ' prod. · ' + _fmtNum.format(Number(c.unidades) || 0) + ' ud' + (c.traslados_en_transito ? ' <span title="Traslados entre bodegas en tránsito" style="color:#e67e22">· ' + c.traslados_en_transito + ' en tránsito</span>' : '')
+        : '—');
+      return '<tr' + (b.activo === false ? ' style="opacity:.6"' : '') + '>' +
+        '<td><span class="sigla-badge ' + getSiglaClass(b.empresa) + '">' + escHtml(getSigla(b.empresa)) + '</span></td>' +
+        '<td>' + escHtml(b.nombre || '') + (b.municipio ? ' <span style="color:#718096">· ' + escHtml(b.municipio) + '</span>' : '') + (b.activo === false ? ' <em style="color:#a0aec0">(inactiva en el catálogo)</em>' : '') + '</td>' +
+        '<td>' + (c ? '<strong>' + escHtml(c.codigo) + '</strong>' : '—') + '</td>' +
+        '<td>' + (c ? fmtDate(c.fecha_corte) : '—') + '</td>' +
+        '<td>' + estado + '</td><td>' + inicial + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' + exist + '</td>' +
+        '<td style="font-size:0.8rem">' + usrs + '</td>' +
+        '<td><button class="btn-dl" style="padding:3px 10px;font-size:0.76rem" onclick="bcAbrirModalGestionBodega(' + b.bodega_id + ')">' + (c ? '✏️ Editar' : '✅ Habilitar') + '</button></td></tr>';
+    }).join('');
+  }
+
+  var ub = document.getElementById('bc-body-usuarios');
+  document.getElementById('bc-row-ct-usuarios').textContent = '(' + bcGest.usuarios.length + ')';
+  if (!bcGest.usuarios.length) {
+    ub.innerHTML = '<tr><td colspan="5"><div class="empty">Aún no hay usuarios de bodega.</div></td></tr>';
+    return;
+  }
+  ub.innerHTML = bcGest.usuarios.map(function(u) {
+    var nombres = (u.bodegas || []).map(function(id) {
+      var b = bcGest.bodegas.filter(function(x) { return x.bodega_id === id; })[0];
+      return b ? (b.config ? escHtml(b.config.codigo) : escHtml(b.nombre)) : '#' + id;
+    }).join(', ') || '<span style="color:#a0aec0">Sin bodegas</span>';
+    return '<tr' + (u.activo ? '' : ' style="opacity:.6"') + '><td>' + escHtml(u.nombre) + '</td><td>' + escHtml(u.email) + '</td><td>' + nombres + '</td>' +
+      '<td>' + (u.activo ? '<span style="color:#27ae60;font-weight:600">Activo</span>' : '<span style="color:#a0aec0">Inactivo</span>') + '</td>' +
+      '<td><button class="btn-dl" style="padding:3px 10px;font-size:0.76rem" onclick="bcAbrirModalUsuario(\'' + escHtml(u.usuario_id) + '\')">✏️ Editar</button></td></tr>';
+  }).join('');
+}
+
+// Sugiere un código a partir del nombre («Bodega COATOL» → COATOL); si otra del mismo catálogo y
+// empresa se llama igual, agrega el municipio («COATOL-CHICORAL»).
+function bcSugerirCodigo(b) {
+  function limpia(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').trim();
+  }
+  var base = limpia(b.nombre).replace(/^BODEGA\s+/, '').split(/\s+/)[0] || 'BODEGA';
+  base = base.slice(0, 12);
+  var repetida = bcGest.bodegas.some(function(o) {
+    return o.bodega_id !== b.bodega_id && o.empresa === b.empresa &&
+      (limpia(o.nombre).replace(/^BODEGA\s+/, '').split(/\s+/)[0] || '').slice(0, 12) === base;
+  });
+  if (repetida && b.municipio) {
+    var m = limpia(b.municipio).split(/\s+/)[0].slice(0, 12);
+    if (m) return base + '-' + m;
+  }
+  return base;
+}
+
+function bcAbrirModalGestionBodega(id) {
+  var b = bcGest.bodegas.filter(function(x) { return x.bodega_id === id; })[0];
+  if (!b) return;
+  var c = b.config;
+  document.getElementById('bg-modal-titulo').textContent = c ? '✏️ Editar bodega satélite' : '✅ Habilitar bodega satélite';
+  document.getElementById('bg-m-id').value = b.bodega_id;
+  document.getElementById('bg-m-nombre').value = getSigla(b.empresa) + ' · ' + (b.nombre || '') + (b.municipio ? ' · ' + b.municipio : '');
+  var cod = document.getElementById('bg-m-codigo');
+  cod.value = c ? c.codigo : bcSugerirCodigo(b);
+  cod.disabled = !!(c && c.movimientos > 0);
+  var corte = document.getElementById('bg-m-corte');
+  corte.value = c ? c.fecha_corte : today();
+  corte.max = today();
+  corte.disabled = !!(c && c.inicial_aplicado);
+  document.getElementById('bg-m-habilitada').checked = c ? c.habilitada : true;
+  document.getElementById('bg-modal-overlay').classList.add('show');
+}
+
+function bcCerrarModalGestionBodega() {
+  document.getElementById('bg-modal-overlay').classList.remove('show');
+}
+
+async function bcGuardarGestionBodega() {
+  var id = Number(document.getElementById('bg-m-id').value);
+  var codigo = document.getElementById('bg-m-codigo').value.trim().toUpperCase();
+  var corte = document.getElementById('bg-m-corte').value;
+  if (!/^[A-Z0-9]{2,12}(-[A-Z0-9]{2,12})?$/.test(codigo)) { showToast('Código no válido: mayúsculas y números (2 a 12), con un guion y un segundo bloque opcional.', '#e74c3c', 5000); return; }
+  if (!corte) { showToast('Indica la fecha de corte', '#e74c3c'); return; }
+  var btn = document.getElementById('bg-m-btn-guardar');
+  btn.disabled = true; btn.textContent = '⏳ Guardando...';
+  try {
+    await _bcRpc('bodega_admin_guardar_bodega', {
+      p_bodega_id: id, p_codigo: codigo, p_fecha_corte: corte,
+      p_habilitada: document.getElementById('bg-m-habilitada').checked
+    });
+    bcCerrarModalGestionBodega();
+    showToast('✅ Bodega guardada');
+    await bcGestionCargar();
+  } catch (err) {
+    showToast('❌ ' + err.message, '#e74c3c', 6000);
+  } finally {
+    btn.disabled = false; btn.textContent = '✓ Guardar';
+  }
+}
+
+// ── Usuarios de bodega ──
+function bcAbrirModalUsuario(uid) {
+  var u = uid ? bcGest.usuarios.filter(function(x) { return x.usuario_id === uid; })[0] : null;
+  var habilitadas = bcGest.bodegas.filter(function(b) { return b.config && b.config.habilitada; });
+  if (!u && !habilitadas.length) { showToast('Primero habilita al menos una bodega.', '#e67e22', 5000); return; }
+  document.getElementById('bu-modal-titulo').textContent = u ? '✏️ Editar usuario de bodega' : '👤 Nuevo usuario de bodega';
+  document.getElementById('bu-m-id').value = u ? u.usuario_id : '';
+  document.getElementById('bu-m-nombre').value = u ? u.nombre : '';
+  var em = document.getElementById('bu-m-email');
+  em.value = u ? u.email : '';
+  em.disabled = !!u;
+  document.getElementById('bu-m-pass').value = '';
+  document.getElementById('bu-m-pass-wrap').style.display = u ? 'none' : '';
+  document.getElementById('bu-m-activo').checked = u ? u.activo : true;
+  var asignadas = u ? (u.bodegas || []) : [];
+  document.getElementById('bu-m-bodegas').innerHTML = habilitadas.map(function(b) {
+    return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer"><input type="checkbox" class="bu-m-bod" value="' + b.bodega_id + '"' +
+      (asignadas.indexOf(b.bodega_id) >= 0 ? ' checked' : '') + '> <span class="sigla-badge ' + getSiglaClass(b.empresa) + '">' + escHtml(getSigla(b.empresa)) + '</span> ' +
+      escHtml(b.nombre) + (b.municipio ? ' · ' + escHtml(b.municipio) : '') + ' <strong>(' + escHtml(b.config.codigo) + ')</strong></label>';
+  }).join('') || '<span style="color:#a0aec0">No hay bodegas habilitadas.</span>';
+  document.getElementById('bu-modal-overlay').classList.add('show');
+}
+
+function bcCerrarModalUsuario() {
+  document.getElementById('bu-modal-overlay').classList.remove('show');
+}
+
+async function bcGuardarUsuario() {
+  var uid = document.getElementById('bu-m-id').value;
+  var nombre = document.getElementById('bu-m-nombre').value.trim();
+  var email = document.getElementById('bu-m-email').value.trim().toLowerCase();
+  var pass = document.getElementById('bu-m-pass').value;
+  var activo = document.getElementById('bu-m-activo').checked;
+  var bodegas = Array.prototype.map.call(document.querySelectorAll('.bu-m-bod:checked'), function(i) { return Number(i.value); });
+  if (nombre.length < 3) { showToast('Escribe el nombre (mínimo 3 caracteres)', '#e74c3c'); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showToast('Correo no válido', '#e74c3c'); return; }
+  if (!uid && pass.length < 8) { showToast('La contraseña debe tener al menos 8 caracteres', '#e74c3c'); return; }
+
+  var btn = document.getElementById('bu-m-btn-guardar');
+  btn.disabled = true; btn.textContent = '⏳ Guardando...';
+  var creada = false;
+  try {
+    if (!uid) {
+      // ¿Ya existe una cuenta con ese correo? Una cuenta del panel principal NO puede ser de bodega.
+      var f = await _bcRpc('bodega_admin_buscar_usuario', { p_email: email });
+      if (f.existe) {
+        if (f.es_usuario_principal) throw new Error('Ese correo ya es de un usuario del panel principal. Los usuarios de bodega deben ser cuentas aparte: usa otro correo.');
+        if (f.ya_es_bodega) throw new Error('Ese correo ya es usuario de bodega: edítalo desde la lista.');
+        if (!window.confirm('Ya existe una cuenta con ese correo (sin acceso al panel de la empresa). ¿Vincularla como usuario de bodega? Su contraseña no se cambia.')) {
+          return;
+        }
+        uid = f.usuario_id;
+      } else {
+        var fnRes = await _sb.functions.invoke('create-user', { body: { email: email, password: pass } });
+        if (fnRes.error) {
+          var msg = 'Error al crear la cuenta en Auth';
+          try { var body = await fnRes.error.context.json(); if (body && body.error) msg = body.error; } catch (e2) {}
+          throw new Error(msg);
+        }
+        uid = fnRes.data && fnRes.data.user_id;
+        if (!uid) throw new Error('No se recibió el ID de la cuenta creada');
+        creada = true;
+      }
+    }
+    await _bcRpc('bodega_admin_guardar_usuario', { p_usuario_id: uid, p_nombre: nombre, p_email: email, p_activo: activo, p_bodegas: bodegas });
+    bcCerrarModalUsuario();
+    showToast('✅ Usuario de bodega guardado');
+    await bcGestionCargar();
+  } catch (err) {
+    showToast('❌ ' + err.message + (creada ? ' — La cuenta SÍ se creó; vuelve a guardar con el mismo correo para vincularla.' : ''), '#e74c3c', 8000);
+  } finally {
+    btn.disabled = false; btn.textContent = '✓ Guardar';
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────
 if (typeof document !== 'undefined' && document.getElementById('load-zone') && !window.__BC_TEST) {
   loadBodegasConsignacion();
@@ -420,4 +638,10 @@ if (typeof document !== 'undefined' && document.getElementById('load-zone') && !
   } else {
     bcLoadCatalogo();
   }
+  // Un aviso de la campanita (módulo 'bodegas') abre directo la gestión: bodegas-consignacion.html?tab=gestion
+  try {
+    if (new URLSearchParams(location.search).get('tab') === 'gestion' && typeof _authReady !== 'undefined') {
+      _authReady.then(function() { bcSwitchTab('gestion'); }).catch(function() {});
+    }
+  } catch (e) { /* sin parámetros */ }
 }

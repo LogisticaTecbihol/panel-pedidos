@@ -1,0 +1,27 @@
+-- ROLLBACK de bodega_satelite_nucleo.sql — borra las funciones del núcleo. No toca datos ni tablas.
+DROP FUNCTION IF EXISTS public.bodega_kardex(bigint, text, date, date, boolean);
+DROP FUNCTION IF EXISTS public.bodega_anular_movimiento(bigint, text);
+DROP FUNCTION IF EXISTS public.bodega_anular_documento(bigint, text, text);
+DROP FUNCTION IF EXISTS public.bodega_aplicar_conteo(bigint);
+DROP FUNCTION IF EXISTS public.bodega_conteos(bigint, bigint);
+DROP FUNCTION IF EXISTS public.bodega_guardar_conteo(bigint, bigint, text, date, jsonb, text);
+DROP FUNCTION IF EXISTS public.bodega_registrar_salida(bigint, text, jsonb, text, date);
+DROP FUNCTION IF EXISTS public.bodega_recibir_traslado(bigint, text, jsonb, text);
+DROP FUNCTION IF EXISTS public.bodega_traslados_pendientes(bigint);
+DROP FUNCTION IF EXISTS public.bodega_existencias(bigint);
+DROP FUNCTION IF EXISTS public.bodega_productos();
+DROP FUNCTION IF EXISTS public.bodega_mi_contexto();
+DROP FUNCTION IF EXISTS public._bodega_alertas(bigint);
+DROP FUNCTION IF EXISTS public._bodega_pendientes(bigint);
+DROP FUNCTION IF EXISTS public._bodega_lineas(jsonb, boolean);
+DROP FUNCTION IF EXISTS public._bodega_siguiente(bigint, text);
+DROP FUNCTION IF EXISTS public._bodega_saldos(bigint);
+DROP FUNCTION IF EXISTS public._bodega_saldo_de(bigint, text);
+DROP FUNCTION IF EXISTS public._bodega_tiene_inicial(bigint);
+DROP FUNCTION IF EXISTS public._bodega_acceso(bigint);
+DROP FUNCTION IF EXISTS public._bodega_actor_nombre();
+DROP FUNCTION IF EXISTS public._bodega_nombre_canonico(text);
+DROP FUNCTION IF EXISTS public._bodega_fecha_segura(text);
+DROP FUNCTION IF EXISTS public._bodega_presentacion(text);
+DROP FUNCTION IF EXISTS public._bodega_signo(text);
+DROP FUNCTION IF EXISTS public._bodega_hoy();

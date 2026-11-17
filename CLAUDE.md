@@ -595,3 +595,41 @@ los huecos estaban en el código de cada módulo.
   (Reenvases RE, Bodega NC, algunas de Ingresos/Devoluciones anteriores al 1-oct); las cargas históricas no avisan (no afectan existencias).
 - Probado con un arnés de navegador sobre los archivos reales (`with(scope)` con Supabase, PDF y DOM simulados; 85 comprobaciones): `NOTIF` (reintento, sin contabilidad, contabilidad = quien guarda, externas, fallo parcial/total,
   franja persistente) y el alta/edición de Reenvases, Ingresos, Bodega NC y el trámite masivo de Devoluciones (confirmación única, un PDF por devolución a su empresa, envío caído, cancelar). **No se probó con usuarios reales ni contra Storage real.**
+
+## Bodegas satélite / consignación: inventario propio por bodega (piloto IASO)
+
+**Estado (2026-11-17): CÓDIGO ESCRITO Y PROBADO, NADA APLICADO EN PRODUCCIÓN.** Las 5 migraciones y el código están en el repo sin commitear. Alcance acordado: fases 0 (fundaciones) + 1 (núcleo) + 1b (traslados entre bodegas);
+**sin** fase 2 (solicitudes de muestra/cambio/devolución a la principal) ni fase 3 (supervisión en la principal más allá de la pestaña «Gestión»). **Piloto: IASO — Bodega COATOL (Chicoral), Bodega COATOL (Ibagué) y Bodega ESPINAL**
+(ids 1, 4 y 5 de `BodegasConsignacion`; COATOL está dos veces en el catálogo, misma empresa y nombre, distinto municipio: códigos `COATOL-CHICORAL` y `COATOL-IBAGUE`).
+
+- **Idea**: cada bodega habilitada lleva su **libro propio** (tablas `Bodega*`) y sus usuarios son cuentas de Auth **sin fila en `usuarios`** (`get_user_role()` es NULL → las políticas de la principal les niegan todo; comprobado en
+  producción: solo leen `empresas`). Nada de `_kx_movs`, `get_saldos_holding`, Kardex, Existencias, Dashboard ni Reportes lee las tablas `Bodega*` (comprobado: `_kx_movs` idéntico antes/después de un guion completo, 4844 filas).
+  Las tablas **no tienen políticas de escritura** (solo SELECT para admin, para Backup): se escribe SOLO por RPC `SECURITY DEFINER` (guarda `_bodega_acceso` + `pg_advisory_xact_lock` por bodega).
+- **Migraciones** (`supabase/migrations/bodega_satelite_*.sql`, cada una con `_rollback.sql`; aplicar con `apply_migration` ANTES de publicar el código, EN ESTE ORDEN): `tablas` → `avisos` (amplía `notificaciones_modulo_check` con `'bodegas'`,
+  único objeto existente que toca) → `nucleo` → `traslados_bodega` → `admin`. Tablas: `BodegaConfig` (código + `fecha_corte`), `BodegaUsuarios`, `BodegaUsuarioBodegas`, `BodegaConsecutivos`, `BodegaConteos`, `BodegaConteoLineas`,
+  `BodegaTraslados`, `BodegaMovimientos` (libro; el signo sale del tipo; nada se borra, se anula; un trigger impide editar/borrar). Probadas contra producción en **transacciones revertidas** (usuario de bodega y admin simulados con
+  `request.jwt.claims`): ~120 comprobaciones (idempotencia, restricciones, aislamiento, cada RPC, traslados en tránsito/cancelación/diferencia, permisos, la principal intacta). Los rollbacks se comprobaron solo de forma estática (cada
+  `DROP FUNCTION` coincide con una función creada), **no ejecutados**.
+- **Reglas que NO son obvias**: (1) los traslados de la principal se leen de `Pedidos` con el MISMO criterio que `_kx_movs` (`Remisiones` = `REMISION|cant|fecha` separadas por coma, `Historico` ≠ true, `Estado_2` ≠ 'Anulado' —no `Estado`,
+  que vale `recibido`—, fuera de `RemisionesAnuladas`) y solo cuentan las remisiones **posteriores** a `fecha_corte` (las anteriores se asumen dentro del conteo); (2) clave del saldo = **producto normalizado sin mayúsculas** (el maestro
+  solo tiene el nombre; `Pedidos.Presentacion` viene escrita de varias formas) y el nombre visible es el del maestro (`_bodega_nombre_canonico`); (3) cantidades **enteras**; (4) el conteo **inicial** debe tener la fecha de corte de la
+  bodega y bloquea salidas/traslados hasta aplicarse (recibir de la principal sí se puede antes); (5) recibir con diferencia exige observación y avisa a la principal (campanita: admin + contabilidad de la empresa; `NOTIF.destino`
+  abre `bodegas-consignacion.html?tab=gestion`); `ENTRADA_TRASLADO*` admiten cantidad 0 (línea que no llegó); (6) un traslado entre bodegas solo dentro de la **misma empresa** (función + trigger), en tránsito hasta que el destino confirma,
+  bloqueo de ambas bodegas en orden de id; (7) no se anulan `SALDO_INICIAL`, `ENTRADA_TRASLADO` ni movimientos con traslado (se corrigen con conteo/ajuste o «Cancelar traslado»); (8) las RPC `bodega_admin_*` rechazan una cuenta que ya
+  sea usuario de la principal (con un rol vería la principal): los usuarios de bodega son cuentas APARTE.
+- **Frontend**: `bodega-login.html`, `bodega-recuperar.html`, `bodega-satelite.html` + `js/bodega-satelite.js` (Existencias · Por recibir · Traslados entre bodegas · Salidas con PDF `BOD-<COD>-RS-0001` · Conteos y ajustes · Movimientos con Excel),
+  `js/bodega-auth.js`, `js/bodega-cliente.js`. **No cargan `auth.js`** y usan un cliente Supabase con otra clave de sesión (`sb-bodega-auth`): `shared.js` crea `_sb` con la clave por defecto, la MISMA del panel principal (mismo origen), y
+  `auth.js` hace `signOut()` global a cualquier cuenta sin fila en `usuarios` → sin clave propia las dos apps se cerrarían la sesión entre sí. `bodega-cliente.js` envuelve `supabase.createClient` (va entre la librería y `shared.js`).
+  La app nunca cierra sesión por su cuenta si la cuenta no es de bodega (solo avisa); cerrar sesión es `scope:'local'`. Reutiliza `generarRemisionPDF` sin modificarlo. En `bodegas-consignacion.html` hay una pestaña NUEVA **«Gestión de bodegas
+  satélite»** (solo admin: habilitar bodega con código y fecha de corte; crear/editar usuarios de bodega con la Edge Function `create-user` + `bodega_admin_guardar_usuario`); las 3 pestañas anteriores no cambiaron.
+  Otros archivos tocados: `js/notificaciones.js` (ruta del módulo `bodegas`; subir su `?v=` en las 24 páginas que lo cargan) y `js/backup.js` (las tablas `Bodega*`).
+- **Pasos manuales al activar**: (1) aplicar las 5 migraciones; (2) publicar el código; (3) en Supabase Auth → URL Configuration agregar a las redirecciones permitidas `…/bodega-recuperar.html` (sin eso el correo de recuperación
+  no vuelve a la app); (4) Gestión: habilitar las 3 bodegas con la fecha del conteo físico y crear sus usuarios; (5) cada bodega aplica su conteo inicial; (6) probar con un usuario REAL (no se hizo).
+- **Probado en navegador** con Supabase simulado sobre las páginas reales (≈75 comprobaciones: recibir con diferencia, salidas + PDF + anular, traslados + cancelar, conteos inicial y periódico, Kardex y Excel, escape de HTML,
+  cuenta de la principal sin acceso y sin cerrarle la sesión, login, gestión, móvil 375 px sin desborde). **No se probó**: con usuarios reales ni contra el Supabase real, el correo de recuperación, el aspecto del PDF a ojo (solo que se genera:
+  3 páginas), el flujo completo `create-user`, concurrencia real (dos usuarios a la vez; el bloqueo se razonó y se probó el orden de ids, no la carrera).
+- **Pendiente / fuera de alcance**: **«Paso 0» de endurecimiento DE LA PRINCIPAL aplazado** (decisión del usuario, 2026-11-17): hay funciones `SECURITY DEFINER` de `public` sin guarda de rol y dos políticas INSERT sin rol
+  (`notificaciones`, `audit_log`) que una cuenta sin fila en `usuarios` aún puede usar; el aislamiento de LECTURA ya funciona sin tocarlas. Antes de aplicarlo hay que ver si el panel de Chía Abago (otro repo, esquema `abago`, mismas cuentas sin
+  fila en `public.usuarios`) las usa. Tampoco hecho: fase 2 (solicitudes y devolución a la principal, `SALIDA_DEVOLUCION_PRINCIPAL` ya está en el CHECK), pestañas de supervisión «Existencias por bodega» / «Solicitudes», avisos por correo,
+  conciliar contra ventas, valorización contable del stock de las satélites (hoy fuera de todo reporte), y bloquear en el catálogo el cambio de empresa de una bodega ya habilitada. Hallazgo preexistente confirmado:
+  `rebuildConsecs` (`pedidos.js` ~1243) no copia `Bodega_Consignacion_Id` al reabrir un traslado (la base lo conserva por `COALESCE` en `editar_pedido_completo`).
