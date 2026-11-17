@@ -598,7 +598,10 @@ los huecos estaban en el código de cada módulo.
 
 ## Bodegas satélite / consignación: inventario propio por bodega (piloto IASO)
 
-**Estado (2026-11-17): CÓDIGO ESCRITO Y PROBADO, NADA APLICADO EN PRODUCCIÓN.** Las 5 migraciones y el código están en el repo sin commitear. Alcance acordado: fases 0 (fundaciones) + 1 (núcleo) + 1b (traslados entre bodegas);
+**Estado (2026-11-17): MIGRACIONES APLICADAS EN PRODUCCIÓN y código publicado en `main`; todavía NO hay bodegas habilitadas ni usuarios de bodega (las tablas `Bodega*` están vacías).** Las 5 migraciones se aplicaron
+con `apply_migration` unas horas DESPUÉS de publicar el código (hasta entonces el Backup mostraba error en las tablas nuevas); después se aplicó un 6.º ajuste menor (`bodega_satelite_search_path`: `search_path` fijo en 3 helpers puros, por un aviso del
+análisis de seguridad). Tras aplicar se repitió en producción un recorrido completo con las funciones reales (revertido): administración, aislamiento, conteo inicial, recibir con diferencia + aviso, salida y anulación, traslados entre bodegas
+(enviar/cancelar/recibir, otra empresa rechazada); `_kx_movs` quedó idéntico (4844 filas / 12958) y los contadores `id` se reiniciaron a 1. Alcance acordado: fases 0 (fundaciones) + 1 (núcleo) + 1b (traslados entre bodegas);
 **sin** fase 2 (solicitudes de muestra/cambio/devolución a la principal) ni fase 3 (supervisión en la principal más allá de la pestaña «Gestión»). **Piloto: IASO — Bodega COATOL (Chicoral), Bodega COATOL (Ibagué) y Bodega ESPINAL**
 (ids 1, 4 y 5 de `BodegasConsignacion`; COATOL está dos veces en el catálogo, misma empresa y nombre, distinto municipio: códigos `COATOL-CHICORAL` y `COATOL-IBAGUE`).
 
@@ -623,7 +626,7 @@ los huecos estaban en el código de cada módulo.
   La app nunca cierra sesión por su cuenta si la cuenta no es de bodega (solo avisa); cerrar sesión es `scope:'local'`. Reutiliza `generarRemisionPDF` sin modificarlo. En `bodegas-consignacion.html` hay una pestaña NUEVA **«Gestión de bodegas
   satélite»** (solo admin: habilitar bodega con código y fecha de corte; crear/editar usuarios de bodega con la Edge Function `create-user` + `bodega_admin_guardar_usuario`); las 3 pestañas anteriores no cambiaron.
   Otros archivos tocados: `js/notificaciones.js` (ruta del módulo `bodegas`; subir su `?v=` en las 24 páginas que lo cargan) y `js/backup.js` (las tablas `Bodega*`).
-- **Pasos manuales al activar**: (1) aplicar las 5 migraciones; (2) publicar el código; (3) en Supabase Auth → URL Configuration agregar a las redirecciones permitidas `…/bodega-recuperar.html` (sin eso el correo de recuperación
+- **Pasos manuales al activar** (1 y 2 YA HECHOS el 2026-11-17): (1) aplicar las migraciones; (2) publicar el código; (3) en Supabase Auth → URL Configuration agregar a las redirecciones permitidas `…/bodega-recuperar.html` (sin eso el correo de recuperación
   no vuelve a la app); (4) Gestión: habilitar las 3 bodegas con la fecha del conteo físico y crear sus usuarios; (5) cada bodega aplica su conteo inicial; (6) probar con un usuario REAL (no se hizo).
 - **Probado en navegador** con Supabase simulado sobre las páginas reales (≈75 comprobaciones: recibir con diferencia, salidas + PDF + anular, traslados + cancelar, conteos inicial y periódico, Kardex y Excel, escape de HTML,
   cuenta de la principal sin acceso y sin cerrarle la sesión, login, gestión, móvil 375 px sin desborde). **No se probó**: con usuarios reales ni contra el Supabase real, el correo de recuperación, el aspecto del PDF a ojo (solo que se genera:
