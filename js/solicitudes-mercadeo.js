@@ -157,8 +157,11 @@ function smExt(nombre) {
 }
 
 // ── Llamada a la Edge Function (con el mensaje de error legible) ──
+// La función corre en us-west-2, la misma región que la base de datos (sin indicarlo corría en us-east-1 y cada
+// consulta cruzaba el país). Requiere `x-region` en Access-Control-Allow-Headers de la función (ya está).
+var SM_REGION_FUNCION = 'us-west-2';
 async function smInvocar(body) {
-  var res = await _sb.functions.invoke('solicitud-mercadeo', { body: body });
+  var res = await _sb.functions.invoke('solicitud-mercadeo', { body: body, region: SM_REGION_FUNCION });
   if (res.error) {
     var msg = 'No se pudo completar la operación';
     try {

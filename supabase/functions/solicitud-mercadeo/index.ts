@@ -44,13 +44,20 @@
 //
 // Permisos: enviar = rol admin o módulo `solicitudes_mercadeo`; aprobar = rol admin o módulo
 // `solicitudes_mercadeo_aprobar` (usuario_modulos). Desplegar con verify_jwt = true.
+//
+// Rendimiento: la base de datos de este proyecto está en us-west-2 y, sin indicarlo, la función corre en la
+// región más cercana al navegador (us-east-1), así que cada consulta cruzaba el país. Por eso (1) el navegador
+// fija la región con `functions.invoke(..., { region: 'us-west-2' })` (header `x-region`, de ahí que esté en
+// Access-Control-Allow-Headers) y (2) las consultas de arranque (perfil, módulos, empresas y, en `contexto`, la
+// lista de usuarios y el contador) se lanzan EN PARALELO con la verificación de la sesión en Auth, en vez de
+// una tras otra. Lo adelantado solo se usa si Auth confirma el mismo usuario del JWT.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': 'https://logisticatecbihol.github.io',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-region',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
@@ -101,6 +108,24 @@ const MAX_PENDIENTES_POR_USUARIO = 30
 const MAX_ENVIOS_POR_HORA = 10
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// Cuerpo de la petición ya leído (o el error de lectura, que se lanza después de autenticar).
+type Cuerpo = { ok: true; b: any } | { ok: false; e: unknown }
+// Resultados adelantados: perfil, módulos, empresas y —solo en `contexto`— usuarios del panel y contador de pendientes.
+type Adelanto = [any, any, any, any, any]
+
+// `sub` (id del usuario) del JWT. Solo se usa para adelantar consultas; la identidad la confirma Auth con getUser().
+function subDeJwt(authHeader: string): string | null {
+  try {
+    const partes = authHeader.replace(/^Bearer\s+/i, '').trim().split('.')
+    if (partes.length !== 3) return null
+    const b64 = partes[1].replace(/-/g, '+').replace(/_/g, '/')
+    const sub = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '='))).sub
+    return typeof sub === 'string' && UUID_RE.test(sub) ? sub.toLowerCase() : null
+  } catch (_e) {
+    return null
+  }
+}
 
 class Rechazo extends Error {
   status: number
@@ -197,29 +222,58 @@ serve(async (req) => {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Rechazo('No autenticado', 401)
 
+    // El cuerpo se lee ya (es local, no toca la red) para saber la acción; si no es JSON válido el error se lanza
+    // más abajo, DESPUÉS de autenticar y comprobar permisos, igual que antes.
+    const leido: Cuerpo = await req.json().then(
+      (b: any) => ({ ok: true, b }) as Cuerpo,
+      (e: unknown) => ({ ok: false, e }) as Cuerpo,
+    )
+    const accion = leido.ok ? leido.b?.action : undefined
+
     const supabaseUser = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: authHeader } } },
     )
-    const { data: { user } } = await supabaseUser.auth.getUser()
-    if (!user) throw new Rechazo('No autenticado', 401)
-
     const admin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { autoRefreshToken: false, persistSession: false } },
     )
 
+    // Consultas de arranque (todas con el cliente de servicio; los filtros por usuario van por parámetro).
+    const qPerfil = (id: string) => admin.from('usuarios').select('id, nombre, email, rol').eq('id', id).eq('activo', true).maybeSingle()
+    const qMods = (id: string) => admin.from('usuario_modulos').select('modulo').eq('usuario_id', id).in('modulo', [MODULO, MODULO_APROBAR])
+    const qEmpresas = (id: string) => admin.from('usuario_empresas').select('empresa_sigla').eq('usuario_id', id)
+    const qUsuariosPanel = () => admin.from('usuarios').select('id, nombre, email, rol').eq('activo', true).order('nombre')
+    const qPendientes = () => admin.from(TABLA).select('id', { count: 'exact', head: true }).eq('estado_aprobacion', 'Por aprobar')
+
+    // La puerta de enlace ya verificó la firma del JWT (verify_jwt = true): de ahí sale el id con el que se
+    // adelantan las consultas mientras Auth confirma que la sesión sigue vigente (no revocada). Lo adelantado
+    // solo se usa si Auth devuelve ese mismo usuario; si algo falla se vuelve al camino normal.
+    const idJwt = subDeJwt(authHeader)
+    const adelanto: Promise<Adelanto | null> = idJwt
+      ? Promise.all([
+          qPerfil(idJwt), qMods(idJwt), qEmpresas(idJwt),
+          accion === 'contexto' ? qUsuariosPanel() : null,
+          accion === 'contexto' ? qPendientes() : null,
+        ]).then((r) => r as Adelanto, () => null)
+      : Promise.resolve(null)
+
+    const { data: { user } } = await supabaseUser.auth.getUser()
+    if (!user) throw new Rechazo('No autenticado', 401)
+
+    const pre: Adelanto | null = idJwt === user.id ? await adelanto : null
+    const [p, mods, empresasFila, usuariosPre, pendientesPre]: Adelanto = pre ??
+      (await Promise.all([qPerfil(user.id), qMods(user.id), qEmpresas(user.id), null, null]) as Adelanto)
+
     // Perfil activo
-    const p = await admin.from('usuarios').select('id, nombre, email, rol').eq('id', user.id).eq('activo', true).maybeSingle()
     if (p.error) throw p.error
     if (!p.data) throw new Rechazo('Tu usuario no está activo', 403)
     const perfil = p.data
     const nombreUsuario = (perfil.nombre || '').trim() || perfil.email
 
     // Permisos (admin siempre)
-    const mods = await admin.from('usuario_modulos').select('modulo').eq('usuario_id', user.id).in('modulo', [MODULO, MODULO_APROBAR])
     if (mods.error) throw mods.error
     const tiene = (m: string) => (mods.data || []).some((r: any) => r.modulo === m)
     const esAdmin = perfil.rol === 'admin'
@@ -232,18 +286,18 @@ serve(async (req) => {
     if (esAdmin || perfil.rol === 'cartera') {
       empresas = [...EMPRESAS_HOLDING]
     } else {
-      const e = await admin.from('usuario_empresas').select('empresa_sigla').eq('usuario_id', user.id)
-      if (e.error) throw e.error
-      empresas = (e.data || []).map((r: any) => r.empresa_sigla).filter((s: string) => EMPRESAS_HOLDING.includes(s))
+      if (empresasFila.error) throw empresasFila.error
+      empresas = (empresasFila.data || []).map((r: any) => r.empresa_sigla).filter((s: string) => EMPRESAS_HOLDING.includes(s))
     }
 
-    const body = await req.json()
+    if (!leido.ok) throw leido.e
+    const body = leido.b
 
     // ── Utilidades que usan el contexto de la petición ──
     // Usuarios activos del panel (para "Solicitante"/"a nombre de"), incluido el propio usuario.
-    // Solo se expone nombre y rol (no el correo).
-    async function usuariosPanel() {
-      const c = await admin.from('usuarios').select('id, nombre, email, rol').eq('activo', true).order('nombre')
+    // Solo se expone nombre y rol (no el correo). `pre`: resultado ya adelantado (solo en `contexto`).
+    async function usuariosPanel(pre?: any) {
+      const c = pre ?? await qUsuariosPanel()
       if (c.error) throw c.error
       return (c.data || []).map((x: any) => ({ id: x.id, nombre: (x.nombre || '').trim() || x.email, rol: x.rol }))
     }
@@ -555,10 +609,10 @@ serve(async (req) => {
 
     switch (body?.action) {
       case 'contexto': {
-        const usuarios = await usuariosPanel()
+        const usuarios = await usuariosPanel(usuariosPre)
         let pendientes: number | null = null
         if (puedeAprobar) {
-          const c = await admin.from(TABLA).select('id', { count: 'exact', head: true }).eq('estado_aprobacion', 'Por aprobar')
+          const c = pendientesPre ?? await qPendientes()
           if (c.error) throw c.error
           pendientes = c.count ?? 0
         }
