@@ -69,7 +69,42 @@ async function doLogin(e) {
     return;
   }
 
+  // Cuentas que no son del panel pero sí usuarias de una bodega satélite van a la app de bodegas
+  // (en vez de que index.html les cierre la sesión por no tener fila en `usuarios`).
+  btn.textContent = 'Verificando acceso...';
+  if (await irABodegaSiAplica(res.data && res.data.user, email, pass)) return;
+
   location.replace('index.html');
+}
+
+// true si la cuenta NO tiene acceso al panel pero SÍ es usuaria activa de alguna bodega satélite: cierra la sesión
+// del panel (solo esta, scope local), abre la de la app de bodegas (clave de sesión propia, igual que
+// js/bodega-cliente.js) con las mismas credenciales y navega. Ante cualquier duda o error devuelve false y el
+// flujo es el de siempre. Una cuenta del panel que además es de bodega (con fila activa en `usuarios`) entra al panel.
+async function irABodegaSiAplica(user, email, pass) {
+  try {
+    if (!user) return false;
+    // Misma consulta que js/auth.js para decidir si la cuenta es del panel.
+    var p = await _sb.from('usuarios').select('id').eq('id', user.id).eq('activo', true).maybeSingle();
+    if (p.error || p.data) return false;
+    var c = await _sb.rpc('bodega_mi_contexto');
+    if (c.error || !c.data || !c.data.usuario) return false;
+
+    document.getElementById('btn-login').textContent = 'Entrando a Bodegas satélite...';
+    // Local: no revoca otras sesiones de la cuenta (un signOut global cerraría también la de la bodega).
+    try { await _sb.auth.signOut({ scope: 'local' }); } catch (e) {}
+    // Desde aquí la sesión del panel ya no existe: si algo falla, el destino es el login de bodegas.
+    var destino = 'bodega-login.html';
+    try {
+      var cb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storageKey: 'sb-bodega-auth' } });
+      var r2 = await cb.auth.signInWithPassword({ email: email, password: pass });
+      if (!r2.error) destino = 'bodega-satelite.html';
+    } catch (e2) {}
+    location.replace(destino);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 function togglePass() {
