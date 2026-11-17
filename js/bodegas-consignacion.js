@@ -477,7 +477,7 @@ function bcRenderGestion() {
   var ub = document.getElementById('bc-body-usuarios');
   document.getElementById('bc-row-ct-usuarios').textContent = '(' + bcGest.usuarios.length + ')';
   if (!bcGest.usuarios.length) {
-    ub.innerHTML = '<tr><td colspan="5"><div class="empty">Aún no hay usuarios de bodega.</div></td></tr>';
+    ub.innerHTML = '<tr><td colspan="6"><div class="empty">Aún no hay usuarios de bodega.</div></td></tr>';
     return;
   }
   ub.innerHTML = bcGest.usuarios.map(function(u) {
@@ -485,7 +485,11 @@ function bcRenderGestion() {
       var b = bcGest.bodegas.filter(function(x) { return x.bodega_id === id; })[0];
       return b ? (b.config ? escHtml(b.config.codigo) : escHtml(b.nombre)) : '#' + id;
     }).join(', ') || '<span style="color:#a0aec0">Sin bodegas</span>';
-    return '<tr' + (u.activo ? '' : ' style="opacity:.6"') + '><td>' + escHtml(u.nombre) + '</td><td>' + escHtml(u.email) + '</td><td>' + nombres + '</td>' +
+    // «Cuenta»: una cuenta del panel (con rol) que además gestiona bodegas se distingue de las que son SOLO de bodega.
+    var cuenta = u.rol_panel
+      ? '<span style="background:#ebf8ff;color:#2a4365;border-radius:10px;padding:1px 9px;font-size:0.72rem;font-weight:700;white-space:nowrap" title="Cuenta del panel principal que también gestiona bodegas">Panel: ' + escHtml(u.rol_panel) + '</span>'
+      : '<span style="background:#e2e8f0;color:#4a5568;border-radius:10px;padding:1px 9px;font-size:0.72rem;font-weight:700;white-space:nowrap" title="Cuenta creada solo para las bodegas (no ve el panel)">Solo bodega</span>';
+    return '<tr' + (u.activo ? '' : ' style="opacity:.6"') + '><td>' + escHtml(u.nombre) + '</td><td>' + escHtml(u.email) + '</td><td>' + cuenta + '</td><td>' + nombres + '</td>' +
       '<td>' + (u.activo ? '<span style="color:#27ae60;font-weight:600">Activo</span>' : '<span style="color:#a0aec0">Inactivo</span>') + '</td>' +
       '<td><button class="btn-dl" style="padding:3px 10px;font-size:0.76rem" onclick="bcAbrirModalUsuario(\'' + escHtml(u.usuario_id) + '\')">✏️ Editar</button></td></tr>';
   }).join('');
@@ -569,6 +573,13 @@ function bcAbrirModalUsuario(uid) {
   document.getElementById('bu-m-pass').value = '';
   document.getElementById('bu-m-pass-wrap').style.display = u ? 'none' : '';
   document.getElementById('bu-m-activo').checked = u ? u.activo : true;
+  var nota = document.getElementById('bu-m-nota');
+  var esPanel = !!(u && u.rol_panel);
+  nota.innerHTML = esPanel
+    ? '👤 Cuenta del <strong>panel principal</strong> (rol: <strong>' + escHtml(u.rol_panel) + '</strong>). Desactivarla aquí solo le quita el acceso a las bodegas; su acceso al panel no cambia.'
+    : '';
+  nota.style.background = esPanel ? '#ebf8ff' : '';
+  nota.style.padding = esPanel ? '8px 10px' : '0';
   var asignadas = u ? (u.bodegas || []) : [];
   document.getElementById('bu-m-bodegas').innerHTML = habilitadas.map(function(b) {
     return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer"><input type="checkbox" class="bu-m-bod" value="' + b.bodega_id + '"' +
@@ -591,23 +602,27 @@ async function bcGuardarUsuario() {
   var bodegas = Array.prototype.map.call(document.querySelectorAll('.bu-m-bod:checked'), function(i) { return Number(i.value); });
   if (nombre.length < 3) { showToast('Escribe el nombre (mínimo 3 caracteres)', '#e74c3c'); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showToast('Correo no válido', '#e74c3c'); return; }
-  if (!uid && pass.length < 8) { showToast('La contraseña debe tener al menos 8 caracteres', '#e74c3c'); return; }
 
   var btn = document.getElementById('bu-m-btn-guardar');
   btn.disabled = true; btn.textContent = '⏳ Guardando...';
   var creada = false;
   try {
     if (!uid) {
-      // ¿Ya existe una cuenta con ese correo? Una cuenta del panel principal NO puede ser de bodega.
+      // ¿Ya existe una cuenta con ese correo? Una cuenta del panel principal SÍ puede gestionar bodegas (p. ej. un
+      // comercial): se vincula con su misma cuenta y contraseña, sin tocar su acceso al panel. La contraseña solo se pide
+      // para cuentas NUEVAS.
       var f = await _bcRpc('bodega_admin_buscar_usuario', { p_email: email });
       if (f.existe) {
-        if (f.es_usuario_principal) throw new Error('Ese correo ya es de un usuario del panel principal. Los usuarios de bodega deben ser cuentas aparte: usa otro correo.');
         if (f.ya_es_bodega) throw new Error('Ese correo ya es usuario de bodega: edítalo desde la lista.');
-        if (!window.confirm('Ya existe una cuenta con ese correo (sin acceso al panel de la empresa). ¿Vincularla como usuario de bodega? Su contraseña no se cambia.')) {
+        var pregunta = f.es_usuario_principal
+          ? 'Esta cuenta ya es del PANEL PRINCIPAL (rol: ' + (f.rol_panel || '—') + (f.nombre_panel ? ', ' + f.nombre_panel : '') + '). Se le dará acceso a las bodegas marcadas con su MISMA cuenta y contraseña; su acceso al panel no cambia. ¿Continuar?'
+          : 'Ya existe una cuenta con ese correo (sin acceso al panel de la empresa). ¿Vincularla como usuario de bodega? Su contraseña no se cambia.';
+        if (!window.confirm(pregunta)) {
           return;
         }
         uid = f.usuario_id;
       } else {
+        if (pass.length < 8) throw new Error('Cuenta nueva: la contraseña temporal debe tener al menos 8 caracteres.');
         var fnRes = await _sb.functions.invoke('create-user', { body: { email: email, password: pass } });
         if (fnRes.error) {
           var msg = 'Error al crear la cuenta en Auth';

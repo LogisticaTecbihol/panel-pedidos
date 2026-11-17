@@ -89,7 +89,7 @@ async function doLogin(e) {
   try { ctx = await bodegaContexto(); } catch (err) { ctx = null; }
   if (!ctx || !ctx.usuario) {
     try { await _sb.auth.signOut({ scope: 'local' }); } catch (e2) {}
-    errEl.innerHTML = 'Esta cuenta no tiene acceso a las bodegas satélite. Si eres del panel de la empresa, ingresa por <a href="login.html">el inicio de sesión del panel</a>.';
+    errEl.innerHTML = 'Esta cuenta no tiene bodegas asignadas (o está desactivada). Pide al administrador que te habilite. Para el panel de la empresa ingresa por <a href="login.html">su inicio de sesión</a>.';
     btn.disabled = false;
     btn.textContent = 'Iniciar sesión';
     return;

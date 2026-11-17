@@ -188,11 +188,11 @@
         <h3>👤 Usuarios de bodega <span id="bc-row-ct-usuarios" style="font-weight:400;color:#718096"></span></h3>
         <button class="btn-dl" onclick="bcAbrirModalUsuario()">➕ Nuevo usuario de bodega</button>
       </div>
-      <p style="font-size:0.76rem;color:#718096;margin:0 0 10px">Son cuentas aparte de los usuarios del panel: no aparecen en «Usuarios» y no ven nada del panel de la empresa. Entran por <a href="bodega-login.html" target="_blank" rel="noopener">bodega-login.html</a>.</p>
+      <p style="font-size:0.76rem;color:#718096;margin:0 0 10px">Los usuarios <strong>«Solo bodega»</strong> son cuentas aparte de los usuarios del panel: no aparecen en «Usuarios» y no ven nada del panel de la empresa. Una persona que <strong>ya tiene cuenta en el panel</strong> (p. ej. un comercial) también puede gestionar bodegas con su misma cuenta: escribe su correo del panel y se le vincula sin cambiar su acceso al panel (se muestra como «Panel: rol»). Todos entran a las bodegas por <a href="bodega-login.html" target="_blank" rel="noopener">bodega-login.html</a>.</p>
       <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr><th>Nombre</th><th>Correo</th><th>Bodegas</th><th>Estado</th><th></th></tr>
+            <tr><th>Nombre</th><th>Correo</th><th>Cuenta</th><th>Bodegas</th><th>Estado</th><th></th></tr>
           </thead>
           <tbody id="bc-body-usuarios"></tbody>
         </table>
@@ -309,9 +309,9 @@
         <input class="ef" id="bu-m-email" type="email" maxlength="120" autocomplete="off">
       </div>
       <div style="margin-bottom:12px" id="bu-m-pass-wrap">
-        <label class="ef-label">Contraseña temporal * (mín. 8 caracteres)</label>
+        <label class="ef-label">Contraseña temporal (solo si la cuenta es NUEVA; mín. 8 caracteres)</label>
         <input class="ef" id="bu-m-pass" type="text" maxlength="72" autocomplete="off">
-        <div style="font-size:0.72rem;color:#a0aec0;margin-top:3px">Compártela con la persona por un canal seguro; puede cambiarla con «¿Olvidaste tu contraseña?» en bodega-login.html.</div>
+        <div style="font-size:0.72rem;color:#a0aec0;margin-top:3px">Si escribes el correo de alguien que ya usa el panel, se vincula su misma cuenta y esta contraseña se ignora. Para cuentas nuevas, compártela por un canal seguro; la persona puede cambiarla con «¿Olvidaste tu contraseña?» en bodega-login.html.</div>
       </div>
       <div style="margin-bottom:12px">
         <label class="ef-label">Bodegas asignadas</label>
@@ -322,6 +322,7 @@
           <input type="checkbox" id="bu-m-activo" checked style="width:16px;height:16px;cursor:pointer"> Usuario activo
         </label>
       </div>
+      <div id="bu-m-nota" style="font-size:0.76rem;color:#2a4365;border-radius:6px;margin-top:6px"></div>
     </div>
     <div class="mftr">
       <div class="mftr-btns">
@@ -338,6 +339,6 @@
 <script src="js/shared.js?v=20261023a"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261117a"></script>
-<script src="js/bodegas-consignacion.js?v=20261117a"></script>
+<script src="js/bodegas-consignacion.js?v=20261117b"></script>
 </body>
 </html>
