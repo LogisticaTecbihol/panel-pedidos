@@ -38,6 +38,7 @@ var BACKUP_TABLES = [
   { name: 'BodegaConteoLineas', label: 'Bodegas Satélite: Conteo Líneas' },
   { name: 'BodegaTraslados',   label: 'Bodegas Satélite: Traslados' },
   { name: 'BodegaConsecutivos', label: 'Bodegas Satélite: Consecutivos' },
+  { name: 'BodegaSolicitudes', label: 'Bodegas Satélite: Solicitudes' },
   { name: 'solicitudes_mercadeo', label: 'Solicitudes Mercadeo' },
   { name: 'Cotizaciones',      label: 'Cotizaciones' },
   { name: 'CotizacionLineas',  label: 'Cotización Líneas' },

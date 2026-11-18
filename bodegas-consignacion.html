@@ -101,6 +101,9 @@
     <button class="btn-export tab-btn" id="bc-tab-resumen" onclick="bcSwitchTab('resumen')" style="background:#718096">📦 Resumen por bodega</button>
     <button class="btn-export tab-btn auth-edit-only" id="bc-tab-admin" onclick="bcSwitchTab('admin')" style="background:#718096">🗂️ Administrar bodegas</button>
     <button class="btn-export tab-btn auth-admin-only" id="bc-tab-gestion" onclick="bcSwitchTab('gestion')" style="background:#718096;display:none">🏬 Gestión de bodegas satélite</button>
+    <!-- Se muestran solo a quien puede verlas (RPC bodega_principal_permisos): admin y personal de la principal con este módulo -->
+    <button class="btn-export tab-btn" id="bc-tab-solicitudes" onclick="bcSwitchTab('solicitudes')" style="background:#718096;display:none">📨 Solicitudes de bodegas <span id="bc-sol-badge" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;font-size:0.7rem;font-weight:800;margin-left:4px">0</span></button>
+    <button class="btn-export tab-btn" id="bc-tab-supervision" onclick="bcSwitchTab('supervision')" style="background:#718096;display:none">📦 Existencias por bodega</button>
   </div>
 
   <!-- PANEL: Listado -->
@@ -195,6 +198,67 @@
             <tr><th>Nombre</th><th>Correo</th><th>Cuenta</th><th>Bodegas</th><th>Estado</th><th></th></tr>
           </thead>
           <tbody id="bc-body-usuarios"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL: Solicitudes de las bodegas satélite (muestra, cambio, devolución) -->
+  <div id="bc-panel-solicitudes" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>📨 Solicitudes de las bodegas satélite <span id="bc-row-ct-sol" style="font-weight:400;color:#718096"></span></h3>
+        <button class="btn-dl" onclick="bcSolCargar()">🔄 Actualizar</button>
+      </div>
+      <p style="font-size:0.76rem;color:#718096;margin:0 0 10px">Las bodegas satélite <strong>solicitan</strong> muestras y cambios y <strong>devuelven</strong> mercancía a la principal. Aquí las atiende el personal de Muestras / Devoluciones: gestiona el documento en su módulo de siempre (Muestras, Devoluciones y Cambios o Ingresos) y anota aquí su referencia. <strong>Esta pantalla no crea ni mueve nada en la principal.</strong></p>
+      <div class="filters" style="margin-bottom:8px">
+        <div class="fg"><label>Estado</label><select id="bc-sol-festado" onchange="bcSolRender()">
+          <option value="abiertas">Abiertas (por atender)</option><option value="">Todas</option><option value="Pendiente">Pendiente</option><option value="En proceso">En proceso</option><option value="En tránsito">En tránsito (devoluciones)</option>
+          <option value="Atendida">Atendida</option><option value="Recibida">Recibida</option><option value="Recibida con diferencia">Recibida con diferencia</option><option value="Rechazada">Rechazada</option><option value="Cancelada">Cancelada</option></select></div>
+        <div class="fg"><label>Tipo</label><select id="bc-sol-ftipo" onchange="bcSolRender()"><option value="">Todos</option><option value="MUESTRA">Muestras</option><option value="CAMBIO">Cambios</option><option value="DEVOLUCION">Devoluciones</option></select></div>
+        <div class="fg"><label>Bodega</label><select id="bc-sol-fbodega" onchange="bcSolRender()"><option value="">Todas</option></select></div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Documento</th><th>Tipo</th><th>Fecha</th><th>Bodega</th><th>Para</th><th>Detalle</th><th>Estado</th><th></th></tr>
+          </thead>
+          <tbody id="bc-body-sol"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL: Existencias por bodega satélite (solo lectura) -->
+  <div id="bc-panel-supervision" style="display:none">
+    <div class="card">
+      <div class="card-head">
+        <h3>📦 Existencias de las bodegas satélite <span id="bc-row-ct-sup" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-dl" onclick="bcSupExcelTodas()">⬇ Excel (todas)</button>
+          <button class="btn-dl" onclick="bcSupCargar(true)">🔄 Actualizar</button>
+        </div>
+      </div>
+      <p style="font-size:0.76rem;color:#718096;margin:0 0 10px">Solo lectura. Es el inventario propio de cada bodega (producto terminado en buen estado, sin apartados): <strong>no forma parte</strong> de las existencias, el Kardex ni los reportes de la principal. «En tránsito» = ya salió de la bodega (traslado a otra bodega o devolución a la principal) y aún no se confirma.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Empresa</th><th>Bodega</th><th>Código</th><th>Conteo inicial</th><th style="text-align:right">Productos</th><th style="text-align:right">Unidades</th><th style="text-align:right">En tránsito</th><th style="text-align:right">Solicitudes abiertas</th><th>Último movimiento</th><th></th></tr>
+          </thead>
+          <tbody id="bc-body-sup"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" id="bc-sup-detalle" style="display:none">
+      <div class="card-head">
+        <h3 id="bc-sup-titulo">📦 Existencias</h3>
+        <button class="btn-dl" onclick="bcSupExcelUna()">⬇ Exportar Excel</button>
+      </div>
+      <div class="filters" style="margin-bottom:8px"><div class="fg"><label>Buscar producto</label><input class="ef" id="bc-sup-q" type="search" placeholder="Nombre del producto" oninput="bcSupRenderDetalle()" style="min-width:240px"></div></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Producto</th><th>Presentación</th><th style="text-align:right">Existencia</th></tr></thead>
+          <tbody id="bc-body-sup-detalle"></tbody>
         </table>
       </div>
     </div>
@@ -333,12 +397,27 @@
   </div>
 </div>
 
+<!-- MODAL: Detalle y atención de una solicitud de bodega -->
+<div class="overlay" id="bq-modal-overlay">
+  <div class="modal-box" style="max-width:780px">
+    <div class="mhdr">
+      <div style="flex:1"><h2 id="bq-modal-titulo">📨 Solicitud</h2></div>
+      <button class="btn-close" onclick="bcSolCerrar()">✕</button>
+    </div>
+    <div class="mbody" id="bq-modal-body"></div>
+    <div class="mftr">
+      <div class="mftr-btns" id="bq-modal-btns"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared.js?v=20261023a"></script>
 <script src="js/auth.js?v=20261021"></script>
-<script src="js/notificaciones.js?v=20261117a"></script>
-<script src="js/bodegas-consignacion.js?v=20261117b"></script>
+<script src="js/notificaciones.js?v=20261118a"></script>
+<script src="js/bodegas-consignacion.js?v=20261118a"></script>
 </body>
 </html>

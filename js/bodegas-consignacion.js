@@ -179,13 +179,15 @@ function bcClearFilters() {
 
 function bcSwitchTab(tab) {
   bcTab = tab;
-  ['listado', 'resumen', 'admin', 'gestion'].forEach(function(t) {
+  ['listado', 'resumen', 'admin', 'gestion', 'solicitudes', 'supervision'].forEach(function(t) {
     var panel = document.getElementById('bc-panel-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
     var btn = document.getElementById('bc-tab-' + t);
     if (btn) btn.style.background = (t === tab) ? '#1a5276' : '#718096';
   });
   if (tab === 'gestion') bcGestionCargar();
+  if (tab === 'solicitudes') bcSolCargar();
+  if (tab === 'supervision') bcSupCargar();
 }
 
 // ── Render ─────────────────────────────────────────────────────
@@ -645,18 +647,301 @@ async function bcGuardarUsuario() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Solicitudes de las bodegas satélite y existencias por bodega (fase 2; ver
+// supabase/migrations/bodega_satelite_solicitudes.sql)
+//
+// La bodega solicita muestras y cambios y devuelve mercancía a la principal; AQUÍ las atiende el personal que ya maneja
+// Muestras / Devoluciones (y el administrador): gestiona el documento en su módulo de siempre y anota su referencia.
+// Esta sección NO crea ni mueve nada en la principal: solo cambia el estado de la solicitud (RPC bodega_solicitud_atender).
+// Quién ve y quién atiende lo decide el servidor (bodega_principal_permisos / puede_atender); la pantalla solo muestra u oculta.
+// ══════════════════════════════════════════════════════════════
+var bcPerm = { ver: false, atiende: false, admin: false, listo: false };
+var bcSol = { lista: [], cargado: false, sel: null };
+var bcSup = { bodegas: [], cargado: false, sel: null };
+var BC_SOL_TIPO = { MUESTRA: { txt: 'Muestra', ico: '📨' }, CAMBIO: { txt: 'Cambio', ico: '🔄' }, DEVOLUCION: { txt: 'Devolución', ico: '↩️' } };
+var BC_SOL_ABIERTAS = ['Pendiente', 'En proceso', 'En tránsito'];
+
+async function bcPermisosCargar() {
+  try {
+    if (typeof _authReady !== 'undefined') { try { await _authReady; } catch (e) {} }
+    var p = await _bcRpc('bodega_principal_permisos');
+    bcPerm = { ver: !!(p && p.ver), atiende: !!(p && p.atiende), admin: !!(p && p.admin), listo: true };
+  } catch (e) {
+    bcPerm = { ver: false, atiende: false, admin: false, listo: true };
+  }
+  ['solicitudes', 'supervision'].forEach(function(t) {
+    var b = document.getElementById('bc-tab-' + t);
+    if (b) b.style.display = bcPerm.ver ? '' : 'none';
+  });
+  if (bcPerm.ver) bcSolCargar(true);   // solo para el contador de la pestaña
+  return bcPerm;
+}
+
+function bcSolBadgeEstado(e) {
+  var c = { 'Pendiente': ['#feebc8', '#7b341e'], 'En proceso': ['#bee3f8', '#2a4365'], 'Atendida': ['#c6f6d5', '#22543d'], 'Rechazada': ['#fed7d7', '#742a2a'],
+            'En tránsito': ['#bee3f8', '#2a4365'], 'Recibida': ['#c6f6d5', '#22543d'], 'Recibida con diferencia': ['#feebc8', '#7b341e'], 'Cancelada': ['#e2e8f0', '#4a5568'] }[e] || ['#e2e8f0', '#4a5568'];
+  return '<span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700;white-space:nowrap;background:' + c[0] + ';color:' + c[1] + '">' + escHtml(e) + '</span>';
+}
+function bcSolNombreBodega(s) { var b = s.bodega || {}; return (b.nombre || '') + (b.municipio ? ' · ' + b.municipio : ''); }
+function bcSolResumen(s) {
+  var l = s.lineas || [];
+  var dev = l.filter(function(x) { return (x.sentido || 'DEVUELVE') === 'DEVUELVE'; });
+  var uds = dev.reduce(function(t, x) { return t + Number(x.cantidad); }, 0);
+  if (s.tipo === 'CAMBIO') return 'devuelve ' + _fmtNum.format(uds) + ' ud' + (l.length > dev.length ? ' · con reemplazo' : '');
+  return l.length + ' producto(s) · ' + _fmtNum.format(uds) + ' ud' + (s.tipo === 'MUESTRA' ? (s.origen_stock === 'BODEGA' ? ' · del stock de la bodega' : ' · la despacha la principal') : '');
+}
+
+async function bcSolCargar(soloContador) {
+  var tbody = document.getElementById('bc-body-sol');
+  if (!soloContador && tbody && !bcSol.cargado) tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Cargando…</div></td></tr>';
+  try {
+    if (typeof _authReady !== 'undefined') { try { await _authReady; } catch (e) {} }
+    bcSol.lista = (await _bcRpc('bodega_solicitudes_principal')) || [];
+    bcSol.cargado = true;
+    var sel = document.getElementById('bc-sol-fbodega');
+    if (sel) {
+      var prev = sel.value, vistos = {};
+      bcSol.lista.forEach(function(s) { vistos[s.bodega_id] = bcSolNombreBodega(s) + ' (' + ((s.bodega || {}).codigo || '') + ')'; });
+      sel.innerHTML = '<option value="">Todas</option>' + Object.keys(vistos).sort(function(a, b) { return vistos[a].localeCompare(vistos[b], 'es'); })
+        .map(function(id) { return '<option value="' + id + '">' + escHtml(vistos[id]) + '</option>'; }).join('');
+      sel.value = vistos[prev] ? prev : '';
+    }
+    var porAtender = bcSol.lista.filter(function(s) { return s.puede_atender && (s.estado === 'Pendiente' || s.estado === 'En tránsito'); }).length;
+    var bd = document.getElementById('bc-sol-badge');
+    if (bd) { bd.textContent = porAtender; bd.style.display = porAtender > 0 ? '' : 'none'; }
+    if (!soloContador) bcSolRender();
+  } catch (err) {
+    if (!soloContador && tbody) tbody.innerHTML = '<tr><td colspan="8"><div class="empty">' + escHtml((err && err.message) || String(err)) + '</div></td></tr>';
+  }
+}
+
+function bcSolRender() {
+  var tbody = document.getElementById('bc-body-sol');
+  if (!tbody) return;
+  var fe = document.getElementById('bc-sol-festado').value;
+  var ft = document.getElementById('bc-sol-ftipo').value;
+  var fb = document.getElementById('bc-sol-fbodega').value;
+  var filas = bcSol.lista.filter(function(s) {
+    if (fe === 'abiertas' ? BC_SOL_ABIERTAS.indexOf(s.estado) < 0 : (fe && s.estado !== fe)) return false;
+    if (ft && s.tipo !== ft) return false;
+    if (fb && String(s.bodega_id) !== fb) return false;
+    return true;
+  });
+  document.getElementById('bc-row-ct-sol').textContent = '(' + filas.length + ' de ' + bcSol.lista.length + ')';
+  if (!filas.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty">' + (bcSol.lista.length ? 'Ninguna solicitud coincide con el filtro.' : 'Las bodegas aún no han enviado solicitudes.') + '</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = filas.map(function(s) {
+    var t = BC_SOL_TIPO[s.tipo] || { txt: s.tipo, ico: '' };
+    var atender = s.puede_atender && BC_SOL_ABIERTAS.indexOf(s.estado) >= 0;
+    return '<tr' + (s.estado === 'Cancelada' ? ' style="opacity:.6"' : '') + '>' +
+      '<td><strong>' + escHtml(s.consecutivo) + '</strong></td><td>' + t.ico + ' ' + escHtml(t.txt) + '</td>' +
+      '<td style="white-space:nowrap">' + fmtDate(s.fecha) + '</td>' +
+      '<td><span class="sigla-badge ' + getSiglaClass((s.bodega || {}).empresa) + '">' + escHtml(getSigla((s.bodega || {}).empresa)) + '</span> ' + escHtml(bcSolNombreBodega(s)) + '</td>' +
+      '<td>' + escHtml(s.destinatario || '—') + '</td><td>' + escHtml(bcSolResumen(s)) + '</td>' +
+      '<td>' + bcSolBadgeEstado(s.estado) + (s.ref_principal ? '<div style="font-size:0.72rem;color:#718096">Ref: ' + escHtml(s.ref_principal) + '</div>' : '') + '</td>' +
+      '<td><button class="btn-dl" style="padding:3px 10px;font-size:0.76rem' + (atender ? ';background:#1a5276;color:#fff' : '') + '" onclick="bcSolAbrir(' + s.id + ')">' + (atender ? '▶ Atender' : 'Ver') + '</button></td></tr>';
+  }).join('');
+}
+
+function bcSolCerrar() {
+  document.getElementById('bq-modal-overlay').classList.remove('show');
+  bcSol.sel = null;
+}
+
+function bcSolAbrir(id) {
+  var s = bcSol.lista.filter(function(x) { return x.id === id; })[0];
+  if (!s) return;
+  bcSol.sel = s;
+  var t = BC_SOL_TIPO[s.tipo] || { txt: s.tipo, ico: '' };
+  var pares = [['Documento', '<strong>' + escHtml(s.consecutivo) + '</strong>'], ['Tipo', escHtml(t.ico + ' ' + t.txt)], ['Fecha', escHtml(fmtDate(s.fecha))],
+               ['Bodega', escHtml(bcSolNombreBodega(s))], ['Estado', bcSolBadgeEstado(s.estado)]];
+  if (s.tipo === 'MUESTRA') {
+    pares.push(['Destinatario', escHtml(s.destinatario)], ['Teléfono', escHtml(s.telefono)], ['Municipio', escHtml(s.municipio + (s.departamento ? ', ' + s.departamento : ''))],
+      ['Cultivo', escHtml(s.tipo_cultivo)], ['Objetivo', escHtml(s.objetivo)], ['Origen del producto', s.origen_stock === 'BODEGA' ? 'Stock de la bodega (ya se descontó)' : 'La despacha la principal']);
+  } else if (s.tipo === 'CAMBIO') {
+    pares.push(['Cliente', escHtml(s.destinatario)], ['Teléfono', escHtml(s.telefono)], ['Municipio', escHtml(s.municipio + (s.departamento ? ', ' + s.departamento : ''))],
+      ['Factura', escHtml(s.num_factura)], ['Razón del cambio', escHtml(s.motivo)]);
+  } else {
+    pares.push(['Motivo', escHtml(s.motivo)]);
+  }
+  if (s.observaciones) pares.push(['Observaciones', escHtml(s.observaciones)]);
+  pares.push(['Registrada por', escHtml(s.creado_por_nombre || '')]);
+
+  var cambio = s.tipo === 'CAMBIO';
+  var h = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px 14px;margin-bottom:12px">' +
+    pares.filter(function(p) { return p[1] !== '' && p[1] != null; }).map(function(p) {
+      return '<div><div style="font-size:0.72rem;color:#718096">' + escHtml(p[0]) + '</div><div style="font-size:0.88rem">' + p[1] + '</div></div>';
+    }).join('') + '</div>' +
+    '<div style="overflow-x:auto"><table><thead><tr><th>Producto</th>' + (cambio ? '<th>Sentido</th><th>Lote / vencimiento</th>' : '') + '<th style="text-align:right">Cantidad</th></tr></thead><tbody>' +
+    (s.lineas || []).map(function(l) {
+      return '<tr><td>' + escHtml(l.producto) + '</td>' +
+        (cambio ? '<td>' + (l.sentido === 'REEMPLAZO' ? 'Reemplazo' : 'Devuelve') + '</td><td>' + escHtml(l.lote || '—') + '</td>' : '') +
+        '<td style="text-align:right">' + _fmtNum.format(Number(l.cantidad) || 0) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+
+  if (s.ref_principal || s.respuesta) {
+    h += '<div style="margin-top:12px;padding:8px 12px;background:#f7fafc;border-radius:8px;font-size:0.84rem"><strong>Respuesta de la principal</strong>' +
+      (s.ref_principal ? '<div>Referencia: <strong>' + escHtml(s.ref_principal) + '</strong></div>' : '') +
+      (s.respuesta ? '<div>' + escHtml(s.respuesta) + '</div>' : '') +
+      (s.atendido_por_nombre ? '<div style="color:#718096;font-size:0.76rem">' + escHtml(s.atendido_por_nombre) + '</div>' : '') + '</div>';
+  }
+  if (s.estado === 'Cancelada') h += '<div style="margin-top:12px;padding:8px 12px;background:#f7fafc;border-radius:8px;font-size:0.84rem"><strong>Cancelada por la bodega:</strong> ' + escHtml(s.motivo_cancelacion || '') + '</div>';
+
+  var abierta = BC_SOL_ABIERTAS.indexOf(s.estado) >= 0;
+  var botones = '<button class="btn-cancel" onclick="bcSolCerrar()">Cerrar</button>';
+  if (abierta && s.puede_atender) {
+    var guia = s.tipo === 'MUESTRA'
+      ? (s.origen_stock === 'BODEGA'
+          ? 'Esta muestra ya salió del stock de la bodega. Regístrala en <a href="muestras.html" target="_blank" rel="noopener">Muestras</a> si corresponde y anota su consecutivo. <strong>Si la rechazas, las unidades vuelven al inventario de la bodega.</strong>'
+          : 'Despáchala desde <a href="muestras.html" target="_blank" rel="noopener">Muestras</a> (con su aprobación) y anota aquí su consecutivo.')
+      : s.tipo === 'CAMBIO'
+        ? 'Gestiona el cambio en <a href="devoluciones.html" target="_blank" rel="noopener">Devoluciones y Cambios</a> y anota aquí su consecutivo.'
+        : 'Cuando llegue la mercancía, regístrala en <a href="ingresos.html" target="_blank" rel="noopener">Ingresos</a> y anota aquí la remisión de entrada. Si llegó distinto a lo que dice el documento, marca «Recibida con diferencia» y descríbela.';
+    h += '<div style="margin-top:14px;padding:10px 12px;border:1px solid #bee3f8;background:#ebf8ff;border-radius:8px">' +
+      '<div style="font-weight:700;color:#2a4365;margin-bottom:4px">Atender esta solicitud</div>' +
+      '<div style="font-size:0.8rem;color:#2a4365;margin-bottom:8px">' + guia + '</div>' +
+      '<div style="margin-bottom:8px"><label class="ef-label">' + (s.tipo === 'DEVOLUCION' ? 'Remisión de entrada en la principal' : 'Referencia en la principal') + ' <span style="font-weight:400;color:#718096">(obligatoria al marcar atendida / recibida)</span></label>' +
+      '<input class="ef" id="bq-ref" maxlength="120" placeholder="' + (s.tipo === 'DEVOLUCION' ? 'Ej: IASO-RE-0100' : s.tipo === 'MUESTRA' ? 'Consecutivo de la muestra' : 'Consecutivo del cambio') + '"></div>' +
+      '<div><label class="ef-label">Respuesta para la bodega <span style="font-weight:400;color:#718096">(obligatoria al rechazar o si hay diferencia)</span></label>' +
+      '<textarea class="ef" id="bq-resp" maxlength="500" style="min-height:60px"></textarea></div></div>';
+    if (s.tipo === 'DEVOLUCION') {
+      botones += '<button class="btn-cancel" style="border-color:#c05621;color:#c05621" onclick="bcSolAtender(\'RECIBIDA_DIF\')">⚠️ Recibida con diferencia</button>' +
+                 '<button class="btn-confirm" onclick="bcSolAtender(\'RECIBIDA\')">✅ Confirmar recepción</button>';
+    } else {
+      if (s.estado === 'Pendiente') botones += '<button class="btn-cancel" onclick="bcSolAtender(\'EN_PROCESO\')">▶ Marcar en proceso</button>';
+      botones += '<button class="btn-cancel" style="border-color:#c0392b;color:#c0392b" onclick="bcSolAtender(\'RECHAZADA\')">✖ Rechazar</button>' +
+                 '<button class="btn-confirm" onclick="bcSolAtender(\'ATENDIDA\')">✅ Marcar atendida</button>';
+    }
+  } else if (abierta) {
+    h += '<div style="margin-top:14px;font-size:0.8rem;color:#718096">Solo lectura: esta solicitud la atienden el administrador y quienes manejan Muestras / Devoluciones (aprobadores de muestras) de la empresa.</div>';
+  }
+  document.getElementById('bq-modal-titulo').textContent = t.ico + ' Solicitud ' + s.consecutivo;
+  document.getElementById('bq-modal-body').innerHTML = h;
+  document.getElementById('bq-modal-btns').innerHTML = botones;
+  document.getElementById('bq-modal-overlay').classList.add('show');
+}
+
+async function bcSolAtender(accion) {
+  var s = bcSol.sel;
+  if (!s || !document.getElementById('bq-ref') || !document.getElementById('bq-resp')) return;   // sin formulario = solo lectura
+  var ref = document.getElementById('bq-ref').value.trim();
+  var resp = document.getElementById('bq-resp').value.trim();
+  if ((accion === 'ATENDIDA' || accion === 'RECIBIDA') && ref.length < 2) { showToast('Escribe la referencia del documento en la principal.', '#e67e22', 5000); document.getElementById('bq-ref').focus(); return; }
+  if ((accion === 'RECHAZADA' || accion === 'RECIBIDA_DIF') && resp.length < 5) { showToast(accion === 'RECHAZADA' ? 'Escribe el motivo del rechazo (mínimo 5 caracteres).' : 'Describe la diferencia encontrada (mínimo 5 caracteres).', '#e67e22', 5000); document.getElementById('bq-resp').focus(); return; }
+  if (accion === 'RECHAZADA' && s.origen_stock === 'BODEGA' && !window.confirm('Esta muestra salió del stock de la bodega. Al rechazarla las unidades VUELVEN al inventario de la bodega. ¿Rechazar?')) return;
+  var btns = document.querySelectorAll('#bq-modal-btns button');
+  Array.prototype.forEach.call(btns, function(b) { b.disabled = true; });
+  try {
+    var r = await _bcRpc('bodega_solicitud_atender', { p_id: s.id, p_accion: accion, p_ref: ref, p_respuesta: resp });
+    showToast('✅ ' + s.consecutivo + ': ' + r.estado + (r.movimientos_anulados ? ' (las unidades volvieron al inventario de la bodega)' : ''));
+    bcSolCerrar();
+    await bcSolCargar();
+  } catch (err) {
+    showToast('❌ ' + err.message, '#e74c3c', 7000);
+    Array.prototype.forEach.call(btns, function(b) { b.disabled = false; });
+  }
+}
+
+// ── Existencias por bodega (solo lectura) ──
+async function bcSupCargar(forzar) {
+  var tbody = document.getElementById('bc-body-sup');
+  if (!tbody) return;
+  if (!bcSup.cargado || forzar) tbody.innerHTML = '<tr><td colspan="10"><div class="empty">Cargando…</div></td></tr>';
+  try {
+    if (typeof _authReady !== 'undefined') { try { await _authReady; } catch (e) {} }
+    var d = await _bcRpc('bodega_supervision_resumen');
+    bcSup.bodegas = (d && d.bodegas) || [];
+    bcSup.cargado = true;
+    if (bcSup.sel != null && !bcSup.bodegas.some(function(b) { return b.bodega_id === bcSup.sel; })) bcSup.sel = null;
+    bcSupRender();
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty">' + escHtml((err && err.message) || String(err)) + '</div></td></tr>';
+  }
+}
+
+function bcSupRender() {
+  var tbody = document.getElementById('bc-body-sup');
+  document.getElementById('bc-row-ct-sup').textContent = '(' + bcSup.bodegas.length + ' bodega(s))';
+  if (!bcSup.bodegas.length) {
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty">No hay bodegas satélite habilitadas que puedas ver.</div></td></tr>';
+    document.getElementById('bc-sup-detalle').style.display = 'none';
+    return;
+  }
+  tbody.innerHTML = bcSup.bodegas.map(function(b) {
+    var transito = (Number(b.en_transito_traslados) || 0) + (Number(b.en_transito_devoluciones) || 0);
+    return '<tr' + (bcSup.sel === b.bodega_id ? ' style="background:#ebf8ff"' : '') + '>' +
+      '<td><span class="sigla-badge ' + getSiglaClass(b.empresa) + '">' + escHtml(getSigla(b.empresa)) + '</span></td>' +
+      '<td>' + escHtml(b.nombre || '') + (b.municipio ? ' <span style="color:#718096">· ' + escHtml(b.municipio) + '</span>' : '') + '</td>' +
+      '<td><strong>' + escHtml(b.codigo) + '</strong></td>' +
+      '<td>' + (b.inicial_aplicado ? '<span style="color:#27ae60">✔ Aplicado</span>' : '<span style="color:#e67e22">⏳ Pendiente</span>') + '</td>' +
+      '<td style="text-align:right">' + _fmtNum.format((b.items || []).length) + '</td>' +
+      '<td style="text-align:right;font-weight:700">' + _fmtNum.format(Number(b.unidades) || 0) + '</td>' +
+      '<td style="text-align:right">' + (transito ? '<span style="color:#e67e22">' + _fmtNum.format(transito) + '</span>' : '—') + '</td>' +
+      '<td style="text-align:right">' + (b.solicitudes_abiertas ? '<strong>' + b.solicitudes_abiertas + '</strong>' : '—') + '</td>' +
+      '<td>' + (b.ultimo_movimiento ? fmtDate(b.ultimo_movimiento) : '—') + '</td>' +
+      '<td><button class="btn-dl" style="padding:3px 10px;font-size:0.76rem" onclick="bcSupSeleccionar(' + b.bodega_id + ')">Ver existencias</button></td></tr>';
+  }).join('');
+  bcSupRenderDetalle();
+}
+
+function bcSupSeleccionar(id) {
+  bcSup.sel = id;
+  var q = document.getElementById('bc-sup-q'); if (q) q.value = '';
+  bcSupRender();
+  var det = document.getElementById('bc-sup-detalle');
+  if (det && det.scrollIntoView) det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function bcSupBodegaSel() { return bcSup.bodegas.filter(function(b) { return b.bodega_id === bcSup.sel; })[0] || null; }
+
+function bcSupRenderDetalle() {
+  var det = document.getElementById('bc-sup-detalle');
+  var b = bcSupBodegaSel();
+  if (!b) { det.style.display = 'none'; return; }
+  det.style.display = '';
+  document.getElementById('bc-sup-titulo').textContent = '📦 ' + (b.nombre || '') + (b.municipio ? ' · ' + b.municipio : '') + ' (' + b.codigo + ')';
+  var q = (document.getElementById('bc-sup-q').value || '').trim().toUpperCase();
+  var items = (b.items || []).filter(function(i) { return !q || String(i.producto).toUpperCase().indexOf(q) >= 0; });
+  document.getElementById('bc-body-sup-detalle').innerHTML = items.length ? items.map(function(i) {
+    return '<tr><td>' + escHtml(i.producto) + '</td><td>' + escHtml(i.presentacion || '') + '</td><td style="text-align:right;font-weight:700">' + _fmtNum.format(Number(i.existencia) || 0) + '</td></tr>';
+  }).join('') : '<tr><td colspan="3"><div class="empty">' + (q ? 'Ningún producto coincide.' : (b.inicial_aplicado ? 'No hay existencias.' : 'La bodega aún no aplica su conteo inicial.')) + '</div></td></tr>';
+}
+
+function bcExcel(nombre, filas, hoja) {
+  if (typeof XLSX === 'undefined') { showToast('La librería de Excel no está disponible todavía; intenta de nuevo.', '#e67e22'); return; }
+  if (!filas.length) { showToast('No hay datos para exportar.', '#e67e22'); return; }
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), hoja || 'Datos');
+  XLSX.writeFile(wb, nombre);
+}
+function bcSupFilas(b) {
+  return (b.items || []).map(function(i) {
+    return { 'Empresa': getSigla(b.empresa), 'Bodega': b.nombre + (b.municipio ? ' · ' + b.municipio : ''), 'Código': b.codigo, 'Producto': i.producto, 'Presentación': i.presentacion || '', 'Existencia': Number(i.existencia) };
+  });
+}
+function bcSupExcelUna() {
+  var b = bcSupBodegaSel(); if (!b) return;
+  bcExcel('Existencias_' + b.codigo + '_' + today() + '.xlsx', bcSupFilas(b), 'Existencias');
+}
+function bcSupExcelTodas() {
+  var filas = [];
+  bcSup.bodegas.forEach(function(b) { filas = filas.concat(bcSupFilas(b)); });
+  bcExcel('Existencias_bodegas_satelite_' + today() + '.xlsx', filas, 'Existencias');
+}
+
 // ── Init ───────────────────────────────────────────────────────
 if (typeof document !== 'undefined' && document.getElementById('load-zone') && !window.__BC_TEST) {
   loadBodegasConsignacion();
-  if (typeof _authReady !== 'undefined') {
-    _authReady.then(function() { bcLoadCatalogo(); }).catch(function() {});
-  } else {
-    bcLoadCatalogo();
-  }
-  // Un aviso de la campanita (módulo 'bodegas') abre directo la gestión: bodegas-consignacion.html?tab=gestion
-  try {
-    if (new URLSearchParams(location.search).get('tab') === 'gestion' && typeof _authReady !== 'undefined') {
-      _authReady.then(function() { bcSwitchTab('gestion'); }).catch(function() {});
-    }
-  } catch (e) { /* sin parámetros */ }
+  var _bcListo = (typeof _authReady !== 'undefined') ? _authReady : Promise.resolve();
+  // Un aviso de la campanita (módulo 'bodegas') abre directo la pestaña que corresponde:
+  // bodegas-consignacion.html?tab=gestion | solicitudes | supervision
+  _bcListo.then(function() { bcLoadCatalogo(); return bcPermisosCargar(); }).then(function() {
+    var t = null;
+    try { t = new URLSearchParams(location.search).get('tab'); } catch (e) { /* sin parámetros */ }
+    if (t === 'gestion') bcSwitchTab('gestion');
+    else if ((t === 'solicitudes' || t === 'supervision') && bcPerm.ver) bcSwitchTab(t);
+  }).catch(function() {});
 }

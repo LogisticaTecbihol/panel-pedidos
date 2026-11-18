@@ -547,7 +547,9 @@ var NOTIF = (function() {
     } else if (mod === 'ordenes') {
       if (ref) q.buscar = ref;                 // OC-<destino>-<origen>-<n> es único
     } else if (mod === 'bodegas') {
-      q.tab = 'gestion';                       // avisos de las bodegas satélite: abre la pestaña de gestión
+      // Avisos de las bodegas satélite: solicitudes (BOD-<COD>-SM|SC|DV-n) → bandeja de solicitudes;
+      // el resto (recepción con diferencia) → pestaña de gestión.
+      q.tab = /^BOD-.+-(SM|SC|DV)-\d+$/i.test(ref) ? 'solicitudes' : 'gestion';
     } else if (mod === 'solicitudes_mercadeo') {
       // "por aprobar" -> bandeja de aprobación; aprobada/rechazada -> Mis solicitudes.
       q.tab = /por aprobar/i.test(tit) ? 'aprobar' : 'mis';
