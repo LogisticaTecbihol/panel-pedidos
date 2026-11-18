@@ -598,7 +598,7 @@ los huecos estaban en el código de cada módulo.
 
 ## Bodegas satélite / consignación: inventario propio por bodega (piloto IASO)
 
-**Estado (2026-11-17): MIGRACIONES APLICADAS EN PRODUCCIÓN y código publicado en `main`; las 3 bodegas del piloto ya están habilitadas (`BodegaConfig`, corte 2026-10-01), pero todavía NO hay usuarios de bodega ni movimientos (prueba guiada en curso).** Las 5 migraciones se aplicaron
+**Estado (2026-11-17): MIGRACIONES APLICADAS EN PRODUCCIÓN y código publicado en `main`; las 3 bodegas del piloto ya están habilitadas (`BodegaConfig`, corte 2026-10-01). La prueba guiada se CERRÓ el 2026-11-18 (ver al final de esta sección): hoy no hay usuarios de bodega ni movimientos.** Las 5 migraciones se aplicaron
 con `apply_migration` unas horas DESPUÉS de publicar el código (hasta entonces el Backup mostraba error en las tablas nuevas); después se aplicaron un 6.º ajuste menor (`bodega_satelite_search_path`: `search_path` fijo en 3 helpers puros, por un aviso del
 análisis de seguridad) y un 7.º (`bodega_satelite_usuarios_panel`, ver la regla 8). Tras aplicar se repitió en producción un recorrido completo con las funciones reales (revertido): administración, aislamiento, conteo inicial, recibir con diferencia + aviso, salida y anulación, traslados entre bodegas
 (enviar/cancelar/recibir, otra empresa rechazada); `_kx_movs` quedó idéntico (4844 filas / 12958) y los contadores `id` se reiniciaron a 1. Alcance acordado: fases 0 (fundaciones) + 1 (núcleo) + 1b (traslados entre bodegas);
@@ -668,8 +668,8 @@ o del stock de la bodega (a elección de la bodega); atienden quienes ya manejan
   editor/contabilidad/gerente_iaso/remisionador con `muestras_aprobar` + (`muestras` para MUESTRA, `devoluciones` para CAMBIO y DEVOLUCION) + la empresa de la bodega (`_bodega_principal_atiende`); en IASO hoy son contabilidad, la gerencia y el remisionador. **Esas personas necesitan además el módulo
   `bodegas_consignacion`** para entrar a las pestañas (hoy solo lo tiene el admin y las cuentas de prueba): asignarlo desde Usuarios. Un comercial que también es usuario de bodega **no** ve la bandeja de la principal (su rol no está en la lista).
 - **Avisos**: `_bodega_avisar_solicitud` (campanita, módulo `bodegas`) al administrador y a los atendedores de ese tipo y empresa, al crear una solicitud/devolución y al cancelarla. **La bodega no recibe avisos** (no tiene campanita): ve el estado y la respuesta en su pestaña. `NOTIF.destino` abre `?tab=solicitudes` cuando
-  la referencia es `BOD-…-SM|SC|DV-n` (y `?tab=gestion` para lo demás); se subió el `?v=` de `notificaciones.js` en las 24 páginas. **OJO con la prueba guiada**: `_bodega_avisar` (recepción con diferencia) está redefinida temporalmente solo para el admin, pero `_bodega_avisar_solicitud` es una función aparte y NO lo está:
-  cualquier solicitud que se cree ahora (también de prueba) avisa a las personas reales de la principal (en IASO, contabilidad, la gerencia y el remisionador). Avisarles antes de hacer pruebas con solicitudes, o cerrar la prueba guiada.
+  la referencia es `BOD-…-SM|SC|DV-n` (y `?tab=gestion` para lo demás); se subió el `?v=` de `notificaciones.js` en las 24 páginas. **Ojo al probar**: tanto `_bodega_avisar` (recepción con diferencia; ya restaurada: administradores + contabilidad de la empresa) como `_bodega_avisar_solicitud` avisan a personas reales de la principal (en IASO, contabilidad, la gerencia y el remisionador):
+  cualquier recepción con diferencia o solicitud que se cree (también de prueba) les llega. Avisarles antes de hacer pruebas.
 - **Pantallas**: app de bodega, pestaña «📨 Solicitudes» (formularios de muestra con origen principal/stock de la bodega, de cambio con lote y reemplazo, y de devolución con PDF; historial con filtros, detalle y cancelar; tarjeta «Solicitudes abiertas» y tabla de devoluciones en tránsito en Existencias; `SALIDA_MUESTRA` en Movimientos).
   El editor de líneas se generalizó (`bsOptsLista`, columna extra de lote). Principal, `bodegas-consignacion.html`: pestañas «📨 Solicitudes de bodegas» (bandeja con contador, modal para atender con guía a Muestras / Devoluciones y Cambios / Ingresos) y «📦 Existencias por bodega» (resumen, detalle por bodega y Excel);
   se muestran según `bodega_principal_permisos`. `backup.js` incluye la tabla nueva.
@@ -678,3 +678,14 @@ o del stock de la bodega (a elección de la bodega); atienden quienes ya manejan
   **Aplicada en producción el 2026-11-18** y verificada ahí: objetos, permisos (las 8 funciones públicas solo para `authenticated`, las 7 internas para nadie, la tabla solo la lee el admin y nadie escribe directo) y una prueba humo revertida (muestra del stock + cancelación,
   permisos de admin y de contabilidad, supervisión; `_kx_movs` y Pedidos idénticos y 0 filas de la fase 2 al terminar). **No se probó**: con usuarios reales desde el navegador, el aspecto del PDF de la devolución a ojo, ni la campanita en vivo con los avisos nuevos.
 - **Fuera de alcance de la fase 2**: adjuntos (fotos/PDF) en la solicitud, PDF de la muestra que sale del stock, enlazar una salida de reemplazo con su solicitud de cambio, avisos a la bodega, recepción de la devolución por líneas, y lo que ya estaba pendiente (Paso 0, correo, valorización contable).
+
+### Cierre de la prueba guiada (2026-11-18)
+
+Con el visto bueno del usuario se cerró la prueba y las bodegas quedaron listas para empezar de cero:
+- Se vació el libro y lo que colgaba de él (movimientos, conteos y sus líneas, traslados, solicitudes, series, usuarios de bodega y sus asignaciones) con `TRUNCATE … RESTART IDENTITY`: los `id` y las series `BOD-…` vuelven a empezar en 1.
+  **Se conservó `BodegaConfig`**: las 3 bodegas siguen habilitadas con su código y su fecha de corte 2026-10-01. Esa fecha es la de la prueba; como no hay conteo inicial aplicado, el admin puede cambiarla (y el código) desde «Gestión» antes de empezar de verdad
+  (una vez aplicado el conteo inicial ya no se puede).
+- Se borraron de Auth las 2 cuentas creadas solo para la prueba (no eran del panel ni habían dejado filas en otras tablas). La cuenta del panel que se había vinculado a las bodegas (un comercial) **no** se borró: solo perdió el vínculo.
+  También se borraron los avisos del módulo `bodegas`; `audit_log` se dejó intacto (34 filas de las tablas `Bodega*`: historial de lo hecho en la prueba).
+- `_bodega_avisar` se restauró a su definición original (administradores + contabilidad de la empresa); durante la prueba estaba limitada al administrador.
+- Siguen pendientes para empezar de verdad: fijar la fecha de corte real de cada bodega, crear sus usuarios, aplicar el conteo inicial, asignar `bodegas_consignacion` a quienes atienden y agregar `…/bodega-recuperar.html` a las redirecciones de Supabase Auth.
