@@ -798,6 +798,7 @@ function enviarRemisionIngreso(btn) {
     remision: remNum,
     left_fields: left,
     right_fields: right,
+    observaciones: g.Observaciones || '',
     entregas: entregas,
     qty_header: 'Cantidad',
     file_prefix: 'Remision_Ingreso'
@@ -872,6 +873,7 @@ function exportarRemisionIngreso() {
     remision: remNum,
     left_fields: left,
     right_fields: right,
+    observaciones: g.Observaciones || '',
     entregas: entregas,
     qty_header: 'Cantidad',
     file_prefix: 'Remision_Ingreso'
@@ -1223,6 +1225,7 @@ async function saveIngreso() {
           await _ingEnviarContabilidad({
             fecha: fecha, origen: origen, empresaOrigen: empresa_origen, empresaDestino: empresa_destino,
             responsable: responsable, remOrigen: result.remision_origen || '', remDestino: result.remision_destino || '',
+            observaciones: observaciones,
             lineas: [{ Producto: prod, Presentacion: pres, Cantidad: cant }].concat(_comparten)
           }, null);
         } catch (eEnv) { NOTIF.falloEnvio(eEnv, 'Enviar'); }
@@ -1277,7 +1280,7 @@ document.getElementById('confirm-ing-overlay').addEventListener('click', functio
 
 // Arma el PDF de la remisión de ingreso y lo envía a la contabilidad de las dos empresas (la sigla del
 // consecutivo también cuenta). Lo usan el alta y la edición.
-// o: { fecha, origen, empresaOrigen, empresaDestino, responsable, remOrigen, remDestino, lineas:[{Producto,Presentacion,Cantidad}] }
+// o: { fecha, origen, empresaOrigen, empresaDestino, responsable, remOrigen, remDestino, observaciones, lineas:[{Producto,Presentacion,Cantidad}] }
 // contab: lo confirmado al guardar (puede ser null: entonces se resuelve por empresas y consecutivos).
 async function _ingEnviarContabilidad(o, contab) {
   var _remIng = o.remDestino || o.remOrigen || '';
@@ -1293,6 +1296,7 @@ async function _ingEnviarContabilidad(o, contab) {
     ref_label: null, date_label: 'Fecha ingreso', fecha_entrega: o.fecha, remision: _remIng,
     left_fields: [['Origen', o.origen], ['Emp. Origen', o.empresaOrigen], ['Responsable', o.responsable]],
     right_fields: _rightIng,
+    observaciones: o.observaciones || '',
     entregas: _entregas, qty_header: 'Cantidad', file_prefix: 'Remision_Ingreso',
     return_doc: true, copies: ['COPIA - CONTABILIDAD']
   });
@@ -1366,7 +1370,7 @@ async function confirmAndSaveIngreso() {
         await _ingEnviarContabilidad({
           fecha: fecha, origen: origen, empresaOrigen: empresa_origen, empresaDestino: empresa_destino,
           responsable: responsable, remOrigen: result.remision_origen || remision_origen,
-          remDestino: result.remision_destino || remision_destino, lineas: validLines
+          remDestino: result.remision_destino || remision_destino, observaciones: observaciones, lineas: validLines
         }, _pendingContabIng);
       } catch (e) { NOTIF.falloEnvio(e, 'Enviar'); }
     }
