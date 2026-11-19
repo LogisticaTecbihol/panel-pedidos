@@ -411,6 +411,9 @@ function _drawRemisionCopy(doc, data, palette) {
   // legalización de mantenimiento), no el Sí/No de Bonif.
   var useObs = lastColHeader === 'Observaciones' || !!data.last_col_texto;
   var showValores = !!data.show_valores;
+  // hide_last_col: sin última columna (ni Bonif. ni Observaciones). Para documentos cuya
+  // observación es del documento completo y va en el recuadro de arriba, no por línea.
+  var hideLast = !!data.hide_last_col && !showValores;
 
   var tableBody = (data.entregas || []).map(function(p, i) {
     var prodName = String(p.producto || '');
@@ -439,13 +442,13 @@ function _drawRemisionCopy(doc, data, palette) {
       row.push(fmtMoney(p.valor_unitario));
       row.push(fmtMoney(p.valor_total));
     }
-    row.push(lastVal);
+    if (!hideLast) row.push(lastVal);
     return row;
   });
 
   var tableHead = ['#', data.col1_header || 'Producto', data.col2_header || 'Presentacion', data.qty_header || 'Cant. Entregada'];
   if (showValores) tableHead.push('Valor Unit.', 'Valor Total');
-  tableHead.push(lastColHeader);
+  if (!hideLast) tableHead.push(lastColHeader);
 
   // col1_width/col2_width/col2_align permiten a un llamador (ej. legalización
   // de gastos, donde la col. 2 es "Proveedor" en vez de "Presentacion")
@@ -457,6 +460,9 @@ function _drawRemisionCopy(doc, data, palette) {
   var colStyles;
   if (showValores) {
     colStyles = { 0: { halign: 'center', cellWidth: 8 }, 1: { cellWidth: col1W || 52 }, 2: { halign: col2Align, cellWidth: col2W || 24 }, 3: { halign: 'center', cellWidth: 18 }, 4: { halign: 'right', cellWidth: 24 }, 5: { halign: 'right', cellWidth: 26 }, 6: { halign: 'center', cellWidth: 14 } };
+  } else if (hideLast) {
+    // Mismo ancho total que las demás tablas (187.9 mm en media carta).
+    colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: col1W || 92 }, 2: { halign: col2Align, cellWidth: col2W || 52 }, 3: { halign: 'center', cellWidth: 34 } };
   } else if (useObs) {
     colStyles = { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: col1W || 60 }, 2: { halign: col2Align, cellWidth: col2W || 32 }, 3: { halign: 'center', cellWidth: 28 }, 4: { cellWidth: 52 } };
   } else {

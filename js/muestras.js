@@ -349,7 +349,7 @@ async function loadMuestras() {
     // Devoluciones de muestras no utilizadas. Si Muestra_Id aún no existe
     // (migración sin aplicar) degrada sin romper.
     apiGet('getDevoluciones', {
-      columns: 'id,Empresa,Fecha,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Estado,Remision,Remision_Ingreso,Fecha_Ingreso,Fecha_Devolucion,Bodega_Ingreso,Muestra_Id,Muestra_Ref',
+      columns: 'id,Empresa,Fecha,Consecutivo,Producto,Presentacion,Cantidad,Cant_Entregada,Estado,Remision,Remision_Ingreso,Fecha_Ingreso,Fecha_Devolucion,Bodega_Ingreso,Muestra_Id,Muestra_Ref,Observaciones',
       muestraOnly: true
     }).catch(function() { return { ok: true, devoluciones: [] }; })
   ]);
@@ -1201,6 +1201,7 @@ async function saveMuDevolucion() {
     pendingContab = conf;
   }
 
+  var obsDev = document.getElementById('mu-dev-obs').value.trim();
   var btn = document.getElementById('btn-save-mu-dev');
   btn.disabled = true;
   btn.textContent = '⏳ Guardando...';
@@ -1216,7 +1217,7 @@ async function saveMuDevolucion() {
       Municipio: head.Municipio || '',
       Departamento: head.Departamento || '',
       Motivo: 'Devolución de muestra no utilizada',
-      Observaciones: document.getElementById('mu-dev-obs').value.trim(),
+      Observaciones: obsDev,
       Remision: remManual,
       Muestra_Ref: _muMuestraRef(emp, consec),
       lineas: sel
@@ -1229,7 +1230,7 @@ async function saveMuDevolucion() {
       try {
         var r = generarRemisionPDF(_muDevPdfData(head, sel.map(function(l) {
           return { Producto: l.Producto, Presentacion: l.Presentacion, cantidad: l.Cantidad };
-        }), rem, fecha, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
+        }), rem, fecha, { observaciones: obsDev, return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
         if (r) {
           await NOTIF.enviarPDFContabilidad(r.doc, {
             modulo: 'devoluciones', referencia: 'M-' + consec + ' · RE ' + rem,
@@ -1266,16 +1267,21 @@ function descargarPdfDevMuestra(rem, fecha) {
   var consec = head.Consecutivo || '';
   var emp = head.Empresa || '';
   var lineas = [];
+  var obsDevPdf = '';
   allMuestras.forEach(function(x) {
     if (x.Consecutivo !== consec || !consec || (x.Empresa || '') !== emp) return;
     (muDevPorLinea[x.id] || []).forEach(function(d) {
       var dRem = String(d.Remision_Ingreso || d.Remision || '').trim();
       var dFecha = d.Fecha_Ingreso || d.Fecha_Devolucion || d.Fecha || '';
-      if (dRem === rem && dFecha === fecha) lineas.push({ Producto: d.Producto, Presentacion: d.Presentacion, cantidad: d.Cant_Entregada });
+      if (dRem === rem && dFecha === fecha) {
+        lineas.push({ Producto: d.Producto, Presentacion: d.Presentacion, cantidad: d.Cant_Entregada });
+        // La observación de la devolución se guarda igual en todas sus líneas.
+        if (!obsDevPdf && d.Observaciones) obsDevPdf = String(d.Observaciones).trim();
+      }
     });
   });
   if (!lineas.length) { showToast('No se encontraron líneas para esa remisión.', '#e67e22'); return; }
-  generarRemisionPDF(_muDevPdfData(head, lineas, rem, fecha, { copies: ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD'] }));
+  generarRemisionPDF(_muDevPdfData(head, lineas, rem, fecha, { observaciones: obsDevPdf, copies: ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD'] }));
 }
 
 // ── Sub-flujo: orden de producción de muestras ──

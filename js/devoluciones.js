@@ -1032,6 +1032,8 @@ function exportarDevRemisionAdicionalPDF(idx) {
     direccion: head.Direccion || '',
     left_fields: [['Cliente', head.Cliente || ''], ['NIT', head.NIT || ''], ['Vendedor', head.Vendedor || ''], ['Telefono', head.Telefono || '']],
     right_fields: [['Direccion', head.Direccion || ''], ['Municipio', head.Municipio || ''], ['Departamento', head.Departamento || ''], ['Bodega', er.bodega || '']],
+    // La nota de una remisión adicional se guarda en sus propias filas (no en la devolución original).
+    observaciones: (er.rows && er.rows[0] && er.rows[0].Observaciones) || '',
     entregas: entregas,
     qty_header: esIngreso ? 'Cant. Devuelta' : 'Cant. Repuesta',
     file_prefix: esIngreso ? 'Remision_Ingreso_Devolucion' : 'Remision_Salida_Devolucion'
@@ -1165,6 +1167,7 @@ function exportarDevRemisionPDF(tipo, opts) {
     direccion: head.Direccion || '',
     left_fields: left,
     right_fields: right,
+    observaciones: head.Observaciones || '',
     entregas: entregas,
     qty_header: 'Cant. Devuelta',
     file_prefix: esIngreso ? 'Remision_Ingreso_Devolucion' : 'Remision_Salida_Devolucion'
@@ -2333,12 +2336,12 @@ async function saveTramitarDev() {
         var jsPDFDoc = null;
         if (ingresoEnabled && _finalRemIng) {
           _right[3] = ['Bodega', bodegaIngreso||''];
-          var rI = generarRemisionPDF({ empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIng, left_fields: _left, right_fields: _right, entregas: _entregas, qty_header:'Cant. Devuelta', file_prefix:'Remision_Ingreso_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] });
+          var rI = generarRemisionPDF({ empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIng, left_fields: _left, right_fields: _right, observaciones: head.Observaciones||'', entregas: _entregas, qty_header:'Cant. Devuelta', file_prefix:'Remision_Ingreso_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] });
           if (rI) jsPDFDoc = rI.doc;
         }
         if (salidaEnabled && _finalRemSal) {
           _right[3] = ['Bodega', bodegaSalida||''];
-          var opts = { empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSal, left_fields: _left, right_fields: _right, entregas: _entregas, qty_header:'Cant. Devuelta', file_prefix:'Remision_Salida_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] };
+          var opts = { empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSal, left_fields: _left, right_fields: _right, observaciones: head.Observaciones||'', entregas: _entregas, qty_header:'Cant. Devuelta', file_prefix:'Remision_Salida_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] };
           if (jsPDFDoc) opts._doc = jsPDFDoc;
           var rS = generarRemisionPDF(opts);
           if (rS) jsPDFDoc = rS.doc;
@@ -2548,12 +2551,12 @@ async function guardarReabrirDev() {
         var jsPDFDoc = null;
         if (remIng) {
           right[3] = ['Bodega', bodegaIng||''];
-          var rI = generarRemisionPDF({ empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaIng, remision: remIng, left_fields: left, right_fields: right, entregas: _entregasAd('cant_ingreso'), qty_header:'Cant. Devuelta', file_prefix:'Remision_Ingreso_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] });
+          var rI = generarRemisionPDF({ empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaIng, remision: remIng, left_fields: left, right_fields: right, observaciones: document.getElementById('reabrir-nota').value.trim(), entregas: _entregasAd('cant_ingreso'), qty_header:'Cant. Devuelta', file_prefix:'Remision_Ingreso_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] });
           if (rI) jsPDFDoc = rI.doc;
         }
         if (remSal) {
           right[3] = ['Bodega', bodegaSal||''];
-          var optsS = { empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaSal, remision: remSal, left_fields: left, right_fields: right, entregas: _entregasAd('cant_salida'), qty_header:'Cant. Repuesta', file_prefix:'Remision_Salida_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] };
+          var optsS = { empresa: empresaDev, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Devolucion', date_label:'Fecha remision', fecha_entrega: fechaSal, remision: remSal, left_fields: left, right_fields: right, observaciones: document.getElementById('reabrir-nota').value.trim(), entregas: _entregasAd('cant_salida'), qty_header:'Cant. Repuesta', file_prefix:'Remision_Salida_Devolucion', return_doc: true, copies:['COPIA - CONTABILIDAD'] };
           if (jsPDFDoc) optsS._doc = jsPDFDoc;
           var rS = generarRemisionPDF(optsS);
           if (rS) jsPDFDoc = rS.doc;
@@ -3100,12 +3103,12 @@ async function _devEnviarContabilidad(o) {
   var doc = null;
   if (o.ingreso && o.ingreso.rem) {
     right[3] = ['Bodega', o.ingreso.bodega || ''];
-    var rI = generarRemisionPDF({ empresa: o.empresa, consecutivo: head.Consecutivo || '', doc_title: 'REMISION DE INGRESO', ref_label: 'Devolucion', date_label: 'Fecha remision', fecha_entrega: o.ingreso.fecha, remision: o.ingreso.rem, left_fields: left, right_fields: right, entregas: entregas, qty_header: 'Cant. Devuelta', file_prefix: 'Remision_Ingreso_Devolucion', return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+    var rI = generarRemisionPDF({ empresa: o.empresa, consecutivo: head.Consecutivo || '', doc_title: 'REMISION DE INGRESO', ref_label: 'Devolucion', date_label: 'Fecha remision', fecha_entrega: o.ingreso.fecha, remision: o.ingreso.rem, left_fields: left, right_fields: right, observaciones: head.Observaciones || '', entregas: entregas, qty_header: 'Cant. Devuelta', file_prefix: 'Remision_Ingreso_Devolucion', return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
     if (rI && rI.doc) doc = rI.doc;
   }
   if (o.salida && o.salida.rem) {
     right[3] = ['Bodega', o.salida.bodega || ''];
-    var optsS = { empresa: o.empresa, consecutivo: head.Consecutivo || '', doc_title: 'REMISION DE SALIDA', ref_label: 'Devolucion', date_label: 'Fecha remision', fecha_entrega: o.salida.fecha, remision: o.salida.rem, left_fields: left, right_fields: right, entregas: entregas, qty_header: 'Cant. Devuelta', file_prefix: 'Remision_Salida_Devolucion', return_doc: true, copies: ['COPIA - CONTABILIDAD'] };
+    var optsS = { empresa: o.empresa, consecutivo: head.Consecutivo || '', doc_title: 'REMISION DE SALIDA', ref_label: 'Devolucion', date_label: 'Fecha remision', fecha_entrega: o.salida.fecha, remision: o.salida.rem, left_fields: left, right_fields: right, observaciones: head.Observaciones || '', entregas: entregas, qty_header: 'Cant. Devuelta', file_prefix: 'Remision_Salida_Devolucion', return_doc: true, copies: ['COPIA - CONTABILIDAD'] };
     if (doc) optsS._doc = doc;
     var rS = generarRemisionPDF(optsS);
     if (rS && rS.doc) doc = rS.doc;

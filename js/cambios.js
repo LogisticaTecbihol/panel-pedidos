@@ -1452,11 +1452,11 @@ async function saveGestionarCam() {
         };
         var jsPDFDoc = null;
         if (_finalRemIngC) {
-          var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']].concat(_camEntregaPdf(head).izq), right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']].concat(_camEntregaPdf(head).der), entregas:_eItems(lineasIng), qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
+          var rI = generarRemisionPDF({ empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE INGRESO', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaIngreso, remision: _finalRemIngC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']].concat(_camEntregaPdf(head).izq), right_fields:[['Correo',head.Correo||''],['Bodega',bodegaIngreso||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']].concat(_camEntregaPdf(head).der), observaciones:_camObsPdf(head), entregas:_eItems(lineasIng), qty_header:'Cantidad', file_prefix:'Remision_Ingreso_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] });
           if (rI) jsPDFDoc = rI.doc;
         }
         if (_finalRemSalC) {
-          var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']].concat(_camEntregaPdf(head).izq), right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']].concat(_camEntregaPdf(head).der), entregas:_eItems(lineasSal), qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
+          var optsS = { empresa: gestionarCamEmpresa, consecutivo: head.Consecutivo||'', doc_title:'REMISION DE SALIDA', ref_label:'Cambio', date_label:'Fecha remision', fecha_entrega: fechaSalida, remision: _finalRemSalC, left_fields:[['Cliente',head.Cliente||''],['NIT',head.NIT||''],['Telefono',head.Telefono||''],['N° Factura',head.Num_Factura||'']].concat(_camEntregaPdf(head).izq), right_fields:[['Correo',head.Correo||''],['Bodega',bodegaSalida||''],['Fecha compra',head.Fecha_Compra||''],['Estado',result.estado||head.Estado||'Pendiente']].concat(_camEntregaPdf(head).der), observaciones:_camObsPdf(head), entregas:_eItems(lineasSal), qty_header:'Cantidad', file_prefix:'Remision_Salida_Cambio', return_doc:true, copies:['COPIA - CONTABILIDAD'] };
           if (jsPDFDoc) optsS._doc = jsPDFDoc;
           var rS = generarRemisionPDF(optsS);
           if (rS) jsPDFDoc = rS.doc;
@@ -1505,6 +1505,12 @@ function _camEntregaPdf(head) {
     izq: [['Sucursal', head.Sucursal || ''], ['Direccion', head.Direccion_Envio || '']],
     der: [['Municipio', head.Municipio || ''], ['Departamento', head.Departamento || '']]
   };
+}
+
+// Observaciones del cambio para el recuadro de las remisiones. Los cambios del sistema anterior traen en el
+// mismo campo un marcador interno «[Remisión: … | Fecha: …]» (el detalle lo lee aparte): no debe imprimirse.
+function _camObsPdf(head) {
+  return String((head && head.Observaciones) || '').replace(/\[Remisión:[^\]]*\]/gi, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function _camViewContext() {
@@ -1840,6 +1846,7 @@ function exportarCamRemisionPDF(tipo, opts) {
     telefono: head.Telefono || '',
     left_fields: left,
     right_fields: right,
+    observaciones: _camObsPdf(head),
     entregas: entregas,
     qty_header: 'Cantidad',
     file_prefix: esIngreso ? 'Remision_Ingreso_Cambio' : 'Remision_Salida_Cambio'

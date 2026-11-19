@@ -2403,7 +2403,8 @@ function _ncEmpresaAutoRemision(empresa) {
 }
 
 // Datos para el PDF de remisión de un movimiento de Bodega NC.
-function _buildNCRemisionPDFData(empresa, fecha, motivo, tipo, remision, lineas) {
+// observaciones: la del movimiento (es del documento completo: va en el recuadro, no por línea).
+function _buildNCRemisionPDFData(empresa, fecha, motivo, tipo, remision, lineas, observaciones) {
   var esIngreso = tipo === 'Ingreso_NC';
   var motivoLabel = NC_MOTIVO_LABELS[motivo] || motivo || '';
   var entregas = (lineas || []).map(function(l) {
@@ -2420,7 +2421,9 @@ function _buildNCRemisionPDFData(empresa, fecha, motivo, tipo, remision, lineas)
     ref_label: null,
     file_prefix: esIngreso ? 'Remision_Ingreso_NC' : 'Remision_Salida_NC',
     copies: ['ORIGINAL - LOGISTICA', 'COPIA - CONTABILIDAD'],
-    last_col_header: 'Observaciones',
+    // La columna «Observaciones» por línea siempre salía vacía: la observación es del documento y va en el recuadro.
+    hide_last_col: true,
+    observaciones: observaciones || '',
     entregas: entregas,
     left_fields: [
       ['Tipo', esIngreso ? 'INGRESO A BODEGA NC' : 'SALIDA DE BODEGA NC'],
@@ -2440,7 +2443,7 @@ function _buildNCRemisionPDFData(empresa, fecha, motivo, tipo, remision, lineas)
 // o: { empresa, fecha, motivo, tipo, remision, lineas }; contab: lo confirmado al guardar (o null).
 async function _ncEnviarContabilidad(o, contab) {
   if (typeof NOTIF === 'undefined' || typeof generarRemisionPDF !== 'function') return;
-  var data = _buildNCRemisionPDFData(o.empresa, o.fecha, o.motivo, o.tipo, o.remision, o.lineas);
+  var data = _buildNCRemisionPDFData(o.empresa, o.fecha, o.motivo, o.tipo, o.remision, o.lineas, o.observaciones);
   var r = generarRemisionPDF(Object.assign({}, data, { return_doc: true, copies: ['COPIA - CONTABILIDAD'] }));
   if (!r || !r.doc) throw new Error('no se pudo armar el PDF de la remisión');
   var esIngreso = o.tipo === 'Ingreso_NC';
@@ -2522,13 +2525,13 @@ async function saveNC() {
 
     if (remisionFinal && typeof generarRemisionPDF === 'function') {
       try {
-        generarRemisionPDF(_buildNCRemisionPDFData(empresa, fecha, motivo, ncModalTipo, remisionFinal, validLines));
+        generarRemisionPDF(_buildNCRemisionPDFData(empresa, fecha, motivo, ncModalTipo, remisionFinal, validLines, obs));
       } catch (ePdf) { console.error('PDF remisión NC:', ePdf); }
     }
 
     if (_contabNC && remisionFinal && !esHistorico) {
       try {
-        await _ncEnviarContabilidad({ empresa: empresa, fecha: fecha, motivo: motivo, tipo: ncModalTipo, remision: remisionFinal, lineas: validLines }, _contabNC);
+        await _ncEnviarContabilidad({ empresa: empresa, fecha: fecha, motivo: motivo, tipo: ncModalTipo, remision: remisionFinal, lineas: validLines, observaciones: obs }, _contabNC);
       } catch (eEnv) { NOTIF.falloEnvio(eEnv, 'Enviar'); }
     }
 
@@ -2636,7 +2639,7 @@ async function saveEditNC() {
     var _regEdit = (typeof ncAjustes !== 'undefined' ? ncAjustes : []).find(function(a) { return (a.__row || a.id) === editNCId; });
     if (remisionFinal && remisionFinal !== editNCRemisionOrig && !(_regEdit && _regEdit.Historico) && typeof NOTIF !== 'undefined') {
       try {
-        await _ncEnviarContabilidad({ empresa: empresa, fecha: fecha, motivo: motivo, tipo: ncModalTipo, remision: remisionFinal, lineas: [line] }, null);
+        await _ncEnviarContabilidad({ empresa: empresa, fecha: fecha, motivo: motivo, tipo: ncModalTipo, remision: remisionFinal, lineas: [line], observaciones: obs }, null);
       } catch (eEnv) { NOTIF.falloEnvio(eEnv, 'Enviar'); }
     }
 
