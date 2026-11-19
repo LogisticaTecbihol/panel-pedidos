@@ -689,3 +689,17 @@ Con el visto bueno del usuario se cerró la prueba y las bodegas quedaron listas
   También se borraron los avisos del módulo `bodegas`; `audit_log` se dejó intacto (34 filas de las tablas `Bodega*`: historial de lo hecho en la prueba).
 - `_bodega_avisar` se restauró a su definición original (administradores + contabilidad de la empresa); durante la prueba estaba limitada al administrador.
 - Siguen pendientes para empezar de verdad: fijar la fecha de corte real de cada bodega, crear sus usuarios, aplicar el conteo inicial, asignar `bodegas_consignacion` a quienes atienden y agregar `…/bodega-recuperar.html` a las redirecciones de Supabase Auth.
+
+## Bandeja de notificaciones (`notificaciones.html`): cada quien ve solo lo recibido
+
+Caso 2026-11-19 (Nicolle Pardo, rol `cartera`): su bandeja mostraba 46 filas (15 recibidas + 31 que ELLA envió a otros) y 21 salían como «Nueva» (el estado del destinatario, que ella no puede
+marcar: los botones ✓ y las casillas son solo de admin), mientras la campanita le marcaba 0. Los avisos que le **llegan** eran todos correctos (10 «Pedido por aprobar (cliente nuevo)» + 4 «Cliente nuevo»
+informativos de PARCELAR + 1 «SM-5 aprobada»); el defecto era solo lo que mostraba la página.
+
+- **Regla** (`loadInbox`, `js/notificaciones-page.js`): el admin ve todo (menos lo dirigido a administradores, que oculta `applyFilters`/`renderStats`); **cualquier otro usuario ve solo `para_usuario_id = él`**.
+  Antes era `para = él OR de = él` (commit `9909c5c`, «ver enviadas y recibidas»); se quitó a propósito. Coincide con la campanita (`NOTIF.loadUnread`) y con el filtro de Realtime de la misma página.
+- **La base no cambió**: la política `notif_select_own` sigue dejando leer filas donde el usuario es remitente (hace falta para insertar y releer lo suyo); el filtro es del cliente. Quien no sea admin y
+  quiera ver lo que envió ya no tiene dónde hacerlo. Quienes reciben los avisos de «cliente nuevo» (`find_aprobadores_cliente_nuevo`: usuarios activos con rol `cartera` o `admin`; el informativo, solo `cartera`)
+  no dependen de la empresa, por lo que hoy Cartera los recibe de todas.
+- Probado con un arnés de Chrome sin interfaz sobre el `notificaciones-page.js` real con Supabase simulado (Cartera: 15 de 15, 0 no leídas, sin enviadas ni ajenas; admin: sin cambios; otro rol: solo lo suyo).
+  No se probó con la sesión real de Nicolle.
