@@ -5,6 +5,14 @@
 (function() {
   var PAGE_SIZE = 50;
 
+  // Usuarios a los que la bandeja les muestra SOLO lo que les llegó, no lo que enviaron a otros.
+  // Pedido 2026-11-19: vale únicamente para Nicolle Pardo (Cartera): ella veía los avisos que
+  // envió con estado «Nueva» (el del destinatario) y no podía marcarlos. Para sumar a alguien,
+  // agrega aquí su id (columna `id` de la tabla `usuarios`).
+  var SOLO_RECIBIDAS_IDS = [
+    '35bf46f4-ce5e-4ae1-a2b4-24a006fcee56' // Nicolle Pardo
+  ];
+
   var _all = [];
   var _senders = {};
   var _filtered = [];
@@ -104,10 +112,12 @@
         .select('id, created_at, para_usuario_id, de_usuario_id, modulo, referencia, titulo, mensaje, storage_path, leida, leida_at')
         .order('created_at', { ascending: false })
         .limit(1000);
-      // Quien no es admin ve SOLO lo que le llegó a él (igual que la campanita y que el
-      // título «Total recibidas»). Los avisos que él envió a otros no son suyos: salían
-      // como «Nueva» (estado del destinatario) y no podía marcarlos como leídos.
-      if (!AUTH.isAdmin()) query = query.eq('para_usuario_id', user.id);
+      // Admin: ve todo. Usuarios de SOLO_RECIBIDAS_IDS: solo lo que les llegó a ellos (igual que
+      // la campanita). Los demás conservan lo de siempre: lo recibido y lo que ellos enviaron.
+      if (!AUTH.isAdmin()) {
+        if (SOLO_RECIBIDAS_IDS.indexOf(user.id) >= 0) query = query.eq('para_usuario_id', user.id);
+        else query = query.or('para_usuario_id.eq.' + user.id + ',de_usuario_id.eq.' + user.id);
+      }
       var res = await query;
       if (res.error) throw new Error(res.error.message);
       _all = res.data || [];
