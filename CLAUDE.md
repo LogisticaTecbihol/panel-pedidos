@@ -202,6 +202,31 @@ Mismo patrón que «Solicitudes a Mercadeo» (`solicitudes-mercadeo.*`): aprobac
 - Probado con un arnés de navegador (Edge Function simulada en memoria); las funciones se desplegaron y rechazan llamadas sin credenciales. El flujo
   completo contra producción requiere una sesión real de un usuario con el permiso.
 
+## Muestras: «Cliente» y «NIT» opcionales (`muestras.html` → «Nueva Solicitud de Muestras»)
+
+Pedido 2026-11-20. Dos campos **opcionales** en el formulario de alta y de edición, entre Responsable y Departamento (`mu-cliente`, `mu-nit`). Hasta ahora la remisión PDF de muestras imprimía el
+**Solicitante** (casi siempre una persona interna: «Mercadeo», «Paula Martinez»…) en la fila «Cliente» y dejaba el NIT en blanco; el campo nuevo es el cliente real.
+
+- **Modelo** (`supabase/migrations/add_cliente_nit_muestras.sql` + `_rollback.sql`; migración remota `add_cliente_nit_muestras` **aplicada el 2026-11-20** y verificada: 2 columnas, 331 filas con `''`; va ANTES de publicar el código, porque `agregarMuestra` ya inserta las dos columnas): `SolicitudMuestras."Cliente"` y `"NIT"`
+  (text NOT NULL default `''`, mismos nombres que Pedidos / Devoluciones / CambiosMercancia). Son datos de la solicitud completa: se repiten en todas las líneas del consecutivo, como Responsable o Municipio.
+  Las solicitudes anteriores quedan con `''` (sin backfill; el detalle muestra «—»).
+- **Escritura** (`shared.js`): `agregarMuestra` guarda ambos (recortados) en cada línea; `editarMuestra` solo los toca si el body trae `Cliente`/`NIT` (el modal de edición sí los manda; `saveEntregas`, que
+  edita línea por línea, **no** los manda y no los pisa). Al agregar líneas a una solicitud ya existente (`saveEntregas`, `saveLineasNuevasMuestra`) se copian de la cabecera.
+- **Campo Cliente** (`setupMuClienteAC`, `loadClientesMu`, `muestras.js`): buscador sobre `apiGet('getClientesUnicos')` (la misma lista de Cambios de Mercancía; sugiere por nombre o NIT, sin repetidos) con el
+  `muInitAC` de los productos; al elegir uno rellena el NIT. Se puede escribir un nombre que no esté en la lista (prospecto) y el NIT a mano. **No** rellena municipio/departamento (en una muestra son el lugar de
+  aplicación). Si la lista no carga, quedan como texto libre y se reintenta al abrir de nuevo. No se valida el formato del NIT.
+- **Orden de producción** (`Tipo_Solicitud = 'Produccion'`): no hay cliente; `onMuTipoChange` oculta los dos campos y `_muClienteNitForm` guarda `''` aunque tuvieran texto.
+- **PDF** (`_muClientePdf`): la **remisión** (al guardar, al despachar en «Guardar entregas» y desde el detalle) imprime `Cliente` y `NIT` si se escribieron; **sin Cliente sigue saliendo el Solicitante, como antes**
+  (y el NIT que haya). La hoja «Solicitud de muestras» (`_dataMuestraSolicitud`, también la que va en el paquete a contabilidad) agrega las filas Cliente y NIT **solo si tienen valor**, al inicio de la columna
+  izquierda; sin ellos queda igual que siempre. **No se tocó** el PDF de la remisión de ingreso de una devolución de muestra (`_muDevPdfData`) ni el registro de la devolución (`Cliente: 'Muestra #n'`).
+- **Se ve en**: formulario (alta y edición), detalle de la solicitud (no en órdenes de producción), búsqueda de la lista (`f-txt`), pestaña «Detalle» (columna Cliente, ordenable) y su Excel (Cliente y NIT).
+  No se agregaron a la tabla principal ni al panel/Excel de Despachos.
+- Como una edición solo actualiza la línea que se edita (igual que Responsable, Municipio…), el Cliente/NIT que se muestra es el de la primera línea del consecutivo.
+- Probado: la migración dentro de una transacción revertida contra producción (idempotencia, 331 filas anteriores con `''`, tipos y nulabilidad, insert con y sin los campos, update, rollback; producción
+  quedó sin las columnas) y un arnés de navegador sobre el `muestras.js`/`shared.js` reales con el HTML real del modal y Supabase simulado (39 comprobaciones: campos, buscador y NIT automático, texto libre,
+  alta con PDF a contabilidad, sin Cliente igual que antes, orden de producción, edición, fila anterior, PDF de remisión y solicitud con/sin Cliente, `agregarMuestra`/`editarMuestra`). **No se probó con un usuario
+  real ni contra el Supabase real** (permisos de lectura de `ClientesUnicos` por rol).
+
 ## Solicitudes a Mercadeo: envío directo de las no comerciales
 
 `solicitudes-mercadeo.html` + `js/solicitudes-mercadeo.js` + Edge Function `solicitud-mercadeo`. Una solicitud **no comercial** se salta la aprobación del gerente

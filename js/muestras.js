@@ -273,6 +273,69 @@ function setupMuEditProdAC() {
   });
 }
 
+// ── Cliente / NIT (opcionales) ──
+// «Cliente» sugiere de la lista de clientes (la misma de Cambios de Mercancía: ClientesUnicos) y al elegir uno rellena el NIT.
+// También se puede escribir un nombre que no esté en la lista (un prospecto) y el NIT a mano. Si la lista no carga
+// (sin acceso o sin red) los dos campos quedan como texto libre. NO se rellena municipio/departamento: en una muestra
+// son el lugar de aplicación, no la dirección del cliente.
+var muClientesCache = null;   // null = aún no cargada (se reintenta al abrir el formulario)
+var muClienteAC = null;
+
+async function loadClientesMu() {
+  if (muClientesCache) return;
+  try {
+    var data = await apiGet('getClientesUnicos');
+    if (!data || !data.ok) return;
+    var vistos = {};
+    muClientesCache = (data.clientes || []).filter(function(c) {
+      if (!c || !c.cliente) return false;
+      var k = String(c.cliente).trim().toLowerCase() + '|' + String(c.nit || '').trim();
+      if (vistos[k]) return false;
+      vistos[k] = 1;
+      return true;
+    });
+  } catch (e) { /* queda como texto libre */ }
+}
+
+function setupMuClienteAC() {
+  if (muClienteAC) return;   // los listeners quedan en el input; la lista se lee de la caché en cada tecla
+  var input = document.getElementById('mu-cliente');
+  if (!input) return;
+  muClienteAC = muInitAC(input, {
+    items: function() { return muClientesCache || []; },
+    display: function(c) {
+      return '<strong>' + escHtml(c.cliente) + '</strong>' +
+             (c.nit ? ' <span class="ac-sub">NIT ' + escHtml(c.nit) + '</span>' : '') +
+             (c.municipio ? '<div class="ac-sub">' + escHtml(c.municipio) + '</div>' : '');
+    },
+    match: function(c, val) {
+      return ((c.cliente || '') + ' ' + (c.nit || '')).toLowerCase().indexOf(val) >= 0;
+    },
+    onSelect: function(c) {
+      input.value = c.cliente || '';
+      document.getElementById('mu-nit').value = c.nit || '';
+    }
+  });
+}
+
+// Cliente y NIT del formulario. Una orden de producción no se despacha a un cliente: se guardan vacíos aunque el
+// campo tuviera texto de antes de cambiar el tipo.
+function _muClienteNitForm() {
+  var esProd = ((document.getElementById('mu-tipo-solicitud') || {}).value) === 'Produccion';
+  return {
+    Cliente: esProd ? '' : document.getElementById('mu-cliente').value.trim(),
+    NIT: esProd ? '' : document.getElementById('mu-nit').value.trim()
+  };
+}
+
+// Cliente/NIT que llevan la remisión y la solicitud en PDF: los escritos en la solicitud; si no hay Cliente, el
+// Solicitante en su lugar (como se hacía antes de existir el campo) y el NIT que haya.
+function _muClientePdf(head) {
+  head = head || {};
+  var cli = String(head.Cliente || '').trim();
+  return { cliente: cli || head.Solicitante || '', nit: String(head.NIT || '').trim() };
+}
+
 var EMPRESAS_SIGLA = {
   'PARCELAR DE COLOMBIA SAS': 'PARCELAR',
   'GREEN AGROSOLUCIONES DE COLOMBIA SAS': 'GREEN',
@@ -569,7 +632,7 @@ function applyMuFilters() {
     if (fApr && (r.Estado_Aprobacion || 'Por aprobar') !== fApr) return false;
     if (fTxt) {
       var hay = [r.Empresa, r.Consecutivo, r.Responsable, r.Municipio, r.Producto, r.Presentacion,
-                 r.Tipo_Cultivo, r.Solicitante, r.Autoriza, r.Objetivo, r.Remision]
+                 r.Tipo_Cultivo, r.Solicitante, r.Autoriza, r.Objetivo, r.Remision, r.Cliente, r.NIT]
         .join(' ').toLowerCase();
       if (hay.indexOf(fTxt) < 0) return false;
     }
@@ -846,6 +909,8 @@ async function viewMuestra(id) {
     field('Empresa', EMPRESAS_SIGLA[r.Empresa] || r.Empresa) +
     field('Fecha Solicitud', fmtDate(r.Fecha_Solicitud)) +
     field('Responsable', r.Responsable) +
+    (esProd ? '' : field('Cliente', r.Cliente)) +
+    (esProd ? '' : field('NIT', r.NIT)) +
     field(esProd ? 'Solicitante' : 'Departamento', esProd ? r.Solicitante : r.Departamento) +
     (esProd ? '' : field('Municipio', r.Municipio)) +
     (esProd ? '' : field('Tipo de Cultivo', r.Tipo_Cultivo)) +
@@ -1542,6 +1607,7 @@ async function saveEntregas() {
           Empresa: head2.Empresa, Consecutivo: head2.Consecutivo, _reuse_consecutivo: true,
           Fecha_Solicitud: head2.Fecha_Solicitud, Fecha_Despacho: fechaDespacho || head2.Fecha_Despacho,
           Responsable: head2.Responsable, Departamento: head2.Departamento, Municipio: head2.Municipio,
+          Cliente: head2.Cliente || '', NIT: head2.NIT || '',
           Tipo_Cultivo: head2.Tipo_Cultivo, Fecha_Aplicacion: head2.Fecha_Aplicacion,
           Fecha_Seguimiento: head2.Fecha_Seguimiento, Remision: remision,
           Solicitante: head2.Solicitante, Autoriza: head2.Autoriza,
@@ -1570,7 +1636,7 @@ async function saveEntregas() {
         var _crEnt = generarRemisionPDF({
           empresa: muViewEmpresa, consecutivo: (muHeadRow && muHeadRow.Consecutivo) || '',
           ref_label: 'Solicitud de muestras', fecha_entrega: fechaDespacho || '',
-          remision: remision, cliente: (muHeadRow && muHeadRow.Solicitante) || '',
+          remision: remision, cliente: _muClientePdf(muHeadRow).cliente, nit: _muClientePdf(muHeadRow).nit,
           comercial: (muHeadRow && muHeadRow.Responsable) || '',
           municipio: (muHeadRow && muHeadRow.Municipio) || '', departamento: (muHeadRow && muHeadRow.Departamento) || '',
           observaciones: (muHeadRow && muHeadRow.Observaciones) || '',
@@ -1651,6 +1717,7 @@ async function saveLineasNuevasMuestra() {
       Empresa: head.Empresa, Consecutivo: head.Consecutivo, _reuse_consecutivo: true,
       Fecha_Solicitud: head.Fecha_Solicitud, Fecha_Despacho: head.Fecha_Despacho,
       Responsable: head.Responsable, Departamento: head.Departamento, Municipio: head.Municipio,
+      Cliente: head.Cliente || '', NIT: head.NIT || '',
       Tipo_Cultivo: head.Tipo_Cultivo, Fecha_Aplicacion: head.Fecha_Aplicacion,
       Fecha_Seguimiento: head.Fecha_Seguimiento, Remision: head.Remision || '',
       Solicitante: head.Solicitante, Autoriza: head.Autoriza,
@@ -2120,13 +2187,15 @@ function exportarMuestraRemisionPDF(opts) {
     return;
   }
 
+  var cliPdf = _muClientePdf(head);
   var data = {
     empresa: head.Empresa || '',
     consecutivo: ctx.consec,
     ref_label: 'Solicitud de muestras',
     fecha_entrega: fechaDespacho || '',
     remision: remision,
-    cliente: head.Solicitante || '',
+    cliente: cliPdf.cliente,
+    nit: cliPdf.nit,
     comercial: head.Responsable || '',
     municipio: head.Municipio || '',
     departamento: head.Departamento || '',
@@ -2189,6 +2258,10 @@ function _dataMuestraSolicitud(ctx, head) {
     ['Municipio', head.Municipio || ''],
     ['Departamento', head.Departamento || '']
   ];
+  // Cliente y NIT solo se imprimen si se escribieron (una solicitud sin ellos sale igual que siempre).
+  var _cliSol = String(head.Cliente || '').trim(), _nitSol = String(head.NIT || '').trim();
+  if (_nitSol) left.unshift(['NIT', _nitSol]);
+  if (_cliSol) left.unshift(['Cliente', _cliSol]);
   var right = [
     ['Fecha aplicacion', head.Fecha_Aplicacion || ''],
     ['Fecha seguimiento', head.Fecha_Seguimiento || ''],
@@ -2302,6 +2375,11 @@ function onMuTipoChange() {
   var remWrap = document.getElementById('mu-remision-wrap');
   if (fdWrap) fdWrap.style.display = esProd ? 'none' : '';
   if (remWrap) remWrap.style.display = esProd ? 'none' : '';
+  // Cliente y NIT: una orden de producción no se despacha a un cliente.
+  var cliWrap = document.getElementById('mu-cliente-wrap');
+  var nitWrap = document.getElementById('mu-nit-wrap');
+  if (cliWrap) cliWrap.style.display = esProd ? 'none' : '';
+  if (nitWrap) nitWrap.style.display = esProd ? 'none' : '';
   var linesTitle = document.getElementById('mu-lines-title');
   if (linesTitle) linesTitle.textContent = esProd ? '📦 Productos a producir (presentación de muestra)' : '📦 Productos solicitados';
   if (esProd && !muEditId) {
@@ -2335,6 +2413,8 @@ async function openNewMuestra() {
   document.getElementById('dl-mu-responsable').innerHTML = Object.keys(respSet).sort().map(function(v) {
     return '<option value="' + escHtml(v) + '">';
   }).join('');
+  document.getElementById('mu-cliente').value = '';
+  document.getElementById('mu-nit').value = '';
   document.getElementById('mu-departamento').value = '';
   document.getElementById('mu-municipio').value = '';
   document.getElementById('mu-tipo-cultivo').value = '';
@@ -2377,6 +2457,8 @@ async function openNewMuestra() {
   document.getElementById('mu-overlay').classList.add('show');
   if (muGeoAC) { if (muGeoAC.deptAC) muGeoAC.deptAC.destroy(); if (muGeoAC.muniAC) muGeoAC.muniAC.destroy(); muGeoAC = null; }
   muGeoAC = setupGeoAutocomplete(document.getElementById('mu-departamento'), document.getElementById('mu-municipio'));
+  setupMuClienteAC();
+  loadClientesMu();   // sin esperar: mientras llega, el campo sirve como texto libre
   await loadProductosCache();
   setupMuProdAutocomplete();
 }
@@ -2395,6 +2477,8 @@ async function editMuestra(id) {
   document.getElementById('mu-fecha-solicitud').value = toDateInput(r.Fecha_Solicitud);
   document.getElementById('mu-fecha-despacho').value = toDateInput(r.Fecha_Despacho);
   document.getElementById('mu-responsable').value = r.Responsable || '';
+  document.getElementById('mu-cliente').value = r.Cliente || '';
+  document.getElementById('mu-nit').value = r.NIT || '';
   document.getElementById('mu-departamento').value = r.Departamento || '';
   document.getElementById('mu-municipio').value = r.Municipio || '';
   document.getElementById('mu-tipo-cultivo').value = r.Tipo_Cultivo || '';
@@ -2442,6 +2526,8 @@ async function editMuestra(id) {
   document.getElementById('mu-overlay').classList.add('show');
   if (muGeoAC) { if (muGeoAC.deptAC) muGeoAC.deptAC.destroy(); if (muGeoAC.muniAC) muGeoAC.muniAC.destroy(); muGeoAC = null; }
   muGeoAC = setupGeoAutocomplete(document.getElementById('mu-departamento'), document.getElementById('mu-municipio'));
+  setupMuClienteAC();
+  loadClientesMu();
   await loadProductosCache();
   setupMuEditProdAC();
 }
@@ -2592,6 +2678,8 @@ async function saveMuestra() {
     btn.textContent = '⏳ Guardando...';
 
     var generarRemMu = estado === 'Despachada' && !(muEditRow && (muEditRow.Remision || '').trim()) && !document.getElementById('mu-remision').value.trim();
+    var _cnE = _muClienteNitForm();
+    var _cpE = _muClientePdf({ Cliente: _cnE.Cliente, NIT: _cnE.NIT, Solicitante: document.getElementById('mu-solicitante').value.trim() });
     try {
       var result = await apiPost({
         action: 'editarMuestra',
@@ -2601,6 +2689,8 @@ async function saveMuestra() {
         Fecha_Solicitud: document.getElementById('mu-fecha-solicitud').value,
         Fecha_Despacho: document.getElementById('mu-fecha-despacho').value,
         Responsable: document.getElementById('mu-responsable').value.trim(),
+        Cliente: _cnE.Cliente,
+        NIT: _cnE.NIT,
         Departamento: document.getElementById('mu-departamento').value.trim(),
         Municipio: document.getElementById('mu-municipio').value.trim(),
         Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
@@ -2626,13 +2716,14 @@ async function saveMuestra() {
           var _empMu = document.getElementById('mu-empresa').value || '';
           var _consecMuEdit = document.getElementById('mu-consecutivo').value.trim();
           var _entMu = [{ producto: producto, presentacion: presentacion, cantidad: cantEntregada || cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' }];
-          var _cr = generarRemisionPDF({ empresa: _empMu, consecutivo: _consecMuEdit, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: document.getElementById('mu-responsable').value.trim(), municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), observaciones: document.getElementById('mu-observaciones').value.trim(), entregas: _entMu, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+          var _cr = generarRemisionPDF({ empresa: _empMu, consecutivo: _consecMuEdit, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: _cpE.cliente, nit: _cpE.nit, comercial: document.getElementById('mu-responsable').value.trim(), municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), observaciones: document.getElementById('mu-observaciones').value.trim(), entregas: _entMu, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
           if (_cr && _cr.doc) {
             // Paquete completo: además de la remisión, se agrega la página
             // de la Solicitud (todas las líneas de este consecutivo) para
             // que contabilidad reciba el mismo respaldo que en Pedidos.
             var _headMuEdit = {
               Empresa: _empMu, Solicitante: document.getElementById('mu-solicitante').value.trim(),
+              Cliente: _cnE.Cliente, NIT: _cnE.NIT,
               Responsable: document.getElementById('mu-responsable').value.trim(),
               Autoriza: document.getElementById('mu-autoriza').value.trim(),
               Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
@@ -2705,6 +2796,8 @@ async function saveMuestra() {
   try {
     var responsableId = await _resolveResponsableId(responsable);
     var _estadoMuSave = document.getElementById('mu-estado').value;
+    var _cnN = _muClienteNitForm();
+    var _cpN = _muClientePdf({ Cliente: _cnN.Cliente, NIT: _cnN.NIT, Solicitante: document.getElementById('mu-solicitante').value.trim() });
     var result = await apiPost({
       action: 'agregarMuestra',
       Empresa: empresa,
@@ -2713,6 +2806,8 @@ async function saveMuestra() {
       Fecha_Despacho: document.getElementById('mu-fecha-despacho').value,
       Responsable: responsable,
       responsable_id: responsableId,
+      Cliente: _cnN.Cliente,
+      NIT: _cnN.NIT,
       Departamento: document.getElementById('mu-departamento').value.trim(),
       Municipio: document.getElementById('mu-municipio').value.trim(),
       Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
@@ -2754,13 +2849,14 @@ async function saveMuestra() {
         var _entMuN = productosValidos.map(function(p) {
           return { producto: p.producto, presentacion: p.presentacion, cantidad: p.cantidad, valor_unitario: 0, valor_total: 0, bonificado: 'No' };
         });
-        var _crN = generarRemisionPDF({ empresa: empresa, consecutivo: consecutivo, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: document.getElementById('mu-solicitante').value.trim(), comercial: responsable, municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), observaciones: document.getElementById('mu-observaciones').value.trim(), entregas: _entMuN, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
+        var _crN = generarRemisionPDF({ empresa: empresa, consecutivo: consecutivo, ref_label: 'Solicitud de muestras', fecha_entrega: document.getElementById('mu-fecha-despacho').value || '', remision: result.remision, cliente: _cpN.cliente, nit: _cpN.nit, comercial: responsable, municipio: document.getElementById('mu-municipio').value.trim(), departamento: document.getElementById('mu-departamento').value.trim(), observaciones: document.getElementById('mu-observaciones').value.trim(), entregas: _entMuN, return_doc: true, copies: ['COPIA - CONTABILIDAD'] });
         if (_crN && _crN.doc) {
           // Paquete completo: se agrega la página de la Solicitud con
           // todas las líneas recién creadas, igual que hace el botón
           // manual "Enviar Remisión".
           var _headMuNew = {
             Empresa: empresa, Solicitante: document.getElementById('mu-solicitante').value.trim(),
+            Cliente: _cnN.Cliente, NIT: _cnN.NIT,
             Responsable: responsable, Autoriza: document.getElementById('mu-autoriza').value.trim(),
             Tipo_Cultivo: document.getElementById('mu-tipo-cultivo').value.trim(),
             Municipio: document.getElementById('mu-municipio').value.trim(),
@@ -3051,6 +3147,7 @@ function renderDetalleMu() {
         else if (col === 'aprobacion') { va = (a.Estado_Aprobacion || 'Por aprobar').toLowerCase(); vb = (b.Estado_Aprobacion || 'Por aprobar').toLowerCase(); }
         else if (col === 'estado') { va = (a.Estado || '').toLowerCase(); vb = (b.Estado || '').toLowerCase(); }
         else if (col === 'solicitante') { va = (a.Solicitante || '').toLowerCase(); vb = (b.Solicitante || '').toLowerCase(); }
+        else if (col === 'cliente') { va = (a.Cliente || '').toLowerCase(); vb = (b.Cliente || '').toLowerCase(); }
         else if (col === 'remision') { va = (a.Remision || ''); vb = (b.Remision || ''); }
         else { va = ''; vb = ''; }
         var cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
@@ -3068,6 +3165,7 @@ function renderDetalleMu() {
     { id: 'fecha', label: 'Fecha Solicitud' },
     { id: 'responsable', label: 'Responsable' },
     { id: 'solicitante', label: 'Solicitante' },
+    { id: 'cliente', label: 'Cliente' },
     { id: 'municipio', label: 'Municipio' },
     { id: 'cultivo', label: 'Tipo Cultivo' },
     { id: 'producto', label: 'Producto' },
@@ -3114,6 +3212,7 @@ function renderDetalleMu() {
       '<td style="white-space:nowrap;font-size:0.78rem">' + fmtDate(r.Fecha_Solicitud) + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(r.Responsable || '—') + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(r.Solicitante || '—') + '</td>' +
+      '<td style="font-size:0.78rem">' + escHtml(r.Cliente || '—') + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(r.Municipio || '—') + '</td>' +
       '<td style="font-size:0.78rem">' + escHtml(r.Tipo_Cultivo || '—') + '</td>' +
       '<td style="font-weight:600">' + escHtml(r.Producto || '—') + '</td>' +
@@ -3140,6 +3239,8 @@ function exportDetalleMuExcel() {
       'Fecha Solicitud': r.Fecha_Solicitud || '',
       'Responsable': r.Responsable || '',
       'Solicitante': r.Solicitante || '',
+      'Cliente': r.Cliente || '',
+      'NIT': r.NIT || '',
       'Municipio': r.Municipio || '',
       'Departamento': r.Departamento || '',
       'Tipo Cultivo': r.Tipo_Cultivo || '',
@@ -3157,7 +3258,7 @@ function exportDetalleMuExcel() {
 
   var ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
-    {wch:12},{wch:10},{wch:14},{wch:18},{wch:18},{wch:16},{wch:16},{wch:16},
+    {wch:12},{wch:10},{wch:14},{wch:18},{wch:18},{wch:28},{wch:16},{wch:16},{wch:16},{wch:16},
     {wch:30},{wch:14},{wch:10},{wch:10},{wch:14},{wch:12},{wch:12},{wch:30},{wch:30}
   ];
   var wb = XLSX.utils.book_new();

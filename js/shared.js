@@ -1997,6 +1997,7 @@ async function _apiPostCore(body) {
           Empresa: body.Empresa || '', Consecutivo: consecMu, Fecha_Solicitud: body.Fecha_Solicitud || null,
           Fecha_Despacho: body.Fecha_Despacho || null, Responsable: body.Responsable || '',
           Departamento: body.Departamento || '', Municipio: body.Municipio || '', Tipo_Cultivo: body.Tipo_Cultivo || '',
+          Cliente: String(body.Cliente || '').trim(), NIT: String(body.NIT || '').trim(),
           Fecha_Aplicacion: body.Fecha_Aplicacion || null, Fecha_Seguimiento: body.Fecha_Seguimiento || null,
           Remision: body.Remision || '', Objetivo: body.Objetivo || '',
           Producto: lin.Producto || '', Presentacion: lin.Presentacion || '',
@@ -2091,6 +2092,9 @@ async function _apiPostCore(body) {
       // Solo lo tocan los modales de alta/edición; las ediciones línea-a-línea
       // de saveEntregas no lo envían y no deben pisarlo.
       if (body.Tipo_Solicitud !== undefined) _updMu.Tipo_Solicitud = body.Tipo_Solicitud || 'Despacho';
+      // Cliente / NIT (opcionales): igual, solo el modal de edición los envía; saveEntregas no.
+      if (body.Cliente !== undefined) _updMu.Cliente = String(body.Cliente || '').trim();
+      if (body.NIT !== undefined) _updMu.NIT = String(body.NIT || '').trim();
       var res = await _sb.from('SolicitudMuestras').update(_updMu).eq('id', body.row);
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, updated: 1, remision: remMuE };

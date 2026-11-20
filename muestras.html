@@ -305,6 +305,14 @@
           <input class="ef" id="mu-responsable" type="text" placeholder="Nombre del responsable" list="dl-mu-responsable">
           <datalist id="dl-mu-responsable"></datalist>
         </div>
+        <div id="mu-cliente-wrap">
+          <label class="ef-label">Cliente <span style="font-weight:400;color:#718096">(opcional)</span></label>
+          <input class="ef" id="mu-cliente" type="text" placeholder="Buscar cliente o escribir el nombre" autocomplete="off" maxlength="200">
+        </div>
+        <div id="mu-nit-wrap">
+          <label class="ef-label">NIT <span style="font-weight:400;color:#718096">(opcional)</span></label>
+          <input class="ef" id="mu-nit" type="text" placeholder="N° identificación" autocomplete="off" maxlength="40">
+        </div>
         <div>
           <label class="ef-label">Departamento</label>
           <input class="ef" id="mu-departamento" type="text" placeholder="Ej: Cundinamarca">
@@ -545,13 +553,13 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261023a"></script>
+<script src="js/shared.js?v=20261120a"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261118a"></script>
 <script src="js/colombia-geo.js"></script>
 <script src="js/pdf-remision.js?v=20261119a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/asignacion-inventario.js?v=20260909g"></script>
-<script src="js/muestras.js?v=20261119a"></script>
+<script src="js/muestras.js?v=20261120a"></script>
 </body>
 </html>
