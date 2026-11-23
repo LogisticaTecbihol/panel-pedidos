@@ -2842,6 +2842,7 @@ var CARVAL_PRODUCTS = (function() {
     'SAGUM 25 SC X 500 ML CV',
     'SAGUM X LITRO CV',
     'SHOCK UPI 36 EG X 500G',
+    'SHOCK UPI 36 EG X KG',
     'TABUS 50 WG X 40 GR CV'
   ];
   var set = {};
