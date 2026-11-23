@@ -548,7 +548,7 @@ legalización (Ruta / Mantenimiento) ni un envío cuya `Fecha` caiga en un perí
 
 Pedido 2026-11-23. «Conciliar» ya no es aprobar cada legalización: es **registrar la factura (o documento) del sistema contable por empresa**, con su valor y el **rango de fechas** que cubre, y que descuente
 lo causado de esa empresa en el Prorrateo. **Estado: migración remota `legalizacion_gastos_facturas` APLICADA en producción el 2026-11-23** (con `apply_migration`; verificada: tabla vacía, RLS con 4 políticas, 3 triggers, 8 CHECK, índice único parcial,
-la función del trigger no es ejecutable por clientes y `anon` no lee nada; las 174 legalizaciones intactas). El código aún no está publicado (commit pendiente): hasta entonces nadie ve la pestaña. Si algún día se vuelve a
+la función del trigger no es ejecutable por clientes y `anon` no lee nada; las 174 legalizaciones intactas). El código se subió a `main` el 2026-11-23 (commit `7f704b6`) y lo publica GitHub Pages. Si algún día se vuelve a
 publicar el código sin la tabla, la pantalla funciona igual, pero «Facturado» y «Pendiente» muestran «—» y la pestaña nueva avisa que falta la migración. El asesor de seguridad de Supabase marca `legalizacion_factura_empresa_visible`
 como «SECURITY DEFINER ejecutable por `authenticated`», igual que sus hermanas `legalizacion_gastos_visible` y `legalizacion_empresa_restringida`: es a propósito (la política RLS la necesita) y solo responde si el que llama ve esa empresa.
 
