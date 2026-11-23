@@ -15,16 +15,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Dos trabajos (como la plantilla oficial de GitHub Pages): el paquete se sube en `build` y se
+  # publica en `deploy`. Con todo en un solo trabajo, `deploy-pages` buscaba el paquete un segundo
+  # después de subirlo y a veces GitHub aún no lo listaba («No artifacts named "github-pages"»);
+  # y un reintento del mismo run fallaba por «Multiple artifacts» (quedaba el paquete del 1.er intento).
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Margen para que GitHub indexe el paquete recién subido antes de buscarlo.
+      - name: Esperar a que el paquete quede listado
+        run: sleep 10
       - id: deployment
         uses: actions/deploy-pages@v4
