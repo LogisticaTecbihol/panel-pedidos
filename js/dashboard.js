@@ -2939,7 +2939,10 @@ function dLegCargar() {
     // Fuentes SIN recorte por empresa/rol, solo para el prorrateo (null si ve todo o si falla):
     // con las recortadas, un usuario restringido no resuelve sus remisiones (el rol
     // mercadeo ni lee Pedidos) y en viajes mixtos le toca más de lo que le corresponde.
-    dLegVeTodas() ? Promise.resolve(null) : LegProrrateo.cargarFuentesCompletas(_sb)
+    dLegVeTodas() ? Promise.resolve(null) : LegProrrateo.cargarFuentesCompletas(_sb),
+    // Facturas de la conciliación contable (tarjeta «Pendiente por conciliar»). Si la tabla aún no existe
+    // o falla la lectura, la tarjeta lo dice y el resto del informe sigue igual.
+    apiGet('getLegalizacionFacturas', { columns: 'id,Empresa,Numero_Documento,Periodo_Desde,Periodo_Hasta,Valor,Estado' }).catch(function() { return { ok: false }; })
   ]).then(function(r) {
     for (var i = 0; i < 3; i++) if (!r[i].ok) throw new Error(r[i].error || 'Error al cargar legalizaciones');
     var completas = r[11];
@@ -2967,6 +2970,7 @@ function dLegCargar() {
       vehiculos: (r[3] && r[3].vehiculos) || [],
       mapas: mapas,
       grupo: completas ? completas.grupo : null,   // TODAS las legalizaciones (concepto, valor y reparto); null = las que el usuario ve
+      facturas: (r[12] && r[12].ok) ? (r[12].facturas || []) : null,   // null = no se pudieron leer
       fallidas: fallidas
     };
     if (gen === dLegGen) dLeg = datos;
@@ -3006,7 +3010,7 @@ function dLegCalcular(datos, desde, hasta, fEmp) {
   datos.vehiculos.forEach(function(v) { vehEsp[String(v.Placa || '').trim().toUpperCase()] = v; });
 
   var d = {
-    filas: [], total: 0, sel: { total: 0, nLeg: 0, nEnv: 0, pendTotal: 0, pendN: 0 }, rechazadas: 0,
+    filas: [], total: 0, sel: { total: 0, nLeg: 0, nEnv: 0 }, rechazadas: 0,
     porMes: {}, porCat: {}, vehiculos: [], pro: null, cuadre: 0
   };
   var veh = {};
@@ -3088,7 +3092,6 @@ function dLegCalcular(datos, desde, hasta, fEmp) {
     if (partic && !partic[leg.id]) return;
     d.sel.total += totalLeg;
     if (esEnv) d.sel.nEnv++; else d.sel.nLeg++;
-    if (!esEnv && leg.Estado_Conciliacion === 'Por conciliar') { d.sel.pendTotal += totalLeg; d.sel.pendN++; }
 
     // Kilometraje (solo viajes de Ruta).
     if (!esEnv && !esMant && leg.Km_Salida != null && leg.Km_Llegada != null) {
@@ -3270,6 +3273,20 @@ function dLegMostrarCard(bodyId, mostrar) {
   if (card) card.style.display = mostrar ? '' : 'none';
 }
 
+// Tarjeta «Pendiente por conciliar»: lo causado por empresa en el período (Prorrateo) menos las facturas registradas
+// en Legalización → Conciliación contable cuyo rango cae completo dentro del período. Con empresa elegida, solo la suya.
+// Misma cuenta que las tarjetas de arriba de esa pantalla (LegProrrateo.resumenConciliacion).
+function dLegKpiPendiente(d, datos, desde, hasta, fEmp, enEmp) {
+  if (!datos.facturas) return kpiCard('orange', '—', 'Pendiente por conciliar' + enEmp, 'facturas no disponibles');
+  var veTodo = !dLegEmpresaUnica() && LegProrrateo.empresaVisible(LegProrrateo.EMPRESA_TECBIHOL, AUTH);
+  var r = LegProrrateo.resumenConciliacion(d.proGrupo, datos.facturas, { desde: desde, hasta: hasta },
+    { visible: dLegEmpresaDelUsuario, conSinEmpresa: veTodo && !fEmp, solo: fEmp ? dGetSigla(fEmp) : '' });
+  return kpiCard('orange', dMoneyM(r.pendienteTotal), 'Pendiente por conciliar' + enEmp,
+    'Facturado ' + dMoneyFull(r.facturadoTotal) + ' de ' + dMoneyFull(r.causadoTotal) + ' causado' +
+    (r.sinEmpresa ? ' · incluye ' + dMoneyFull(r.sinEmpresa) + ' sin empresa' : '') +
+    (r.cruzan.length ? ' · ' + r.cruzan.length + (r.cruzan.length === 1 ? ' factura cruza' : ' facturas cruzan') + ' el período' : ''));
+}
+
 async function buildLegalizacionDash() {
   var tok = ++dLegBuildTok;
   var chipEl = document.getElementById('leg-chip');
@@ -3326,7 +3343,7 @@ async function buildLegalizacionDash() {
     kpiCard('teal', dLegNum(s.nLeg), 'Legalizaciones (LEG)' + enEmp, 'rutas y mantenimiento' + parti) +
     kpiCard('purple', dLegNum(s.nEnv), 'Envíos (ENV)' + enEmp, 'fletes registrados' + parti) +
     kpiCard('green', dMoneyM(nDocs ? s.total / nDocs : 0), 'Promedio por documento' + enEmp, 'LEG + ENV' + (fEmp ? ' · monto completo' : '')) +
-    kpiCard('orange', dMoneyM(s.pendTotal), 'Por conciliar' + enEmp, dLegNum(s.pendN) + ' legalización(es)' + parti) +
+    dLegKpiPendiente(d, datos, fDesde, fHasta, fEmp, enEmp) +
     kpiCard('teal', dLegCant(d.carga.litros) + ' L', 'Litros transportados' + (fEmp ? ' · ' + escHtml(sigEmp) : ''),
       d.carga.costoLitro != null ? dLegMoney2(d.carga.costoLitro) + ' por litro' : 'sin litros identificados') +
     kpiCard('purple', dLegCant(d.carga.kilos) + ' Kg', 'Kilos transportados' + (fEmp ? ' · ' + escHtml(sigEmp) : ''),
@@ -3429,8 +3446,9 @@ async function buildLegalizacionDash() {
   document.getElementById('leg-nota').innerHTML =
     '<p>• Incluye legalizaciones de ruta, mantenimiento y envíos por <b>fecha de la legalización</b>; excluye las rechazadas' +
       (d.rechazadas ? ' (' + dLegNum(d.rechazadas) + ' en el período)' : '') + '.</p>' +
+    '<p>• <b>Pendiente por conciliar</b> = lo causado por empresa en el período (Prorrateo: gasto por producto + Combustible + Mantenimiento) menos las facturas registradas en Legalización → «Conciliación contable» cuyo rango de fechas cae completo dentro del período; «sin empresa» (Otros, Sin identificar y «Sin reparto asignado») no lo descuenta ninguna factura por empresa. Con empresa elegida, solo la suya.</p>' +
     '<p>• <b>Gasto por empresa:</b> el gasto de cada ruta o envío (sin combustible) se prorratea entre los productos de sus remisiones relacionadas, por litros, kilos o unidades, y se asigna a la empresa dueña de cada remisión; lo que no se puede ligar a un producto va aparte en «Sin identificar» (un solo monto; no cuenta en el 100 % por empresa). <b>Combustible</b> y <b>Mantenimiento</b> se reparten según el reparto manual de cada legalización; sin reparto, quedan en «Sin reparto asignado». <b>Otros</b> (las líneas de ruta con concepto «Otros») va completo en «Sin reparto asignado», sin discriminar por empresa. Son las mismas cifras de la pestaña Prorrateo de gastos del módulo Legalización (mismo rango' + (fEmp ? ' y misma empresa' : ', sin filtro de empresa') + '). Pasa el cursor sobre «Sin …» para ver qué legalizaciones lo componen.</p>' +
-    (fEmp ? '<p>• <b>Empresa elegida (' + escHtml(sigEmp) + '):</b> las tarjetas de Total legalizado, LEG, ENV, Promedio y Por conciliar cuentan solo los documentos donde participa la empresa (con productos suyos en las remisiones relacionadas o con combustible / mantenimiento repartido a ella) y suman el monto <b>completo</b> de cada documento, que no se divide por empresa (la tarjeta de Total legalizado indica «Su parte»: Gasto + Combustible + Mantenimiento + Otros de la empresa; la diferencia es de otras empresas en esos mismos documentos); un mismo documento puede contar en varias empresas, así que las cifras de distintas empresas no suman el total. Gasto, Combustible, Mantenimiento y Otros por empresa y las tarjetas de litros y kilos muestran solo su parte; el 100 % es su parte, y «Sin identificar» / «Sin reparto asignado» no se muestran porque no se pueden atribuir a una empresa. El listado y los vehículos muestran esos mismos documentos (con su valor completo y el combustible completo de cada viaje); el gasto por concepto sigue siendo de todas las empresas.</p>' : '') +
+    (fEmp ? '<p>• <b>Empresa elegida (' + escHtml(sigEmp) + '):</b> las tarjetas de Total legalizado, LEG, ENV y Promedio cuentan solo los documentos donde participa la empresa (con productos suyos en las remisiones relacionadas o con combustible / mantenimiento repartido a ella) y suman el monto <b>completo</b> de cada documento, que no se divide por empresa (la tarjeta de Total legalizado indica «Su parte»: Gasto + Combustible + Mantenimiento + Otros de la empresa; la diferencia es de otras empresas en esos mismos documentos); un mismo documento puede contar en varias empresas, así que las cifras de distintas empresas no suman el total. Gasto, Combustible, Mantenimiento y Otros por empresa y las tarjetas de litros y kilos muestran solo su parte; el 100 % es su parte, y «Sin identificar» / «Sin reparto asignado» no se muestran porque no se pueden atribuir a una empresa. El listado y los vehículos muestran esos mismos documentos (con su valor completo y el combustible completo de cada viaje); el gasto por concepto sigue siendo de todas las empresas.</p>' : '') +
     '<p>• <b>Litros, kilos y unidades transportados:</b> los de los productos de las remisiones relacionadas a rutas y envíos (mismas cantidades del «Resumen del período» de Prorrateo); una remisión relacionada en dos legalizaciones cuenta en cada una. <b>$/litro</b> y <b>$/kilo</b> = parte del gasto prorrateada a líquidos (o a sólidos) ÷ litros (o kilos) movidos. Lo que quedó en «Sin identificar» no tiene cantidades.</p>' +
     (Math.abs(d.cuadre) > 1 ? '<p class="leg-aviso">⚠ El total de gastos (' + dMoneyFull(d.total) + ') no coincide con gasto prorrateado + combustible + mantenimiento + otros (diferencia ' + dMoneyFull(Math.round(d.cuadre)) + '); suele deberse a repartos manuales con montos negativos o inconsistentes.</p>' : '') +
     (datos.fallidas.length ? '<p class="leg-aviso">⚠ No se pudieron cargar: ' + escHtml(datos.fallidas.join(', ')) + '. Las remisiones que dependen de esas fuentes pueden aparecer como «Sin identificar».</p>' : '') +

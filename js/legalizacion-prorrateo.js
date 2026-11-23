@@ -774,6 +774,143 @@ var LegProrrateo = (function() {
     return { filas: filas, total: filas.reduce(function(s, f) { return s + f.monto; }, 0) };
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // Conciliación contable: facturas por empresa contra lo causado en el Prorrateo
+  // ──────────────────────────────────────────────────────────────
+  // Cada factura (tabla LegalizacionGastosFacturas: empresa, valor y rango de fechas de las
+  // legalizaciones que cubre) descuenta lo que el Prorrateo le asigna a esa empresa:
+  //   causado de una empresa = gasto por producto + su Combustible + su Mantenimiento.
+  // Lo que el Prorrateo no puede atribuir a ninguna empresa (Otros, Sin identificar y el Combustible
+  // o Mantenimiento «Sin reparto asignado») es «Sin empresa»: sigue pendiente (ninguna factura por
+  // empresa lo descuenta).  causado total = Σ causado por empresa + Sin empresa = Σ gasto de las
+  // legalizaciones del período (sin las rechazadas).
+  // Una factura cuenta en un período (Desde/Hasta) solo si su rango cae COMPLETO dentro de él; las que
+  // lo cruzan no se descuentan y se avisan (prorratear por días daría números que no cuadran con
+  // contabilidad). Sin Desde/Hasta cuentan todas las vigentes.
+  // Todo es puro (sin DOM): lo usan el módulo Legalización y el Dashboard.
+  // ══════════════════════════════════════════════════════════════
+  var FACTURA_TOLERANCIA = 1; // pesos: diferencias menores son redondeo del prorrateo
+
+  // { sigla: monto } = gasto por producto + Combustible + Mantenimiento de cada empresa.
+  function causadoPorEmpresa(calc) {
+    var out = {};
+    [calc.porEmpresa, calc.combustiblePorEmpresa, calc.mantenimiento && calc.mantenimiento.porEmpresa].forEach(function(m) {
+      Object.keys(m || {}).forEach(function(emp) { out[emp] = (out[emp] || 0) + (Number(m[emp]) || 0); });
+    });
+    return out;
+  }
+
+  // Lo que el Prorrateo no atribuye a ninguna empresa.
+  function sinEmpresaDe(calc) {
+    return (Number(calc.combustibleSinAsignar) || 0) + (Number(calc.mantenimiento && calc.mantenimiento.sinAsignar) || 0) +
+      (Number(calc.otros && calc.otros.total) || 0) + (Number(calc.sinIdentificar) || 0);
+  }
+
+  function _dia(s) { return String(s || '').slice(0, 10); }
+  function facturaVigente(f) { return !!f && f.Estado !== 'Anulada'; }
+  function facturaDentro(f, desde, hasta) {
+    return facturaVigente(f) && (!desde || _dia(f.Periodo_Desde) >= desde) && (!hasta || _dia(f.Periodo_Hasta) <= hasta);
+  }
+  // Se cruza con el período pero no cae completa dentro de él.
+  function facturaCruza(f, desde, hasta) {
+    return facturaVigente(f) && !facturaDentro(f, desde, hasta) &&
+      (!hasta || _dia(f.Periodo_Desde) <= hasta) && (!desde || _dia(f.Periodo_Hasta) >= desde);
+  }
+  // Dos rangos (inclusive) de facturas se cruzan.
+  function rangosSeCruzan(a, b) {
+    return _dia(a.Periodo_Desde) <= _dia(b.Periodo_Hasta) && _dia(b.Periodo_Desde) <= _dia(a.Periodo_Hasta);
+  }
+
+  // Resumen por empresa de un período.
+  //   calc      = resultado de calcular() SIN filtro de empresa (todas las legalizaciones)
+  //   facturas  = LegalizacionGastosFacturas (las anuladas no cuentan)
+  //   f         = { desde, hasta } ('' = sin límite)
+  //   opts      = { visible(sigla) → bool (empresas que se le muestran al usuario),
+  //                 conSinEmpresa → bool (si se le muestra «Sin empresa»), solo → sigla (opcional) }
+  // → { filas: [{ emp, causado, facturado, pendiente, nFacturas }], sinEmpresa (null si no se muestra),
+  //     causadoTotal, facturadoTotal, pendienteTotal, cruzan: [facturas que cruzan el período] }
+  function resumenConciliacion(calc, facturas, f, opts) {
+    f = f || {}; opts = opts || {};
+    var desde = f.desde || '', hasta = f.hasta || '';
+    var visible = opts.visible || function() { return true; };
+    var solo = opts.solo || '';
+    var causado = causadoPorEmpresa(calc);
+    var porEmp = {};
+    Object.keys(causado).forEach(function(emp) {
+      if (!visible(emp) || (solo && emp !== solo)) return;
+      porEmp[emp] = { emp: emp, causado: causado[emp], facturado: 0, pendiente: 0, nFacturas: 0 };
+    });
+    var cruzan = [];
+    (facturas || []).forEach(function(fa) {
+      if (!facturaVigente(fa)) return;
+      var emp = getSigla(fa.Empresa);
+      if (!visible(emp) || (solo && emp !== solo)) return;
+      if (facturaCruza(fa, desde, hasta)) { cruzan.push(fa); return; }
+      if (!facturaDentro(fa, desde, hasta)) return;
+      var r = porEmp[emp] || (porEmp[emp] = { emp: emp, causado: 0, facturado: 0, pendiente: 0, nFacturas: 0 });
+      r.facturado += Number(fa.Valor) || 0;
+      r.nFacturas++;
+    });
+    var filas = Object.keys(porEmp).map(function(k) { var r = porEmp[k]; r.pendiente = r.causado - r.facturado; return r; })
+      .filter(function(r) { return r.causado > 0 || r.facturado > 0; })
+      .sort(function(a, b) { return b.causado - a.causado; });
+    var sin = (opts.conSinEmpresa && !solo) ? sinEmpresaDe(calc) : null;
+    var causadoTotal = filas.reduce(function(s, r) { return s + r.causado; }, 0) + (sin || 0);
+    var facturadoTotal = filas.reduce(function(s, r) { return s + r.facturado; }, 0);
+    return { filas: filas, sinEmpresa: sin, causadoTotal: causadoTotal, facturadoTotal: facturadoTotal,
+             pendienteTotal: causadoTotal - facturadoTotal, cruzan: cruzan };
+  }
+
+  // Análisis de cada factura vigente contra lo causado.
+  //   causadoFn(sigla, desde, hasta) → lo causado por esa empresa en el rango (el llamador lo calcula con calcular()).
+  // → { [id]: { causado (en su propio rango), grupoFacturado, grupoCausado, supera, cambio, alRegistrar } }
+  //   · supera: las facturas VIGENTES de la misma empresa que se cruzan con esta (incluida ella) suman más
+  //     que lo causado en el rango unido de todas ellas (se permite facturar por partes y complementar).
+  //   · cambio: lo causado hoy en su rango difiere de lo que se guardó al registrarla (el reparto cambió).
+  function analizarFacturas(facturas, causadoFn) {
+    var vigentes = (facturas || []).filter(facturaVigente);
+    var out = {};
+    var cache = {};
+    function causado(emp, d, h) {
+      var k = emp + '|' + d + '|' + h;
+      if (!(k in cache)) cache[k] = causadoFn(emp, d, h);
+      return cache[k];
+    }
+    vigentes.forEach(function(fa) {
+      var emp = getSigla(fa.Empresa);
+      var d = _dia(fa.Periodo_Desde), h = _dia(fa.Periodo_Hasta);
+      var grupo = vigentes.filter(function(o) { return getSigla(o.Empresa) === emp && rangosSeCruzan(fa, o); });
+      var uD = d, uH = h, suma = 0;
+      grupo.forEach(function(o) {
+        if (_dia(o.Periodo_Desde) < uD) uD = _dia(o.Periodo_Desde);
+        if (_dia(o.Periodo_Hasta) > uH) uH = _dia(o.Periodo_Hasta);
+        suma += Number(o.Valor) || 0;
+      });
+      var propio = causado(emp, d, h);
+      var grupoCausado = (uD === d && uH === h) ? propio : causado(emp, uD, uH);
+      var snap = fa.Causado_Al_Registrar;
+      out[fa.id] = {
+        causado: propio,
+        grupoFacturado: suma,
+        grupoCausado: grupoCausado,
+        supera: suma > grupoCausado + FACTURA_TOLERANCIA,
+        cambio: snap != null && snap !== '' && Math.abs(propio - Number(snap)) > FACTURA_TOLERANCIA,
+        alRegistrar: (snap != null && snap !== '') ? Number(snap) : null
+      };
+    });
+    return out;
+  }
+
+  // Empresas en las que el usuario puede registrar/ver facturas: las del holding que ve y, si ve todo
+  // el holding, los grupos externos (Tecbihol, Chia Abago, Materias primas). [{ value, sigla }]
+  function empresasParaFactura(auth) {
+    var base = EMPRESAS_HOLDING.filter(function(e) { return !auth || !auth.hasCompany || auth.hasCompany(e.value); });
+    [EMPRESA_TECBIHOL, EMPRESA_ABAGO, EMPRESA_MP].forEach(function(ext) {
+      if (empresaVisible(ext, auth)) base = base.concat([{ value: ext, sigla: ext }]);
+    });
+    return base;
+  }
+
   return {
     CONCEPTOS_RUTA_FIJOS: CONCEPTOS_RUTA_FIJOS,
     esConceptoOtros: esConceptoOtros,
@@ -795,6 +932,16 @@ var LegProrrateo = (function() {
     empresaVisible: empresaVisible,
     empresaUnica: empresaUnica,
     calcular: calcular,
-    noProrrateado: noProrrateado
+    noProrrateado: noProrrateado,
+    FACTURA_TOLERANCIA: FACTURA_TOLERANCIA,
+    causadoPorEmpresa: causadoPorEmpresa,
+    sinEmpresaDe: sinEmpresaDe,
+    facturaVigente: facturaVigente,
+    facturaDentro: facturaDentro,
+    facturaCruza: facturaCruza,
+    rangosSeCruzan: rangosSeCruzan,
+    resumenConciliacion: resumenConciliacion,
+    analizarFacturas: analizarFacturas,
+    empresasParaFactura: empresasParaFactura
   };
 })();

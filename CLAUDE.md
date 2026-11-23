@@ -544,6 +544,46 @@ legalización (Ruta / Mantenimiento) ni un envío cuya `Fecha` caiga en un perí
   de aplicarla sobre registros reales de octubre y noviembre (también revertido: 144 legalizaciones intactas, 0 de prueba). La pantalla con un arnés de navegador sobre el código real (sintaxis de todo el archivo y 20 casos de
   los helpers: no admin, admin, rpc con error / excepción / sin cierres). **No se probó la pantalla completa con un usuario real** (crear/editar/adjuntar desde el navegador).
 
+## Legalización de gastos: conciliación contable (facturas por empresa)
+
+Pedido 2026-11-23. «Conciliar» ya no es aprobar cada legalización: es **registrar la factura (o documento) del sistema contable por empresa**, con su valor y el **rango de fechas** que cubre, y que descuente
+lo causado de esa empresa en el Prorrateo. **Estado: migración remota `legalizacion_gastos_facturas` APLICADA en producción el 2026-11-23** (con `apply_migration`; verificada: tabla vacía, RLS con 4 políticas, 3 triggers, 8 CHECK, índice único parcial,
+la función del trigger no es ejecutable por clientes y `anon` no lee nada; las 174 legalizaciones intactas). El código aún no está publicado (commit pendiente): hasta entonces nadie ve la pestaña. Si algún día se vuelve a
+publicar el código sin la tabla, la pantalla funciona igual, pero «Facturado» y «Pendiente» muestran «—» y la pestaña nueva avisa que falta la migración. El asesor de seguridad de Supabase marca `legalizacion_factura_empresa_visible`
+como «SECURITY DEFINER ejecutable por `authenticated`», igual que sus hermanas `legalizacion_gastos_visible` y `legalizacion_empresa_restringida`: es a propósito (la política RLS la necesita) y solo responde si el que llama ve esa empresa.
+
+- **Modelo** (`supabase/migrations/legalizacion_gastos_facturas.sql` + `_rollback.sql`): tabla `LegalizacionGastosFacturas` — `Empresa` (nombre completo del holding, como en `LegalizacionGastosEmpresas`, o `TECBIHOL` / `CHIA ABAGO` /
+  `MATERIAS PRIMAS`; CHECK), `Numero_Documento` (único por empresa entre vigentes, sin importar mayúsculas), `Fecha_Documento`, `Periodo_Desde` / `Periodo_Hasta` (fechas de las **legalizaciones y envíos** que cubre, no la fecha del
+  documento), `Valor` (> 0), `Observacion`, `Causado_Al_Registrar` (lo que el Prorrateo daba para esa empresa y rango al guardar; lo calcula el navegador, NULL si no estaba listo), `Estado` (`Vigente` | `Anulada`) + motivo / quién /
+  cuándo. **Nada se borra: se anula** (motivo ≥ 5 caracteres; una anulada no se modifica y libera su número); borrar de verdad solo admin. Sin RPC: la pantalla escribe directo (`apiPost` `guardarLegalizacionFactura` /
+  `anularLegalizacionFactura`, `apiGet('getLegalizacionFacturas')` en `shared.js`) y la base hace cumplir las reglas con el trigger `trg_legalizacion_facturas_guard` + CHECKs + índice único parcial. Auditoría estándar.
+  - **Permisos (RLS)**: ver = módulo `legalizacion_gastos` o `_aprobar` + empresas que ve (`legalizacion_factura_empresa_visible`: holding = `user_has_company`; los tres grupos externos = quien ve las 5 empresas del holding);
+    registrar / editar / anular = `legalizacion_gastos_aprobar` («Conciliar legalización de gastos (registrar facturas)»; el admin pasa siempre; el rol `lector` no) con la misma restricción de empresa. Hoy tienen el permiso
+    Carlos Ramirez (solo PARCELAR) y Johana Hernandez (todas). El **cierre de mes no aplica** (registrar una factura no cambia ninguna legalización).
+  - **La lista de grupos externos `('CHIA ABAGO','MATERIAS PRIMAS','TECBIHOL')` ya vive en CINCO sitios**: los cuatro de la sección «TECBIHOL en el reparto» + `legalizacion_factura_empresa_visible` y el CHECK de la tabla de facturas.
+- **Cuenta** (`js/legalizacion-prorrateo.js`, compartida con el Dashboard; pura, sin DOM): `causadoPorEmpresa(calc)` = gasto por producto + Combustible + Mantenimiento de cada empresa; `sinEmpresaDe(calc)` = Otros + Sin identificar +
+  Combustible y Mantenimiento «Sin reparto asignado» (nadie lo recibe: **ninguna factura por empresa lo descuenta**, sigue pendiente hasta asignarle reparto a su legalización); `resumenConciliacion` arma causado / facturado /
+  pendiente por empresa. Causado total = Σ empresas + sin empresa = Σ gastos de las legalizaciones (sin las rechazadas), comprobado. Una factura cuenta en un período **solo si su rango cae completo dentro de Desde / Hasta**; las
+  que lo cruzan no se descuentan y se avisan (no se prorratea por días). Varias facturas por empresa, incluso cruzadas (complementarias), se suman; `analizarFacturas` marca «⚠ supera lo causado» cuando las vigentes que se cruzan suman más
+  que lo causado en el rango unido (tolerancia `FACTURA_TOLERANCIA` = $1; **se avisa y se pide confirmar, no se bloquea**) y «↻ el reparto cambió» si lo causado hoy difiere de `Causado_Al_Registrar`. **Si cambias estas reglas, el
+  Dashboard usa la misma función** (`dLegKpiPendiente`).
+- **Pantalla** (`legalizacion-gastos.html`, `js/legalizacion-conciliacion.js`): pestaña nueva «🧾 Conciliación contable» (filtros Empresa / Desde / Hasta / Estado / Buscar, «+ Registrar factura», resumen por empresa del período, lista
+  ordenable con causado en el rango y diferencia, editar, anular, Excel con hoja «Resumen por empresa»); tarjeta «Conciliación contable del período» en Prorrateo (sigue sus filtros, y su Excel trae la hoja «Conciliación contable»);
+  tarjetas de arriba: Total legalizaciones · Valor total · Facturado · Pendiente por conciliar (con «incluye $X sin empresa»), que toman el período de la pestaña activa (Prorrateo o Conciliación contable; vacío en las demás).
+  El formulario avisa antes de guardar: causado de la empresa en ese rango, otras facturas que se cruzan y pendiente resultante.
+  - **El archivo carga ANTES de `legalizacion-gastos.js`** (ese arranca la carga al final de su archivo y ya llama a estas funciones); solo usa los globales de aquél dentro de funciones. `LG_COLS_FAC` se registra en `LG_SORT_COLS.fac`.
+  - El cálculo por empresa usa **todas las legalizaciones** (`prorrateoGrupo` para quien no ve todo por RLS) y luego solo se le muestran sus empresas; «Sin empresa» y los grupos externos solo los ve quien ve las 5 empresas del holding
+    (`concVeTodo`). Hasta que cargan los mapas de remisiones (`prorrateoListo`) quien no ve todo ve «…» (con los mapas vacíos todo cae en Sin identificar). Al cambiar legalizaciones o mapas hay que llamar `concInvalidar()`.
+- **Se retiró el Conciliar / Rechazar de cada legalización** (nadie lo usó: 0 de 163): bloque «Conciliación» del detalle, `doConciliarLG`, filtros y columnas «Estado» de las listas, de la Vista detallada y de sus Excel, y las tarjetas
+  Por conciliar / Conciliadas. **Se conservan**: la función `conciliar_legalizacion_gastos`, las columnas `Estado_Conciliacion` / `Saldo_*` / `Conciliado_Por`… (todo sigue «Por conciliar» y eso sigue habilitando editar y borrar), la acción
+  `conciliarLegalizacionGastos` de `shared.js` (sin uso) y el Historial. El **Dashboard**: la tarjeta «Por conciliar» pasó a «Pendiente por conciliar» (misma cuenta); su listado de documentos aún muestra una columna «Estado»
+  (hoy «Por conciliar» en todos). Backup (`BACKUP_TABLES`) incluye la tabla nueva.
+- Probado: la migración dentro de una transacción revertida contra producción con usuarios reales simulados bajo RLS (Johana, Carlos, contabilidad, lector, editor sin el permiso, cartera sin módulo, admin y `anon`: 40 casos —alta,
+  número repetido, CHECKs, nace Vigente, anular con/sin motivo, anulada inmutable, número reutilizable, visibilidad por empresa y por grupo externo, borrar solo admin, auditoría—; después se aplicó de verdad) y la página real
+  con arneses de Chrome sin interfaz (Supabase simulado, datos con cifras hechas a mano: 151 comprobaciones en 6 escenarios —admin con alta / duplicado / validaciones / complementaria que supera / editar / anular / períodos que cruzan
+  / Excel / orden; con facturas ya cargadas y el Dashboard; sin permiso; usuario de una empresa; de dos empresas; tabla inexistente—). **No se probó con usuarios reales ni con las cifras de producción** (no se midió cuánto de los
+  $31,7 M queda «Sin empresa»; se ve en pantalla) ni el Dashboard completo (solo `dLegKpiPendiente`).
+
 ## Salidas a producción: tipo de salida (Reenvase / Reetiquetado / Reformulación / …)
 
 **Estado:** migración remota `reenvases_tipo_salida` (`supabase/migrations/reenvases_tipo_salida.sql`) **aplicada el 2026-11-12** y verificada en producción (452 líneas, ninguna sin tipo, sin salidas mezcladas, auditoría intacta,

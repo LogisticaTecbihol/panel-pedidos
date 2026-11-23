@@ -154,10 +154,10 @@ tbody tr.lg-row-legs>td{vertical-align:top}
   </div>
 
   <div class="stats">
-    <div class="sc pend-aprob"><div class="num" id="s-porconciliar">0</div><div class="lbl">Por conciliar</div></div>
-    <div class="sc entregado"><div class="num" id="s-conciliadas">0</div><div class="lbl">Conciliadas</div></div>
     <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Total legalizaciones</div></div>
-    <div class="sc recibido"><div class="num" id="s-valor">$0</div><div class="lbl">Valor total (Por conciliar + Envíos)</div></div>
+    <div class="sc recibido"><div class="num" id="s-valor">$0</div><div class="lbl">Valor total (legalizaciones + envíos)</div></div>
+    <div class="sc entregado"><div class="num" id="s-facturado">$0</div><div class="lbl">Facturado (conciliado)</div><div class="car-sub" id="s-facturado-sub"></div></div>
+    <div class="sc pend-aprob"><div class="num" id="s-pendiente">$0</div><div class="lbl">Pendiente por conciliar</div><div class="car-sub" id="s-pendiente-sub"></div></div>
   </div>
   <div id="s-periodo" style="display:none;margin:-6px 0 14px;font-size:0.8rem;font-weight:600;color:#b7791f"></div>
 
@@ -168,14 +168,6 @@ tbody tr.lg-row-legs>td{vertical-align:top}
         <option value="">Todos</option>
         <option value="Ruta">Ruta</option>
         <option value="Mantenimiento">Mantenimiento</option>
-      </select>
-    </div>
-    <div class="fg"><label>Estado</label>
-      <select id="f-estado" onchange="renderTable()">
-        <option value="Por conciliar">Por conciliar</option>
-        <option value="Conciliada">Conciliadas</option>
-        <option value="Rechazada">Rechazadas</option>
-        <option value="">Todas</option>
       </select>
     </div>
     <div class="fg" id="f-fg-desde"><label>Desde</label><input type="date" id="f-desde" onchange="renderTable()"></div>
@@ -192,6 +184,7 @@ tbody tr.lg-row-legs>td{vertical-align:top}
     <button class="lg-tab" id="tab-legalizaciones" onclick="switchTab('legalizaciones')" style="background:#1a5276">📋 Legalizaciones</button>
     <button class="lg-tab" id="tab-envios" onclick="switchTab('envios')" style="background:#718096">📦 Envíos</button>
     <button class="lg-tab" id="tab-prorrateo" onclick="switchTab('prorrateo')" style="background:#718096">📊 Prorrateo de gastos</button>
+    <button class="lg-tab" id="tab-conciliacion" onclick="switchTab('conciliacion')" style="background:#718096">🧾 Conciliación contable</button>
     <button class="lg-tab" id="tab-vehiculos" onclick="switchTab('vehiculos')" style="background:#718096">🚚 Vehículos</button>
     <button class="lg-tab" id="tab-detalle" onclick="switchTab('detalle')" style="background:#718096">🔎 Vista detallada</button>
     <button class="lg-tab" id="tab-consecutivo" onclick="switchTab('consecutivo')" style="background:#718096">🧮 Consecutivo</button>
@@ -312,6 +305,17 @@ tbody tr.lg-row-legs>td{vertical-align:top}
     </div>
     <div class="card" style="margin-bottom:16px">
       <div class="card-head">
+        <h3>Conciliación contable del período</h3>
+        <span id="gpv-total" style="font-weight:600;color:#1a5276;font-size:0.86rem;margin-left:auto;margin-right:12px"></span>
+        <button class="btn-edit" onclick="switchTab('conciliacion')">🧾 Facturas</button>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Lo causado de cada empresa (gasto por producto + su Combustible + su Mantenimiento) menos lo facturado: las facturas por empresa de la pestaña «Conciliación contable» cuyo rango de fechas cae completo dentro de Desde / Hasta. «Sin empresa» es lo que el Prorrateo no atribuye a ninguna empresa (Otros, Sin identificar y el Combustible o Mantenimiento «Sin reparto asignado»): ninguna factura por empresa lo descuenta y sigue pendiente hasta asignarle reparto a su legalización.</div>
+      </div>
+      <div id="gpv-body"></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
         <h3>Resumen del período</h3>
         <span id="gpr-legs-total" style="font-weight:600;color:#1a5276;font-size:0.86rem"></span>
       </div>
@@ -389,6 +393,59 @@ tbody tr.lg-row-legs>td{vertical-align:top}
     </div>
   </div>
 
+  <!-- Conciliación contable: facturas del sistema contable por empresa, con valor y rango de fechas -->
+  <div id="panel-conciliacion" style="display:none">
+    <div class="filters">
+      <div class="fg"><label>Empresa</label><select id="cf-emp" onchange="renderConciliacion()"><option value="">Todas</option></select></div>
+      <div class="fg"><label>Desde</label><input type="date" id="cf-desde" onchange="renderConciliacion()"></div>
+      <div class="fg"><label>Hasta</label><input type="date" id="cf-hasta" onchange="renderConciliacion()"></div>
+      <div class="fg"><label>Estado</label>
+        <select id="cf-estado" onchange="renderConciliacion()">
+          <option value="Vigente">Vigentes</option>
+          <option value="Anulada">Anuladas</option>
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="fg"><label>Buscar</label><input type="text" id="cf-txt" placeholder="N.º de factura, observación…" style="width:200px" oninput="renderConciliacion()"></div>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn-dl lg-solo-conciliar" onclick="openFormFactura()">+ Registrar factura</button>
+        <button style="background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600" onclick="clearConciliacionFiltros()">✕ Limpiar</button>
+      </div>
+    </div>
+    <div id="cf-aviso" class="hist-aviso" style="display:none;margin:0 0 16px"></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
+        <h3>Causado, facturado y pendiente por empresa</h3>
+        <span id="cf-resumen-total" style="font-weight:600;color:#1a5276;font-size:0.86rem"></span>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">Causado = lo que el Prorrateo le asigna a cada empresa (gasto por producto + su Combustible + su Mantenimiento) en las legalizaciones y envíos con fecha entre Desde y Hasta. Facturado = facturas vigentes de la empresa cuyo rango de fechas cae completo dentro de ese período; las que lo cruzan no se descuentan (se avisa). Pendiente = causado − facturado.</div>
+      </div>
+      <div id="cf-resumen-body"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Facturas registradas <span id="cf-ct" style="font-weight:400;color:#718096"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
+          <button class="btn-clear-sort" id="btn-clear-sort-fac" onclick="clearSortLg('fac')" title="Quitar el orden de columnas">✕ Limpiar orden</button>
+          <button class="btn-dl" onclick="exportarFacturasExcel()">📥 Exportar Excel</button>
+          <button class="btn-dl" onclick="loadLegalizaciones()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div style="padding:12px 20px 0">
+        <div class="gpp-note">El rango de fechas de cada factura son las fechas de las <strong>legalizaciones y envíos</strong> que cubre (no la fecha del documento). «Causado» es lo que el Prorrateo le asigna hoy a esa empresa en ese rango; la diferencia es informativa. Se pueden registrar varias facturas de una misma empresa, incluso con fechas que se cruzan (factura complementaria): se avisa si juntas pasan lo causado. Una factura no se borra: se anula con un motivo.</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr id="fac-head"></tr>
+          </thead>
+          <tbody id="fac-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <div id="panel-vehiculos" style="display:none">
     <div class="card">
       <div class="card-head">
@@ -421,15 +478,6 @@ tbody tr.lg-row-legs>td{vertical-align:top}
           <option value="Ruta">Ruta</option>
           <option value="Mantenimiento">Mantenimiento</option>
           <option value="Envio">Envío</option>
-        </select>
-      </div>
-      <div class="fg"><label>Estado</label>
-        <select id="df-estado" onchange="renderDetalleTable()">
-          <option value="">Todas</option>
-          <option value="Por conciliar">Por conciliar</option>
-          <option value="Conciliada">Conciliadas</option>
-          <option value="Rechazada">Rechazadas</option>
-          <option value="Registrado">Registrados (envíos)</option>
         </select>
       </div>
       <div class="fg"><label>Desde</label><input type="date" id="df-desde" onchange="renderDetalleTable()"></div>
@@ -921,7 +969,65 @@ tbody tr.lg-row-legs>td{vertical-align:top}
   </div>
 </div>
 
-<!-- MODAL: Ver / Conciliar -->
+<!-- MODAL: Registrar / editar una factura (conciliación contable) -->
+<div class="overlay" id="form-fac-overlay" onclick="if(isBackdropClick(event))closeFormFactura()">
+  <div class="modal-box" style="max-width:680px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="fac-titulo">Registrar factura</h2>
+        <div class="meta">Factura o documento del sistema contable, por empresa</div>
+      </div>
+      <button class="btn-close" onclick="closeFormFactura()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+        <div><label class="ef-label">Empresa *</label><select class="ef" id="fac-empresa" onchange="recalcFactura()"></select></div>
+        <div><label class="ef-label">N.º de factura o documento *</label><input class="ef" id="fac-numero" type="text" maxlength="60" placeholder="Como está en el sistema contable" autocomplete="off"></div>
+        <div><label class="ef-label">Período desde *</label><input class="ef" id="fac-desde" type="date" onchange="recalcFactura()"></div>
+        <div><label class="ef-label">Período hasta *</label><input class="ef" id="fac-hasta" type="date" onchange="recalcFactura()"></div>
+        <div><label class="ef-label">Fecha del documento *</label><input class="ef" id="fac-fecha" type="date"></div>
+        <div><label class="ef-label">Valor facturado ($) *</label><input class="ef" id="fac-valor" type="number" min="0" step="1" oninput="recalcFactura()" style="text-align:right"></div>
+        <div style="grid-column:span 2"><label class="ef-label">Observación</label><textarea class="ef" id="fac-obs" rows="2" maxlength="500" style="resize:vertical" placeholder="Opcional"></textarea></div>
+      </div>
+      <div class="gpp-note" style="margin:8px 0 0">El período son las fechas de las legalizaciones y envíos que cubre la factura; puede ser un rango parcial dentro de un mes.</div>
+      <div id="fac-calculo" style="margin-top:14px"></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="closeFormFactura()">Cancelar</button>
+        <button class="btn-confirm" id="fac-btn-guardar" onclick="saveFormFactura()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Anular una factura -->
+<div class="overlay" id="anular-fac-overlay" style="z-index:210" onclick="if(isBackdropClick(event))closeAnularFactura()">
+  <div class="modal-box" style="max-width:520px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2>Anular factura</h2>
+        <div class="meta" id="anular-fac-meta"></div>
+      </div>
+      <button class="btn-close" onclick="closeAnularFactura()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="font-size:0.84rem;color:#4a5568;margin-bottom:10px">La factura deja de descontar lo causado. No se borra: queda anulada con su motivo, quién y cuándo, y su número se puede volver a usar.</div>
+      <label class="ef-label">Motivo de la anulación *</label>
+      <textarea class="ef" id="anular-fac-motivo" rows="3" maxlength="300" style="resize:vertical" placeholder="Ej. Valor digitado con error; se registra de nuevo."></textarea>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns" style="width:100%;display:flex">
+        <span style="flex:1"></span>
+        <button class="btn-cancel" onclick="closeAnularFactura()">Cancelar</button>
+        <button class="btn-confirm" id="anular-fac-btn" style="background:#c0392b" onclick="doAnularFactura()">Anular factura</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Ver -->
 <div class="overlay" id="ver-overlay" onclick="if(isBackdropClick(event))closeVer()">
   <div class="modal-box" style="max-width:980px">
     <div class="mhdr">
@@ -947,12 +1053,13 @@ tbody tr.lg-row-legs>td{vertical-align:top}
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261105a"></script>
-<script src="js/auth.js?v=20261029b"></script>
+<script src="js/shared.js?v=20261123a"></script>
+<script src="js/auth.js?v=20261123a"></script>
 <script src="js/notificaciones.js?v=20261118a"></script>
 <script src="js/pdf-remision.js?v=20261119a"></script>
-<script src="js/legalizacion-prorrateo.js?v=20261104a"></script>
+<script src="js/legalizacion-prorrateo.js?v=20261123a"></script>
 <script src="js/legalizacion-historial.js?v=20261028c"></script>
-<script src="js/legalizacion-gastos.js?v=20261111a"></script>
+<script src="js/legalizacion-conciliacion.js?v=20261123a"></script>
+<script src="js/legalizacion-gastos.js?v=20261123a"></script>
 </body>
 </html>

@@ -30,7 +30,7 @@ var AUTH = (function() {
     { key: 'clientes',                  label: '👥 Clientes' },
     { key: 'notificaciones',          label: '🔔 Notificaciones' },
     { key: 'legalizacion_gastos',          label: '🧾 Legalización de Gastos' },
-    { key: 'legalizacion_gastos_aprobar',  label: '✅ Conciliar legalización de gastos' },
+    { key: 'legalizacion_gastos_aprobar',  label: '✅ Conciliar legalización de gastos (registrar facturas)' },
     { key: 'solicitudes_mercadeo',         label: '📣 Solicitudes a Mercadeo y de Eventos' },
     { key: 'solicitudes_mercadeo_aprobar', label: '✅ Aprobar solicitudes a Mercadeo y de Eventos' }
   ];
@@ -423,8 +423,9 @@ var AUTH = (function() {
     return _modules.indexOf('ordenes_aprobar') >= 0;
   }
 
-  // Quién puede conciliar/rechazar una legalización de gastos (segundo paso).
-  // El backend lo hace cumplir con el RPC conciliar_legalizacion_gastos.
+  // Quién puede registrar, editar y anular las facturas de la conciliación contable de
+  // Legalización de gastos (antes: conciliar/rechazar cada legalización). El backend lo
+  // hace cumplir con las políticas de LegalizacionGastosFacturas (módulo legalizacion_gastos_aprobar).
   function canConciliarGastos() {
     if (!_profile) return false;
     if (_profile.rol === 'lector') return false; // solo lectura, aunque tenga el permiso

@@ -1,10 +1,11 @@
 // ── Legalización de Gastos ──
 // Reemplaza el Excel CT-PFT-FO02: gastos de ruta de un conductor (combustible,
-// alimentación, peajes) contra un anticipo, con conciliación en dos pasos.
+// alimentación, peajes) contra un anticipo. La conciliación contable (facturas por
+// empresa contra lo causado en el Prorrateo) vive en js/legalizacion-conciliacion.js.
 
 // ── Tabs ──
 function switchTab(tab) {
-  ['legalizaciones', 'envios', 'prorrateo', 'vehiculos', 'detalle', 'consecutivo', 'historial', 'remisiones'].forEach(function(t) {
+  ['legalizaciones', 'envios', 'prorrateo', 'conciliacion', 'vehiculos', 'detalle', 'consecutivo', 'historial', 'remisiones'].forEach(function(t) {
     var panel = document.getElementById('panel-' + t);
     var btn = document.getElementById('tab-' + t);
     if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
@@ -13,6 +14,7 @@ function switchTab(tab) {
   updateStats(); // los indicadores dependen de la pestaña (filtro de fechas de Prorrateo)
   if (tab === 'envios') renderEnviosTable();
   if (tab === 'prorrateo') renderProrrateoGastos();
+  if (tab === 'conciliacion') renderConciliacion();
   if (tab === 'vehiculos') renderVehiculosTab();
   if (tab === 'detalle') renderDetalleTable();
   if (tab === 'consecutivo') loadConsecutivoData(); // siempre fresco: otros usuarios crean/borran/anotan
@@ -278,7 +280,11 @@ async function loadClientesConRemision() {
     } else {
       prorrateoMapa = prorrateoMapaReparto = prorrateoClienteMap = prorrateoGrupo = null;
     }
+    prorrateoListo = true; // ya hay mapas de remisiones: el reparto por empresa es confiable (conciliación contable)
+    concInvalidar();
     renderProrrateoGastos(); // legs pudo cargar antes o después de este fetch
+    var panelConc = document.getElementById('panel-conciliacion');
+    if (panelConc && panelConc.style.display !== 'none') renderConciliacion();
     renderRemisionesExternasTab();
     renderEnviosDetalle(); // los productos de cada remisión llegan con este fetch
     renderLegDetalle();
@@ -480,8 +486,10 @@ async function loadLegalizaciones() {
   populateEmpresaSelect('pf-emp', 'Todas', extrasFiltro);
   populateEmpresaSelect('df-emp', 'Todas', extrasFiltro);
   populateEmpresaSelect('ef-emp', 'Todas', extrasFiltro);
+  populateEmpresaSelect('cf-emp', 'Todas', _concExtras()); // Conciliación contable: también los grupos externos que el usuario ve
   aplicarRestriccionEmpresaPropia();
   aplicarPermisosEscritura(); // oculta los «+ Nueva…» al rol de solo lectura
+  aplicarPermisosConciliacion(); // «+ Registrar factura»: solo quien concilia
   aplicarVisibilidadHistorial(); // pestaña Historial: solo quien concilia y no es de una sola empresa
   loadClientesConRemision(); // best-effort, no bloquea la carga principal
 
@@ -506,7 +514,8 @@ async function loadLegalizaciones() {
       apiGet('getLegalizacionGastosItems'),
       apiGet('getLegalizacionGastosEmpresas'),
       apiGet('getVehiculos'),
-      loadCierreLeg() // nunca falla: sin lectura no se oculta nada y la BD sigue haciendo cumplir el cierre
+      loadCierreLeg(), // nunca falla: sin lectura no se oculta nada y la BD sigue haciendo cumplir el cierre
+      loadFacturas()   // nunca falla: sin la tabla (migración sin aplicar) la pantalla sigue sin facturas
     ]);
     if (!results[0].ok) throw new Error(results[0].error || 'Error desconocido');
     if (!results[1].ok) throw new Error(results[1].error || 'Error desconocido');
@@ -520,6 +529,7 @@ async function loadLegalizaciones() {
     legItems = results[1].items || [];
     legEmpresas = results[2].empresas || [];
     vehiculos = results[3].vehiculos || [];
+    concInvalidar(); // el cálculo por empresa de la conciliación depende de legs / items / reparto
     populatePlacaSelects();
     renderVehiculosTab();
 
@@ -588,7 +598,6 @@ var LG_SORT_COLS = {
     { id: 'total', label: 'Total gastos', right: true, fn: function(l) { return totalGastosOf(l.id); } },
     { id: 'parte', label: _parteLabel, right: true, soloPropia: true, fn: _parteEmpresaPropia },
     { id: 'anticipo', label: 'Anticipo', right: true, fn: function(l) { return Number(l.Anticipo_Entregado) || 0; } },
-    { id: 'estado', label: 'Estado', fn: function(l) { return estadoLeg(l) || ''; } },
     { id: 'acciones', label: 'Acciones' }
   ],
   // Detalle de remisiones y productos de Legalizaciones: cada fila es
@@ -611,7 +620,6 @@ var LG_SORT_COLS = {
     { id: 'gasto', label: 'Gasto prorrateado', right: true, fn: function(r) { return r.gasto; } },
     { id: 'total', label: 'Total gastos', right: true, fn: function(r) { return totalGastosOf(r.leg.id); } },
     { id: 'parte', label: _parteLabel, right: true, soloPropia: true, fn: function(r) { return _parteEmpresaPropia(r.leg); } },
-    { id: 'estado', label: 'Estado', fn: function(r) { return estadoLeg(r.leg) || ''; } },
     { id: 'acciones', label: 'Acciones' }
   ],
   env: [
@@ -652,7 +660,6 @@ var LG_SORT_COLS = {
     { id: 'total', label: 'Total gastos', right: true, fn: function(l) { return totalGastosOf(l.id); } },
     { id: 'anticipo', label: 'Anticipo', right: true, fn: function(l) { return Number(l.Anticipo_Entregado) || 0; } },
     { id: 'km', label: 'Km', fn: _detalleKmNum },
-    { id: 'estado', label: 'Estado', fn: function(l) { return estadoLeg(l) || ''; } },
     { id: 'observaciones', label: 'Observaciones', fn: function(l) { return l.Observaciones || ''; } },
     { id: 'acciones', label: 'Acciones' }
   ],
@@ -667,7 +674,6 @@ var LG_SORT_COLS = {
     { id: 'proveedor', label: 'Proveedor', fn: function(x) { return x.it.Proveedor || ''; } },
     { id: 'nit', label: 'NIT', fn: function(x) { return x.it.NIT || ''; } },
     { id: 'valor', label: 'Valor', right: true, fn: function(x) { return Number(x.it.Valor) || 0; } },
-    { id: 'estado', label: 'Estado', fn: function(x) { return estadoLeg(x.leg) || ''; } },
     { id: 'acciones', label: 'Acciones' }
   ],
   veh: [
@@ -678,6 +684,7 @@ var LG_SORT_COLS = {
     { id: 'piloto', label: 'Piloto km', fn: function(v) { return KM_PILOTO_PLACAS.indexOf(v.Placa) >= 0 ? 'Sí' : 'No'; } },
     { id: 'activo', label: 'Activo', fn: function(v) { return v.Activo !== false ? 'Sí' : 'No'; } }
   ],
+  fac: LG_COLS_FAC, // facturas de la conciliación contable (js/legalizacion-conciliacion.js)
   cons: [
     { id: 'n', label: 'N°', fn: function(r) { return r.f.consecutivo; } },
     { id: 'estado', label: 'Estado', fn: function(r) { return r.f.existe ? 'Existe' : (r.f.nota ? 'Revisado' : 'Pendiente'); } },
@@ -712,6 +719,7 @@ var LG_SORT_RENDER = {
   detleg: function() { renderDetalleTable(); },
   detlin: function() { renderDetalleTable(); },
   veh: function() { renderVehiculosTab(); },
+  fac: function() { renderConciliacion(); },
   cons: function() { renderConsecutivoTab(); },
   ext: function() { renderRemisionesExternasTab(); }
 };
@@ -1212,7 +1220,7 @@ function aplicarRestriccionEmpresaPropia() {
   var valor = empresaPropia.nombre;
   var emp = (typeof EMPRESAS_HOLDING !== 'undefined') && EMPRESAS_HOLDING.find(function(e) { return e.sigla === empresaPropia.sigla; });
   if (emp) valor = emp.value;
-  ['f-emp', 'pf-emp', 'df-emp', 'ef-emp'].forEach(function(id) {
+  ['f-emp', 'pf-emp', 'df-emp', 'ef-emp', 'cf-emp'].forEach(function(id) {
     var sel = document.getElementById(id);
     if (!sel) return;
     sel.innerHTML = '<option value="' + escHtml(valor) + '">' + escHtml(empresaPropia.sigla) + '</option>';
@@ -1424,6 +1432,7 @@ function _mostrarCardProrrateo(bodyId, mostrar) {
 
 function renderProrrateoGastos() {
   updateStats(); // el rango Desde/Hasta también afecta los indicadores de arriba
+  renderConcProrrateo(); // causado / facturado / pendiente por empresa del mismo período
   var calc = calcularProrrateoGastos();
   var grupo = calcularProrrateoGrupo(calc); // todas las legalizaciones: monto y % de cada empresa como los ve el admin
   renderResumenProrrateo(calc);
@@ -1757,6 +1766,13 @@ function exportarProrrateoExcel() {
     wsNoPro['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 60 }];
     XLSX.utils.book_append_sheet(wb, wsNoPro, 'No prorrateado');
   }
+  // Causado / facturado / pendiente por empresa del mismo período (js/legalizacion-conciliacion.js).
+  var rowsConc = facturasOk ? concHojaResumen(document.getElementById('pf-desde').value, document.getElementById('pf-hasta').value, document.getElementById('pf-emp').value) : null;
+  if (rowsConc) {
+    var wsConc = XLSX.utils.json_to_sheet(rowsConc);
+    wsConc['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, wsConc, 'Conciliación contable');
+  }
   XLSX.writeFile(wb, 'prorrateo_gastos_' + today() + '.xlsx');
   showToast('Excel exportado');
 }
@@ -1844,17 +1860,6 @@ function tipoLabel(leg) {
   return leg.Tipo === 'Mantenimiento' ? 'Mantenimiento' : 'Ruta';
 }
 
-// Estado tal como lo ve el usuario: los envíos no se concilian, así que se
-// muestran como "Registrado" aunque en BD queden 'Por conciliar'.
-function estadoLeg(leg) { return esEnvio(leg) ? 'Registrado' : leg.Estado_Conciliacion; }
-
-// Con Tipo = Envío el filtro de Estado se ignora (un envío nunca está
-// "Por conciliar"), así el usuario ve todos los envíos sin tocar el Estado.
-// (Lo usa la Vista detallada; la lista principal ya no incluye envíos.)
-function pasaFiltroEstado(leg, fEstado, fTipo) {
-  return !fEstado || fTipo === 'Envio' || estadoLeg(leg) === fEstado;
-}
-
 // Proveedores de las líneas de gasto (un envío tiene uno solo), para mostrar
 // y para buscar en la lista.
 function proveedoresTexto(legId) {
@@ -1868,15 +1873,6 @@ function tipoBadgeHtml(leg) {
   return (leg.Tipo === 'Mantenimiento')
     ? '<span class="badge b-fac">🔧 Mantenimiento</span>'
     : '<span class="badge b-par">🚚 Ruta</span>';
-}
-
-function estadoBadgeHtml(leg) {
-  if (esEnvio(leg)) return '<span class="badge b-cerrado">📦 Registrado</span>';
-  if (leg.Estado_Conciliacion === 'Conciliada') return '<span class="badge b-ent">✅ Conciliada</span>';
-  if (leg.Estado_Conciliacion === 'Rechazada') {
-    return '<span class="badge b-anulado" title="' + escHtml(leg.Motivo_Rechazo || '') + '">❌ Rechazada</span>';
-  }
-  return '<span class="badge b-rec">⏳ Por conciliar</span>';
 }
 
 // ¿El reparto guardado no cuadra con los gastos? Mismo criterio del aviso del
@@ -1961,13 +1957,11 @@ function setDetalleModo(modo) {
 function _detalleLegsFiltrados() {
   var fEmp = document.getElementById('df-emp').value;
   var fTipo = document.getElementById('df-tipo').value;
-  var fEstado = document.getElementById('df-estado').value;
   var fDesde = document.getElementById('df-desde').value;
   var fHasta = document.getElementById('df-hasta').value;
   var fTxt = (document.getElementById('df-txt').value || '').toLowerCase().trim();
 
   return legs.filter(function(leg) {
-    if (!pasaFiltroEstado(leg, fEstado, fTipo)) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fDesde && (leg.Fecha || '') < fDesde) return false;
@@ -2043,7 +2037,6 @@ function _detalleTablaLegalizacion(rows) {
       '<td style="text-align:right">' + escHtml(fmtMoney(totalGastosOf(leg.id))) + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</td>' +
       '<td>' + escHtml(_detalleKmTxt(leg)) + '</td>' +
-      '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td style="max-width:200px;white-space:normal">' + escHtml(leg.Observaciones || '—') + '</td>' +
       '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
     '</tr>';
@@ -2066,7 +2059,6 @@ function _detalleTablaLinea(lineas) {
       '<td>' + escHtml(it.Proveedor || '—') + '</td>' +
       '<td>' + escHtml(it.NIT || '—') + '</td>' +
       '<td style="text-align:right">' + escHtml(fmtMoney(it.Valor)) + '</td>' +
-      '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
     '</tr>';
   }).join('');
@@ -2093,8 +2085,7 @@ function exportarDetalleExcel() {
         'Concepto': it.Concepto || '',
         'Proveedor': it.Proveedor || '',
         'NIT': it.NIT || '',
-        'Valor': Number(it.Valor) || 0,
-        'Estado': estadoLeg(leg) || ''
+        'Valor': Number(it.Valor) || 0
       };
     });
     if (!dataLinea.length) { showToast('No hay líneas de gasto para exportar', '#e74c3c'); return; }
@@ -2126,7 +2117,6 @@ function exportarDetalleExcel() {
         'Total gastos': totalGastosOf(leg.id),
         'Anticipo': Number(leg.Anticipo_Entregado) || 0,
         'Km': km,
-        'Estado': estadoLeg(leg) || '',
         'Observaciones': leg.Observaciones || ''
       };
     });
@@ -2154,7 +2144,6 @@ function exportarLegalizacionesExcel() {
     };
     if (empresaPropia) fila['Parte de ' + empresaPropia.sigla] = _parteEmpresaPropia(leg) === null ? '' : _parteEmpresaPropia(leg);
     fila['Anticipo'] = Number(leg.Anticipo_Entregado) || 0;
-    fila['Estado'] = estadoLeg(leg) || '';
     return fila;
   });
   var wb = XLSX.utils.book_new();
@@ -2174,19 +2163,17 @@ function renderTable() {
   renderDetalleTable();
 }
 
-// Legalizaciones que pasan Empresa/Tipo/Estado y el rango Desde/Hasta (por Fecha de
+// Legalizaciones que pasan Empresa/Tipo y el rango Desde/Hasta (por Fecha de
 // la legalización; sin Buscar ni orden de columnas), la más reciente primero: base
 // común de la lista y del Detalle de remisiones y productos.
 function _legsPorFiltros() {
   var fEmp = document.getElementById('f-emp').value;
   var fTipo = document.getElementById('f-tipo').value;
-  var fEstado = document.getElementById('f-estado').value;
   var fDesde = document.getElementById('f-desde').value;
   var fHasta = document.getElementById('f-hasta').value;
 
   return legs.filter(function(leg) {
     if (esEnvio(leg)) return false; // los envíos tienen su propia pestaña (renderEnviosTable)
-    if (fEstado && leg.Estado_Conciliacion !== fEstado) return false;
     if (fTipo && (leg.Tipo || 'Ruta') !== fTipo) return false;
     if (fEmp && !empresasOf(leg.id).some(function(e) { return e.Empresa === fEmp; })) return false;
     if (fDesde && (leg.Fecha || '') < fDesde) return false;
@@ -2239,7 +2226,6 @@ function renderLegTable() {
       '<td style="text-align:right">' + escHtml(fmtMoney(total)) + '</td>' +
       (empresaPropia ? '<td style="text-align:right">' + _parteEmpresaPropiaHtml(leg) + '</td>' : '') +
       '<td style="text-align:right">' + escHtml(fmtMoney(leg.Anticipo_Entregado)) + '</td>' +
-      '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td>' + acciones + '</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="' + _lgColsVisibles('leg').length + '"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
@@ -2360,7 +2346,6 @@ function renderLegDetalle() {
       '<td style="text-align:right;white-space:nowrap">' + (r.gasto === null ? vacio : escHtml(fmtMoney2(r.gasto))) + '</td>' +
       '<td style="text-align:right">' + (r.primera ? escHtml(fmtMoney(totalGastosOf(leg.id))) : '') + '</td>' +
       (empresaPropia ? '<td style="text-align:right">' + (r.primera ? _parteEmpresaPropiaHtml(leg) : '') + '</td>' : '') +
-      '<td>' + estadoBadgeHtml(leg) + '</td>' +
       '<td><button class="btn-ver" onclick="openVer(' + leg.id + ')">👁 Ver</button></td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="' + _lgColsVisibles('lgd').length + '"><div class="empty">Sin legalizaciones para este filtro.</div></td></tr>';
@@ -2392,7 +2377,6 @@ function exportarLegDetalleExcel() {
       'Total gastos': r.primera ? totalGastosOf(leg.id) : ''
     };
     if (empresaPropia) fila['Parte de ' + empresaPropia.sigla] = r.primera && _parteEmpresaPropia(leg) !== null ? _parteEmpresaPropia(leg) : '';
-    fila['Estado'] = estadoLeg(leg) || '';
     fila['Observación'] = r.nota;
     return fila;
   });
@@ -2642,11 +2626,15 @@ function exportarEnviosDetalleExcel() {
 // fechas visible ahí y se vería un total que no cuadra con la tabla).
 function _periodoIndicadores() {
   var panel = document.getElementById('panel-prorrateo');
-  if (!panel || panel.style.display === 'none') return { desde: '', hasta: '' };
-  return {
-    desde: document.getElementById('pf-desde').value,
-    hasta: document.getElementById('pf-hasta').value
-  };
+  if (panel && panel.style.display !== 'none') {
+    return { desde: document.getElementById('pf-desde').value, hasta: document.getElementById('pf-hasta').value, de: 'Prorrateo' };
+  }
+  // Conciliación contable: sus propios Desde/Hasta (los de las facturas y el resumen por empresa).
+  var conc = document.getElementById('panel-conciliacion');
+  if (conc && conc.style.display !== 'none') {
+    return { desde: document.getElementById('cf-desde').value, hasta: document.getElementById('cf-hasta').value, de: 'Conciliación contable' };
+  }
+  return { desde: '', hasta: '', de: '' };
 }
 
 function updateStats() {
@@ -2659,21 +2647,15 @@ function updateStats() {
   var nota = document.getElementById('s-periodo');
   if (nota) {
     nota.style.display = (per.desde || per.hasta) ? 'block' : 'none';
-    nota.textContent = '📅 Indicadores filtrados por el período de Prorrateo: ' +
+    nota.textContent = '📅 Indicadores filtrados por el período de ' + per.de + ': ' +
       (per.desde ? 'desde ' + fmtDate(per.desde) : 'desde el inicio') + ' ' +
       (per.hasta ? 'hasta ' + fmtDate(per.hasta) : 'hasta hoy');
   }
-  // Los envíos no se concilian y tienen su propia pestaña: no cuentan aquí.
+  // Los envíos tienen su propia pestaña: el conteo es de legalizaciones (ruta y mantenimiento).
   var propias = legs_.filter(function(l) { return !esEnvio(l); });
-  var porConciliar = propias.filter(function(l) { return l.Estado_Conciliacion === 'Por conciliar'; });
-  var conciliadas = propias.filter(function(l) { return l.Estado_Conciliacion === 'Conciliada'; });
-  document.getElementById('s-porconciliar').textContent = porConciliar.length;
-  document.getElementById('s-conciliadas').textContent = conciliadas.length;
   document.getElementById('s-total').textContent = propias.length;
-  // El valor sí suma los envíos (no se concilian, pero son gasto registrado).
-  var valorPend = legs_.filter(function(l) { return esEnvio(l) || l.Estado_Conciliacion === 'Por conciliar'; })
-    .reduce(function(s, l) { return s + totalGastosOf(l.id); }, 0);
-  document.getElementById('s-valor').textContent = fmtMoney(valorPend);
+  // Valor total, facturado y pendiente: del período activo, por empresa (js/legalizacion-conciliacion.js).
+  concActualizarTiles(per);
 }
 
 // ── Opciones de empresa para las filas del reparto ──
@@ -4828,36 +4810,6 @@ function renderVerBody(leg) {
     return '<tr><td>' + escHtml(getSigla(e.Empresa)) + '</td><td style="text-align:right">' + escHtml(fmtMoney(e.Monto)) + '</td></tr>';
   }).join('') || '<tr><td colspan="2"><div class="no-lines">Sin reparto.</div></td></tr>';
 
-  var conciliacionHtml;
-  if (leg.Estado_Conciliacion === 'Conciliada') {
-    conciliacionHtml = '<div style="padding:10px 14px;background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;font-size:0.86rem">' +
-      '<strong>✅ Conciliada</strong> por ' + escHtml(leg.Conciliado_Por || '—') + ' el ' + escHtml(fmtDate(leg.Fecha_Conciliacion)) + '<br>' +
-      'Saldo a favor del empleado: <strong>' + escHtml(fmtMoney(leg.Saldo_Favor_Empleado)) + '</strong> · ' +
-      'Saldo por reembolsar a la empresa: <strong>' + escHtml(fmtMoney(leg.Saldo_Reembolsar_Empresa)) + '</strong>' +
-    '</div>';
-  } else if (leg.Estado_Conciliacion === 'Rechazada') {
-    conciliacionHtml = '<div style="padding:10px 14px;background:#fce4ec;border:1px solid #f5b7b1;border-radius:8px;font-size:0.86rem">' +
-      '<strong>❌ Rechazada</strong> por ' + escHtml(leg.Conciliado_Por || '—') + ' el ' + escHtml(fmtDate(leg.Fecha_Conciliacion)) + '<br>' +
-      'Motivo: ' + escHtml(leg.Motivo_Rechazo || '—') +
-    '</div>';
-  } else if (!esEnv && AUTH.canConciliarGastos()) {
-    conciliacionHtml =
-      '<div style="padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">' +
-        '<div style="font-weight:700;color:#92400e;margin-bottom:8px;font-size:0.86rem">Conciliar legalización</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
-          '<div><label class="ef-label">Saldo a favor del empleado ($)</label><input class="ef" id="ver-saldo-favor" type="number" min="0" step="1"></div>' +
-          '<div><label class="ef-label">Saldo por reembolsar a la empresa ($)</label><input class="ef" id="ver-saldo-reemb" type="number" min="0" step="1"></div>' +
-        '</div>' +
-        '<div style="margin-bottom:10px"><label class="ef-label">Motivo de rechazo (solo si rechaza)</label><input class="ef" id="ver-motivo-rechazo" type="text" style="width:100%"></div>' +
-        '<div style="display:flex;gap:8px">' +
-          '<button class="btn-confirm" onclick="doConciliarLG(true)">✅ Conciliar</button>' +
-          '<button class="btn-cancel" style="color:#c0392b" onclick="doConciliarLG(false)">❌ Rechazar</button>' +
-        '</div>' +
-      '</div>';
-  } else {
-    conciliacionHtml = '<div style="padding:10px 14px;background:#fef3cd;border:1px solid #f9e79f;border-radius:8px;font-size:0.86rem;color:#7d6608">⏳ Pendiente de conciliación.</div>';
-  }
-
   // Kilometraje/rendimiento (piloto, KM_PILOTO_PLACAS): solo informativo,
   // nunca bloquea la conciliación ni cambia el reparto entre empresas.
   var kmHtml = '';
@@ -4918,35 +4870,11 @@ function renderVerBody(leg) {
     // Reparto desactualizado (gastos editados después de calcularlo): aviso con la diferencia.
     (descVer ? '<div style="margin:0 0 14px;padding:8px 12px;background:#fffaf0;border:1px solid #f6ad55;border-radius:8px;font-size:0.84rem;color:#7b341e">⚠ <strong>Reparto desactualizado.</strong> ' +
       escHtml(repartoDescuadreTxt(descVer)) + ' ' + (esMant ? 'Edita la legalización y ajusta los montos del reparto.' : 'Edita y pulsa ⚖ Calcular reparto para recalcularlo.') + '</div>' : '') +
-    // Los envíos no se concilian: sin bloque de conciliación.
-    (esEnv ? '' : '<h3 style="font-size:0.88rem;color:#1a5276;margin-bottom:6px">Conciliación</h3>' + conciliacionHtml) +
     '<h3 style="font-size:0.88rem;color:#1a5276;margin:16px 0 6px">Soportes adjuntos <span id="lg-adj-count"></span></h3>' +
     (AUTH.canWriteLegalizacion() && leg.Estado_Conciliacion === 'Por conciliar' && !legCerradaParaUsuario(leg.Fecha) ?
       '<input type="file" id="lg-adjunto-input" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleAdjuntoUploadLG(this)" style="margin-bottom:8px">' : '') +
     '<div id="lg-adjuntos-list"></div>' +
     _auditoriaHtml(legAuditoria(leg), false);
-}
-
-async function doConciliarLG(aprobar) {
-  var id = verLegId;
-  if (!id) return;
-  var saldoFavor = document.getElementById('ver-saldo-favor').value;
-  var saldoReemb = document.getElementById('ver-saldo-reemb').value;
-  var motivo = document.getElementById('ver-motivo-rechazo').value.trim();
-
-  if (!aprobar && !motivo) { showToast('Indica el motivo del rechazo', '#e67e22'); return; }
-  if (aprobar && !confirm('¿Conciliar esta legalización? No se podrá editar después.')) return;
-  if (!aprobar && !confirm('¿Rechazar esta legalización?')) return;
-
-  var res = await apiPost({
-    action: 'conciliarLegalizacionGastos', id: id, aprobar: aprobar,
-    saldo_favor: saldoFavor, saldo_reembolsar: saldoReemb, motivo_rechazo: motivo
-  });
-  if (!res.ok) { showToast('Error: ' + res.error, '#e74c3c'); return; }
-
-  showToast(aprobar ? 'Legalización conciliada' : 'Legalización rechazada', aprobar ? '#27ae60' : '#e67e22');
-  await loadLegalizaciones();
-  openVer(id);
 }
 
 // ── Adjuntos (bucket privado: solo legalizacion_gastos / _aprobar) ──

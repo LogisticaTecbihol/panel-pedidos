@@ -567,6 +567,13 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, empresas: _addRow(res.data) };
     }
+    // Facturas de la conciliación contable (por empresa, con valor y rango de fechas).
+    // Si la tabla aún no existe responde ok:false y la pantalla sigue funcionando sin ellas.
+    if (action === 'getLegalizacionFacturas') {
+      var res = await _fetchAllRows('LegalizacionGastosFacturas', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, facturas: _addRow(res.data) };
+    }
     if (action === 'getVehiculos') {
       var res = await _fetchAllRows('Vehiculos', cols);
       if (res.error) return { ok: false, error: res.error.message };
@@ -2864,6 +2871,52 @@ async function _apiPostCore(body) {
       });
       if (resConcLG.error) return { ok: false, error: resConcLG.error.message };
       return resConcLG.data || { ok: true };
+    }
+
+    // ── Conciliación contable: facturas por empresa (supabase/migrations/legalizacion_gastos_facturas.sql) ──
+    // Alta o edición (con body.id) de una factura vigente. Las reglas (valor > 0, rango válido, número
+    // único por empresa, quién puede) las hace cumplir la base; aquí solo se traducen sus errores.
+    if (action === 'guardarLegalizacionFactura') {
+      var rowF = {
+        Empresa: (body.Empresa || '').trim(),
+        Numero_Documento: (body.Numero_Documento || '').trim(),
+        Fecha_Documento: body.Fecha_Documento || null,
+        Periodo_Desde: body.Periodo_Desde || null,
+        Periodo_Hasta: body.Periodo_Hasta || null,
+        Valor: Number(body.Valor),
+        Observacion: (body.Observacion || '').trim(),
+        Causado_Al_Registrar: (body.Causado_Al_Registrar != null && body.Causado_Al_Registrar !== '' && isFinite(Number(body.Causado_Al_Registrar))) ? Number(body.Causado_Al_Registrar) : null
+      };
+      var msgErrF = function(err) {
+        if (err.code === '23505') return 'Ya hay una factura vigente con el número ' + rowF.Numero_Documento + ' para esa empresa';
+        if (err.code === '42501') return 'No tienes permiso para registrar o modificar facturas de esa empresa';
+        if (err.code === '23514') return 'Revisa los datos: el valor debe ser mayor que cero y la fecha «hasta» no puede ser anterior a «desde»';
+        return err.message;
+      };
+      if (body.id) {
+        rowF.modificado_por = _uid();
+        var resUpF = await _sb.from('LegalizacionGastosFacturas').update(rowF).eq('id', body.id).select('id');
+        if (resUpF.error) return { ok: false, error: msgErrF(resUpF.error) };
+        if (!resUpF.data || !resUpF.data.length) return { ok: false, error: 'No se pudo modificar: la factura ya no existe, está anulada o no tienes permiso sobre ella' };
+        return { ok: true, id: body.id };
+      }
+      rowF.creado_por = _uid();
+      var resInF = await _sb.from('LegalizacionGastosFacturas').insert(rowF).select('id').single();
+      if (resInF.error) return { ok: false, error: msgErrF(resInF.error) };
+      return { ok: true, id: resInF.data.id };
+    }
+
+    // Anula una factura vigente (no se borra; queda con motivo, quién y cuándo).
+    if (action === 'anularLegalizacionFactura') {
+      if (!body.id) return { ok: false, error: 'Falta el id de la factura' };
+      var motivoAn = (body.motivo || '').trim();
+      if (motivoAn.length < 5) return { ok: false, error: 'Indica el motivo de la anulación (mínimo 5 caracteres)' };
+      var resAnF = await _sb.from('LegalizacionGastosFacturas')
+        .update({ Estado: 'Anulada', Motivo_Anulacion: motivoAn, modificado_por: _uid() })
+        .eq('id', body.id).eq('Estado', 'Vigente').select('id');
+      if (resAnF.error) return { ok: false, error: resAnF.error.code === '42501' ? 'No tienes permiso para anular facturas de esa empresa' : resAnF.error.message };
+      if (!resAnF.data || !resAnF.data.length) return { ok: false, error: 'No se anuló: la factura ya estaba anulada, ya no existe o no tienes permiso sobre ella' };
+      return { ok: true, id: body.id };
     }
 
     // Alta de placa nueva (catálogo Vehiculos): usado tanto por la pestaña

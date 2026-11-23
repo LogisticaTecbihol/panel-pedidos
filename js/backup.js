@@ -24,6 +24,7 @@ var BACKUP_TABLES = [
   { name: 'LegalizacionGastos', label: 'Legalización Gastos' },
   { name: 'LegalizacionGastosItems', label: 'Legalización Items' },
   { name: 'LegalizacionGastosEmpresas', label: 'Legalización Empresas' },
+  { name: 'LegalizacionGastosFacturas', label: 'Legalización Facturas (conciliación)' },
   { name: 'LegalizacionGastosConsecutivoNotas', label: 'Legalización Notas Consec.' },
   { name: 'Vehiculos',         label: 'Vehículos' },
   { name: 'RemisionesExternas', label: 'Remisiones Externas' },
