@@ -770,3 +770,21 @@ informativos de PARCELAR + 1 «SM-5 aprobada»); el defecto era solo lo que most
   no dependen de la empresa, por lo que hoy Cartera los recibe de todas.
 - Probado con un arnés de Chrome sin interfaz sobre el `notificaciones-page.js` real con Supabase simulado (Nicolle: 15 de 15, 0 no leídas, sin enviadas ni ajenas; admin: sin cambios; otro usuario no admin: recibidas + enviadas, como antes).
   No se probó con la sesión real de Nicolle.
+
+## Campanita de notificaciones: contador y lista con TODAS las no leídas
+
+Caso 2026-11-23 (Sharon Bajonero, contabilidad GREEN/IAS): se reclamó que no le llegó el aviso del traslado GREEN-RS-0122 / IASO-RE-0296 (Salidas a producción, Reenvases #484, Lady Puentes, 20/11 9:08 a. m.).
+El aviso **sí se generó** (fila en `notificaciones` con PDF, igual que el de Alison Vargas de IASO) y ella lo leyó a las 4:17 p. m.: llegó, pero estuvo ~7 h sin verse porque la campanita solo es en vivo con el panel abierto.
+El defecto real de la campanita: `loadUnread` (`js/notificaciones.js`) cargaba solo las **20 más recientes** y el contador contaba las no leídas **dentro de esas 20**. Sharon tenía 31 sin leer en la base y la campanita
+mostraba 3; las otras 28 (incluidas 7 del 19/11) no se listaban ni se contaban (solo se veían en `notificaciones.html`, que carga hasta 1000).
+
+- **Ahora** (`loadUnread` → `_loadUnreadOnce`): 3 consultas en paralelo — las `RECIENTES_MAX = 20` más recientes (como siempre), las no leídas más recientes hasta `SIN_LEER_MAX = 100` y un **conteo exacto** de no leídas
+  (`count:'exact', head:true`). La lista es la unión sin repetidos, en orden cronológico: si todas las no leídas ya estaban entre las 20 recientes, queda **idéntica a antes**. El contador usa `_unreadTotal` (el conteo real);
+  si el conteo falla cae a las no leídas de la caché, y si falla la consulta de no leídas se comporta como antes (20 recientes) pero con el contador real. El tope visual «99+» del distintivo no cambió.
+- «Marcar todas leídas» marca las **listadas** (hasta 100) y recarga, así que con más de 100 sin leer quedan las restantes (la lista avisa «Hay N sin leer más que no se listan aquí» + «Ver todas»).
+  `openItem` descuenta 1 del total al marcar (vale también cuando lo llama la bandeja completa) y el evento Realtime UPDATE resincroniza con la base.
+- **Recargas agrupadas**: marcar N avisos dispara N eventos Realtime; si llega una recarga mientras otra está en curso se repite UNA vez al terminar (antes eran N consultas simultáneas, ahora 3 consultas × 2 rondas como máximo).
+- Subido el `?v=` de `notificaciones.js` a `20261123a` en las 24 páginas que lo cargan (subirlo de nuevo en todas si se vuelve a tocar).
+- **No cambió** lo que hace llegar el aviso (mecanismo de «Remisiones de entrada/salida: aviso SIEMPRE a la contabilidad»): ahí no había falla. El título «Remisión salida #… / entrada #…» tampoco dice «traslado» (no se tocó).
+- Probado con un arnés de Chrome sin interfaz sobre el `notificaciones.js` real con Supabase simulado (33 comprobaciones: el caso de Sharon —31 sin leer, 3 en las 20 recientes, lista de 48 filas—, abrir una antigua, marcar todas,
+  sin regresión cuando todas las no leídas son recientes, sin no leídas, fallo del conteo, fallo de la consulta de no leídas, más de 100 sin leer, agrupación de 25 recargas, aviso en vivo). **No se probó con la sesión real de Sharon ni contra el Supabase real.**

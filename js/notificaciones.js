@@ -25,6 +25,17 @@ var NOTIF = (function() {
   var _dropOpen = false;
   var _channel = null;
   var _cache = [];
+  // Campanita: se listan los RECIENTES_MAX más recientes (leídos o no) MÁS todas las no leídas
+  // que queden fuera de ellos (hasta SIN_LEER_MAX). Antes solo se cargaban las 20 más recientes
+  // y el contador contaba dentro de esas 20: una no leída más vieja ni se listaba ni se contaba
+  // (caso Sharon Bajonero, 2026-11-23: 31 sin leer en la base, la campanita mostraba 3).
+  var RECIENTES_MAX = 20;
+  var SIN_LEER_MAX = 100;
+  // Total REAL de no leídas en la base (conteo). null = no se pudo contar: el contador cae
+  // a las no leídas de _cache.
+  var _unreadTotal = null;
+  var _loadBusy = false;     // loadUnread en curso; las llamadas que lleguen mientras se agrupan en una sola
+  var _loadAgain = false;
   var _stylesInjected = false;
   var _directorioPromise = null;
   var _enviadasCache = null;
@@ -147,6 +158,7 @@ var NOTIF = (function() {
       '.notif-inbox-hdr .mark { background: none; border: none; color: #1a5276; font-size: 0.75rem; font-weight: 600; cursor: pointer; padding: 4px 8px; border-radius: 5px; }' +
       '.notif-inbox-hdr .mark:hover { background: #edf2f7; }' +
       '.notif-inbox-hdr .mark[disabled] { color: #a0aec0; cursor: default; }' +
+      '.notif-inbox-more { padding: 7px 14px; background: #fffaf0; border-top: 1px solid #fbd38d; color: #975a16; font-size: 0.74rem; }' +
       '.notif-inbox-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; max-height: 400px; }' +
       '.notif-inbox-list li { border-bottom: 1px solid #edf2f7; }' +
       '.notif-inbox-list li:last-child { border-bottom: none; }' +
@@ -339,15 +351,57 @@ var NOTIF = (function() {
   // ────────────────────────────────────────────────────────────
   // Datos
   // ────────────────────────────────────────────────────────────
+  // Marcar muchas como leídas dispara un evento Realtime por fila: se agrupan las recargas
+  // (si llega otra mientras se carga, se repite UNA vez al terminar).
   async function loadUnread() {
     if (!_uid) return;
-    var res = await _sb.from('notificaciones')
-      .select('id, created_at, de_usuario_id, modulo, referencia, titulo, mensaje, storage_path, leida')
-      .eq('para_usuario_id', _uid)
-      .order('created_at', { ascending: false })
-      .limit(20);
+    if (_loadBusy) { _loadAgain = true; return; }
+    _loadBusy = true;
+    try {
+      do {
+        _loadAgain = false;
+        await _loadUnreadOnce();
+      } while (_loadAgain);
+    } finally {
+      _loadBusy = false;
+    }
+  }
+
+  async function _loadUnreadOnce() {
+    var uid = _uid;
+    if (!uid) return;
+    var COLS = 'id, created_at, de_usuario_id, modulo, referencia, titulo, mensaje, storage_path, leida';
+    var base = function() { return _sb.from('notificaciones').select(COLS).eq('para_usuario_id', uid); };
+    var rs = await Promise.all([
+      base().order('created_at', { ascending: false }).limit(RECIENTES_MAX),
+      base().eq('leida', false).order('created_at', { ascending: false }).limit(SIN_LEER_MAX),
+      _sb.from('notificaciones').select('id', { count: 'exact', head: true })
+        .eq('para_usuario_id', uid).eq('leida', false)
+    ]);
+    var res = rs[0];
     if (res.error) { console.error('NOTIF.loadUnread', res.error); return; }
-    _cache = res.data || [];
+    var filas = (res.data || []).slice();
+
+    // Las no leídas que quedaron fuera de las más recientes se agregan (sin repetir) y la lista
+    // sigue en orden cronológico: si todas las no leídas ya estaban entre las recientes, no cambia nada.
+    if (rs[1].error) {
+      console.error('NOTIF.loadUnread (sin leer)', rs[1].error);
+    } else {
+      var vistos = {};
+      filas.forEach(function(r) { vistos[r.id] = true; });
+      (rs[1].data || []).forEach(function(r) {
+        if (!vistos[r.id]) { vistos[r.id] = true; filas.push(r); }
+      });
+      filas.sort(function(a, b) { return a.created_at < b.created_at ? 1 : (a.created_at > b.created_at ? -1 : 0); });
+    }
+    _cache = filas;
+
+    if (rs[2].error || typeof rs[2].count !== 'number') {
+      if (rs[2].error) console.error('NOTIF.loadUnread (conteo)', rs[2].error);
+      _unreadTotal = null;
+    } else {
+      _unreadTotal = rs[2].count;
+    }
 
     // Resolver nombres de emisores desde el directorio (RPC).
     var emisorIds = {};
@@ -368,7 +422,11 @@ var NOTIF = (function() {
   function _updateBadge() {
     if (!_badge) return;
     var n = 0;
-    _cache.forEach(function(r) { if (!r.leida) n++; });
+    if (typeof _unreadTotal === 'number') {
+      n = _unreadTotal;
+    } else {
+      _cache.forEach(function(r) { if (!r.leida) n++; });
+    }
     if (n > 0) {
       _badge.textContent = n > 99 ? '99+' : String(n);
       _badge.classList.add('on');
@@ -461,8 +519,13 @@ var NOTIF = (function() {
       }).join('') + '</ul>';
     }
 
+    // Más no leídas de las que se listan (solo pasa con más de SIN_LEER_MAX): el contador es el real.
+    var mas = (typeof _unreadTotal === 'number') ? _unreadTotal - unread : 0;
+    var nota = mas > 0
+      ? '<div class="notif-inbox-more">Hay ' + mas + ' sin leer más que no se listan aquí. Usa «Ver todas».</div>'
+      : '';
     var ftr = '<a href="notificaciones.html" class="notif-inbox-ftr">Ver todas →</a>';
-    _drop.innerHTML = hdr + body + ftr;
+    _drop.innerHTML = hdr + body + nota + ftr;
 
     var markBtn = _drop.querySelector('.mark');
     if (markBtn && !markBtn.disabled) {
@@ -500,8 +563,11 @@ var NOTIF = (function() {
       .in('id', ids);
     if (res.error) { showToast('Error: ' + res.error.message, '#e74c3c'); return; }
     _cache.forEach(function(r) { r.leida = true; });
+    if (typeof _unreadTotal === 'number') _unreadTotal = Math.max(0, _unreadTotal - ids.length);
     _updateBadge();
     _renderDrop();
+    // Si quedaban más sin leer que no se listaban (tope), se traen ahora.
+    loadUnread();
   }
 
   // ────────────────────────────────────────────────────────────
@@ -583,6 +649,9 @@ var NOTIF = (function() {
         .eq('id', row.id);
       if (!upd.error) {
         row.leida = true;
+        // La fila puede venir de la campanita o de la bandeja (notificaciones.html): en ambos casos era
+        // una no leída de la base. Se resincroniza con el conteo real al llegar el evento Realtime.
+        if (typeof _unreadTotal === 'number') _unreadTotal = Math.max(0, _unreadTotal - 1);
         _updateBadge();
         if (_dropOpen) _renderDrop();
       }
