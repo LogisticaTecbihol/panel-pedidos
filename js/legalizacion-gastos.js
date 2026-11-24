@@ -82,6 +82,30 @@ var ENVIO_CONCEPTO = 'Envío';
 
 var legAdjuntosCache = [];
 
+// Legalizaciones con soportes adjuntos, para marcarlas con 📎 en la lista. El bucket guarda una
+// carpeta por legalización (nombre = id), así que un solo listado de la raíz basta; no hay columna
+// en la base. { '<id>': true }. Mejor esfuerzo: si el listado falla (red, sin permiso) la lista queda
+// sin marcar y el detalle sigue mostrando sus adjuntos, que es lo que manda.
+var legConAdjuntos = {};
+async function loadLegConAdjuntos() {
+  try {
+    var PAGINA = 1000, offset = 0, mapa = {};
+    for (;;) {
+      var res = await _sb.storage.from(LEG_BUCKET).list('', { limit: PAGINA, offset: offset });
+      if (res.error) return; // conserva lo que ya se sabía
+      var filas = res.data || [];
+      filas.forEach(function(f) { if (f.name && !f.id) mapa[f.name] = true; }); // las carpetas no traen id
+      if (filas.length < PAGINA) break;
+      offset += PAGINA;
+    }
+    legConAdjuntos = mapa;
+  } catch (e) { /* queda sin marcar */ }
+}
+function legAdjIconHtml(leg) {
+  if (!legConAdjuntos[String(leg.id)]) return '';
+  return ' <span title="Tiene soportes adjuntos" aria-label="Tiene soportes adjuntos" style="cursor:pointer" onclick="openVer(' + leg.id + ')">📎</span>';
+}
+
 // Clientes con al menos una remisión real generada (Pedidos.Remisiones no
 // vacío, Estado_2 != 'Anulado', o remisión de ingreso/salida en Cambios y
 // Devoluciones), para sugerir en el campo Cliente(s) y para auto-completar el
@@ -515,7 +539,8 @@ async function loadLegalizaciones() {
       apiGet('getLegalizacionGastosEmpresas'),
       apiGet('getVehiculos'),
       loadCierreLeg(), // nunca falla: sin lectura no se oculta nada y la BD sigue haciendo cumplir el cierre
-      loadFacturas()   // nunca falla: sin la tabla (migración sin aplicar) la pantalla sigue sin facturas
+      loadFacturas(),  // nunca falla: sin la tabla (migración sin aplicar) la pantalla sigue sin facturas
+      loadLegConAdjuntos() // nunca falla: sin el listado la lista simplemente no muestra 📎
     ]);
     if (!results[0].ok) throw new Error(results[0].error || 'Error desconocido');
     if (!results[1].ok) throw new Error(results[1].error || 'Error desconocido');
@@ -2217,7 +2242,7 @@ function renderLegTable() {
       acciones += ' <button class="btn-edit" style="color:#c0392b" onclick="eliminarLegalizacion(' + leg.id + ')">🗑️</button>';
     }
     return '<tr>' +
-      '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
+      '<td>' + escHtml(leg.Consecutivo || '') + legAdjIconHtml(leg) + '</td>' +
       '<td>' + escHtml(fmtDate(leg.Fecha)) + legLockHtml(leg) + '</td>' +
       '<td>' + escHtml(leg.Responsable || '') + '</td>' +
       '<td>' + tipoBadgeHtml(leg) + '</td>' +
@@ -2460,7 +2485,7 @@ function renderEnviosTable() {
       acciones += ' <button class="btn-edit" style="color:#c0392b" onclick="eliminarLegalizacion(' + leg.id + ')">🗑️</button>';
     }
     return '<tr>' +
-      '<td>' + escHtml(leg.Consecutivo || '') + '</td>' +
+      '<td>' + escHtml(leg.Consecutivo || '') + legAdjIconHtml(leg) + '</td>' +
       '<td>' + escHtml(fmtDate(leg.Fecha)) + legLockHtml(leg) + '</td>' +
       '<td>' + escHtml(proveedoresTexto(leg.id) || '—') + '</td>' +
       '<td>' + escHtml(nitEnvioDe(leg) || '—') + '</td>' +
@@ -4890,6 +4915,13 @@ async function loadAdjuntosLG(legId) {
   var res = await _sb.storage.from(LEG_BUCKET).list(folder, { limit: 50 });
   var files = (res.data || []).filter(function(f) { return f.name && f.id; });
   legAdjuntosCache = files;
+
+  // Mantiene el 📎 de la lista al día al subir o eliminar (o al abrir un registro con otro estado).
+  if (!res.error) {
+    var tenia = !!legConAdjuntos[String(legId)];
+    if (files.length) legConAdjuntos[String(legId)] = true; else delete legConAdjuntos[String(legId)];
+    if (tenia !== !!files.length) { renderLegTable(); renderEnviosTable(); } // el detalle lo abre cualquiera de las dos listas
+  }
 
   if (!files.length) {
     listEl.innerHTML = '<div class="adjuntos-empty">Sin archivos adjuntos</div>';
