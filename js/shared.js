@@ -2629,6 +2629,25 @@ async function _apiPostCore(body) {
       return { ok: true, deleted: 1 };
     }
 
+    // Borrado masivo de registros de Clientes (varios a la vez, desde la tabla de
+    // clientes.html). Va en lotes de 100 ids para no pasarse del largo de la URL.
+    // `.select('id')` devuelve las filas realmente borradas: la RLS descarta sin
+    // error las que el usuario no puede borrar, así que `deleted` puede ser menor
+    // que `requested` y el llamador debe compararlos. Si un lote falla, `deleted`
+    // trae lo que sí alcanzó a borrarse en los anteriores.
+    if (action === 'eliminarClientesUnicos') {
+      var _idsDelCli = (body.ids || []).filter(function(x) { return x !== null && x !== undefined && x !== ''; });
+      if (!_idsDelCli.length) return { ok: true, deleted: 0, requested: 0 };
+      var _delCliTotal = 0;
+      for (var _dci = 0; _dci < _idsDelCli.length; _dci += 100) {
+        var _resDelCli = await _sb.from('ClientesUnicos').delete()
+          .in('id', _idsDelCli.slice(_dci, _dci + 100)).select('id');
+        if (_resDelCli.error) return { ok: false, error: _resDelCli.error.message, deleted: _delCliTotal, requested: _idsDelCli.length };
+        _delCliTotal += (_resDelCli.data || []).length;
+      }
+      return { ok: true, deleted: _delCliTotal, requested: _idsDelCli.length };
+    }
+
     // ── Bitácora de contacto (por cliente unificado, cruza por NIT) ──
     if (action === 'agregarBitacoraContacto') {
       if (['Llamada', 'WhatsApp', 'Correo', 'Otro'].indexOf(body.Tipo_Contacto) < 0) {

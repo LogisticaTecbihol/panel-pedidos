@@ -5,6 +5,11 @@
 var clientesData = [];
 var editingId = null;
 var deleteId = null;
+// Borrado masivo: selIds = ids de registros marcados (se marca el grupo completo
+// de un NIT, con todas sus sedes); bulkDeleteIds = foto de lo que mostró la
+// pantalla de confirmación, que es exactamente lo que se borra.
+var selIds = {};
+var bulkDeleteIds = [];
 var importRows = [];
 var PAGE_SIZE = 50;
 var currentPage = 1;
@@ -596,10 +601,17 @@ function renderTable() {
     ? (AUTH.canDelete() || (AUTH.isCartera && AUTH.isCartera())) : false;
   var tbody = document.getElementById('t-body');
 
+  // La selección solo puede contener lo que se ve con los filtros actuales (así la
+  // pantalla de confirmación nunca incluye filas ocultas) y siempre por grupo
+  // completo: si un grupo quedó a medias (p. ej. cambió tras recargar), se suelta.
+  _podarSeleccion(filtered);
+  document.getElementById('th-sel').style.display = canDel ? '' : 'none';
+
   tbody.innerHTML = pageGroups.map(function(g, i) {
     var first = g.records[0];
     var isMulti = g.records.length > 1;
     var globalIdx = start + i;
+    var selMarcado = canDel && _grupoSeleccionado(g);
 
     var empresas = [];
     var empresasSeen = {};
@@ -656,7 +668,13 @@ function renderTable() {
       actionHtml += '</td>';
     }
 
-    return '<tr>' +
+    var selTd = canDel
+      ? '<td class="sel-col"><input type="checkbox" onchange="toggleSelGrupo(' + globalIdx + ',this)"' + (selMarcado ? ' checked' : '') +
+        ' aria-label="Seleccionar ' + escHtml(first.Cliente || '') + '"></td>'
+      : '';
+
+    return '<tr' + (selMarcado ? ' class="row-sel"' : '') + '>' +
+      selTd +
       '<td style="color:#a0aec0;font-size:0.74rem">' + (globalIdx + 1) + '</td>' +
       '<td>' + empresaHtml + '</td>' +
       '<td style="font-weight:600">' + escHtml(first.Cliente || '') + multiTag + '</td>' +
@@ -673,6 +691,8 @@ function renderTable() {
       actionHtml +
       '</tr>';
   }).join('');
+
+  _syncSelUI();
 
   var pagEl = document.getElementById('pagination');
   if (totalPages <= 1) { pagEl.innerHTML = ''; return; }
@@ -1254,6 +1274,193 @@ async function confirmDelete() {
   }
 }
 
+// ── Borrado masivo: selección de varias filas + pantalla de validación ──
+// La fila de la tabla es un GRUPO (todos los registros con el mismo NIT, una sede
+// cada uno). Marcar la fila marca el grupo completo y borrarla borra todas sus
+// sedes, aunque estén en varias empresas: la pantalla de confirmación lo muestra.
+// Mismos permisos que el 🗑️ individual (admin y cartera; la RLS de la base manda).
+var bulkDeleteN = 0;
+var _bulkBorrando = false;
+
+function _puedeBorrarClientes() {
+  return (typeof AUTH !== 'undefined' && AUTH.canDelete)
+    ? !!(AUTH.canDelete() || (AUTH.isCartera && AUTH.isCartera())) : false;
+}
+
+function _grupoSeleccionado(g) {
+  return g.records.length > 0 && g.records.every(function(r) { return selIds[r.id]; });
+}
+
+// Deja en selIds solo los grupos completos que siguen visibles con los filtros.
+function _podarSeleccion(gruposVisibles) {
+  var nueva = {};
+  if (_puedeBorrarClientes()) {
+    gruposVisibles.forEach(function(g) {
+      if (_grupoSeleccionado(g)) g.records.forEach(function(r) { nueva[r.id] = true; });
+    });
+  }
+  selIds = nueva;
+}
+
+function _gruposPagina() {
+  var start = (currentPage - 1) * PAGE_SIZE;
+  return currentGroups.slice(start, start + PAGE_SIZE);
+}
+
+// Contador y botones de la barra + estado de la casilla del encabezado.
+function _syncSelUI() {
+  var n = _puedeBorrarClientes() ? currentGroups.filter(_grupoSeleccionado).length : 0;
+  document.getElementById('sel-ct').textContent = n;
+  document.getElementById('btn-del-sel').style.display = n ? '' : 'none';
+  document.getElementById('btn-sel-clear').style.display = n ? '' : 'none';
+  var pag = _gruposPagina();
+  var marcados = pag.filter(_grupoSeleccionado).length;
+  var chk = document.getElementById('chk-sel-all');
+  chk.checked = pag.length > 0 && marcados === pag.length;
+  chk.indeterminate = marcados > 0 && marcados < pag.length;
+}
+
+function toggleSelGrupo(idx, el) {
+  if (!_puedeBorrarClientes()) return;
+  var g = currentGroups[idx];
+  if (!g) return;
+  g.records.forEach(function(r) {
+    if (el.checked) selIds[r.id] = true; else delete selIds[r.id];
+  });
+  var tr = el.closest('tr');
+  if (tr) tr.classList.toggle('row-sel', el.checked);
+  _syncSelUI();
+}
+
+// «Seleccionar todo»: solo las filas de la página visible (decisión del usuario).
+function toggleSelPagina(marcar) {
+  if (!_puedeBorrarClientes()) return;
+  _gruposPagina().forEach(function(g) {
+    g.records.forEach(function(r) {
+      if (marcar) selIds[r.id] = true; else delete selIds[r.id];
+    });
+  });
+  renderTable();
+}
+
+function clearSel() {
+  selIds = {};
+  renderTable();
+}
+
+function openBulkDelete() {
+  if (!_puedeBorrarClientes()) { showToast('❌ No tienes permiso para eliminar clientes', '#e74c3c'); return; }
+  var grupos = currentGroups.filter(_grupoSeleccionado);
+  if (!grupos.length) return;
+
+  bulkDeleteIds = [];
+  var conPedidos = 0, conSedes = 0, totalReg = 0;
+  var filas = grupos.map(function(g) {
+    var first = g.records[0];
+    var tiene = _grupoTienePedidos(g);
+    g.records.forEach(function(r) { bulkDeleteIds.push(r.id); });
+    totalReg += g.records.length;
+    if (tiene) conPedidos++;
+    if (g.records.length > 1) conSedes++;
+
+    var vistas = {};
+    var empresasHtml = g.records.map(function(r) {
+      var sig = getSigla((r.Nombre_Empresa || '').trim());
+      if (vistas[sig]) return '';
+      vistas[sig] = true;
+      return '<span class="sigla-tag ' + getSiglaClass(r.Nombre_Empresa) + '">' + escHtml(sig) + '</span>';
+    }).join(' ');
+
+    var idFmt = _fmtIdent(_bestId(g.records), _grupoTipoId(g)).text || '—';
+    return '<tr' + (tiene ? ' class="bd-fila-ped"' : '') + '>' +
+      '<td>' + empresasHtml + '</td>' +
+      '<td style="font-weight:600">' + escHtml(first.Cliente || '') + '</td>' +
+      '<td>' + escHtml(idFmt) + '</td>' +
+      '<td style="text-align:center' + (g.records.length > 1 ? ';font-weight:700;color:#2c5282' : '') + '">' + g.records.length + '</td>' +
+      '<td style="text-align:center">' + (tiene ? '<span style="color:#c05621;font-weight:700">Sí</span>' : '<span style="color:#a0aec0">No</span>') + '</td>' +
+      '</tr>';
+  });
+  bulkDeleteN = grupos.length;
+
+  var nCli = grupos.length === 1 ? '1 cliente' : grupos.length + ' clientes';
+  var nReg = totalReg === 1 ? '1 registro' : totalReg + ' registros';
+  document.getElementById('bd-resumen').textContent =
+    '¿Eliminar ' + nCli + (totalReg !== grupos.length ? ' (' + nReg + ' en total)' : '') + '?';
+
+  var avPed = document.getElementById('bd-aviso-ped');
+  if (conPedidos) {
+    avPed.innerHTML = '⚠️ <strong>' + conPedidos + '</strong> de los ' + grupos.length + ' clientes tienen pedidos registrados (filas resaltadas). ' +
+      'Los pedidos no se borran, pero el cliente dejará de existir en el catálogo de Clientes.';
+    avPed.style.display = '';
+  } else {
+    avPed.style.display = 'none';
+  }
+  var avSedes = document.getElementById('bd-aviso-sedes');
+  if (conSedes) {
+    avSedes.innerHTML = 'ℹ️ <strong>' + conSedes + '</strong> de los clientes tienen varios registros (sedes). ' +
+      'Se eliminarán <strong>todos</strong> sus registros, incluidos los de otras empresas en las que aparece ese NIT (columna «Registros»).';
+    avSedes.style.display = '';
+  } else {
+    avSedes.style.display = 'none';
+  }
+
+  document.getElementById('bd-lista').innerHTML = filas.join('');
+  document.getElementById('bd-confirma-txt').textContent =
+    'Entiendo que se eliminarán definitivamente ' + nCli + ' (' + nReg + ') y que esta acción no se puede deshacer.';
+  document.getElementById('bd-confirma').checked = false;
+  document.getElementById('btn-bd-confirm').disabled = true;
+  document.getElementById('bulk-delete-overlay').style.display = 'flex';
+}
+
+function closeBulkDelete() {
+  if (_bulkBorrando) return;
+  document.getElementById('bulk-delete-overlay').style.display = 'none';
+  bulkDeleteIds = [];
+}
+
+async function confirmBulkDelete() {
+  if (_bulkBorrando || !bulkDeleteIds.length) return;
+  if (!document.getElementById('bd-confirma').checked) return;
+  if (!_puedeBorrarClientes()) { showToast('❌ No tienes permiso para eliminar clientes', '#e74c3c'); return; }
+
+  var ids = bulkDeleteIds.slice();
+  var nCli = bulkDeleteN;
+  var btn = document.getElementById('btn-bd-confirm');
+  _bulkBorrando = true;
+  btn.disabled = true;
+  btn.textContent = '⏳ Eliminando...';
+
+  var hechos = 0, msgErr = '';
+  try {
+    var result = await apiPost({ action: 'eliminarClientesUnicos', ids: ids });
+    hechos = (result && result.deleted) || 0;
+    if (!result || !result.ok) msgErr = (result && result.error) || 'Error al eliminar';
+  } catch (err) {
+    msgErr = (err && err.message) || String(err);
+  }
+  _bulkBorrando = false;
+  btn.textContent = '🗑️ Sí, eliminar';
+
+  if (hechos > 0) {
+    // Algo se borró (todo o una parte): se cierra, se limpia la selección y se recarga.
+    selIds = {};
+    closeBulkDelete();
+    await loadClientes();
+  } else {
+    btn.disabled = false;
+  }
+
+  if (msgErr) {
+    showToast('❌ Error: ' + msgErr + (hechos ? ' (alcanzaron a eliminarse ' + hechos + ' de ' + ids.length + ' registros)' : ''), '#e74c3c', 8000);
+  } else if (hechos === 0) {
+    showToast('⚠️ No se eliminó ningún registro (sin permiso o ya no existían).', '#e67e22', 8000);
+  } else if (hechos < ids.length) {
+    showToast('⚠️ Se eliminaron ' + hechos + ' de ' + ids.length + ' registros; el resto no se pudo eliminar (sin permiso o ya no existía).', '#e67e22', 8000);
+  } else {
+    showToast('✅ ' + (nCli === 1 ? 'Cliente eliminado' : nCli + ' clientes eliminados'));
+  }
+}
+
 // ── Import Excel ──
 function handleImportExcel(input) {
   var file = input.files[0];
@@ -1585,6 +1792,7 @@ document.getElementById('edit-overlay').addEventListener('click', function(e) { 
 document.getElementById('detail-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeDetail(); });
 document.getElementById('import-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeImport(); });
 document.getElementById('delete-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeDelete(); });
+document.getElementById('bulk-delete-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeBulkDelete(); });
 document.getElementById('bitacora-overlay').addEventListener('click', function(e) { if (isBackdropClick(e)) closeBitacora(); });
 
 // ── Init ──

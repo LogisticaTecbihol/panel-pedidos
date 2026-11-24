@@ -29,6 +29,13 @@
 .ped-no { background: #edf2f7; color: #a0aec0; }
 .nit-dv-bad { color: #c0392b; font-weight: 700; cursor: help; border-bottom: 1px dotted #c0392b; }
 .tel-warn { color: #c0392b; cursor: help; border-bottom: 1px dotted #c0392b; }
+.sel-col { width: 34px; text-align: center; }
+.sel-col input { width: 16px; height: 16px; cursor: pointer; }
+tr.row-sel td { background: #fff5f5; }
+.btn-confirm.btn-peligro { background: #e74c3c; }
+.btn-confirm.btn-peligro:hover:not(:disabled) { background: #c0392b; }
+.btn-confirm.btn-peligro:disabled { background: #a0aec0; }
+.bd-fila-ped td { background: #fffaf0; }
 </style>
 </head>
 <body data-modulo="clientes">
@@ -119,7 +126,9 @@
   <div class="card">
     <div class="card-head">
       <h3>👥 Clientes <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
-      <div style="display:flex;gap:8px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-dl" id="btn-sel-clear" onclick="clearSel()" style="display:none;background:none;border:1px solid #cbd5e0;color:#4a5568">✕ Quitar selección</button>
+        <button class="btn-dl" id="btn-del-sel" onclick="openBulkDelete()" style="display:none;background:#e74c3c">🗑️ Eliminar seleccionados (<span id="sel-ct">0</span>)</button>
         <button class="btn-dl auth-edit-only" onclick="openNuevoCliente()" style="background:#1a5276">➕ Agregar Cliente</button>
         <button class="btn-dl auth-edit-only" onclick="document.getElementById('file-upload').click()" style="background:#27ae60">📥 Importar Excel</button>
         <input type="file" id="file-upload" accept=".xlsx,.xls" style="display:none" onchange="handleImportExcel(this)">
@@ -131,6 +140,7 @@
       <table>
         <thead>
           <tr>
+            <th class="sel-col" id="th-sel" style="display:none"><input type="checkbox" id="chk-sel-all" onchange="toggleSelPagina(this.checked)" title="Seleccionar todos los clientes de esta página" aria-label="Seleccionar todos los clientes de esta página"></th>
             <th style="width:30px">#</th>
             <th>Empresa</th>
             <th>Cliente</th>
@@ -423,13 +433,53 @@
   </div>
 </div>
 
+<!-- BULK DELETE CONFIRM MODAL (borrado masivo de clientes seleccionados) -->
+<div class="overlay" id="bulk-delete-overlay">
+  <div class="modal-box" style="max-width:760px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">
+      <div style="flex:1">
+        <h2>🗑️ Eliminar clientes seleccionados</h2>
+        <div style="font-size:0.78rem;opacity:0.85;margin-top:4px">Revisa la lista: esta acción no se puede deshacer</div>
+      </div>
+      <button class="btn-close" onclick="closeBulkDelete()">✕</button>
+    </div>
+    <div class="mbody" style="padding:20px 24px">
+      <div id="bd-resumen" style="font-size:0.95rem;font-weight:700;color:#2d3748;margin-bottom:10px"></div>
+      <div id="bd-aviso-ped" style="display:none;background:#fffaf0;border:1px solid #f6ad55;color:#7b341e;border-radius:8px;padding:10px 12px;font-size:0.8rem;line-height:1.45;margin-bottom:12px"></div>
+      <div id="bd-aviso-sedes" style="display:none;background:#ebf4ff;border:1px solid #bee3f8;color:#2c5282;border-radius:8px;padding:10px 12px;font-size:0.8rem;line-height:1.45;margin-bottom:12px"></div>
+      <div style="overflow:auto;max-height:300px;border:1px solid #e2e8f0;border-radius:8px">
+        <table class="prod-table" style="font-size:0.82rem">
+          <thead>
+            <tr>
+              <th>Empresa</th>
+              <th>Cliente</th>
+              <th>Identificación</th>
+              <th style="text-align:center">Registros</th>
+              <th style="text-align:center">¿Pedidos?</th>
+            </tr>
+          </thead>
+          <tbody id="bd-lista"></tbody>
+        </table>
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:8px;margin-top:16px;font-size:0.84rem;color:#2d3748;cursor:pointer">
+        <input type="checkbox" id="bd-confirma" onchange="document.getElementById('btn-bd-confirm').disabled = !this.checked" style="width:16px;height:16px;margin-top:2px">
+        <span id="bd-confirma-txt">Entiendo que estos clientes se eliminarán de forma definitiva.</span>
+      </label>
+    </div>
+    <div class="mftr" style="justify-content:center;gap:12px">
+      <button class="btn-cancel" onclick="closeBulkDelete()">Cancelar</button>
+      <button class="btn-confirm btn-peligro" id="btn-bd-confirm" onclick="confirmBulkDelete()" disabled>🗑️ Sí, eliminar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/shared.js?v=20261023a"></script>
+<script src="js/shared.js?v=20261124a"></script>
 <script src="js/auth.js?v=20261109a"></script>
 <script src="js/notificaciones.js?v=20261123a"></script>
 <script src="js/colombia-geo.js"></script>
-<script src="js/clientes.js?v=20261109a"></script>
+<script src="js/clientes.js?v=20261124a"></script>
 </body>
 </html>
