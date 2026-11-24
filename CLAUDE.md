@@ -805,8 +805,8 @@ Pedido 2026-11-24. La tabla de Clientes tiene una columna de **casillas** para m
 
 Pedido 2026-11-24 (parte del análisis de rentabilidad bruta de IASO hecho en Excel el mismo día). Pestaña nueva del Dashboard (`dashboard.html`, botón «💰 Rentabilidad IASO» junto a Legalización) que estima el margen
 de lo **remisionado por IASO** y deja **digitar a mano el costo unitario** de cada producto. **Estado: migración remota `create_costos_producto` APLICADA en producción el 2026-11-24** (con `apply_migration`, el mismo SQL probado; verificada: tabla vacía, RLS activa con 4 políticas solo-admin, 3 triggers, 4 CHECK,
-índice único, `Producto_Clave` generada, `anon` sin acceso, la función de apoyo no es ejecutable por clientes, Pedidos y ListaPrecios intactos y sin avisos nuevos del asesor de seguridad). **El código sigue en el árbol de trabajo, sin commit ni publicar**:
-hasta publicarlo, la pestaña no existe para los usuarios. Si se publicara un código viejo sin la tabla, la pestaña carga con los costos automáticos, avisa en la nota y deshabilita los campos de costo; el resto del Dashboard no se afecta.
+índice único, `Producto_Clave` generada, `anon` sin acceso, la función de apoyo no es ejecutable por clientes, Pedidos y ListaPrecios intactos y sin avisos nuevos del asesor de seguridad). **El código se subió a `main` el 2026-11-24 (commit `a7459bc`) y lo publica GitHub Pages**: la pestaña la ve solo el administrador.
+Si algún día se publicara el código sin la tabla, la pestaña carga con los costos automáticos, avisa en la nota y deshabilita los campos de costo; el resto del Dashboard no se afecta.
 
 - **Quién**: solo el administrador (`dRentPermiso()` = `AUTH.isAdmin()`; `switchDashTab` se niega con aviso a cualquier otro). La tabla `CostosProducto` también lo exige por RLS (select/insert/update/delete = `get_user_role() = 'admin'`).
   Decisión del usuario: ni gerente_iaso ni contabilidad la ven aunque tengan el módulo Dashboard.
