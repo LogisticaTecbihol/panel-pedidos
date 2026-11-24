@@ -574,6 +574,14 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, facturas: _addRow(res.data) };
     }
+    // Costo unitario MANUAL por producto (Dashboard → Rentabilidad; supabase/migrations/create_costos_producto.sql).
+    // Solo el administrador puede leerla (RLS). Si la tabla aún no existe responde ok:false y la pestaña
+    // sigue funcionando con los costos automáticos, sin permitir editar.
+    if (action === 'getCostosProducto') {
+      var res = await _fetchAllRows('CostosProducto', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, costos: _addRow(res.data) };
+    }
     if (action === 'getVehiculos') {
       var res = await _fetchAllRows('Vehiculos', cols);
       if (res.error) return { ok: false, error: res.error.message };
@@ -2935,6 +2943,50 @@ async function _apiPostCore(body) {
         .eq('id', body.id).eq('Estado', 'Vigente').select('id');
       if (resAnF.error) return { ok: false, error: resAnF.error.code === '42501' ? 'No tienes permiso para anular facturas de esa empresa' : resAnF.error.message };
       if (!resAnF.data || !resAnF.data.length) return { ok: false, error: 'No se anuló: la factura ya estaba anulada, ya no existe o no tienes permiso sobre ella' };
+      return { ok: true, id: body.id };
+    }
+
+    // ── Dashboard → Rentabilidad: costo unitario manual por producto (supabase/migrations/create_costos_producto.sql) ──
+    // Alta o edición (con body.id) del costo vigente de un producto. Las reglas (costo > 0, un solo costo por
+    // empresa y producto, solo administrador) las hace cumplir la base; aquí solo se traducen sus errores.
+    // Devuelve la fila guardada para que la pantalla actualice su caché sin volver a leer la tabla.
+    if (action === 'guardarCostoProducto') {
+      var COLS_COSTO = 'id,Empresa,Producto,Producto_Clave,Costo_Unitario,Nota,creado_por_nombre,creado_en,modificado_por_nombre,modificado_en';
+      var rowCP = {
+        Empresa: (body.Empresa || '').trim(),
+        Producto: (body.Producto || '').trim(),
+        Costo_Unitario: Number(body.Costo_Unitario),
+        Nota: (body.Nota || '').trim()
+      };
+      if (!rowCP.Empresa || !rowCP.Producto) return { ok: false, error: 'Falta la empresa o el producto' };
+      if (!isFinite(rowCP.Costo_Unitario) || rowCP.Costo_Unitario <= 0) return { ok: false, error: 'El costo debe ser un número mayor que cero' };
+      var msgErrCP = function(err) {
+        if (err.code === '42501') return 'Solo un administrador puede registrar o cambiar costos';
+        if (err.code === '23505') return 'Ese producto ya tiene un costo guardado (otro usuario lo acaba de crear): actualiza la pestaña e inténtalo de nuevo';
+        if (err.code === '23514') return 'Revisa los datos: el costo debe ser mayor que cero y la nota de máximo 300 caracteres';
+        if (err.code === '42P01' || err.code === 'PGRST205') return 'Falta aplicar la migración create_costos_producto.sql en la base de datos';
+        return err.message;
+      };
+      if (body.id) {
+        rowCP.modificado_por = _uid();
+        var resUpCP = await _sb.from('CostosProducto').update(rowCP).eq('id', body.id).select(COLS_COSTO);
+        if (resUpCP.error) return { ok: false, error: msgErrCP(resUpCP.error) };
+        if (!resUpCP.data || !resUpCP.data.length) return { ok: false, error: 'No se pudo modificar: el costo ya no existe o no tienes permiso sobre él' };
+        return { ok: true, id: body.id, costo: resUpCP.data[0] };
+      }
+      rowCP.creado_por = _uid();
+      var resInCP = await _sb.from('CostosProducto').insert(rowCP).select(COLS_COSTO).single();
+      if (resInCP.error) return { ok: false, error: msgErrCP(resInCP.error) };
+      return { ok: true, id: resInCP.data.id, costo: resInCP.data };
+    }
+
+    // «Restablecer»: borra el costo manual y el producto vuelve a su costo automático. El valor anterior
+    // queda en audit_log (quién y cuándo).
+    if (action === 'eliminarCostoProducto') {
+      if (!body.id) return { ok: false, error: 'Falta el id del costo' };
+      var resDelCP = await _sb.from('CostosProducto').delete().eq('id', body.id).select('id');
+      if (resDelCP.error) return { ok: false, error: resDelCP.error.code === '42501' ? 'Solo un administrador puede restablecer costos' : resDelCP.error.message };
+      if (!resDelCP.data || !resDelCP.data.length) return { ok: false, error: 'No se restableció: el costo ya no existía o no tienes permiso sobre él' };
       return { ok: true, id: body.id };
     }
 

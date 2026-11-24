@@ -486,6 +486,7 @@ async function loadDashboard() {
     _cliNitMap = null;             // se reconstruye con el nuevo maestro
     _allOrdersCache.emp = undefined; // idem con los nuevos pedidos
     dLegInvalidar();                 // el informe de Legalización se vuelve a pedir al abrirlo / repintarlo
+    if (typeof dRentInvalidar === 'function') dRentInvalidar();   // idem Rentabilidad IASO (js/rentabilidad.js)
     dLoadedAt = new Date();
 
     // Snapshot de existencias: ya viene en vuelo desde arriba (null si falló).
@@ -499,6 +500,7 @@ async function loadDashboard() {
     populateDashFilters();
     populateMpProductoSelect();
     dLegAplicarPermiso();
+    if (typeof dRentAplicarPermiso === 'function') dRentAplicarPermiso();
     buildDashboard();
 
     setSyncStatus('ok', 'Conectado a la nube. Ultima actualizacion: ' + dLoadedAt.toLocaleTimeString('es-CO'));
@@ -690,6 +692,7 @@ function buildDashboard() {
   buildMovimientosPorProducto(fEmp, fDesde, fHasta);
   if (dActiveTab === 'movimientos') buildMovimientosEmpresa();
   if (dActiveTab === 'legalizacion') buildLegalizacionDash();
+  if (dActiveTab === 'rentabilidad' && typeof buildRentabilidadDash === 'function') buildRentabilidadDash();
 }
 
 // ── Existencias (snapshot Kardex) ──
@@ -2615,10 +2618,10 @@ function buildClientesNuevos(fEmp, fDesde, fHasta) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Pestañas (Resumen general · Movimientos por empresa · Legalización de gastos)
+// Pestañas (Resumen general · Movimientos por empresa · Legalización de gastos · Rentabilidad IASO)
 // ══════════════════════════════════════════════════════════════
 var dActiveTab = 'resumen';
-var D_TABS = ['resumen', 'movimientos', 'legalizacion'];
+var D_TABS = ['resumen', 'movimientos', 'legalizacion', 'rentabilidad'];
 
 function switchDashTab(tab) {
   if (D_TABS.indexOf(tab) < 0) tab = 'resumen';
@@ -2626,6 +2629,11 @@ function switchDashTab(tab) {
   // esto cubre llamarla a mano). RLS devolvería 0 filas sin error a los demás.
   if (tab === 'legalizacion' && !dLegPermiso()) {
     showToast('No tienes acceso al informe de Legalización de gastos', '#e74c3c');
+    return;
+  }
+  // Rentabilidad IASO (js/rentabilidad.js): solo administrador (la tabla de costos también lo exige por RLS).
+  if (tab === 'rentabilidad' && !(typeof dRentPermiso === 'function' && dRentPermiso())) {
+    showToast('Solo el administrador puede ver la rentabilidad', '#e74c3c');
     return;
   }
   dActiveTab = tab;
@@ -2636,11 +2644,15 @@ function switchDashTab(tab) {
   // Movimientos muestra TODAS las empresas lado a lado: el filtro de empresa no
   // aplica (Desde/Hasta y los rangos rápidos sí). En Legalización el filtro de
   // empresa acota solo lo atribuible a una empresa (ver buildLegalizacionDash).
-  document.getElementById('df-emp-fg').style.display = (tab === 'movimientos') ? 'none' : '';
+  // Rentabilidad es solo de IASO (por ahora): tampoco usa el filtro de empresa; Desde / Hasta
+  // se aplican a la fecha de cada REMISIÓN.
+  document.getElementById('df-emp-fg').style.display = (tab === 'movimientos' || tab === 'rentabilidad') ? 'none' : '';
   if (tab === 'movimientos') {
     buildMovimientosEmpresa();
   } else if (tab === 'legalizacion') {
     buildLegalizacionDash();
+  } else if (tab === 'rentabilidad') {
+    buildRentabilidadDash();
   } else {
     // Los gráficos reconstruidos mientras el panel estaba oculto midieron 0 px.
     Object.keys(_dashCharts).forEach(function(id) { try { _dashCharts[id].resize(); } catch (e) {} });

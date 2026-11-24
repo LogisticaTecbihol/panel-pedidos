@@ -187,6 +187,32 @@
   .leg-scroll .mini-table th { position: sticky; top: 0; z-index: 1; }
   .mini-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .leg-aviso { color: #c0392b; font-weight: 700; }
+
+  /* ── RENTABILIDAD IASO ── */
+  .rent-controles { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid #e2e8f0; background: #fafbfc; }
+  .rent-controles input, .rent-controles select { padding: 6px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.82rem; font-family: inherit; }
+  .rent-controles .sub { font-size: 0.76rem; color: #718096; margin-left: auto; }
+  .rent-scroll { overflow: auto; max-height: 640px; }
+  .rent-scroll .mini-table th { position: sticky; top: 0; z-index: 1; }
+  .rent-th { cursor: pointer; user-select: none; white-space: nowrap; }
+  .rent-th:hover { color: #1a5276; }
+  .rent-table th, .rent-table td { padding: 6px 8px; }
+  .rent-table td { vertical-align: top; }
+  .rent-fuente { white-space: normal; max-width: 175px; margin-left: auto; line-height: 1.35; }
+  .rent-sub { font-size: 0.68rem; color: #718096; font-weight: 400; white-space: normal; }
+  .rent-edit { white-space: nowrap; }
+  .rent-costo { width: 112px; text-align: right; padding: 4px 6px; border: 1px solid #cbd5e0; border-radius: 5px; font-size: 0.82rem; font-family: inherit; font-variant-numeric: tabular-nums; }
+  .rent-costo.tiene { border-color: #8e44ad; background: #faf5fd; font-weight: 700; }
+  .rent-costo:focus { outline: 2px solid #bee3f8; border-color: #3182ce; }
+  .rent-costo:disabled { opacity: .55; background: #edf2f7; }
+  .rent-reset { background: none; border: none; cursor: pointer; color: #8e44ad; font-size: 1rem; padding: 0 3px; font-weight: 700; }
+  .rent-reset:hover { color: #6c3483; }
+  .rent-tag { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.66rem; font-weight: 700; }
+  .rent-tag-manual { background: #e9d8fd; color: #553c9a; }
+  .rent-tag-auto { background: #c6f6d5; color: #22543d; }
+  .rent-tag-otra { background: #feebc8; color: #7b341e; }
+  .rent-tag-sin { background: #fed7d7; color: #822727; }
+  .rent-neg { color: #c0392b; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -262,6 +288,8 @@
     <button class="dash-tab" id="tab-movimientos" onclick="switchDashTab('movimientos')">🏢 Movimientos por empresa</button>
     <!-- Solo admin / módulo Legalización: dashboard.js lo muestra tras cargar los permisos -->
     <button class="dash-tab" id="tab-legalizacion" onclick="switchDashTab('legalizacion')" style="display:none">🧾 Legalización de gastos</button>
+    <!-- Solo administrador: rentabilidad estimada de IASO (js/rentabilidad.js la muestra tras cargar los permisos) -->
+    <button class="dash-tab" id="tab-rentabilidad" onclick="switchDashTab('rentabilidad')" style="display:none">💰 Rentabilidad IASO</button>
   </div>
 
   <!-- Filters -->
@@ -582,6 +610,26 @@
     </div>
   </div>
 
+  <!-- ═══ Pestaña: Rentabilidad IASO (solo administrador) ═══ -->
+  <div id="panel-rentabilidad" style="display:none">
+    <div class="mov-toolbar">
+      <div id="rent-chip"></div>
+      <button class="btn-export" onclick="dRentExportar()">📊 Exportar Excel</button>
+    </div>
+    <div class="empty" id="rent-msg" style="display:none"></div>
+    <div id="rent-contenido">
+      <div class="kpi-grid" id="rent-kpis"></div>
+
+      <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>💰 Rentabilidad por producto</h4><div class="sub" id="rent-tabla-sub"></div></div>
+        <div class="rent-controles" id="rent-controles"></div>
+        <div class="dash-card-body rent-scroll" style="padding:0" id="rent-tabla"></div>
+      </div>
+
+      <div class="mov-nota" id="rent-nota"></div>
+    </div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
@@ -594,6 +642,7 @@
 <script src="js/notificaciones.js?v=20261123a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261123a"></script>
-<script src="js/dashboard.js?v=20261123a"></script>
+<script src="js/rentabilidad.js?v=20261124a"></script>
+<script src="js/dashboard.js?v=20261124a"></script>
 </body>
 </html>

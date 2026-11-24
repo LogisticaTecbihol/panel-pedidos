@@ -43,6 +43,7 @@ var BACKUP_TABLES = [
   { name: 'solicitudes_mercadeo', label: 'Solicitudes Mercadeo' },
   { name: 'Cotizaciones',      label: 'Cotizaciones' },
   { name: 'CotizacionLineas',  label: 'Cotización Líneas' },
+  { name: 'CostosProducto',    label: 'Costos de producto (Rentabilidad)' },
   { name: 'parametros_inventario', label: 'Parámetros Inventario' },
   { name: 'solicitudes_reabastecimiento', label: 'Solicitudes Reabastecimiento' },
   { name: 'Clientes',          label: 'Clientes', sinId: true },
