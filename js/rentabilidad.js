@@ -433,7 +433,7 @@ var dRentPromesa = null;     // carga en curso
 var dRentGen = 0;            // sube al invalidar: una carga vieja no pisa la caché
 var dRentBuildTok = 0;       // el último repintado gana
 var dRentUltimo = null;      // { res, entrada, rango, desde, hasta } — lo último mostrado (lo que exporta el botón)
-var dRentVista = { q: '', filtro: 'todos', clasif: '', orden: 'clasificacion', dir: 1 };   // clasif = clave de la clasificación filtrada ('' = todas)
+var dRentVista = { q: '', filtro: 'todos', margen: 'todos', clasif: '', orden: 'clasificacion', dir: 1 };   // clasif = clave de la clasificación filtrada ('' = todas); margen = 'todos' | 'negativo'
 var dRentGuardando = {};     // clave (o 'c:' + clave para la clasificación) → true mientras se guarda (evita dobles envíos)
 var dRentCat = [];           // clasificaciones que existen (las de la tabla, sin «Otros»), para las listas desplegables
 var dRentSub = 'rent';       // sub-pestaña visible: 'rent' (Rentabilidad) | 'bonif' (Bonificaciones)
@@ -734,7 +734,19 @@ function dRentPintarControles() {
       [['todos', 'Todos los productos'], ['sin', 'Solo sin costo'], ['manual', 'Solo con costo manual'], ['automatico', 'Solo con costo automático']]
         .map(function(o) { return '<option value="' + o[0] + '"' + (v.filtro === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
     '</select>' +
+    '<select id="rent-margen" onchange="dRentFiltrarMargen(this.value)" title="Margen bruto: el costo supera al precio promedio de venta">' +
+      '<option value="todos"' + (v.margen === 'todos' ? ' selected' : '') + '>Todos los márgenes</option>' +
+      '<option value="negativo"' + (v.margen === 'negativo' ? ' selected' : '') + '>' + dRentTextoNegativos() + '</option>' +
+    '</select>' +
     '<span id="rent-cuenta" class="sub"></span>';
+}
+
+// Margen negativo = el costo usado supera al precio promedio de venta (mismo criterio que pinta la fila en rojo).
+// Un producto sin costo no tiene margen y no entra.
+function dRentEsMargenNegativo(f) { return f.margen != null && f.margen < 0; }
+function dRentTextoNegativos() {
+  var n = dRentUltimo ? dRentUltimo.res.filas.filter(dRentEsMargenNegativo).length : 0;
+  return 'Solo margen negativo (' + n + ')';
 }
 
 function dRentFilasVisibles() {
@@ -742,6 +754,7 @@ function dRentFilasVisibles() {
   return dRentUltimo.res.filas.filter(function(f) {
     if (q && f.clave.indexOf(q) < 0) return false;
     if (v.clasif && Rentabilidad.clave(f.clasificacion) !== v.clasif) return false;
+    if (v.margen === 'negativo' && !dRentEsMargenNegativo(f)) return false;
     if (v.filtro === 'sin') return f.fuente === 'sin';
     if (v.filtro === 'manual') return f.fuente === 'manual';
     if (v.filtro === 'automatico') return f.fuente === 'automatico';
@@ -807,7 +820,7 @@ function dRentPintarTabla() {
       : '<th class="' + c.cls + '">' + c.t + '</th>';
   }).join('') + '</tr></thead>';
   cont.innerHTML = '<table class="mini-table rent-table">' + thead + '<tbody>' +
-    (visibles.length ? visibles.map(dRentFilaHtml).join('') : '<tr><td colspan="' + DRENT_COLUMNAS.length + '" style="text-align:center;color:#a0aec0;padding:24px">Ningún producto coincide con la búsqueda</td></tr>') +
+    (visibles.length ? visibles.map(dRentFilaHtml).join('') : '<tr><td colspan="' + DRENT_COLUMNAS.length + '" style="text-align:center;color:#a0aec0;padding:24px">Ningún producto coincide con los filtros</td></tr>') +
     '</tbody></table>';
 }
 
@@ -883,6 +896,7 @@ function dRentPintarNota() {
       (sinPrecio ? ': ' + dRentNum(sinPrecio) + ' unidades en este período' : '') + '. El margen se calcula solo sobre las unidades con precio.</p>' +
     '<p>• <b>Costo automático:</b> precio <b>Mayorista</b> de la lista de la proveedora principal según las órdenes de compra aprobadas a IASO (las OC traen valor 0); si esa no lo tiene, el de otra proveedora de las OC o el de otra empresa (se marca en ámbar: conviene verificar el nombre del producto; con varias empresas se toma el mayor). <b>No se estima</b>: sin Mayorista ni costo manual el producto queda «Sin costo» y no entra al margen. ⚠ = el costo automático es mayor que el Dealer de IASO.</p>' +
     '<p>• <b>Costo manual:</b> escribe el costo unitario en la columna «Costo manual» y presiona Enter; reemplaza al automático en <b>todo</b> el período (no tiene fechas de vigencia). ↺ lo restablece al automático. Cada cambio queda en Auditoría con quién y cuándo. Solo el administrador ve esta pestaña.</p>' +
+    '<p>• <b>Margen negativo:</b> el desplegable «Solo margen negativo» deja en la tabla los productos cuyo <b>costo usado supera al precio promedio de venta</b> (filas en rojo); el número entre paréntesis es cuántos hay en el período. Se combina con la búsqueda, la clasificación y el filtro de costo. Un producto «Sin costo» no tiene margen y no aparece ahí; al corregir un costo la fila editada se queda hasta que cambies de filtro.</p>' +
     '<p>• <b>Clasificación:</b> la lista inicial viene de <i>categorias.xlsx</i>; los productos que no figuran allí (o venían sin clasificación) están en <b>«Otros»</b>, resaltado en ámbar. Cámbiala en la columna «Clasificación» (o elige «➕ Nueva clasificación…»); «Otros» la quita. Aplica a todas las empresas, no tiene fechas y cada cambio queda en Auditoría. La tabla se ordena por clasificación (alfabético, «Otros» al final) y «Rentabilidad por clasificación» suma lo mismo que los totales de arriba: el margen % es sobre las ventas de los productos con costo.</p>' +
     (datos && !datos.costosOk ? '<p class="leg-aviso">⚠ No se pudieron leer los costos manuales (' + escHtml(datos.costosError) + '). ¿Se aplicó la migración create_costos_producto.sql? Mientras tanto no se pueden editar costos.</p>' : '') +
     (datos && !datos.clasifOk ? '<p class="leg-aviso">⚠ No se pudieron leer las clasificaciones (' + escHtml(datos.clasifError) + '). ¿Se aplicó la migración create_clasificacion_producto.sql? Mientras tanto todos los productos aparecen como «Otros» y no se pueden editar.</p>' : '');
@@ -891,6 +905,7 @@ function dRentPintarNota() {
 // ── Búsqueda, filtro y orden ──
 function dRentBuscar(q) { dRentVista.q = q; dRentPintarTabla(); }
 function dRentFiltrar(f) { dRentVista.filtro = f; dRentPintarTabla(); }
+function dRentFiltrarMargen(m) { dRentVista.margen = m === 'negativo' ? 'negativo' : 'todos'; dRentPintarTabla(); }
 function dRentFiltrarClasif(c) { dRentVista.clasif = c || ''; dRentPintarClasif(); dRentPintarTabla(); }
 // Clic en una fila de «Rentabilidad por clasificación»: filtra la tabla de productos (otro clic lo quita).
 function dRentClickGrupo(c) {
@@ -930,7 +945,10 @@ function dRentRecalcularFila(k) {
     }
   }
   var c = document.getElementById('rent-cuenta');
-  if (c && !dRentVista.q && dRentVista.filtro === 'todos') c.textContent = u.res.filas.length + ' productos';
+  var v = dRentVista;
+  if (c && !v.q && v.filtro === 'todos' && v.margen === 'todos' && !v.clasif) c.textContent = u.res.filas.length + ' productos';   // con algún filtro activo el conteo no se toca (la fila editada se queda hasta repintar)
+  var optNeg = document.querySelector('#rent-margen option[value="negativo"]');
+  if (optNeg) optNeg.textContent = dRentTextoNegativos();   // el costo cambia cuántos productos quedan con margen negativo
 }
 
 function dRentActualizarCache(filaGuardada, idEliminado) {
