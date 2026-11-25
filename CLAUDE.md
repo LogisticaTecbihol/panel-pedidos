@@ -910,3 +910,19 @@ Caso 2026-11-25 (Sharon Bajonero, contabilidad GREEN/IAS): no veía en `ingresos
   desde su planta no cuentan; solo 2 filas de RESO del 2026-09-17, 187 ud). Kardex, Existencias, Inventario, Reportes, Dashboard y Legalización leen `Ingresos` con `getIngresos` bajo RLS: hoy ven lo mismo que admin/editor para su empresa.
 - Probado en transacciones revertidas contra producción con usuarios simulados (`request.jwt.claims`): 10 usuarios de roles distintos, conteo independiente «destino u origen en mis empresas» igual al de la política, y verificación tras aplicar
   (Sharon y Lizeth ven el id 819, Alison y Karol no). **No se probó con la sesión real de Sharon en el navegador.**
+
+## Salidas a producción: se ve la salida que cita un ingreso de retorno que el usuario ya ve
+
+Caso 2026-11-25 (continuación del de «Ingresos: Contabilidad ve también los ingresos de su empresa ORIGEN»): Sharon Bajonero (contabilidad GREEN/IAS) ya veía el ingreso RESO-RE-0082 (origen GREEN, planta Mosquera) pero no la salida
+RESO-RS-0263 a la que responde (`Ingresos.Reenvase_Ref`): `Reenvases_select` solo mostraba filas con `Empresa` o `Empresa_Destino` propia, y esa RS es de RESO y sin destino (va a la planta).
+Esa RS y su RE **no mueven inventario de GREEN** (en `_kx_movs` solo afectan a RESO); por eso no entraba en el criterio «remisiones que afectan el inventario de mi empresa», que ya estaba cubierto al 100 % para Ingresos y Salidas
+a producción tras la migración anterior (comprobado con las 5 cuentas de contabilidad: 0 filas sin ver). La regla de abajo es la de «reenvase relacionado», decidida por el usuario.
+
+- **Cambio** (`supabase/migrations/reenvases_ver_por_ingreso_vinculado.sql`, migración remota `reenvases_ver_por_ingreso_vinculado` **APLICADA el 2026-11-25**, rollback `..._rollback.sql`): `Reenvases_select` suma una 4.ª condición:
+  existe un `Ingresos` con `Reenvase_Ref <> ''` igual a la `Remision` de la salida. La subconsulta corre bajo la RLS de Ingresos del propio usuario, así que **la salida se ve si el usuario ve el ingreso de retorno que la cita**
+  (si cambia quién ve cada ingreso, esto lo sigue). Solo lectura: INSERT/UPDATE/DELETE siguen exigiendo `Empresa` propia (Sharon ve la RS-0263 pero no puede editarla ni borrarla). Se ven todas las líneas de la remisión.
+  **Una salida sin ingreso de retorno registrado todavía no se ve**: la relación nace al registrar el retorno. La regla vale para todos los roles (también editores con la empresa), igual que `Ingresos_select`.
+- **Efecto**: Sharon 177 → 225 líneas, Karol (PARCELAR) 135 → 146, Lizeth (RESO) 147 → 156, Alison (IASO) 81 = 81; editores con GREEN/PARCELAR/IAS +11 y Jhon Paez +1; nadie pierde filas. Los 143 ingresos con `Reenvase_Ref`
+  apuntan a una salida existente (93 remisiones distintas) y existe `idx_ingresos_reenvase_ref`. Las filas nuevas son de otras empresas, así que no deberían mover las cifras por empresa de Kardex/Existencias (razonado, no probado en el navegador).
+- Probado en transacciones revertidas contra producción con 18 usuarios simulados (lo visible después = lo anterior + las salidas citadas por un ingreso visible, diferencia 0) y, tras aplicar, con Sharon, Lizeth, Karol y Alison.
+  **Ojo al probar en un solo bloque**: simular el `DELETE` de un usuario antes de medir a otro contamina la medición (pasó una vez). **No se probó con la sesión real de Sharon en el navegador.**
