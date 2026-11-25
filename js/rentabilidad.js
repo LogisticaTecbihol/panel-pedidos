@@ -45,6 +45,7 @@ var Rentabilidad = (function() {
     'INSUMOS AGROPECUARIOS SOSTENIBLES SAS': 'IASO',
     'INSUMOS AGROPECUARIOS DE LA SABANA SAS': 'IAS'
   };
+  var BONIF_DESDE = '2026-07-01';   // la sub-pestaña «Bonificaciones» mide SIEMPRE desde esta fecha de remisión (pedido del usuario, 2026-11-25)
   var VALOR_MINIMO = 10;     // por debajo (0 o simbólico, p. ej. $1) la línea no cuenta como venta
   var FACTOR_ATIPICO = 5;    // por encima de 5 × Dealer: error de digitación probable
 
@@ -200,7 +201,8 @@ var Rentabilidad = (function() {
       if (k && n && !esOtros(n)) clasifs[k] = { fila: c, nombre: n };
     });
 
-    var bonifDet = [];   // una entrada por remisión bonificada: producto, cliente, NIT, mes, unidades
+    var bonifDet = [];   // una entrada por remisión bonificada (desde BONIF_DESDE): producto, cliente, NIT, mes, unidades
+    var ventasBonif = 0; // ventas con precio válido desde BONIF_DESDE: denominador del % de las ventas de «Bonificaciones»
     var filas = {};
     (e.pedidos || []).forEach(function(p) {
       var toks = parseRemisiones(p.Remisiones);
@@ -221,12 +223,17 @@ var Rentabilidad = (function() {
         f.unidades += t.cant;
         if (t.num) f._remisiones[t.num] = 1; else f.sinNumero++;   // remisiones registradas sin número se cuentan aparte
         f._pedidos[p.Consecutivo + '#' + p.Cliente] = 1;
+        // «Bonificaciones» solo mira remisiones con fecha y desde BONIF_DESDE (una remisión sin fecha no se puede ubicar)
+        var desdeBonif = !!t.fecha && t.fecha >= BONIF_DESDE;
         if (bon) {
           f.bonif += t.cant;
-          bonifDet.push({ k: k, cliente: String(p.Cliente == null ? '' : p.Cliente).trim(), nit: p.NIT, mes: t.fecha ? t.fecha.slice(0, 7) : 'sin-fecha',
+          if (desdeBonif) bonifDet.push({ k: k, cliente: String(p.Cliente == null ? '' : p.Cliente).trim(), nit: p.NIT, mes: t.fecha.slice(0, 7),
             cant: t.cant, ped: p.Consecutivo + '#' + p.Cliente });
         }
-        else if (vu >= VALOR_MINIMO && !(dealer > 0 && vu > FACTOR_ATIPICO * dealer)) { f.valor += t.cant * vu; f.undPrecio += t.cant; }
+        else if (vu >= VALOR_MINIMO && !(dealer > 0 && vu > FACTOR_ATIPICO * dealer)) {
+          f.valor += t.cant * vu; f.undPrecio += t.cant;
+          if (desdeBonif) ventasBonif += t.cant * vu;
+        }
         else f.undSinPrecio += t.cant;
       });
     });
@@ -275,8 +282,11 @@ var Rentabilidad = (function() {
     });
 
     var totalesGen = totalizar(lista);
+    var bonif = resumirBonificaciones(bonifDet, lista, ventasBonif);
+    bonif.desde = desde > BONIF_DESDE ? desde : BONIF_DESDE;   // si el «Desde» del Dashboard es posterior se respeta; uno anterior no abre el período
+    bonif.hasta = hasta;
     return { filas: lista, totales: totalesGen, grupos: porClasificacion(lista),
-      bonificaciones: resumirBonificaciones(bonifDet, lista, totalesGen.valor),
+      bonificaciones: bonif,
       excluidos: { unidades: excl.unidades, pedidos: Object.keys(excl.pedidos).length } };
   }
 
@@ -342,7 +352,7 @@ var Rentabilidad = (function() {
       return { nombre: mejor, clave: ck, nit: g.nit, variantes: Object.keys(g.nombres).sort(), unidades: g.und, costo: g.costo, undSinCosto: g.undSinCosto,
         productos: cuenta(g.productos), pedidos: cuenta(g.pedidos), pct: pct(g.costo) };
     }).sort(ordenCosto);
-    var meses = Object.keys(mes).sort(function(a, b) { return a === 'sin-fecha' ? 1 : b === 'sin-fecha' ? -1 : a < b ? -1 : a > b ? 1 : 0; }).map(function(m) {
+    var meses = Object.keys(mes).sort().map(function(m) {
       var g = mes[m];
       return { nombre: m, mes: m, unidades: g.und, costo: g.costo, undSinCosto: g.undSinCosto, clientes: cuenta(g.clientes), productos: cuenta(g.productos), pedidos: cuenta(g.pedidos), pct: pct(g.costo) };
     });
@@ -397,7 +407,7 @@ var Rentabilidad = (function() {
   }
 
   return {
-    EMPRESA_IASO: EMPRESA_IASO, VALOR_MINIMO: VALOR_MINIMO, FACTOR_ATIPICO: FACTOR_ATIPICO,
+    EMPRESA_IASO: EMPRESA_IASO, BONIF_DESDE: BONIF_DESDE, VALOR_MINIMO: VALOR_MINIMO, FACTOR_ATIPICO: FACTOR_ATIPICO,
     OTROS: OTROS, clave: clave, sigla: sigla, parseRemisiones: parseRemisiones, enRango: enRango,
     indexarLista: indexarLista, indexarProveedoras: indexarProveedoras, costoAutomatico: costoAutomatico,
     limpiarClasif: limpiarClasif, esOtros: esOtros, compararClasif: compararClasif, catalogo: catalogo, canonica: canonica,
@@ -570,7 +580,6 @@ function dRentSubTab(v) {
 // ── Bonificaciones: costo de lo bonificado ──
 var DRENT_MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 function dRentMesTxt(m) {
-  if (m === 'sin-fecha') return 'Sin fecha de remisión';
   var p = String(m).split('-'), i = Number(p[1]) - 1;
   return (DRENT_MESES[i] || p[1]) + ' ' + p[0];
 }
@@ -594,8 +603,12 @@ function dRentPintarBonif() {
   if (!kp || !dRentUltimo) return;
   var B = dRentUltimo.res.bonificaciones, t = B.total;
   var sinC = t.undSinCosto > 0;
+  // Siempre desde el 01/07/2026 (o desde el «Desde» del Dashboard si es posterior), por fecha de remisión y sin cargas históricas
+  var chip = document.getElementById('bon-chip');
+  if (chip) chip.innerHTML = '<span class="dash-range-chip">📅 Desde el ' + escHtml(fmtDate(B.desde)) + (B.hasta ? ' hasta el ' + escHtml(fmtDate(B.hasta)) : ' en adelante') +
+    ' · por fecha de remisión · <span class="emp">sin carga histórica</span></span>';
   kp.innerHTML =
-    kpiCard('orange', dMoneyM(t.costo), 'Costo de lo bonificado', dMoneyFull(Math.round(t.costo)) + (t.pctVentas != null ? ' · equivale al ' + dRentPct(t.pctVentas) + ' de las ventas remisionadas' : '')) +
+    kpiCard('orange', dMoneyM(t.costo), 'Costo de lo bonificado', dMoneyFull(Math.round(t.costo)) + (t.pctVentas != null ? ' · equivale al ' + dRentPct(t.pctVentas) + ' de las ventas remisionadas en el mismo período' : '')) +
     kpiCard('', dRentNum(t.unidades), 'Unidades bonificadas', t.productos + ' producto(s) · remisionadas en el período') +
     kpiCard('purple', String(t.clientes), 'Clientes bonificados', t.pedidos + ' pedido(s)') +
     kpiCard(sinC ? 'red' : 'green', dRentNum(t.undSinCosto), 'Unidades sin costo', sinC ? t.productosSinCosto + ' producto(s) sin costo: digítalo en «Rentabilidad»; no entran al costo' : 'todo lo bonificado tiene costo');
@@ -649,7 +662,7 @@ function dRentPintarBonif() {
   var nota = document.getElementById('bon-nota');
   if (nota) nota.innerHTML =
     '<p>• <b>Qué se mide:</b> el <b>costo</b> de las unidades <b>bonificadas y remisionadas</b> por IASO: unidades × costo unitario del producto. Es el mismo costo de la sub-pestaña «Rentabilidad» (el manual si lo digitaste; si no, el Mayorista de la proveedora), así que si cambias un costo allá este resumen se actualiza. Las unidades de un producto <b>sin costo</b> no entran al costo: se informan aparte (+ud sin costo).</p>' +
-    '<p>• <b>Período:</b> el «Desde / Hasta» de arriba se aplica a la <b>fecha de cada remisión</b>, igual que en Rentabilidad; el mes de cada fila es el de la remisión. Quedan fuera los pedidos anulados, las cargas históricas y los pedidos a bodegas o en consignación. Las bonificaciones no suman a las ventas ni al margen de la sub-pestaña «Rentabilidad» (su precio simbólico no cuenta como venta).</p>' +
+    '<p>• <b>Período:</b> todos los indicadores de esta sub-pestaña se miden <b>desde el 01/07/2026</b>, por la <b>fecha de cada remisión</b> (un pedido anterior a esa fecha pero remisionado después sí cuenta; una remisión sin fecha no). Si el «Desde» de arriba es posterior a esa fecha se usa el de arriba; uno anterior no la adelanta. El «Hasta» sí se aplica. El mes de cada fila es el de la remisión. Quedan fuera los pedidos anulados, las <b>cargas históricas</b> (pedidos marcados como «Carga histórica») y los pedidos a bodegas o en consignación. Las bonificaciones no suman a las ventas ni al margen de la sub-pestaña «Rentabilidad» (su precio simbólico no cuenta como venta), y esa sub-pestaña sigue usando el rango de arriba sin el piso del 01/07.</p>' +
     '<p>• <b>Clientes:</b> se agrupan por NIT (sin dígito de verificación) para unir las distintas formas de escribir el nombre; una línea sin NIT se une a otra del mismo nombre que sí lo tenga y, si no hay, queda por su nombre. El % del costo es sobre el costo total bonificado del período.</p>';
 }
 
@@ -1138,7 +1151,7 @@ function dRentExportar() {
     });
     bCli.push({ 'Cliente': 'TOTAL', 'Unidades bonificadas': bt.unidades, 'Costo': r2(bt.costo), '% del costo': 1, 'Productos': bt.productos, 'Pedidos': bt.pedidos, 'Unidades sin costo': bt.undSinCosto });
     var bMes = B.meses.map(function(r) {
-      return { 'Mes (fecha de la remisión)': r.mes === 'sin-fecha' ? 'Sin fecha' : r.mes, 'Unidades bonificadas': r.unidades, 'Costo': r2(r.costo), '% del costo': pctB(r.pct),
+      return { 'Mes (fecha de la remisión)': r.mes, 'Unidades bonificadas': r.unidades, 'Costo': r2(r.costo), '% del costo': pctB(r.pct),
         'Clientes': r.clientes, 'Productos': r.productos, 'Pedidos': r.pedidos, 'Unidades sin costo': r.undSinCosto };
     });
     bMes.push({ 'Mes (fecha de la remisión)': 'TOTAL', 'Unidades bonificadas': bt.unidades, 'Costo': r2(bt.costo), '% del costo': 1, 'Clientes': bt.clientes, 'Productos': bt.productos, 'Pedidos': bt.pedidos, 'Unidades sin costo': bt.undSinCosto });
@@ -1150,6 +1163,7 @@ function dRentExportar() {
   }
   criterios.push([]);
   criterios.push(['Bonificaciones: costo de las unidades bonificadas y remisionadas = unidades × costo usado del producto (el mismo de la hoja «Rentabilidad»). Total del período: ' + bt.unidades + ' unidades, costo $' + Math.round(bt.costo).toLocaleString('es-CO') + (bt.pctVentas != null ? ' (' + (Math.round(bt.pctVentas * 1000) / 10).toLocaleString('es-CO') + ' % de las ventas remisionadas)' : '') + '; ' + bt.undSinCosto + ' unidades sin costo no incluidas.']);
+  criterios.push(['Las hojas «Bonificados …» miden desde el ' + fmtDate(B.desde) + (B.hasta ? ' hasta el ' + fmtDate(B.hasta) : ' en adelante') + ' (el piso es el 01/07/2026; un «Desde» posterior del Dashboard lo adelanta), por fecha de remisión y sin cargas históricas; no usan el rango de la hoja «Rentabilidad».']);
   criterios.push(['Los clientes se agrupan por NIT (sin dígito de verificación). El mes es el de la fecha de cada remisión.']);
 
   var wsC = XLSX.utils.aoa_to_sheet(criterios);
