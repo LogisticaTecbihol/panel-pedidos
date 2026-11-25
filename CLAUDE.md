@@ -896,3 +896,17 @@ estado `dRentSub`): «💰 Rentabilidad» (todo lo anterior, sin cambios) y «�
   (Ese error contaminó un Excel de «pedidos sin precio» del 2026-11-25 —203 de 231 líneas eran bonificadas con $1 correcto—; se rehízo con las 28 líneas realmente sin precio.)
 - Probado: el módulo puro con casos hechos a mano (61 comprobaciones: NIT con DV y puntos, unión por nombre, costo manual/Mayorista/sin costo, remisión anulada y sin fecha, períodos, el piso del 01/07 —30/06 fuera, 01/07 dentro, «Desde» anterior y posterior—, suma de las cuatro vistas); con **datos reales de producción** (1.026 líneas de IASO, 668 OC, 1.098 precios, 12 costos manuales, 84 clasificaciones) y contrastado con una consulta SQL independiente
   (303 unidades, 31 productos, mismo desglose por mes y misma huella md5 de unidades por producto); y la pantalla con el arnés de navegador sobre el código real con Supabase simulado (cambio de sub-pestaña, tablas, costo manual y clasificación → resumen, Excel, período vacío, septiembre, el piso con «Desde» vacío / anterior / posterior, bonificación de junio y carga histórica fuera, HTML malicioso en el cliente). **No se probó** con la sesión de un administrador real ni el aspecto a ojo (panel de pruebas angosto).
+
+## Ingresos: Contabilidad ve también los ingresos de su empresa ORIGEN
+
+Caso 2026-11-25 (Sharon Bajonero, contabilidad GREEN/IAS): no veía en `ingresos.html` el ingreso RESO-RE-0082 (Empresa_Origen GREEN, Empresa_Destino RESO, reenvase de la planta Mosquera). La política
+`Ingresos_select` (`add_contabilidad_role.sql` 2026-08-20, repetida en `fix_reenvases_select_rls.sql`) solo dejaba a `contabilidad` ver las filas con `Empresa_Destino` propia. El aviso con el PDF sí le había llegado
+(campanita); lo que faltaba era la fila en la lista.
+
+- **Cambio** (`supabase/migrations/ingresos_contabilidad_ve_origen.sql`, migración remota `ingresos_contabilidad_ve_origen` **APLICADA el 2026-11-25** y verificada; rollback `..._rollback.sql`): solo la rama `contabilidad` de SELECT pasa a
+  «destino propio **o** origen propio». El origen lleva la misma guarda que los demás roles (`Empresa_Origen` no nulo ni en blanco): `user_has_company(NULL o '')` devuelve true y sin ella las 160 filas sin origen se verían para toda la contabilidad.
+  INSERT/UPDATE/DELETE no cambiaron (ya admitían origen o destino) y el resto de roles queda idéntico.
+- **Efecto**: Sharon 255 → 450 ingresos, Karol (PARCELAR) 284 → 401, Lizeth (RESO) 178 → 180, Alison (IASO) 66 = 66. Nadie perdió filas y ninguna fila nueva con origen en blanco. En el Kardex el efecto es mínimo (las salidas de GREEN y PARCELAR
+  desde su planta no cuentan; solo 2 filas de RESO del 2026-09-17, 187 ud). Kardex, Existencias, Inventario, Reportes, Dashboard y Legalización leen `Ingresos` con `getIngresos` bajo RLS: hoy ven lo mismo que admin/editor para su empresa.
+- Probado en transacciones revertidas contra producción con usuarios simulados (`request.jwt.claims`): 10 usuarios de roles distintos, conteo independiente «destino u origen en mis empresas» igual al de la política, y verificación tras aplicar
+  (Sharon y Lizeth ven el id 819, Alison y Karol no). **No se probó con la sesión real de Sharon en el navegador.**
