@@ -31,6 +31,10 @@
 //    categorias.xlsx) guardada en ClasificacionProducto, global y solo editable por el administrador.
 //    Sin fila = «Otros» (que no se guarda). La tabla se ordena por clasificación (alfabético y «Otros»
 //    al final; dentro de cada una, por valor vendido) y hay una tabla de rentabilidad POR clasificación.
+//  · Bonificaciones (2026-11-25): sub-pestaña «🎁 Bonificaciones» con el COSTO de lo bonificado (unidades
+//    bonificadas remisionadas × el costo usado del producto, el mismo de la tabla de rentabilidad), por
+//    producto, cliente (agrupado por NIT), mes de la remisión y clasificación. Las unidades de un producto
+//    sin costo se informan aparte (no entran al costo).
 // ══════════════════════════════════════════════════════════════
 var Rentabilidad = (function() {
   var EMPRESA_IASO = 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS';
@@ -196,6 +200,7 @@ var Rentabilidad = (function() {
       if (k && n && !esOtros(n)) clasifs[k] = { fila: c, nombre: n };
     });
 
+    var bonifDet = [];   // una entrada por remisión bonificada: producto, cliente, NIT, mes, unidades
     var filas = {};
     (e.pedidos || []).forEach(function(p) {
       var toks = parseRemisiones(p.Remisiones);
@@ -216,7 +221,11 @@ var Rentabilidad = (function() {
         f.unidades += t.cant;
         if (t.num) f._remisiones[t.num] = 1; else f.sinNumero++;   // remisiones registradas sin número se cuentan aparte
         f._pedidos[p.Consecutivo + '#' + p.Cliente] = 1;
-        if (bon) f.bonif += t.cant;
+        if (bon) {
+          f.bonif += t.cant;
+          bonifDet.push({ k: k, cliente: String(p.Cliente == null ? '' : p.Cliente).trim(), nit: p.NIT, mes: t.fecha ? t.fecha.slice(0, 7) : 'sin-fecha',
+            cant: t.cant, ped: p.Consecutivo + '#' + p.Cliente });
+        }
         else if (vu >= VALOR_MINIMO && !(dealer > 0 && vu > FACTOR_ATIPICO * dealer)) { f.valor += t.cant * vu; f.undPrecio += t.cant; }
         else f.undSinPrecio += t.cant;
       });
@@ -265,8 +274,89 @@ var Rentabilidad = (function() {
       });
     });
 
-    return { filas: lista, totales: totalizar(lista), grupos: porClasificacion(lista),
+    var totalesGen = totalizar(lista);
+    return { filas: lista, totales: totalesGen, grupos: porClasificacion(lista),
+      bonificaciones: resumirBonificaciones(bonifDet, lista, totalesGen.valor),
       excluidos: { unidades: excl.unidades, pedidos: Object.keys(excl.pedidos).length } };
+  }
+
+  // NIT sin puntos ni dígito de verificación («901.571.914-1» → «901571914»); '' si no parece un NIT.
+  function nitBase(nit) {
+    var s = String(nit == null ? '' : nit).trim();
+    var m = /^([\d.,\s]+)-\s*\d$/.exec(s);
+    if (m) s = m[1];
+    s = s.replace(/\D/g, '');
+    return s.length >= 5 ? s : '';
+  }
+
+  // COSTO de lo bonificado: unidades bonificadas remisionadas × el costo usado del producto (`f.costo`, el mismo de
+  // la tabla de rentabilidad: manual si existe, si no el Mayorista de la proveedora). Un producto sin costo no entra
+  // al costo: sus unidades se informan aparte (`undSinCosto`). Todo sale de las mismas entradas `det`, así que el
+  // total por producto, por cliente, por mes y por clasificación coincide.
+  // Clientes: se agrupan por NIT (sin dígito de verificación); una línea sin NIT usa el de otra línea con el mismo
+  // nombre y, si no hay, el nombre normalizado. Se muestra el nombre con más unidades de cada grupo.
+  function resumirBonificaciones(det, filas, valorVentas) {
+    var porK = {};
+    (filas || []).forEach(function(f) { porK[f.clave] = f; });
+    var nombreANit = {};
+    (det || []).forEach(function(d) { var n = nitBase(d.nit); if (n) nombreANit[clave(d.cliente)] = n; });
+
+    function nuevo() { return { und: 0, costo: 0, undSinCosto: 0, clientes: {}, pedidos: {}, productos: {} }; }
+    function sumar(g, d, costoUnit) {
+      g.und += d.cant;
+      if (costoUnit != null) g.costo += d.cant * costoUnit; else g.undSinCosto += d.cant;
+      g.pedidos[d.ped] = 1;
+    }
+    var T = nuevo(), prod = {}, cli = {}, mes = {}, cla = {};
+    (det || []).forEach(function(d) {
+      var f = porK[d.k];
+      if (!f) return;
+      var cu = f.costo;                                   // null = sin costo
+      var nitK = nitBase(d.nit) || nombreANit[clave(d.cliente)] || '';
+      var ck = nitK ? 'n:' + nitK : 'c:' + clave(d.cliente);
+      var pg = prod[d.k] || (prod[d.k] = nuevo());
+      var cg = cli[ck] || (cli[ck] = Object.assign(nuevo(), { nit: nitK, nombres: {} }));
+      var mg = mes[d.mes] || (mes[d.mes] = nuevo());
+      var kg = cla[clave(f.clasificacion)] || (cla[clave(f.clasificacion)] = Object.assign(nuevo(), { nombre: f.clasificacion }));
+      [T, pg, cg, mg, kg].forEach(function(g) { sumar(g, d, cu); });
+      T.clientes[ck] = 1; T.productos[d.k] = 1;
+      pg.clientes[ck] = 1;
+      cg.productos[d.k] = 1; cg.nombres[d.cliente] = (cg.nombres[d.cliente] || 0) + d.cant;
+      mg.clientes[ck] = 1; mg.productos[d.k] = 1;
+      kg.clientes[ck] = 1; kg.productos[d.k] = 1;
+    });
+
+    function cuenta(o) { return Object.keys(o).length; }
+    var totCosto = T.costo;
+    function pct(c) { return totCosto > 0 ? c / totCosto : null; }
+    function ordenCosto(a, b) { return (b.costo - a.costo) || (b.unidades - a.unidades) || String(a.nombre).localeCompare(String(b.nombre)); }
+
+    var productos = Object.keys(prod).map(function(k) {
+      var f = porK[k], g = prod[k];
+      return { nombre: f.producto, clave: k, clasificacion: f.clasificacion, unidades: g.und, costoUnit: f.costo, fuente: f.fuente, fuenteTxt: f.fuenteTxt,
+        costo: g.costo, sinCosto: f.costo == null, undSinCosto: g.undSinCosto, clientes: cuenta(g.clientes), pedidos: cuenta(g.pedidos), pct: pct(g.costo), fila: f };
+    }).sort(ordenCosto);
+    var clientes = Object.keys(cli).map(function(ck) {
+      var g = cli[ck], mejor = '', mu = -1;
+      Object.keys(g.nombres).forEach(function(n) { if (g.nombres[n] > mu || (g.nombres[n] === mu && n.length > mejor.length)) { mejor = n; mu = g.nombres[n]; } });
+      return { nombre: mejor, clave: ck, nit: g.nit, variantes: Object.keys(g.nombres).sort(), unidades: g.und, costo: g.costo, undSinCosto: g.undSinCosto,
+        productos: cuenta(g.productos), pedidos: cuenta(g.pedidos), pct: pct(g.costo) };
+    }).sort(ordenCosto);
+    var meses = Object.keys(mes).sort(function(a, b) { return a === 'sin-fecha' ? 1 : b === 'sin-fecha' ? -1 : a < b ? -1 : a > b ? 1 : 0; }).map(function(m) {
+      var g = mes[m];
+      return { nombre: m, mes: m, unidades: g.und, costo: g.costo, undSinCosto: g.undSinCosto, clientes: cuenta(g.clientes), productos: cuenta(g.productos), pedidos: cuenta(g.pedidos), pct: pct(g.costo) };
+    });
+    var clasificaciones = Object.keys(cla).map(function(k) {
+      var g = cla[k];
+      return { nombre: g.nombre, clave: k, unidades: g.und, costo: g.costo, undSinCosto: g.undSinCosto, clientes: cuenta(g.clientes), productos: cuenta(g.productos), pedidos: cuenta(g.pedidos), pct: pct(g.costo) };
+    }).sort(ordenCosto);
+
+    return {
+      total: { unidades: T.und, costo: T.costo, undSinCosto: T.undSinCosto, productos: cuenta(T.productos), clientes: cuenta(T.clientes), pedidos: cuenta(T.pedidos),
+        productosSinCosto: productos.filter(function(p) { return p.sinCosto; }).length,
+        pctVentas: valorVentas > 0 ? T.costo / valorVentas : null },
+      productos: productos, clientes: clientes, meses: meses, clasificaciones: clasificaciones
+    };
   }
 
   // Filas (ya calculadas) agrupadas por clasificación, en el orden de la tabla: alfabético y «Otros» al final.
@@ -311,7 +401,8 @@ var Rentabilidad = (function() {
     OTROS: OTROS, clave: clave, sigla: sigla, parseRemisiones: parseRemisiones, enRango: enRango,
     indexarLista: indexarLista, indexarProveedoras: indexarProveedoras, costoAutomatico: costoAutomatico,
     limpiarClasif: limpiarClasif, esOtros: esOtros, compararClasif: compararClasif, catalogo: catalogo, canonica: canonica,
-    calcular: calcular, totalizar: totalizar, porClasificacion: porClasificacion
+    calcular: calcular, totalizar: totalizar, porClasificacion: porClasificacion,
+    nitBase: nitBase, resumirBonificaciones: resumirBonificaciones
   };
 })();
 
@@ -321,7 +412,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Rentabilid
 // ══════════════════════════════════════════════════════════════
 // Pantalla
 // ══════════════════════════════════════════════════════════════
-var DRENT_COLS_PEDIDOS = 'id,Nombre_Empresa,Cliente,Consecutivo,Producto,Valor_Unitario,Bonificado,Remisiones,Estado_2,Historico,Bodega_Consignacion_Id,Consignacion,Fecha_Pedido';
+var DRENT_COLS_PEDIDOS = 'id,Nombre_Empresa,Cliente,NIT,Consecutivo,Producto,Valor_Unitario,Bonificado,Remisiones,Estado_2,Historico,Bodega_Consignacion_Id,Consignacion,Fecha_Pedido';
 var DRENT_COLS_OC = 'Empresa_Destino,Empresa_Origen,Producto,Cantidad,Tipo,Estado,Estado_Aprobacion';
 var DRENT_COLS_COSTOS = 'id,Empresa,Producto,Producto_Clave,Costo_Unitario,Nota,creado_por_nombre,creado_en,modificado_por_nombre,modificado_en';
 
@@ -335,6 +426,7 @@ var dRentUltimo = null;      // { res, entrada, rango, desde, hasta } — lo úl
 var dRentVista = { q: '', filtro: 'todos', clasif: '', orden: 'clasificacion', dir: 1 };   // clasif = clave de la clasificación filtrada ('' = todas)
 var dRentGuardando = {};     // clave (o 'c:' + clave para la clasificación) → true mientras se guarda (evita dobles envíos)
 var dRentCat = [];           // clasificaciones que existen (las de la tabla, sin «Otros»), para las listas desplegables
+var dRentSub = 'rent';       // sub-pestaña visible: 'rent' (Rentabilidad) | 'bonif' (Bonificaciones)
 
 function dRentPermiso() { return !!(typeof AUTH !== 'undefined' && AUTH.isAdmin && AUTH.isAdmin()); }
 
@@ -442,6 +534,7 @@ async function buildRentabilidadDash() {
   if (tok !== dRentBuildTok || dActiveTab !== 'rentabilidad') return;
   msgEl.style.display = 'none';
   contEl.style.display = '';
+  dRentSubTab(dRentSub);
 
   var entrada = dRentEntrada(datos, fDesde, fHasta);
   var res = Rentabilidad.calcular(entrada);
@@ -459,6 +552,105 @@ function dRentPintar() {
   dRentPintarControles();
   dRentPintarTabla();
   dRentPintarNota();
+  dRentPintarBonif();
+}
+
+// ── Sub-pestañas: «Rentabilidad» | «Bonificaciones» ──
+function dRentSubTab(v) {
+  dRentSub = v === 'bonif' ? 'bonif' : 'rent';
+  var a = document.getElementById('rent-vista-rent'), b = document.getElementById('rent-vista-bonif');
+  if (a) a.style.display = dRentSub === 'rent' ? '' : 'none';
+  if (b) b.style.display = dRentSub === 'bonif' ? '' : 'none';
+  ['rent', 'bonif'].forEach(function(s) {
+    var x = document.getElementById('rent-sub-' + s);
+    if (x) x.classList.toggle('activa', dRentSub === s);
+  });
+}
+
+// ── Bonificaciones: costo de lo bonificado ──
+var DRENT_MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function dRentMesTxt(m) {
+  if (m === 'sin-fecha') return 'Sin fecha de remisión';
+  var p = String(m).split('-'), i = Number(p[1]) - 1;
+  return (DRENT_MESES[i] || p[1]) + ' ' + p[0];
+}
+function dRentAvisoSinCosto(r) {
+  return r.undSinCosto > 0
+    ? ' <span class="rent-tag rent-tag-sin" title="' + dRentNum(r.undSinCosto) + ' unidad(es) de productos sin costo: no están incluidas en este costo">+' + dRentNum(r.undSinCosto) + ' ud sin costo</span>'
+    : '';
+}
+// cols: [{ t, cls, f(fila) → html }]; pie: fila de totales (misma forma) o null
+function dRentTablaBon(cols, filas, pie) {
+  var thead = '<thead><tr>' + cols.map(function(c) { return '<th class="' + c.cls + '">' + c.t + '</th>'; }).join('') + '</tr></thead>';
+  var cuerpo = filas.map(function(r) {
+    return '<tr>' + cols.map(function(c) { return '<td class="' + c.cls + '"' + (c.tip ? ' title="' + escHtml(c.tip(r)) + '"' : '') + '>' + c.f(r) + '</td>'; }).join('') + '</tr>';
+  }).join('');
+  var pieH = pie ? '<tr class="rent-total">' + cols.map(function(c) { return '<td class="' + c.cls + '">' + (c.p ? c.p(pie) : '') + '</td>'; }).join('') + '</tr>' : '';
+  return '<table class="mini-table rent-table rent-bonif">' + thead + '<tbody>' + cuerpo + pieH + '</tbody></table>';
+}
+
+function dRentPintarBonif() {
+  var kp = document.getElementById('bon-kpis');
+  if (!kp || !dRentUltimo) return;
+  var B = dRentUltimo.res.bonificaciones, t = B.total;
+  var sinC = t.undSinCosto > 0;
+  kp.innerHTML =
+    kpiCard('orange', dMoneyM(t.costo), 'Costo de lo bonificado', dMoneyFull(Math.round(t.costo)) + (t.pctVentas != null ? ' · equivale al ' + dRentPct(t.pctVentas) + ' de las ventas remisionadas' : '')) +
+    kpiCard('', dRentNum(t.unidades), 'Unidades bonificadas', t.productos + ' producto(s) · remisionadas en el período') +
+    kpiCard('purple', String(t.clientes), 'Clientes bonificados', t.pedidos + ' pedido(s)') +
+    kpiCard(sinC ? 'red' : 'green', dRentNum(t.undSinCosto), 'Unidades sin costo', sinC ? t.productosSinCosto + ' producto(s) sin costo: digítalo en «Rentabilidad»; no entran al costo' : 'todo lo bonificado tiene costo');
+
+  var vacio = '<div style="color:#a0aec0;text-align:center;padding:30px 20px">Sin productos bonificados remisionados en el período</div>';
+  var ids = ['bon-prod', 'bon-clasif', 'bon-cli', 'bon-mes'];
+  if (!t.unidades) {
+    ids.forEach(function(id) { var e = document.getElementById(id); if (e) e.innerHTML = vacio; });
+    ['bon-prod-sub', 'bon-clasif-sub', 'bon-cli-sub', 'bon-mes-sub'].forEach(function(id) { var e = document.getElementById(id); if (e) e.textContent = ''; });
+  } else {
+    var money = function(v) { return dRentMoney(Math.round(v)); };
+    var pctC = { t: '% del costo', cls: 'num', f: function(r) { return r.pct == null ? '—' : dRentPct(r.pct); }, p: function() { return '100,0 %'; } };
+    var costoC = function(titulo) {
+      return { t: titulo, cls: 'num', f: function(r) { return (r.sinCosto ? '—' : '<b>' + money(r.costo) + '</b>') + dRentAvisoSinCosto(r); }, p: function(x) { return money(x.costo) + dRentAvisoSinCosto(x); } };
+    };
+    var undC = { t: 'Unidades', cls: 'num', f: function(r) { return dRentNum(r.unidades); }, p: function(x) { return dRentNum(x.unidades); } };
+    var cnt = function(titulo, k) { return { t: titulo, cls: 'num', f: function(r) { return dRentNum(r[k]); }, p: function(x) { return dRentNum(x[k]); } }; };
+    var sub = function(id, txt) { var e = document.getElementById(id); if (e) e.textContent = txt; };
+
+    sub('bon-prod-sub', B.productos.length + ' producto(s) · ordenados por costo');
+    document.getElementById('bon-prod').innerHTML = dRentTablaBon([
+      { t: 'Producto', cls: '', f: function(r) { return '<span style="font-weight:600">' + escHtml(r.nombre) + '</span>'; }, tip: function(r) { return r.nombre; }, p: function() { return 'TOTAL'; } },
+      { t: 'Clasificación', cls: '', f: function(r) { return escHtml(r.clasificacion); } },
+      { t: 'Unidades bonificadas', cls: 'num', f: function(r) { return dRentNum(r.unidades); }, p: function(x) { return dRentNum(x.unidades); } },
+      { t: 'Costo unitario', cls: 'num', f: function(r) { return r.costoUnit != null ? dRentMoney(r.costoUnit) : '—'; } },
+      { t: 'Fuente del costo', cls: 'num', f: function(r) { return '<div class="rent-fuente">' + dRentTagFuente(r.fila) + '</div>'; } },
+      costoC('Costo total'), pctC, cnt('Clientes', 'clientes'), cnt('Pedidos', 'pedidos')
+    ], B.productos, { unidades: t.unidades, costo: t.costo, undSinCosto: t.undSinCosto, clientes: t.clientes, pedidos: t.pedidos });
+
+    sub('bon-clasif-sub', B.clasificaciones.length + ' clasificación(es)');
+    document.getElementById('bon-clasif').innerHTML = dRentTablaBon([
+      { t: 'Clasificación', cls: '', f: function(r) { return '<span style="font-weight:600' + (Rentabilidad.esOtros(r.nombre) ? ';color:#718096' : '') + '">' + escHtml(r.nombre) + '</span>'; }, p: function() { return 'TOTAL'; } },
+      cnt('Productos', 'productos'), undC, costoC('Costo'), pctC, cnt('Clientes', 'clientes'), cnt('Pedidos', 'pedidos')
+    ], B.clasificaciones, { productos: t.productos, unidades: t.unidades, costo: t.costo, undSinCosto: t.undSinCosto, clientes: t.clientes, pedidos: t.pedidos });
+
+    sub('bon-cli-sub', B.clientes.length + ' cliente(s) · agrupados por NIT · ordenados por costo');
+    document.getElementById('bon-cli').innerHTML = dRentTablaBon([
+      { t: 'Cliente', cls: '', f: function(r) { return '<span style="font-weight:600">' + escHtml(r.nombre) + '</span>' + (r.variantes.length > 1 ? ' <span class="rent-sub" title="' + escHtml('Nombres con el mismo NIT: ' + r.variantes.join(' · ')) + '">+' + (r.variantes.length - 1) + ' nombre(s)</span>' : ''); },
+        tip: function(r) { return r.variantes.join(' · '); }, p: function() { return 'TOTAL'; } },
+      { t: 'NIT', cls: '', f: function(r) { return r.nit ? escHtml(r.nit) : '<span style="color:#a0aec0" title="Ninguna línea de este cliente trae NIT">sin NIT</span>'; } },
+      undC, costoC('Costo'), pctC, cnt('Productos', 'productos'), cnt('Pedidos', 'pedidos')
+    ], B.clientes, { unidades: t.unidades, costo: t.costo, undSinCosto: t.undSinCosto, productos: t.productos, pedidos: t.pedidos });
+
+    sub('bon-mes-sub', 'por fecha de la remisión');
+    document.getElementById('bon-mes').innerHTML = dRentTablaBon([
+      { t: 'Mes', cls: '', f: function(r) { return '<span style="font-weight:600">' + escHtml(dRentMesTxt(r.mes)) + '</span>'; }, p: function() { return 'TOTAL'; } },
+      undC, costoC('Costo'), pctC, cnt('Clientes', 'clientes'), cnt('Productos', 'productos'), cnt('Pedidos', 'pedidos')
+    ], B.meses, { unidades: t.unidades, costo: t.costo, undSinCosto: t.undSinCosto, clientes: t.clientes, productos: t.productos, pedidos: t.pedidos });
+  }
+
+  var nota = document.getElementById('bon-nota');
+  if (nota) nota.innerHTML =
+    '<p>• <b>Qué se mide:</b> el <b>costo</b> de las unidades <b>bonificadas y remisionadas</b> por IASO: unidades × costo unitario del producto. Es el mismo costo de la sub-pestaña «Rentabilidad» (el manual si lo digitaste; si no, el Mayorista de la proveedora), así que si cambias un costo allá este resumen se actualiza. Las unidades de un producto <b>sin costo</b> no entran al costo: se informan aparte (+ud sin costo).</p>' +
+    '<p>• <b>Período:</b> el «Desde / Hasta» de arriba se aplica a la <b>fecha de cada remisión</b>, igual que en Rentabilidad; el mes de cada fila es el de la remisión. Quedan fuera los pedidos anulados, las cargas históricas y los pedidos a bodegas o en consignación. Las bonificaciones no suman a las ventas ni al margen de la sub-pestaña «Rentabilidad» (su precio simbólico no cuenta como venta).</p>' +
+    '<p>• <b>Clientes:</b> se agrupan por NIT (sin dígito de verificación) para unir las distintas formas de escribir el nombre; una línea sin NIT se une a otra del mismo nombre que sí lo tenga y, si no hay, queda por su nombre. El % del costo es sobre el costo total bonificado del período.</p>';
 }
 
 function dRentPintarKpis() {
@@ -716,6 +908,7 @@ function dRentRecalcularFila(k) {
   u.res = Rentabilidad.calcular(u.entrada);
   dRentPintarKpis();
   dRentPintarClasif();   // el costo cambia el margen de la clasificación del producto
+  dRentPintarBonif();    // y el costo de lo bonificado
   var fila = dRentFila(k);
   var tbody = document.querySelector('#rent-tabla tbody');
   if (tbody && fila) {
@@ -820,6 +1013,7 @@ function dRentClasifRepintar() {
   dRentPintarClasif();
   dRentPintarControles();
   dRentPintarTabla();
+  dRentPintarBonif();    // el resumen de bonificaciones también se agrupa por clasificación
   if (cont) cont.scrollTop = top;
 }
 
@@ -927,11 +1121,43 @@ function dRentExportar() {
   var porClasif = u.res.grupos.map(function(g) { return filaGrupo(g.clasificacion, g.totales); });
   porClasif.push(filaGrupo('TOTAL', t));
 
+  // Costo de lo bonificado (sub-pestaña «Bonificaciones»): una hoja por vista, con su TOTAL
+  var B = u.res.bonificaciones, bt = B.total;
+  function pctB(v) { return v == null ? '' : Math.round(v * 10000) / 10000; }
+  function costoB(r) { return r.sinCosto ? '' : r2(r.costo); }
+  var hojasBon = [];
+  if (bt.unidades) {
+    var bProd = B.productos.map(function(r) {
+      return { 'Producto': r.nombre, 'Clasificación': r.clasificacion, 'Unidades bonificadas': r.unidades, 'Costo unitario': r.costoUnit == null ? '' : r.costoUnit,
+        'Fuente del costo': r.fuenteTxt, 'Costo total': costoB(r), '% del costo': pctB(r.pct), 'Clientes': r.clientes, 'Pedidos': r.pedidos, 'Unidades sin costo': r.undSinCosto };
+    });
+    bProd.push({ 'Producto': 'TOTAL', 'Unidades bonificadas': bt.unidades, 'Costo total': r2(bt.costo), '% del costo': 1, 'Clientes': bt.clientes, 'Pedidos': bt.pedidos, 'Unidades sin costo': bt.undSinCosto });
+    var bCli = B.clientes.map(function(r) {
+      return { 'Cliente': r.nombre, 'NIT': r.nit, 'Nombres con ese NIT': r.variantes.join('; '), 'Unidades bonificadas': r.unidades, 'Costo': r2(r.costo), '% del costo': pctB(r.pct),
+        'Productos': r.productos, 'Pedidos': r.pedidos, 'Unidades sin costo': r.undSinCosto };
+    });
+    bCli.push({ 'Cliente': 'TOTAL', 'Unidades bonificadas': bt.unidades, 'Costo': r2(bt.costo), '% del costo': 1, 'Productos': bt.productos, 'Pedidos': bt.pedidos, 'Unidades sin costo': bt.undSinCosto });
+    var bMes = B.meses.map(function(r) {
+      return { 'Mes (fecha de la remisión)': r.mes === 'sin-fecha' ? 'Sin fecha' : r.mes, 'Unidades bonificadas': r.unidades, 'Costo': r2(r.costo), '% del costo': pctB(r.pct),
+        'Clientes': r.clientes, 'Productos': r.productos, 'Pedidos': r.pedidos, 'Unidades sin costo': r.undSinCosto };
+    });
+    bMes.push({ 'Mes (fecha de la remisión)': 'TOTAL', 'Unidades bonificadas': bt.unidades, 'Costo': r2(bt.costo), '% del costo': 1, 'Clientes': bt.clientes, 'Productos': bt.productos, 'Pedidos': bt.pedidos, 'Unidades sin costo': bt.undSinCosto });
+    var bCla = B.clasificaciones.map(function(r) {
+      return { 'Clasificación': r.nombre, 'Productos': r.productos, 'Unidades bonificadas': r.unidades, 'Costo': r2(r.costo), '% del costo': pctB(r.pct), 'Clientes': r.clientes, 'Pedidos': r.pedidos, 'Unidades sin costo': r.undSinCosto };
+    });
+    bCla.push({ 'Clasificación': 'TOTAL', 'Productos': bt.productos, 'Unidades bonificadas': bt.unidades, 'Costo': r2(bt.costo), '% del costo': 1, 'Clientes': bt.clientes, 'Pedidos': bt.pedidos, 'Unidades sin costo': bt.undSinCosto });
+    hojasBon = [['Bonificados por producto', bProd], ['Bonificados por cliente', bCli], ['Bonificados por mes', bMes], ['Bonificados por clasificación', bCla]];
+  }
+  criterios.push([]);
+  criterios.push(['Bonificaciones: costo de las unidades bonificadas y remisionadas = unidades × costo usado del producto (el mismo de la hoja «Rentabilidad»). Total del período: ' + bt.unidades + ' unidades, costo $' + Math.round(bt.costo).toLocaleString('es-CO') + (bt.pctVentas != null ? ' (' + (Math.round(bt.pctVentas * 1000) / 10).toLocaleString('es-CO') + ' % de las ventas remisionadas)' : '') + '; ' + bt.undSinCosto + ' unidades sin costo no incluidas.']);
+  criterios.push(['Los clientes se agrupan por NIT (sin dígito de verificación). El mes es el de la fecha de cada remisión.']);
+
   var wsC = XLSX.utils.aoa_to_sheet(criterios);
   wsC['!cols'] = [{ wch: 130 }, { wch: 30 }];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), 'Rentabilidad');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porClasif), 'Por clasificación');
+  hojasBon.forEach(function(h) { XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(h[1]), h[0]); });
   XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
   XLSX.writeFile(wb, 'rentabilidad_IASO_' + today() + '.xlsx');
 }

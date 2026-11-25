@@ -217,6 +217,12 @@
   .rent-clasif.sin { border-style: dashed; border-color: #dd9b3a; background: #fffaf0; color: #7b341e; }
   .rent-clasif:focus { outline: 2px solid #bee3f8; border-color: #3182ce; }
   .rent-clasif:disabled { opacity: .55; background: #edf2f7; }
+  .rent-subtabs { display: flex; gap: 8px; margin: 0 0 14px; flex-wrap: wrap; }
+  .rent-subtab { padding: 7px 18px; border: 1px solid #cbd5e0; border-radius: 20px; background: #fff; color: #4a5568; font-size: 0.84rem; font-weight: 700; font-family: inherit; cursor: pointer; }
+  .rent-subtab:hover { border-color: #3182ce; color: #1a5276; }
+  .rent-subtab.activa { background: #1a5276; border-color: #1a5276; color: #fff; }
+  .rent-bonif td, .rent-bonif th, .rent-grupos td, .rent-grupos th { white-space: nowrap; }
+  .rent-bonif td .rent-fuente { white-space: normal; }
   .rent-grupos td, .rent-grupos th { white-space: nowrap; }
   .rent-grupo-fila { cursor: pointer; }
   .rent-grupo-fila:hover { background: #f1f7fc; }
@@ -625,8 +631,13 @@
       <div id="rent-chip"></div>
       <button class="btn-export" onclick="dRentExportar()">📊 Exportar Excel</button>
     </div>
+    <div class="rent-subtabs">
+      <button type="button" class="rent-subtab activa" id="rent-sub-rent" onclick="dRentSubTab('rent')">💰 Rentabilidad</button>
+      <button type="button" class="rent-subtab" id="rent-sub-bonif" onclick="dRentSubTab('bonif')">🎁 Bonificaciones</button>
+    </div>
     <div class="empty" id="rent-msg" style="display:none"></div>
     <div id="rent-contenido">
+     <div id="rent-vista-rent">
       <div class="kpi-grid" id="rent-kpis"></div>
 
       <div class="dash-card" style="margin-bottom:22px">
@@ -641,6 +652,33 @@
       </div>
 
       <div class="mov-nota" id="rent-nota"></div>
+     </div>
+
+     <div id="rent-vista-bonif" style="display:none">
+      <div class="kpi-grid" id="bon-kpis"></div>
+
+      <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>🎁 Costo de lo bonificado por producto</h4><div class="sub" id="bon-prod-sub"></div></div>
+        <div class="dash-card-body rent-scroll" style="padding:0" id="bon-prod"></div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>🏷️ Por clasificación</h4><div class="sub" id="bon-clasif-sub"></div></div>
+        <div class="dash-card-body" style="padding:0;overflow:auto" id="bon-clasif"></div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>👥 Por cliente</h4><div class="sub" id="bon-cli-sub"></div></div>
+        <div class="dash-card-body rent-scroll" style="padding:0" id="bon-cli"></div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>📅 Por mes</h4><div class="sub" id="bon-mes-sub"></div></div>
+        <div class="dash-card-body" style="padding:0;overflow:auto" id="bon-mes"></div>
+      </div>
+
+      <div class="mov-nota" id="bon-nota"></div>
+     </div>
     </div>
   </div>
 
@@ -656,7 +694,7 @@
 <script src="js/notificaciones.js?v=20261123a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261123a"></script>
-<script src="js/rentabilidad.js?v=20261125a"></script>
+<script src="js/rentabilidad.js?v=20261125b"></script>
 <script src="js/dashboard.js?v=20261124a"></script>
 </body>
 </html>
