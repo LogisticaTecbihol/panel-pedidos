@@ -438,7 +438,11 @@ var dRentGuardando = {};     // clave (o 'c:' + clave para la clasificación) �
 var dRentCat = [];           // clasificaciones que existen (las de la tabla, sin «Otros»), para las listas desplegables
 var dRentSub = 'rent';       // sub-pestaña visible: 'rent' (Rentabilidad) | 'bonif' (Bonificaciones)
 
-function dRentPermiso() { return !!(typeof AUTH !== 'undefined' && AUTH.isAdmin && AUTH.isAdmin()); }
+// Ver la pestaña: el administrador (hasModule devuelve true para admin) o quien tenga el permiso
+// «dashboard_rentabilidad» (asignado desde Usuarios; supabase/migrations/add_modulo_dashboard_rentabilidad.sql).
+// Editar costos y clasificaciones: SOLO el administrador (la RLS de escritura también lo exige).
+function dRentPermiso() { return !!(typeof AUTH !== 'undefined' && AUTH.hasModule && AUTH.hasModule('dashboard_rentabilidad')); }
+function dRentPuedeEditar() { return !!(typeof AUTH !== 'undefined' && AUTH.isAdmin && AUTH.isAdmin()); }
 
 function dRentAplicarPermiso() {
   var btn = document.getElementById('tab-rentabilidad');
@@ -840,7 +844,8 @@ function dRentTagFuente(f) {
 // Lista desplegable de clasificación de un producto: «Otros» (quita la clasificación), las que existen y
 // «Nueva clasificación…». Sin clasificación guardada se resalta en ámbar (hay algo por clasificar).
 function dRentClasifSelectHtml(f) {
-  var editable = dRentUltimo && dRent && dRent.clasifOk;
+  var soloVer = !dRentPuedeEditar();
+  var editable = !soloVer && dRentUltimo && dRent && dRent.clasifOk;
   var actual = f.clasificacion, kActual = Rentabilidad.clave(actual), hay = false;
   var ops = '<option value=""' + (f.clasif ? '' : ' selected') + '>' + Rentabilidad.OTROS + '</option>';
   dRentCat.forEach(function(n) {
@@ -851,12 +856,14 @@ function dRentClasifSelectHtml(f) {
   if (f.clasif && !hay) ops += '<option value="' + escHtml(actual) + '" selected>' + escHtml(actual) + '</option>';   // por si el catálogo no la trae
   ops += '<option value="__nueva__">➕ Nueva clasificación…</option>';
   return '<select class="rent-clasif' + (f.clasif ? '' : ' sin') + '" data-k="' + escHtml(f.clave) + '" onchange="dRentClasifCambio(this)" ' +
-    (editable ? '' : 'disabled title="La tabla de clasificaciones no está disponible (¿se aplicó la migración create_clasificacion_producto.sql?)"') +
+    (editable ? '' : soloVer ? 'disabled title="Solo el administrador puede cambiar clasificaciones"'
+      : 'disabled title="La tabla de clasificaciones no está disponible (¿se aplicó la migración create_clasificacion_producto.sql?)"') +
     (editable && !f.clasif ? ' title="Sin clasificación: queda en «Otros». Elige una para clasificarlo"' : '') + '>' + ops + '</select>';
 }
 
 function dRentFilaHtml(f) {
-  var editable = dRentUltimo && dRent && dRent.costosOk;
+  var soloVer = !dRentPuedeEditar();
+  var editable = !soloVer && dRentUltimo && dRent && dRent.costosOk;
   var prov = f.proveedoras.length
     ? f.proveedoras.map(function(p) { return escHtml(p.sigla) + ' ' + dRentNum(p.unidades); }).join(' · ')
     : '<span style="color:#a0aec0">—</span>';
@@ -875,7 +882,7 @@ function dRentFilaHtml(f) {
     '<td class="num">' + (f.auto ? dRentMoney(f.auto.precio) + '<div class="rent-sub">' + escHtml(f.auto.texto.replace('Mayorista · ', '')) + '</div>' : '<span style="color:#a0aec0">—</span>') + '</td>' +
     '<td class="num rent-edit">' +
       '<input type="number" min="0" step="any" class="rent-costo' + (f.manual ? ' tiene' : '') + '" data-k="' + escHtml(f.clave) + '" value="' + valorInput + '" ' +
-        'placeholder="digitar" ' + (editable ? '' : 'disabled title="La tabla de costos manuales no está disponible"') +
+        'placeholder="' + (soloVer ? '—' : 'digitar') + '" ' + (editable ? '' : 'disabled title="' + (soloVer ? 'Solo el administrador puede digitar costos' : 'La tabla de costos manuales no está disponible') + '"') +
         ' onchange="dRentCostoCambio(this)" onkeydown="if(event.key===\'Enter\'){this.blur()}">' +
       (f.manual && editable ? ' <button type="button" class="rent-reset" title="Restablecer: volver al costo automático" onclick="dRentRestablecer(\'' + escHtml(f.clave).replace(/'/g, '&#39;') + '\')">↺</button>' : '') +
     '</td>' +
@@ -895,7 +902,8 @@ function dRentPintarNota() {
     '<p>• <b>Precio de venta:</b> valor unitario del pedido × cantidad de cada remisión. No cuentan las unidades bonificadas, ni las líneas con valor menor a $' + Rentabilidad.VALOR_MINIMO + ' (cero o simbólico) ni mayor a ' + Rentabilidad.FACTOR_ATIPICO + ' veces el Dealer de IASO (probable error de digitación)' +
       (sinPrecio ? ': ' + dRentNum(sinPrecio) + ' unidades en este período' : '') + '. El margen se calcula solo sobre las unidades con precio.</p>' +
     '<p>• <b>Costo automático:</b> precio <b>Mayorista</b> de la lista de la proveedora principal según las órdenes de compra aprobadas a IASO (las OC traen valor 0); si esa no lo tiene, el de otra proveedora de las OC o el de otra empresa (se marca en ámbar: conviene verificar el nombre del producto; con varias empresas se toma el mayor). <b>No se estima</b>: sin Mayorista ni costo manual el producto queda «Sin costo» y no entra al margen. ⚠ = el costo automático es mayor que el Dealer de IASO.</p>' +
-    '<p>• <b>Costo manual:</b> escribe el costo unitario en la columna «Costo manual» y presiona Enter; reemplaza al automático en <b>todo</b> el período (no tiene fechas de vigencia). ↺ lo restablece al automático. Cada cambio queda en Auditoría con quién y cuándo. Solo el administrador ve esta pestaña.</p>' +
+    '<p>• <b>Costo manual:</b> escribe el costo unitario en la columna «Costo manual» y presiona Enter; reemplaza al automático en <b>todo</b> el período (no tiene fechas de vigencia). ↺ lo restablece al automático. Cada cambio queda en Auditoría con quién y cuándo. Ven esta pestaña el administrador y quien tenga el permiso «Dashboard → Rentabilidad IASO»; solo el administrador edita costos y clasificaciones.</p>' +
+    (dRentPuedeEditar() ? '' : '<p class="leg-aviso">🔒 Tienes acceso de <b>solo consulta</b>: puedes ver, filtrar y exportar a Excel, pero no digitar costos ni cambiar clasificaciones.</p>') +
     '<p>• <b>Margen negativo:</b> el desplegable «Solo margen negativo» deja en la tabla los productos cuyo <b>costo usado supera al precio promedio de venta</b> (filas en rojo); el número entre paréntesis es cuántos hay en el período. Se combina con la búsqueda, la clasificación y el filtro de costo. Un producto «Sin costo» no tiene margen y no aparece ahí; al corregir un costo la fila editada se queda hasta que cambies de filtro.</p>' +
     '<p>• <b>Clasificación:</b> la lista inicial viene de <i>categorias.xlsx</i>; los productos que no figuran allí (o venían sin clasificación) están en <b>«Otros»</b>, resaltado en ámbar. Cámbiala en la columna «Clasificación» (o elige «➕ Nueva clasificación…»); «Otros» la quita. Aplica a todas las empresas, no tiene fechas y cada cambio queda en Auditoría. La tabla se ordena por clasificación (alfabético, «Otros» al final) y «Rentabilidad por clasificación» suma lo mismo que los totales de arriba: el margen % es sobre las ventas de los productos con costo.</p>' +
     (datos && !datos.costosOk ? '<p class="leg-aviso">⚠ No se pudieron leer los costos manuales (' + escHtml(datos.costosError) + '). ¿Se aplicó la migración create_costos_producto.sql? Mientras tanto no se pueden editar costos.</p>' : '') +
@@ -962,6 +970,7 @@ function dRentActualizarCache(filaGuardada, idEliminado) {
 }
 
 async function dRentCostoCambio(inp) {
+  if (!dRentPuedeEditar()) return;   // solo el administrador (la RLS de escritura también lo exige)
   var k = inp.getAttribute('data-k');
   var f = dRentFila(k);
   if (!f || dRentGuardando[k]) return;
@@ -1005,6 +1014,7 @@ async function dRentCostoCambio(inp) {
 }
 
 async function dRentRestablecer(k) {
+  if (!dRentPuedeEditar()) return;
   var f = dRentFila(k);
   if (!f || !f.manual || dRentGuardando[k]) return;
   dRentGuardando[k] = true;
@@ -1049,6 +1059,7 @@ function dRentClasifRepintar() {
 }
 
 async function dRentClasifCambio(sel) {
+  if (!dRentPuedeEditar()) return;
   var k = sel.getAttribute('data-k');
   var f = dRentFila(k);
   if (!f || dRentGuardando['c:' + k]) return;

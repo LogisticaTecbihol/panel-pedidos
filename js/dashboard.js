@@ -2631,9 +2631,9 @@ function switchDashTab(tab) {
     showToast('No tienes acceso al informe de Legalización de gastos', '#e74c3c');
     return;
   }
-  // Rentabilidad IASO (js/rentabilidad.js): solo administrador (la tabla de costos también lo exige por RLS).
+  // Rentabilidad IASO (js/rentabilidad.js): administrador o permiso «dashboard_rentabilidad» (solo ver; las tablas de costos y clasificaciones también lo exigen por RLS).
   if (tab === 'rentabilidad' && !(typeof dRentPermiso === 'function' && dRentPermiso())) {
-    showToast('Solo el administrador puede ver la rentabilidad', '#e74c3c');
+    showToast('No tienes permiso para ver la rentabilidad', '#e74c3c');
     return;
   }
   dActiveTab = tab;

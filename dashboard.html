@@ -303,7 +303,7 @@
     <button class="dash-tab" id="tab-movimientos" onclick="switchDashTab('movimientos')">🏢 Movimientos por empresa</button>
     <!-- Solo admin / módulo Legalización: dashboard.js lo muestra tras cargar los permisos -->
     <button class="dash-tab" id="tab-legalizacion" onclick="switchDashTab('legalizacion')" style="display:none">🧾 Legalización de gastos</button>
-    <!-- Solo administrador: rentabilidad estimada de IASO (js/rentabilidad.js la muestra tras cargar los permisos) -->
+    <!-- Administrador o permiso «dashboard_rentabilidad» (solo ver): rentabilidad estimada de IASO (js/rentabilidad.js la muestra tras cargar los permisos) -->
     <button class="dash-tab" id="tab-rentabilidad" onclick="switchDashTab('rentabilidad')" style="display:none">💰 Rentabilidad IASO</button>
   </div>
 
@@ -625,7 +625,7 @@
     </div>
   </div>
 
-  <!-- ═══ Pestaña: Rentabilidad IASO (solo administrador) ═══ -->
+  <!-- ═══ Pestaña: Rentabilidad IASO (administrador; con el permiso «dashboard_rentabilidad», solo consulta) ═══ -->
   <div id="panel-rentabilidad" style="display:none">
     <div class="mov-toolbar">
       <div id="rent-chip"></div>
@@ -691,11 +691,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="js/shared.js?v=20261125a"></script>
-<script src="js/auth.js?v=20261021"></script>
+<script src="js/auth.js?v=20261125a"></script>
 <script src="js/notificaciones.js?v=20261123a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261123a"></script>
-<script src="js/rentabilidad.js?v=20261125d"></script>
-<script src="js/dashboard.js?v=20261124a"></script>
+<script src="js/rentabilidad.js?v=20261125e"></script>
+<script src="js/dashboard.js?v=20261125a"></script>
 </body>
 </html>

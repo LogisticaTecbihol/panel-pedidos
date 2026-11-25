@@ -21,6 +21,7 @@ var AUTH = (function() {
     { key: 'productos',    label: '📦 Productos' },
     { key: 'reportes',     label: '📈 Reportes' },
     { key: 'dashboard',    label: '📊 Dashboard' },
+    { key: 'dashboard_rentabilidad', label: '💰 Dashboard → Rentabilidad IASO (solo ver)' },
     { key: 'reabastecimiento', label: '🔄 Reabastecimiento' },
     { key: 'bodegas_consignacion', label: '🏬 Bodegas en Consignación' },
     { key: 'cartera',      label: '💳 Cartera' },
