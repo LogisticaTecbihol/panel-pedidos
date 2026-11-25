@@ -213,6 +213,15 @@
   .rent-tag-otra { background: #feebc8; color: #7b341e; }
   .rent-tag-sin { background: #fed7d7; color: #822727; }
   .rent-neg { color: #c0392b; font-weight: 700; }
+  .rent-clasif { width: 168px; padding: 4px 6px; border: 1px solid #cbd5e0; border-radius: 5px; font-size: 0.8rem; font-family: inherit; background: #fff; }
+  .rent-clasif.sin { border-style: dashed; border-color: #dd9b3a; background: #fffaf0; color: #7b341e; }
+  .rent-clasif:focus { outline: 2px solid #bee3f8; border-color: #3182ce; }
+  .rent-clasif:disabled { opacity: .55; background: #edf2f7; }
+  .rent-grupos td, .rent-grupos th { white-space: nowrap; }
+  .rent-grupo-fila { cursor: pointer; }
+  .rent-grupo-fila:hover { background: #f1f7fc; }
+  .rent-grupo-fila.activa { background: #ebf8ff; }
+  .rent-total td { border-top: 2px solid #cbd5e0; font-weight: 700; background: #f7fafc; }
 </style>
 </head>
 <body>
@@ -621,6 +630,11 @@
       <div class="kpi-grid" id="rent-kpis"></div>
 
       <div class="dash-card" style="margin-bottom:22px">
+        <div class="dash-card-head"><h4>🏷️ Rentabilidad por clasificación</h4><div class="sub" id="rent-clasif-sub"></div></div>
+        <div class="dash-card-body" style="padding:0;overflow:auto" id="rent-clasif"></div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:22px">
         <div class="dash-card-head"><h4>💰 Rentabilidad por producto</h4><div class="sub" id="rent-tabla-sub"></div></div>
         <div class="rent-controles" id="rent-controles"></div>
         <div class="dash-card-body rent-scroll" style="padding:0" id="rent-tabla"></div>
@@ -637,12 +651,12 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="js/shared.js?v=20261123a"></script>
+<script src="js/shared.js?v=20261125a"></script>
 <script src="js/auth.js?v=20261021"></script>
 <script src="js/notificaciones.js?v=20261123a"></script>
 <script src="js/existencias.js?v=20261023a"></script>
 <script src="js/legalizacion-prorrateo.js?v=20261123a"></script>
-<script src="js/rentabilidad.js?v=20261124a"></script>
+<script src="js/rentabilidad.js?v=20261125a"></script>
 <script src="js/dashboard.js?v=20261124a"></script>
 </body>
 </html>

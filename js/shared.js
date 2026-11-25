@@ -582,6 +582,13 @@ async function apiGet(action, opts) {
       if (res.error) return { ok: false, error: res.error.message };
       return { ok: true, costos: _addRow(res.data) };
     }
+    // Clasificación por producto (Dashboard → Rentabilidad; supabase/migrations/create_clasificacion_producto.sql).
+    // Solo el administrador puede leerla (RLS). «Otros» no se guarda: un producto sin fila es «Otros».
+    if (action === 'getClasificacionesProducto') {
+      var res = await _fetchAllRows('ClasificacionProducto', cols);
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true, clasificaciones: _addRow(res.data) };
+    }
     if (action === 'getVehiculos') {
       var res = await _fetchAllRows('Vehiculos', cols);
       if (res.error) return { ok: false, error: res.error.message };
@@ -2987,6 +2994,48 @@ async function _apiPostCore(body) {
       var resDelCP = await _sb.from('CostosProducto').delete().eq('id', body.id).select('id');
       if (resDelCP.error) return { ok: false, error: resDelCP.error.code === '42501' ? 'Solo un administrador puede restablecer costos' : resDelCP.error.message };
       if (!resDelCP.data || !resDelCP.data.length) return { ok: false, error: 'No se restableció: el costo ya no existía o no tienes permiso sobre él' };
+      return { ok: true, id: body.id };
+    }
+
+    // ── Dashboard → Rentabilidad: clasificación por producto (supabase/migrations/create_clasificacion_producto.sql) ──
+    // Alta o edición (con body.id) de la clasificación de un producto. Las reglas (2 a 60 caracteres, nunca «Otros»,
+    // una por producto, solo administrador) las hace cumplir la base; aquí solo se traducen sus errores. La base
+    // conserva la grafía ya usada si la clasificación llega escrita distinto, por eso se devuelve la fila guardada.
+    if (action === 'guardarClasificacionProducto') {
+      var COLS_CLASIF = 'id,Producto,Producto_Clave,Clasificacion,creado_por_nombre,creado_en,modificado_por_nombre,modificado_en';
+      var rowCL = {
+        Producto: (body.Producto || '').trim(),
+        Clasificacion: (body.Clasificacion || '').trim()
+      };
+      if (!rowCL.Producto) return { ok: false, error: 'Falta el producto' };
+      if (rowCL.Clasificacion.length < 2 || rowCL.Clasificacion.length > 60) return { ok: false, error: 'La clasificación debe tener entre 2 y 60 caracteres' };
+      if (rowCL.Clasificacion.toLowerCase() === 'otros') return { ok: false, error: '«Otros» no se guarda: para dejar el producto en «Otros» se quita su clasificación' };
+      var msgErrCL = function(err) {
+        if (err.code === '42501') return 'Solo un administrador puede cambiar clasificaciones';
+        if (err.code === '23505') return 'Ese producto ya tiene una clasificación guardada (otro usuario la acaba de crear): actualiza la pestaña e inténtalo de nuevo';
+        if (err.code === '23514') return 'Revisa la clasificación: de 2 a 60 caracteres y distinta de «Otros»';
+        if (err.code === '42P01' || err.code === 'PGRST205') return 'Falta aplicar la migración create_clasificacion_producto.sql en la base de datos';
+        return err.message;
+      };
+      if (body.id) {
+        rowCL.modificado_por = _uid();
+        var resUpCL = await _sb.from('ClasificacionProducto').update(rowCL).eq('id', body.id).select(COLS_CLASIF);
+        if (resUpCL.error) return { ok: false, error: msgErrCL(resUpCL.error) };
+        if (!resUpCL.data || !resUpCL.data.length) return { ok: false, error: 'No se pudo modificar: la clasificación ya no existe o no tienes permiso sobre ella' };
+        return { ok: true, id: body.id, clasificacion: resUpCL.data[0] };
+      }
+      rowCL.creado_por = _uid();
+      var resInCL = await _sb.from('ClasificacionProducto').insert(rowCL).select(COLS_CLASIF).single();
+      if (resInCL.error) return { ok: false, error: msgErrCL(resInCL.error) };
+      return { ok: true, id: resInCL.data.id, clasificacion: resInCL.data };
+    }
+
+    // Dejar un producto en «Otros»: se borra su fila (el valor anterior queda en audit_log).
+    if (action === 'eliminarClasificacionProducto') {
+      if (!body.id) return { ok: false, error: 'Falta el id de la clasificación' };
+      var resDelCL = await _sb.from('ClasificacionProducto').delete().eq('id', body.id).select('id');
+      if (resDelCL.error) return { ok: false, error: resDelCL.error.code === '42501' ? 'Solo un administrador puede cambiar clasificaciones' : resDelCL.error.message };
+      if (!resDelCL.data || !resDelCL.data.length) return { ok: false, error: 'No se quitó: la clasificación ya no existía o no tienes permiso sobre ella' };
       return { ok: true, id: body.id };
     }
 

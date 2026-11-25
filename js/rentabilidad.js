@@ -27,6 +27,10 @@
 //  · Costo automático: Mayorista de la proveedora principal según las OC aprobadas a IASO; si esa
 //    no lo tiene, el de otra proveedora de las OC; si no, el de otra empresa (el mayor si difieren).
 //  · El costo se aplica a TODO el período consultado (no hay vigencia por fechas).
+//  · Clasificación (2026-11-25): cada producto tiene una (Fungicida, Insecticida…; lista inicial de
+//    categorias.xlsx) guardada en ClasificacionProducto, global y solo editable por el administrador.
+//    Sin fila = «Otros» (que no se guarda). La tabla se ordena por clasificación (alfabético y «Otros»
+//    al final; dentro de cada una, por valor vendido) y hay una tabla de rentabilidad POR clasificación.
 // ══════════════════════════════════════════════════════════════
 var Rentabilidad = (function() {
   var EMPRESA_IASO = 'INSUMOS AGROPECUARIOS SOSTENIBLES SAS';
@@ -48,6 +52,35 @@ var Rentabilidad = (function() {
   function sigla(empresa) {
     var e = String(empresa == null ? '' : empresa).trim();
     return SIGLAS[e] || e;
+  }
+
+  // ── Clasificación ──
+  var OTROS = 'Otros';        // clasificación por defecto: no se guarda, es la ausencia de fila
+  function limpiarClasif(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+  function esOtros(s) { return clave(s) === 'otros'; }
+  // Alfabético sin importar mayúsculas ni tildes, y «Otros» siempre al final.
+  function compararClasif(a, b) {
+    var oa = esOtros(a), ob = esOtros(b);
+    if (oa !== ob) return oa ? 1 : -1;
+    return clave(a) < clave(b) ? -1 : clave(a) > clave(b) ? 1 : 0;
+  }
+  // Clasificaciones que existen (las de la tabla), sin repetidos y sin «Otros», ordenadas.
+  function catalogo(clasificaciones) {
+    var vistos = {}, out = [];
+    (clasificaciones || []).forEach(function(c) {
+      var n = limpiarClasif(c && c.Clasificacion);
+      var k = clave(n);
+      if (!k || k === 'otros' || vistos[k]) return;
+      vistos[k] = 1; out.push(n);
+    });
+    return out.sort(compararClasif);
+  }
+  // Si `nombre` ya existe en el catálogo (sin mayúsculas ni tildes) devuelve esa grafía; si no, el nombre limpio.
+  function canonica(nombre, cat) {
+    var n = limpiarClasif(nombre), k = clave(n);
+    if (k === 'otros') return OTROS;
+    for (var i = 0; i < (cat || []).length; i++) if (clave(cat[i]) === k) return cat[i];
+    return n;
   }
 
   // 'NUM|cant|fecha,NUM|cant|fecha' → [{ num, cant, fecha }] (solo cantidad > 0).
@@ -137,10 +170,11 @@ var Rentabilidad = (function() {
       texto: 'Mayorista · otra empresa (' + sigs.join('/') + ')' + (iguales ? '' : ', el mayor') };
   }
 
-  // Entrada: { empresa, pedidos, excluidos, anuladas:{num:1}, ordenes, listaPrecios, costos, desde, hasta }
+  // Entrada: { empresa, pedidos, excluidos, anuladas:{num:1}, ordenes, listaPrecios, costos, clasificaciones, desde, hasta }
   //   pedidos / excluidos: filas de Pedidos YA filtradas por quien llama (empresa, sin anulados ni
   //   históricos; `excluidos` = bodegas y consignación, solo para informar cuánto quedó fuera).
   //   costos: filas de CostosProducto (costo manual) de cualquier empresa; se usan las de `empresa`.
+  //   clasificaciones: filas de ClasificacionProducto (una por producto, de todas las empresas).
   function calcular(e) {
     var empresa = e.empresa || EMPRESA_IASO;
     var claveEmp = clave(empresa);
@@ -154,6 +188,12 @@ var Rentabilidad = (function() {
       if (String(c.Empresa || '').trim() !== empresa) return;
       var k = clave(c.Producto);
       if (k) manuales[k] = c;
+    });
+
+    var clasifs = {};
+    (e.clasificaciones || []).forEach(function(c) {
+      var k = clave(c.Producto), n = limpiarClasif(c.Clasificacion);
+      if (k && n && !esOtros(n)) clasifs[k] = { fila: c, nombre: n };
     });
 
     var filas = {};
@@ -193,6 +233,8 @@ var Rentabilidad = (function() {
       f.dealer = dIdx && dIdx.dea > 0 ? dIdx.dea : null;
       f.auto = costoAutomatico(k, f.proveedoras, idx, claveEmp);
       f.manual = manuales[k] || null;
+      f.clasif = clasifs[k] ? clasifs[k].fila : null;               // la fila guardada (null = «Otros» por defecto)
+      f.clasificacion = clasifs[k] ? clasifs[k].nombre : OTROS;
       if (f.manual) {
         f.costo = Number(f.manual.Costo_Unitario); f.fuente = 'manual'; f.fuenteTxt = 'Manual';
       } else if (f.auto) {
@@ -208,7 +250,9 @@ var Rentabilidad = (function() {
       // Avisos para revisar la lista (no cambian el cálculo)
       f.avisoCostoMayorQueDealer = !!(f.fuente === 'automatico' && f.dealer && f.costo > f.dealer);
       return f;
-    }).sort(function(a, b) { return b.valor - a.valor || a.producto.localeCompare(b.producto); });
+    }).sort(function(a, b) {
+      return compararClasif(a.clasificacion, b.clasificacion) || b.valor - a.valor || a.producto.localeCompare(b.producto);
+    });
 
     // Lo que quedó fuera por ser bodega / consignación (solo informativo)
     var excl = { unidades: 0, pedidos: {} };
@@ -221,7 +265,25 @@ var Rentabilidad = (function() {
       });
     });
 
-    return { filas: lista, totales: totalizar(lista), excluidos: { unidades: excl.unidades, pedidos: Object.keys(excl.pedidos).length } };
+    return { filas: lista, totales: totalizar(lista), grupos: porClasificacion(lista),
+      excluidos: { unidades: excl.unidades, pedidos: Object.keys(excl.pedidos).length } };
+  }
+
+  // Filas (ya calculadas) agrupadas por clasificación, en el orden de la tabla: alfabético y «Otros» al final.
+  // Cada grupo trae sus totales con la MISMA cuenta que el total general (`totalizar`), así que la suma de
+  // los grupos es el total.
+  function porClasificacion(filas) {
+    var mapa = {}, nombres = [];
+    (filas || []).forEach(function(f) {
+      var k = clave(f.clasificacion);
+      if (!mapa[k]) { mapa[k] = { clasificacion: f.clasificacion, clave: k, filas: [] }; nombres.push(f.clasificacion); }
+      mapa[k].filas.push(f);
+    });
+    return nombres.sort(compararClasif).map(function(n) {
+      var g = mapa[clave(n)];
+      g.totales = totalizar(g.filas);
+      return g;
+    });
   }
 
   function totalizar(filas) {
@@ -246,9 +308,10 @@ var Rentabilidad = (function() {
 
   return {
     EMPRESA_IASO: EMPRESA_IASO, VALOR_MINIMO: VALOR_MINIMO, FACTOR_ATIPICO: FACTOR_ATIPICO,
-    clave: clave, sigla: sigla, parseRemisiones: parseRemisiones, enRango: enRango,
+    OTROS: OTROS, clave: clave, sigla: sigla, parseRemisiones: parseRemisiones, enRango: enRango,
     indexarLista: indexarLista, indexarProveedoras: indexarProveedoras, costoAutomatico: costoAutomatico,
-    calcular: calcular, totalizar: totalizar
+    limpiarClasif: limpiarClasif, esOtros: esOtros, compararClasif: compararClasif, catalogo: catalogo, canonica: canonica,
+    calcular: calcular, totalizar: totalizar, porClasificacion: porClasificacion
   };
 })();
 
@@ -262,13 +325,16 @@ var DRENT_COLS_PEDIDOS = 'id,Nombre_Empresa,Cliente,Consecutivo,Producto,Valor_U
 var DRENT_COLS_OC = 'Empresa_Destino,Empresa_Origen,Producto,Cantidad,Tipo,Estado,Estado_Aprobacion';
 var DRENT_COLS_COSTOS = 'id,Empresa,Producto,Producto_Clave,Costo_Unitario,Nota,creado_por_nombre,creado_en,modificado_por_nombre,modificado_en';
 
-var dRent = null;            // { pedidos, excluidos, anuladas, ordenes, lista, costos, costosOk, costosError } | null (sin cargar)
+var DRENT_COLS_CLASIF = 'id,Producto,Producto_Clave,Clasificacion,creado_por_nombre,creado_en,modificado_por_nombre,modificado_en';
+
+var dRent = null;            // { pedidos, excluidos, anuladas, ordenes, lista, costos, costosOk, costosError, clasificaciones, clasifOk, clasifError } | null (sin cargar)
 var dRentPromesa = null;     // carga en curso
 var dRentGen = 0;            // sube al invalidar: una carga vieja no pisa la caché
 var dRentBuildTok = 0;       // el último repintado gana
 var dRentUltimo = null;      // { res, entrada, rango, desde, hasta } — lo último mostrado (lo que exporta el botón)
-var dRentVista = { q: '', filtro: 'todos', orden: 'valor', dir: -1 };
-var dRentGuardando = {};     // clave → true mientras se guarda (evita dobles envíos)
+var dRentVista = { q: '', filtro: 'todos', clasif: '', orden: 'clasificacion', dir: 1 };   // clasif = clave de la clasificación filtrada ('' = todas)
+var dRentGuardando = {};     // clave (o 'c:' + clave para la clasificación) → true mientras se guarda (evita dobles envíos)
+var dRentCat = [];           // clasificaciones que existen (las de la tabla, sin «Otros»), para las listas desplegables
 
 function dRentPermiso() { return !!(typeof AUTH !== 'undefined' && AUTH.isAdmin && AUTH.isAdmin()); }
 
@@ -290,7 +356,8 @@ function dRentCargar() {
     (typeof dListaPrecios !== 'undefined' && dListaPrecios)
       ? Promise.resolve({ ok: true, precios: dListaPrecios })
       : apiGet('getListaPrecios', { columns: 'Empresa,Tipo_Precio,Producto,Precio' }),
-    apiGet('getCostosProducto', { columns: DRENT_COLS_COSTOS }).catch(function(e) { return { ok: false, error: e.message }; })
+    apiGet('getCostosProducto', { columns: DRENT_COLS_COSTOS }).catch(function(e) { return { ok: false, error: e.message }; }),
+    apiGet('getClasificacionesProducto', { columns: DRENT_COLS_CLASIF }).catch(function(e) { return { ok: false, error: e.message }; })
   ]).then(function(r) {
     if (!r[0].ok) throw new Error(r[0].error || 'No se pudieron cargar los pedidos');
     if (!r[1].ok) throw new Error(r[1].error || 'No se pudieron cargar las remisiones anuladas');
@@ -312,7 +379,8 @@ function dRentCargar() {
     var datos = {
       pedidos: incl, excluidos: excl, anuladas: anuladas,
       ordenes: r[2].ordenes || [], lista: r[3].precios || [],
-      costos: r[4].ok ? (r[4].costos || []) : [], costosOk: !!r[4].ok, costosError: r[4].ok ? '' : (r[4].error || 'No se pudieron leer los costos manuales')
+      costos: r[4].ok ? (r[4].costos || []) : [], costosOk: !!r[4].ok, costosError: r[4].ok ? '' : (r[4].error || 'No se pudieron leer los costos manuales'),
+      clasificaciones: r[5].ok ? (r[5].clasificaciones || []) : [], clasifOk: !!r[5].ok, clasifError: r[5].ok ? '' : (r[5].error || 'No se pudieron leer las clasificaciones')
     };
     if (gen === dRentGen) dRent = datos;
     return datos;
@@ -326,7 +394,8 @@ function dRentCargar() {
 function dRentEntrada(datos, desde, hasta) {
   return {
     empresa: Rentabilidad.EMPRESA_IASO, pedidos: datos.pedidos, excluidos: datos.excluidos, anuladas: datos.anuladas,
-    ordenes: datos.ordenes, listaPrecios: datos.lista, costos: datos.costos, desde: desde, hasta: hasta
+    ordenes: datos.ordenes, listaPrecios: datos.lista, costos: datos.costos, clasificaciones: datos.clasificaciones,
+    desde: desde, hasta: hasta
   };
 }
 
@@ -382,7 +451,11 @@ async function buildRentabilidadDash() {
 
 function dRentPintar() {
   if (!dRentUltimo) return;
+  dRentCat = Rentabilidad.catalogo(dRent ? dRent.clasificaciones : []);
+  // El filtro por clasificación se suelta si ya no hay productos de esa clasificación en este período.
+  if (dRentVista.clasif && !dRentUltimo.res.grupos.some(function(g) { return g.clave === dRentVista.clasif; })) dRentVista.clasif = '';
   dRentPintarKpis();
+  dRentPintarClasif();
   dRentPintarControles();
   dRentPintarTabla();
   dRentPintarNota();
@@ -401,12 +474,57 @@ function dRentPintarKpis() {
     kpiCard('purple', String(t.manuales), 'Costos manuales', 'productos del período con costo digitado');
 }
 
+// Rentabilidad POR clasificación: una fila por clasificación (alfabético, «Otros» al final) con la misma cuenta
+// que el total general (`totalizar`); al hacer clic en una fila la tabla de productos se filtra a ella.
+function dRentPintarClasif() {
+  var cont = document.getElementById('rent-clasif');
+  if (!cont || !dRentUltimo) return;
+  var res = dRentUltimo.res, t = res.totales, grupos = res.grupos;
+  var sub = document.getElementById('rent-clasif-sub');
+  if (sub) sub.textContent = grupos.length ? grupos.length + ' clasificación(es) · clic en una fila para ver sus productos' : '';
+  if (!grupos.length) {
+    cont.innerHTML = '<div style="color:#a0aec0;text-align:center;padding:30px 20px">Sin remisiones de IASO en el período</div>';
+    return;
+  }
+  var thead = '<thead><tr><th>Clasificación</th><th class="num">Productos</th><th class="num">Unidades</th><th class="num">Ventas</th>' +
+    '<th class="num" title="Participación en las ventas del período">% ventas</th><th class="num">Costo de lo vendido</th>' +
+    '<th class="num">Margen $</th><th class="num">Margen %</th><th class="num" title="Productos vendidos sin costo: no entran al margen">Sin costo</th></tr></thead>';
+  function celdas(tt, valorTotal) {
+    var neg = tt.margenPct != null && tt.margen < 0;
+    return '<td class="num">' + dRentNum(tt.productos) + '</td>' +
+      '<td class="num">' + dRentNum(tt.unidades) + '</td>' +
+      '<td class="num">' + dRentMoney(Math.round(tt.valor)) + '</td>' +
+      '<td class="num">' + (valorTotal > 0 ? dRentPct(tt.valor / valorTotal) : '—') + '</td>' +
+      '<td class="num">' + (tt.conCosto ? dRentMoney(Math.round(tt.costoTotal)) : '—') + '</td>' +
+      '<td class="num' + (neg ? ' rent-neg' : '') + '">' + (tt.margenPct != null ? dRentMoney(Math.round(tt.margen)) : '—') + '</td>' +
+      '<td class="num' + (neg ? ' rent-neg' : '') + '">' + dRentPct(tt.margenPct) + '</td>' +
+      '<td class="num"' + (tt.sinCosto ? ' title="' + escHtml(dRentMoney(Math.round(tt.valorSinCosto))) + ' en ventas sin costo"' : '') + '>' +
+        (tt.sinCosto ? '<span class="rent-tag rent-tag-sin">' + tt.sinCosto + ' prod.</span>' : '<span style="color:#a0aec0">—</span>') + '</td>';
+  }
+  var filas = grupos.map(function(g) {
+    var activa = dRentVista.clasif === g.clave;
+    var otros = Rentabilidad.esOtros(g.clasificacion);
+    return '<tr class="rent-grupo-fila' + (activa ? ' activa' : '') + '" data-c="' + escHtml(g.clave) + '" onclick="dRentClickGrupo(this.getAttribute(\'data-c\'))" ' +
+      'title="' + (activa ? 'Quitar el filtro' : 'Ver solo los productos de esta clasificación') + '">' +
+      '<td style="font-weight:700' + (otros ? ';color:#718096' : '') + '">' + escHtml(g.clasificacion) + (activa ? ' <span class="rent-tag rent-tag-manual">filtrando</span>' : '') + '</td>' +
+      celdas(g.totales, t.valor) + '</tr>';
+  }).join('');
+  var pie = '<tr class="rent-total"><td>TOTAL</td>' + celdas(t, t.valor) + '</tr>';
+  cont.innerHTML = '<table class="mini-table rent-table rent-grupos">' + thead + '<tbody>' + filas + pie + '</tbody></table>';
+}
+
 function dRentPintarControles() {
   var el = document.getElementById('rent-controles');
   if (!el) return;
   var v = dRentVista;
   el.innerHTML =
     '<input type="search" id="rent-q" placeholder="Buscar producto…" value="' + escHtml(v.q) + '" oninput="dRentBuscar(this.value)" style="width:230px">' +
+    '<select id="rent-clasif-filtro" onchange="dRentFiltrarClasif(this.value)" title="Filtrar por clasificación">' +
+      '<option value="">Todas las clasificaciones</option>' +
+      dRentUltimo.res.grupos.map(function(g) {
+        return '<option value="' + escHtml(g.clave) + '"' + (v.clasif === g.clave ? ' selected' : '') + '>' + escHtml(g.clasificacion) + ' (' + g.filas.length + ')</option>';
+      }).join('') +
+    '</select>' +
     '<select id="rent-filtro" onchange="dRentFiltrar(this.value)">' +
       [['todos', 'Todos los productos'], ['sin', 'Solo sin costo'], ['manual', 'Solo con costo manual'], ['automatico', 'Solo con costo automático']]
         .map(function(o) { return '<option value="' + o[0] + '"' + (v.filtro === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
@@ -418,6 +536,7 @@ function dRentFilasVisibles() {
   var v = dRentVista, q = Rentabilidad.clave(v.q);
   return dRentUltimo.res.filas.filter(function(f) {
     if (q && f.clave.indexOf(q) < 0) return false;
+    if (v.clasif && Rentabilidad.clave(f.clasificacion) !== v.clasif) return false;
     if (v.filtro === 'sin') return f.fuente === 'sin';
     if (v.filtro === 'manual') return f.fuente === 'manual';
     if (v.filtro === 'automatico') return f.fuente === 'automatico';
@@ -428,7 +547,10 @@ function dRentFilasVisibles() {
 // Orden estable y simple: dir = 1 ascendente, -1 descendente.
 function dRentOrdenar(filas) {
   var k = dRentVista.orden, dir = dRentVista.dir;
+  var rangos = {};   // clasificación → posición (alfabético, «Otros» al final); los empates quedan por valor vendido
+  dRentUltimo.res.grupos.forEach(function(g, i) { rangos[g.clave] = i; });
   function val(f) {
+    if (k === 'clasificacion') return rangos[Rentabilidad.clave(f.clasificacion)];
     if (k === 'producto') return f.producto.toLowerCase();
     if (k === 'costo') return f.costo == null ? null : f.costo;
     var x = f[k];
@@ -447,6 +569,7 @@ function dRentOrdenar(filas) {
 
 var DRENT_COLUMNAS = [
   { k: 'producto', t: 'Producto', cls: '' },
+  { k: 'clasificacion', t: 'Clasificación', cls: '' },
   { k: 'unidades', t: 'Unidades', cls: 'num' },
   { k: 'undPrecio', t: 'Con precio', cls: 'num' },
   { k: 'precioProm', t: 'Precio prom.', cls: 'num' },
@@ -496,6 +619,24 @@ function dRentTagFuente(f) {
   return '<span class="rent-tag ' + cls + '" title="' + escHtml(tip) + '">' + escHtml(f.fuenteTxt) + '</span>';
 }
 
+// Lista desplegable de clasificación de un producto: «Otros» (quita la clasificación), las que existen y
+// «Nueva clasificación…». Sin clasificación guardada se resalta en ámbar (hay algo por clasificar).
+function dRentClasifSelectHtml(f) {
+  var editable = dRentUltimo && dRent && dRent.clasifOk;
+  var actual = f.clasificacion, kActual = Rentabilidad.clave(actual), hay = false;
+  var ops = '<option value=""' + (f.clasif ? '' : ' selected') + '>' + Rentabilidad.OTROS + '</option>';
+  dRentCat.forEach(function(n) {
+    var sel = !!f.clasif && Rentabilidad.clave(n) === kActual;
+    if (sel) hay = true;
+    ops += '<option value="' + escHtml(n) + '"' + (sel ? ' selected' : '') + '>' + escHtml(n) + '</option>';
+  });
+  if (f.clasif && !hay) ops += '<option value="' + escHtml(actual) + '" selected>' + escHtml(actual) + '</option>';   // por si el catálogo no la trae
+  ops += '<option value="__nueva__">➕ Nueva clasificación…</option>';
+  return '<select class="rent-clasif' + (f.clasif ? '' : ' sin') + '" data-k="' + escHtml(f.clave) + '" onchange="dRentClasifCambio(this)" ' +
+    (editable ? '' : 'disabled title="La tabla de clasificaciones no está disponible (¿se aplicó la migración create_clasificacion_producto.sql?)"') +
+    (editable && !f.clasif ? ' title="Sin clasificación: queda en «Otros». Elige una para clasificarlo"' : '') + '>' + ops + '</select>';
+}
+
 function dRentFilaHtml(f) {
   var editable = dRentUltimo && dRent && dRent.costosOk;
   var prov = f.proveedoras.length
@@ -506,6 +647,7 @@ function dRentFilaHtml(f) {
   return '<tr data-k="' + escHtml(f.clave) + '">' +
     '<td style="font-weight:600;max-width:260px" title="' + escHtml(f.producto) + '">' + escHtml(f.producto) +
       (f.avisoCostoMayorQueDealer ? ' <span class="leg-aviso" title="El costo automático es mayor que el Dealer de IASO: revisa la lista de precios">⚠</span>' : '') + '</td>' +
+    '<td>' + dRentClasifSelectHtml(f) + '</td>' +
     '<td class="num" title="' + dRentNum(f.nRemisiones) + ' remisión(es)' + (f.sinNumero ? ' (+' + f.sinNumero + ' sin número)' : '') + ' · ' + dRentNum(f.nPedidos) + ' pedido(s)' + (f.undSinPrecio ? ' · ' + dRentNum(f.undSinPrecio) + ' ud sin precio válido' : '') + '">' +
       dRentNum(f.unidades) + (f.bonif ? ' <small style="color:#718096">(+' + dRentNum(f.bonif) + ' bonif.)</small>' : '') + '</td>' +
     '<td class="num">' + dRentNum(f.undPrecio) + '</td>' +
@@ -536,15 +678,23 @@ function dRentPintarNota() {
       (sinPrecio ? ': ' + dRentNum(sinPrecio) + ' unidades en este período' : '') + '. El margen se calcula solo sobre las unidades con precio.</p>' +
     '<p>• <b>Costo automático:</b> precio <b>Mayorista</b> de la lista de la proveedora principal según las órdenes de compra aprobadas a IASO (las OC traen valor 0); si esa no lo tiene, el de otra proveedora de las OC o el de otra empresa (se marca en ámbar: conviene verificar el nombre del producto; con varias empresas se toma el mayor). <b>No se estima</b>: sin Mayorista ni costo manual el producto queda «Sin costo» y no entra al margen. ⚠ = el costo automático es mayor que el Dealer de IASO.</p>' +
     '<p>• <b>Costo manual:</b> escribe el costo unitario en la columna «Costo manual» y presiona Enter; reemplaza al automático en <b>todo</b> el período (no tiene fechas de vigencia). ↺ lo restablece al automático. Cada cambio queda en Auditoría con quién y cuándo. Solo el administrador ve esta pestaña.</p>' +
-    (datos && !datos.costosOk ? '<p class="leg-aviso">⚠ No se pudieron leer los costos manuales (' + escHtml(datos.costosError) + '). ¿Se aplicó la migración create_costos_producto.sql? Mientras tanto no se pueden editar costos.</p>' : '');
+    '<p>• <b>Clasificación:</b> la lista inicial viene de <i>categorias.xlsx</i>; los productos que no figuran allí (o venían sin clasificación) están en <b>«Otros»</b>, resaltado en ámbar. Cámbiala en la columna «Clasificación» (o elige «➕ Nueva clasificación…»); «Otros» la quita. Aplica a todas las empresas, no tiene fechas y cada cambio queda en Auditoría. La tabla se ordena por clasificación (alfabético, «Otros» al final) y «Rentabilidad por clasificación» suma lo mismo que los totales de arriba: el margen % es sobre las ventas de los productos con costo.</p>' +
+    (datos && !datos.costosOk ? '<p class="leg-aviso">⚠ No se pudieron leer los costos manuales (' + escHtml(datos.costosError) + '). ¿Se aplicó la migración create_costos_producto.sql? Mientras tanto no se pueden editar costos.</p>' : '') +
+    (datos && !datos.clasifOk ? '<p class="leg-aviso">⚠ No se pudieron leer las clasificaciones (' + escHtml(datos.clasifError) + '). ¿Se aplicó la migración create_clasificacion_producto.sql? Mientras tanto todos los productos aparecen como «Otros» y no se pueden editar.</p>' : '');
 }
 
 // ── Búsqueda, filtro y orden ──
 function dRentBuscar(q) { dRentVista.q = q; dRentPintarTabla(); }
 function dRentFiltrar(f) { dRentVista.filtro = f; dRentPintarTabla(); }
+function dRentFiltrarClasif(c) { dRentVista.clasif = c || ''; dRentPintarClasif(); dRentPintarTabla(); }
+// Clic en una fila de «Rentabilidad por clasificación»: filtra la tabla de productos (otro clic lo quita).
+function dRentClickGrupo(c) {
+  dRentVista.clasif = dRentVista.clasif === c ? '' : c;
+  dRentPintarControles(); dRentPintarClasif(); dRentPintarTabla();
+}
 function dRentOrdenarPor(k) {
   if (dRentVista.orden === k) dRentVista.dir = -dRentVista.dir;
-  else { dRentVista.orden = k; dRentVista.dir = (k === 'producto') ? 1 : -1; }
+  else { dRentVista.orden = k; dRentVista.dir = (k === 'producto' || k === 'clasificacion') ? 1 : -1; }
   dRentPintarTabla();
 }
 
@@ -562,8 +712,10 @@ function dRentRecalcularFila(k) {
   var u = dRentUltimo;
   if (!u || !dRent) return;   // el Dashboard se recargó solo mientras se guardaba: lo guardado ya está en la base y se verá al repintar
   u.entrada.costos = dRent.costos;
+  u.entrada.clasificaciones = dRent.clasificaciones;
   u.res = Rentabilidad.calcular(u.entrada);
   dRentPintarKpis();
+  dRentPintarClasif();   // el costo cambia el margen de la clasificación del producto
   var fila = dRentFila(k);
   var tbody = document.querySelector('#rent-tabla tbody');
   if (tbody && fila) {
@@ -645,6 +797,79 @@ async function dRentRestablecer(k) {
   dRentRecalcularFila(k);
 }
 
+// ── Edición de la clasificación ──
+function dRentActualizarCacheClasif(filaGuardada, idEliminado) {
+  if (!dRent) return;
+  dRent.clasificaciones = dRent.clasificaciones.filter(function(c) {
+    return idEliminado != null ? c.id !== idEliminado : c.id !== filaGuardada.id;
+  });
+  if (filaGuardada) dRent.clasificaciones.push(filaGuardada);
+}
+
+// Vuelve a calcular con las clasificaciones actuales y repinta lo que depende de ellas: la fila cambia de grupo
+// (la tabla va ordenada por clasificación), la tabla por clasificación y la lista del filtro. Conserva el scroll.
+function dRentClasifRepintar() {
+  var u = dRentUltimo;
+  if (!u || !dRent) return;   // el Dashboard se recargó solo mientras se guardaba: lo guardado ya está en la base
+  u.entrada.clasificaciones = dRent.clasificaciones;
+  u.res = Rentabilidad.calcular(u.entrada);
+  dRentCat = Rentabilidad.catalogo(dRent.clasificaciones);
+  if (dRentVista.clasif && !u.res.grupos.some(function(g) { return g.clave === dRentVista.clasif; })) dRentVista.clasif = '';
+  var cont = document.getElementById('rent-tabla');
+  var top = cont ? cont.scrollTop : 0;
+  dRentPintarClasif();
+  dRentPintarControles();
+  dRentPintarTabla();
+  if (cont) cont.scrollTop = top;
+}
+
+async function dRentClasifCambio(sel) {
+  var k = sel.getAttribute('data-k');
+  var f = dRentFila(k);
+  if (!f || dRentGuardando['c:' + k]) return;
+  var anterior = f.clasif ? f.clasificacion : '';          // valor del <option> de lo que había ('' = «Otros»)
+  var v = sel.value, nuevo;
+
+  if (v === '__nueva__') {
+    var txt = window.prompt('Nombre de la nueva clasificación para\n' + f.producto + ':', '');
+    if (txt == null || !String(txt).trim()) { sel.value = anterior; return; }
+    nuevo = Rentabilidad.canonica(txt, dRentCat);           // si ya existe (sin mayúsculas ni tildes) se usa su grafía
+    if (nuevo.length < 2 || nuevo.length > 60) {
+      showToast('La clasificación debe tener entre 2 y 60 caracteres', '#e74c3c');
+      sel.value = anterior;
+      return;
+    }
+  } else {
+    nuevo = v === '' ? Rentabilidad.OTROS : v;
+  }
+  if (Rentabilidad.clave(nuevo) === Rentabilidad.clave(f.clasificacion)) { sel.value = anterior; return; }   // sin cambio
+
+  dRentGuardando['c:' + k] = true;
+  sel.disabled = true;
+  try {
+    if (Rentabilidad.esOtros(nuevo)) {                      // «Otros» no se guarda: se quita la fila
+      var rd = await apiPost({ action: 'eliminarClasificacionProducto', id: f.clasif.id });
+      if (!rd.ok) throw new Error(rd.error || 'No se pudo quitar la clasificación');
+      dRentActualizarCacheClasif(null, f.clasif.id);
+      showToast(f.producto + ': vuelve a «Otros»', '#27ae60');
+    } else {
+      var rg = await apiPost({
+        action: 'guardarClasificacionProducto', id: f.clasif ? f.clasif.id : null, Producto: f.producto, Clasificacion: nuevo
+      });
+      if (!rg.ok) throw new Error(rg.error || 'No se pudo guardar la clasificación');
+      dRentActualizarCacheClasif(rg.clasificacion);
+      showToast(f.producto + ': ' + rg.clasificacion.Clasificacion, '#27ae60');
+    }
+  } catch (e) {
+    showToast('⚠️ ' + e.message, '#e74c3c');
+    sel.value = anterior;
+  } finally {
+    delete dRentGuardando['c:' + k];
+    sel.disabled = false;
+  }
+  dRentClasifRepintar();
+}
+
 // ── Excel ──
 function dRentExportar() {
   if (typeof XLSX === 'undefined') { showToast('La librería de Excel aún no carga; intenta de nuevo en unos segundos', '#e74c3c'); return; }
@@ -654,6 +879,7 @@ function dRentExportar() {
   var filas = u.res.filas.map(function(f) {
     return {
       'Producto': f.producto,
+      'Clasificación': f.clasificacion,
       'Unidades remisionadas': f.unidades, 'Unidades bonificadas': f.bonif, 'Unidades con precio': f.undPrecio,
       'Unidades sin precio válido': f.undSinPrecio, 'Pedidos': f.nPedidos, 'Remisiones': f.nRemisiones,
       'Precio venta promedio': r2(f.precioProm), 'Valor vendido': r2(f.valor),
@@ -686,10 +912,26 @@ function dRentExportar() {
     ['Costo automático: precio Mayorista de la proveedora principal según las OC aprobadas a IASO (o de otra proveedora / empresa). No se estima: sin Mayorista ni costo manual queda «Sin costo».'],
     ['Costo manual: lo digita el administrador; reemplaza al automático en todo el período.']
   ];
+  criterios.push(['Clasificación: la lista inicial viene de categorias.xlsx; sin clasificación = «Otros». Las filas van ordenadas por clasificación (alfabético, «Otros» al final) y, dentro de cada una, por valor vendido. La hoja «Por clasificación» suma lo mismo que los totales: el margen % es sobre las ventas de los productos con costo.']);
+
+  // Rentabilidad por clasificación (misma cuenta que los totales)
+  function filaGrupo(nombre, tt) {
+    return {
+      'Clasificación': nombre, 'Productos': tt.productos, 'Unidades remisionadas': tt.unidades, 'Unidades con precio': tt.undPrecio,
+      'Valor vendido': r2(tt.valor), '% de las ventas': t.valor > 0 ? Math.round(tt.valor / t.valor * 10000) / 10000 : '',
+      'Costo de lo vendido (productos con costo)': tt.conCosto ? r2(tt.costoTotal) : '',
+      'Margen bruto $': tt.margenPct == null ? '' : r2(tt.margen), 'Margen bruto %': tt.margenPct == null ? '' : Math.round(tt.margenPct * 10000) / 10000,
+      'Productos sin costo': tt.sinCosto, 'Ventas de productos sin costo': r2(tt.valorSinCosto)
+    };
+  }
+  var porClasif = u.res.grupos.map(function(g) { return filaGrupo(g.clasificacion, g.totales); });
+  porClasif.push(filaGrupo('TOTAL', t));
+
   var wsC = XLSX.utils.aoa_to_sheet(criterios);
   wsC['!cols'] = [{ wch: 130 }, { wch: 30 }];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), 'Rentabilidad');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porClasif), 'Por clasificación');
   XLSX.utils.book_append_sheet(wb, wsC, 'Criterios');
   XLSX.writeFile(wb, 'rentabilidad_IASO_' + today() + '.xlsx');
 }
