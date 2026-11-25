@@ -32,6 +32,8 @@ var AUTH = (function() {
     { key: 'notificaciones',          label: '🔔 Notificaciones' },
     { key: 'legalizacion_gastos',          label: '🧾 Legalización de Gastos' },
     { key: 'legalizacion_gastos_aprobar',  label: '✅ Conciliar legalización de gastos (registrar facturas)' },
+    { key: 'vehiculos_vencimientos',         label: '🚗 Vencimientos de Vehículos (ver)' },
+    { key: 'vehiculos_vencimientos_editar',  label: '✏️ Vencimientos de Vehículos → editar y enviar aviso (requiere «ver»)' },
     { key: 'solicitudes_mercadeo',         label: '📣 Solicitudes a Mercadeo y de Eventos' },
     { key: 'solicitudes_mercadeo_aprobar', label: '✅ Aprobar solicitudes a Mercadeo y de Eventos' }
   ];

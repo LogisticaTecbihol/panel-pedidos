@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://opghwfuxrvjpbuxeykxn.supabase.co; font-src 'self'; connect-src 'self' https://opghwfuxrvjpbuxeykxn.supabase.co wss://opghwfuxrvjpbuxeykxn.supabase.co; media-src blob:; frame-src https://opghwfuxrvjpbuxeykxn.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="description" content="Vencimientos de SOAT y técnico-mecánica de los vehículos — Sistema de Gestión Logística">
+<meta name="theme-color" content="#1a5276">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+<title>Vencimientos de Vehículos – Sistema de Gestión Logística</title>
+<link rel="stylesheet" href="css/panel.css?v=20260921d">
+<style>
+  .vv-sc-venc  { border-color: #c0392b; } .vv-sc-venc .num  { color: #922b21; }
+  .vv-sc-urg   { border-color: #e67e22; } .vv-sc-urg .num   { color: #b9540d; }
+  .vv-sc-prox  { border-color: #d4ac0d; } .vv-sc-prox .num  { color: #9a7d0a; }
+  .vv-sc-vig   { border-color: #27ae60; } .vv-sc-vig .num   { color: #1e8449; }
+  .vv-doc      { white-space: nowrap; }
+  .vv-doc .vv-f { font-weight: 600; font-size: 0.84rem; }
+  .vv-pill     { display: inline-block; margin-top: 3px; padding: 2px 9px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }
+  .vv-pill.venc { background: #fdecea; color: #922b21; }
+  .vv-pill.urg  { background: #fdebd0; color: #b9540d; }
+  .vv-pill.prox { background: #fef9e7; color: #9a7d0a; }
+  .vv-pill.vig  { background: #eafaf1; color: #1e8449; }
+  .vv-pill.sin  { background: #edf2f7; color: #718096; }
+  tr.vv-inactivo td { opacity: 0.55; }
+  .vv-chk { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 0.86rem; color: #2d3748; cursor: pointer; }
+  .vv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .vv-grid { grid-template-columns: 1fr; } }
+  .vv-pre { white-space: pre-wrap; word-break: break-word; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; font-family: inherit; font-size: 0.84rem; line-height: 1.5; color: #2d3748; max-height: 360px; overflow: auto; }
+  .vv-aviso { font-size: 0.8rem; color: #718096; margin-top: 10px; }
+  .vv-err { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #fdecea; border: 1px solid #f5b7b1; color: #922b21; font-size: 0.8rem; word-break: break-word; }
+</style>
+</head>
+<body data-modulo="vehiculos_vencimientos">
+
+<!-- HEADER + NAVBAR -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>📦 Sistema de Gestión Logística</h1>
+      <div class="sub">Holding de empresas</div>
+    </div>
+    <div id="auth-info"></div>
+  </div>
+  <nav class="navbar">
+    <a href="index.html">🏠 Inicio</a>
+    <a href="pedidos.html" data-modulo="pedidos">📋 Pedidos</a>
+    <a href="ingresos.html" data-modulo="ingresos">📥 Ingresos</a>
+    <a href="ordenes.html" data-modulo="ordenes">🛒 Órdenes</a>
+    <a href="devoluciones.html" data-modulo="devoluciones">🔄 Devoluciones y Cambios</a>
+    <a href="inventario.html" data-modulo="inventario">📊 Inventario</a>
+    <a href="kardex.html" data-modulo="kardex">📋 Kardex</a>
+    <a href="muestras.html" data-modulo="muestras">🧪 Muestras</a>
+    <a href="reenvases.html" data-modulo="reenvases">🏭 Salidas a producción</a>
+    <a href="productos.html" data-modulo="productos">📦 Productos</a>
+    <a href="lista-precios.html" data-modulo="lista_precios">💲 Lista de Precios</a>
+    <a href="clientes.html" data-modulo="clientes">👥 Clientes</a>
+    <a href="cartera.html" data-modulo="cartera">💳 Cartera</a>
+    <a href="legalizacion-gastos.html" data-modulo="legalizacion_gastos">🧾 Legalización de Gastos</a>
+    <a href="vehiculos-vencimientos.html" data-modulo="vehiculos_vencimientos" class="active">🚗 Vencimientos de Vehículos</a>
+    <div class="nav-dropdown" data-modulo="solicitudes_mercadeo">
+      <button class="nav-dropdown-toggle">📣 Mercadeo</button>
+      <div class="nav-dropdown-menu">
+        <a href="solicitudes-mercadeo.html" data-modulo="solicitudes_mercadeo">📣 Solicitudes a Mercadeo</a>
+        <a href="solicitudes-eventos.html" data-modulo="solicitudes_mercadeo">🎪 Solicitudes de Eventos</a>
+      </div>
+    </div>
+    <a href="reportes.html" data-modulo="reportes">📈 Reportes</a>
+    <a href="dashboard.html" data-modulo="dashboard">📊 Dashboard</a>
+    <a href="reabastecimiento.html" data-modulo="reabastecimiento">🔄 Reabastecimiento</a>
+    <a href="bodegas-consignacion.html" data-modulo="bodegas_consignacion">🏬 Bodegas en Consignación</a>
+    <a href="notificaciones.html" data-modulo="notificaciones">🔔 Notificaciones</a>
+    <div class="nav-dropdown auth-admin-only" id="nav-admin-dropdown" style="display:none">
+      <button class="nav-dropdown-toggle">⚙️ Admin</button>
+      <div class="nav-dropdown-menu">
+        <a href="usuarios.html">👥 Usuarios</a>
+        <a href="auditoria.html">🔍 Auditoría</a>
+        <a href="backup.html">💾 Backup</a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- LOAD ZONE -->
+<div id="load-zone">
+  <div class="spinner" id="load-spinner"></div>
+  <h2>Conectando con la nube...</h2>
+  <p>Cargando vencimientos de vehículos</p>
+  <div id="load-error"></div>
+  <button class="btn-retry" id="btn-retry" style="display:none" onclick="vvCargar()">Reintentar</button>
+</div>
+
+<!-- MAIN -->
+<div id="main" style="display:none">
+
+  <div id="sync-status">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-msg">Conectado a la nube. Los cambios se guardan automáticamente.</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc total"><div class="num" id="s-total">0</div><div class="lbl">Vehículos activos</div></div>
+    <div class="sc vv-sc-venc"><div class="num" id="s-venc">0</div><div class="lbl">Documentos vencidos</div></div>
+    <div class="sc vv-sc-urg"><div class="num" id="s-urg">0</div><div class="lbl">Vencen en 7 días o menos</div></div>
+    <div class="sc vv-sc-prox"><div class="num" id="s-prox">0</div><div class="lbl">Vencen en 8 a 30 días</div></div>
+    <div class="sc vv-sc-vig"><div class="num" id="s-vig">0</div><div class="lbl">Vigentes (más de 30 días)</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="fg"><label>Buscar</label><input type="text" id="f-txt" placeholder="Placa, propietario o identificación…" style="width:280px"></div>
+    <div class="fg"><label>Estado</label>
+      <select id="f-estado">
+        <option value="">Todos</option>
+        <option value="venc">Con documento vencido</option>
+        <option value="urg">Vencen en 7 días o menos</option>
+        <option value="prox">Vencen en 8 a 30 días</option>
+        <option value="vig">Vigentes</option>
+        <option value="sin">Sin fecha cargada</option>
+      </select>
+    </div>
+    <div class="fg"><label><input type="checkbox" id="f-inactivos" style="margin-right:5px">Ver inactivos</label></div>
+    <button onclick="vvLimpiarFiltros()" style="margin-left:auto;background:none;border:1px solid #cbd5e0;color:#4a5568;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Limpiar filtros</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>🚗 Vehículos <span id="row-ct" style="font-weight:400;color:#718096"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-dl" id="btn-nuevo" onclick="vvAbrirNuevo()" style="background:#1a5276;display:none">➕ Agregar vehículo</button>
+        <button class="btn-dl" id="btn-aviso" onclick="vvAbrirAviso()" style="background:#128c7e;display:none">📲 Enviar aviso ahora</button>
+        <button class="btn-dl" onclick="vvCargar()">🔄 Actualizar</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th>Placa</th>
+            <th>Propietario</th>
+            <th>Identificación</th>
+            <th>SOAT</th>
+            <th>Técnico-mecánica</th>
+            <th id="th-accion" style="width:90px;display:none">Acción</th>
+          </tr>
+        </thead>
+        <tbody id="t-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div class="card-head">
+      <h3>📨 Historial de avisos al grupo de WhatsApp <span id="av-ct" style="font-weight:400;color:#718096"></span></h3>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Origen</th>
+            <th>Estado</th>
+            <th style="text-align:center">Documentos</th>
+            <th>Enviado por</th>
+            <th style="width:110px"></th>
+          </tr>
+        </thead>
+        <tbody id="av-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Agregar / Editar vehículo -->
+<div class="overlay" id="edit-overlay">
+  <div class="modal-box" style="max-width:560px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2 id="ed-titulo">➕ Agregar vehículo</h2>
+      </div>
+      <button class="btn-close" onclick="vvCerrarEdicion()">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="vv-grid">
+        <div>
+          <label class="ef-label">Placa *</label>
+          <input class="ef" id="ed-placa" type="text" maxlength="10" placeholder="Ej: ABC123" autocomplete="off" style="text-transform:uppercase">
+        </div>
+        <div>
+          <label class="ef-label">Identificación del propietario (C.C. / NIT)</label>
+          <input class="ef" id="ed-ident" type="text" maxlength="30" placeholder="Ej: 900123456-7" autocomplete="off">
+        </div>
+      </div>
+      <label class="ef-label" style="margin-top:12px">Propietario</label>
+      <input class="ef" id="ed-prop" type="text" maxlength="120" placeholder="Nombre o razón social" autocomplete="off">
+      <div class="vv-grid" style="margin-top:12px">
+        <div>
+          <label class="ef-label">SOAT — vence el</label>
+          <input class="ef" id="ed-soat" type="date" min="2000-01-01" max="2100-12-31">
+        </div>
+        <div>
+          <label class="ef-label">Técnico-mecánica — vence el</label>
+          <input class="ef" id="ed-tec" type="date" min="2000-01-01" max="2100-12-31">
+        </div>
+      </div>
+      <div class="vv-aviso">Dejar una fecha en blanco quita ese documento del control. Al cambiar una fecha se reinician los avisos de ese documento.</div>
+      <label class="vv-chk"><input type="checkbox" id="ed-activo"> Vehículo activo (si se desmarca, deja de avisarse en el grupo)</label>
+      <div id="ed-warn" class="vv-err" style="display:none"></div>
+      <div id="ed-audit"></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="vvCerrarEdicion()">Cancelar</button>
+        <button class="btn-confirm" id="btn-save" onclick="vvGuardar()">✓ Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Enviar aviso ahora (vista previa + confirmación) -->
+<div class="overlay" id="aviso-overlay">
+  <div class="modal-box" style="max-width:620px">
+    <div class="mhdr" style="background:linear-gradient(135deg,#0e6655,#128c7e)">
+      <div style="flex:1">
+        <h2>📲 Enviar aviso ahora</h2>
+        <div style="font-size:0.78rem;opacity:0.9;margin-top:4px">Resumen completo de lo vencido o que vence en 30 días o menos</div>
+      </div>
+      <button class="btn-close" onclick="vvCerrarAviso()">✕</button>
+    </div>
+    <div class="mbody">
+      <div id="aviso-estado" style="font-size:0.86rem;color:#4a5568;margin-bottom:10px"></div>
+      <pre class="vv-pre" id="aviso-texto" style="display:none"></pre>
+      <div id="aviso-error" class="vv-err" style="display:none"></div>
+      <div class="vv-aviso">Se enviará al grupo de WhatsApp configurado. El aviso automático de cada día no se afecta: sigue avisando solo lo nuevo.</div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="vvCerrarAviso()">Cancelar</button>
+        <button class="btn-confirm" id="btn-aviso-ok" onclick="vvEnviarAviso()" style="background:#128c7e" disabled>📲 Enviar al grupo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Ver un aviso del historial -->
+<div class="overlay" id="msg-overlay">
+  <div class="modal-box" style="max-width:620px">
+    <div class="mhdr">
+      <div style="flex:1">
+        <h2>📨 Aviso enviado</h2>
+        <div id="msg-meta" style="font-size:0.78rem;opacity:0.9;margin-top:4px"></div>
+      </div>
+      <button class="btn-close" onclick="vvCerrarMensaje()">✕</button>
+    </div>
+    <div class="mbody">
+      <pre class="vv-pre" id="msg-texto"></pre>
+      <div id="msg-error" class="vv-err" style="display:none"></div>
+    </div>
+    <div class="mftr">
+      <div class="mftr-btns">
+        <button class="btn-cancel" onclick="vvCerrarMensaje()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/shared.js?v=20261023a"></script>
+<script src="js/auth.js?v=20261125b"></script>
+<script src="js/notificaciones.js?v=20261123a"></script>
+<script src="js/vehiculos-vencimientos.js?v=20261125a"></script>
+</body>
+</html>
