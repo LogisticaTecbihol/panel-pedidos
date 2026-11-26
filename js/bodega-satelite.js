@@ -453,13 +453,37 @@ function bsDisponibleLista(k, producto) {
   return { existencia: existencia, enLista: enLista, disponible: existencia - enLista };
 }
 
+// Para buscar mientras se escribe: sin tildes ni mayúsculas.
+function bsSinTildes(s) { return bsNorm(s).normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+// Productos CON existencia que contienen todas las palabras escritas.
+function bsCoincidenStock(texto) {
+  var pal = bsSinTildes(texto).split(' ').filter(Boolean);
+  if (!pal.length) return [];
+  return ((BS.exist && BS.exist.items) || []).filter(function (i) {
+    var n = bsSinTildes(i.producto);
+    return pal.every(function (p) { return n.indexOf(p) >= 0; });
+  });
+}
+
 // Muestra junto a «Producto» el disponible del producto escrito/elegido y lo pone como tope de la cantidad.
+// Mientras el texto no es el nombre exacto, muestra el disponible de los productos que coinciden (hasta 3).
 function bsDispHint(k) {
   var inp = bsEl('bs-' + k + '-prod'), box = bsEl('bs-' + k + '-disp'), qty = bsEl('bs-' + k + '-qty');
   if (!inp || !box) return;
   var nombre = bsNorm(inp.value);
   var it = nombre ? ((BS.exist && BS.exist.items) || []).filter(function (i) { return bsNorm(i.producto) === nombre; })[0] : null;
-  if (!it) { box.innerHTML = ''; if (qty) qty.removeAttribute('max'); return; }
+  if (!it) {
+    if (qty) qty.removeAttribute('max');
+    if (inp.value.trim().length < 2) { box.innerHTML = ''; return; }
+    var cand = bsCoincidenStock(inp.value);
+    if (!cand.length) { box.className = 'bs-disp bs-disp-0'; box.innerHTML = '· Ningún producto con existencia coincide'; return; }
+    box.className = 'bs-disp bs-disp-ok';
+    box.innerHTML = '· ' + cand.slice(0, 3).map(function (c) {
+      return escHtml(c.producto) + ': <strong>' + bsN(Math.max(bsDisponibleLista(k, c.producto).disponible, 0)) + '</strong> ud';
+    }).join(' · ') + (cand.length > 3 ? ' <span class="bs-muted">(+' + (cand.length - 3) + ' más)</span>' : '') +
+      ' <span class="bs-muted">— ' + (cand.length === 1 ? 'Enter para elegirlo' : 'elige uno de la lista') + '</span>';
+    return;
+  }
   var d = bsDisponibleLista(k, it.producto);
   var disp = Math.max(d.disponible, 0);
   box.className = 'bs-disp ' + (disp > 0 ? 'bs-disp-ok' : 'bs-disp-0');
@@ -1241,6 +1265,20 @@ document.addEventListener('change', function (e) {
   if (t.dataset && t.dataset.actInput === 'ln-qty') bsRefrescarLineas(t.dataset.k);
 });
 document.addEventListener('keydown', function (e) {
+  // Enter en «Producto» con un texto que solo coincide con UN producto con existencia: lo completa y pasa a la cantidad
+  // (en vez de intentar agregar con el nombre a medias).
+  if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.actInput === 'ln-prod') {
+    var kp = e.target.dataset.k, exacto = bsNorm(e.target.value);
+    var esExacto = ((BS.exist && BS.exist.items) || []).some(function (i) { return bsNorm(i.producto) === exacto; });
+    var unico = esExacto ? [] : bsCoincidenStock(e.target.value);
+    if (unico.length === 1) {
+      e.preventDefault();
+      e.target.value = unico[0].producto;
+      bsDispHint(kp);
+      var qp = bsEl('bs-' + kp + '-qty'); if (qp) qp.focus();
+      return;
+    }
+  }
   if (e.key === 'Enter' && e.target && /^bs-(sal|tr|cnt|mu|cd|cr|dv)-(prod|qty|ext)$/.test(e.target.id || '')) {
     e.preventDefault();
     var k = e.target.id.split('-')[1];
