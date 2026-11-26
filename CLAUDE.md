@@ -1014,3 +1014,18 @@ Pedido 2026-11-26: además del grupo de WhatsApp, quien tiene acceso al módulo 
   segunda corrida 0, marcas de WhatsApp intactas; después, 0 avisos y 0 marcas). Asesor de seguridad: sin avisos nuevos salvo el INFO «RLS sin política» de la tabla nueva, a propósito. **No se probó**: el sonido y la
   campanita en una sesión real (el primer aviso real es el 2026-11-27).
 - **Hallazgo al aplicar**: Johana Hernandez ya usa el módulo: el 2026-11-25 renovó la técnico-mecánica de HKT455 (vence 2027-11-23) y cargó el SOAT y la técnico-mecánica de DDD294.
+
+## Backup (`backup.html`): Excel de datos y script de estructura
+
+- **Excel de datos** (`js/backup.js`, `BACKUP_TABLES`): una hoja por tabla, nombrada con su etiqueta. Excel prohíbe `: \ / ? * [ ]` en el nombre de una hoja y SheetJS lanza un error:
+  desde el 2026-11-17 la etiqueta «Bodegas Satélite: Configuración» detenía el backup al 48 % sin descargar nada (corregido el 2026-11-26, commit `f9e608a`). `nombreHoja()` limpia esos caracteres,
+  corta a 31 y evita repetidos, así que las etiquetas pueden llevar «:». Solo lee las tablas de `public` (supabase-js solo consulta esquemas expuestos): **no trae los datos de `abago` ni de `prod_priv`**.
+- **Script de estructura** (`exportar_estructura_bd` → `_estructura_bd_ddl`, solo admin): desde el 2026-11-26 (migración remota `exportar_estructura_bd_todos_esquemas`, rollback en `..._rollback.sql`)
+  **exporta todo esquema propio**: dueño `postgres`/`pg_database_owner`, que no sea de una extensión, menos `extensions` y `supabase_migrations`. Hoy son `public`, `abago` (panel de Chía Abagó) y
+  `prod_priv` (creado el 2026-11-24, de otro repositorio). Un esquema nuevo entra solo. Lleva además `CREATE SCHEMA` + permisos de esquema, vistas (con `security_invoker`, en orden de dependencia),
+  permisos de secuencias y comentarios de vistas/funciones; las funciones que usan columnas (`abago.hoy()`, `abago.nit_normalizado`) salen **antes** de las tablas. Sigue sin incluir: datos, Auth,
+  archivos de Storage, secretos de Vault y de Edge Functions, esquemas expuestos de la API (al restaurar hay que exponer `abago`), privilegios por defecto y permisos por columna.
+- Probado el 2026-11-26 contra producción en transacciones revertidas: el script (1,09 MB, 0,3 s) se ejecutó completo en esquemas renombrados (`rtpub`/`rtabago`/`rtprodpriv`, sin FK a `auth.users`,
+  realtime, buckets, cron ni políticas de storage) sin un solo error, y lo restaurado coincide con el original en columnas (2120), funciones (350), vistas (8), índices (362), triggers (255),
+  políticas (322), RLS, permisos de tablas/funciones/esquemas, secuencias y comentarios. Única diferencia: el CHECK `vv_placa_formato` sale con otra agrupación de paréntesis (misma regla). Por el
+  panel (rol `authenticated`, límite de 8 s) responde al admin y rechaza a los demás (42501). **No se probó** restaurarlo en un proyecto Supabase nuevo.
