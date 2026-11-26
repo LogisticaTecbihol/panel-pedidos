@@ -767,6 +767,27 @@ Con el visto bueno del usuario se cerró la prueba y las bodegas quedaron listas
 - `_bodega_avisar` se restauró a su definición original (administradores + contabilidad de la empresa); durante la prueba estaba limitada al administrador.
 - Siguen pendientes para empezar de verdad: fijar la fecha de corte real de cada bodega, crear sus usuarios, aplicar el conteo inicial, asignar `bodegas_consignacion` a quienes atienden y agregar `…/bodega-recuperar.html` a las redirecciones de Supabase Auth.
 
+### Prueba completa con usuarios reales (2026-11-25/26) — cerrada
+
+Segunda prueba guiada, ahora de punta a punta con dos cuentas de prueba reales en el navegador (el usuario operó; las comprobaciones se hicieron en la base después de cada fase) y la fase 2 incluida. Durante la prueba los
+avisos (`_bodega_avisar` y `_bodega_avisar_solicitud`) llegaron SOLO al administrador; al cerrar se restauraron a su definición original (md5 idéntico).
+
+- **Fases y resultado (todas bien)**: A cuentas (sin fila en `usuarios`, bodegas correctas; simuladas en la base ven 0 filas de las tablas de la principal); B acceso por `bodega-login.html` y por `login.html` (redirige a la app de
+  bodegas), aislamiento; C recibir (la remisión anterior al corte no se ofrece; recepción con diferencia + aviso) y conteo inicial; D salidas con PDF, rechazos, anulación con motivo, el número anulado no se reutiliza; E traslados entre
+  bodegas (envío, cancelación en tránsito, recepción con diferencia + aviso); F solicitudes (muestra del stock y de la principal, cambio, devolución con PDF, cancelación, rechazo con reintegro, atención desde el panel); G conteo
+  periódico con borrador, ajustes, anulación de un ajuste, filtros y Excel. La principal no recibió nada: ningún registro de `audit_log`, `Pedidos` ni `notificaciones` de las cuentas de prueba fuera de las tablas `Bodega*`, y
+  `_kx_movs` sin documentos `BOD-`/`CONTEO-`.
+- **Mejoras publicadas durante la prueba**: el «Disponible» al elegir/escribir el producto (commits `0a5522b` y `491f0ca`) y el modal para atender solicitudes por acción (`e6ed528`); ver sus notas arriba.
+- **Hallazgos, ya corregidos (2026-11-26, `bodega-satelite.js?v=20261126c`)**: (1) aplicar el **conteo inicial** abre primero «Revisa el conteo inicial antes de aplicarlo» (`bsResumenInicialHtml`): fecha, productos y
+  unidades, tabla producto por producto (los de cantidad 0 en gris, «no se registra») y aviso de revisar la presentación; el botón es «Está correcto: aplicar» y «Cancelar» vuelve al editor sin guardar (en la prueba se había
+  elegido «AJO AJI ORTIGA X BIDON 20 LITROS» en vez de «X LITRO»); (2) «Nueva salida» y la devolución ya no dicen un «-0001» fijo: muestran la serie y el **último número emitido** (`bsSerieTxt`, desde los movimientos
+  cargados, que incluyen anulados; a propósito no se anuncia «el siguiente», que otro usuario de la bodega podría tomar); (3) la guía de uso (Claude Doc y su Word) ya dice que un **traslado entre bodegas exige el conteo
+  inicial en ORIGEN y DESTINO** (regla de `bodega_crear_traslado_bodega`; la pantalla muestra el destino deshabilitado «— sin conteo inicial»), con una pregunta frecuente nueva, y que recibir de la principal sí se puede antes.
+  Probado con un arnés de navegador (Supabase simulado: resumen, cancelar sin guardar, aplicar, serie con anulados y con número 10 > 2, bodega sin documentos).
+- **No se probó**: el correo de recuperación (las cuentas eran de correos ajenos), los avisos a la contabilidad real, el celular.
+- **Cierre (con OK del usuario)**: vaciadas con `TRUNCATE … RESTART IDENTITY` las tablas `Bodega*` salvo `BodegaConfig` (3 bodegas habilitadas, corte provisional 2026-10-01, sin conteo inicial), borradas las 2 cuentas de prueba de
+  Auth y los avisos `bodegas`; `audit_log` conservado (127 filas de las tablas `Bodega*` en total).
+
 ## Bandeja de notificaciones (`notificaciones.html`): Nicolle Pardo ve solo lo recibido
 
 Caso 2026-11-19 (Nicolle Pardo, rol `cartera`): su bandeja mostraba 46 filas (15 recibidas + 31 que ELLA envió a otros) y 21 salían como «Nueva» (el estado del destinatario, que ella no puede

@@ -503,13 +503,28 @@ function bsValidarExistencia(lista) {
 }
 
 // ══════════════════ SALIDAS ══════════════════
+// Serie propia de la bodega y el último número emitido (BOD-<COD>-<TIPO>-n), sacado de los movimientos ya cargados,
+// que incluyen los anulados. No se anuncia «el siguiente»: otro usuario de la misma bodega podría tomarlo antes;
+// el número real sale en el aviso y en el PDF al registrar.
+function bsSerieTxt(tipo) {
+  var pref = 'BOD-' + BS.bodega.codigo + '-' + tipo + '-';
+  var max = 0, ult = '';
+  (BS.kardex || []).forEach(function (r) {
+    var d = String(r.documento || '');
+    if (d.indexOf(pref) !== 0) return;
+    var n = parseInt(d.slice(pref.length), 10);
+    if (n > max) { max = n; ult = d; }
+  });
+  return 'serie BOD-' + BS.bodega.codigo + '-' + tipo + (ult ? ' (último emitido: ' + ult + ')' : ' (aún no hay ninguno)');
+}
+
 function bsRenderSalidas() {
   var b = BS.bodega;
   var h = '';
   if (!b.inicial_aplicado) {
     h += '<div class="bs-banner">🔒 Las salidas están bloqueadas hasta que la bodega aplique su conteo inicial.</div>';
   }
-  h += '<div class="bs-card"><h3>📤 Nueva salida <small>documento propio ' + escHtml('BOD-' + b.codigo + '-RS-0001') + ' · baja la existencia al registrarla</small></h3>' +
+  h += '<div class="bs-card"><h3>📤 Nueva salida <small>documento propio, ' + escHtml(bsSerieTxt('RS')) + ' · baja la existencia al registrarla</small></h3>' +
        '<div class="bs-row"><div style="flex:2 1 240px"><label class="ef-label">Destinatario *</label><input class="ef" id="bs-sal-dest" maxlength="150" placeholder="Cliente / persona que recibe"></div>' +
        '<div style="flex:0 0 160px"><label class="ef-label">Fecha</label><input class="ef" id="bs-sal-fecha" type="date" value="' + bsHoy() + '" min="' + escHtml(b.fecha_corte) + '" max="' + bsHoy() + '"></div></div>' +
        '<div id="bs-ln-sal">' + bsLineasHtml('sal', { soloStock: true }) + '</div>' +
@@ -796,7 +811,7 @@ function bsRenderSolicitudes() {
   // ── Devolución a la principal ──
   h += '<div id="bs-sf-DEVOLUCION"' + (f === 'DEVOLUCION' ? '' : ' style="display:none"') + '>' +
     (bloqueo ? '<div class="bs-banner">🔒 Las devoluciones están bloqueadas hasta que la bodega aplique su conteo inicial.</div>' : '') +
-    '<div class="bs-banner bs-info">ℹ️ <div>Baja la existencia de la bodega <strong>al registrarla</strong> y queda <strong>en tránsito</strong> hasta que la principal confirme la recepción. La principal registra el ingreso por su lado. Puedes cancelarla mientras siga en tránsito. Documento propio <strong>' + escHtml('BOD-' + b.codigo + '-DV-0001') + '</strong> con PDF.</div></div>' +
+    '<div class="bs-banner bs-info">ℹ️ <div>Baja la existencia de la bodega <strong>al registrarla</strong> y queda <strong>en tránsito</strong> hasta que la principal confirme la recepción. La principal registra el ingreso por su lado. Puedes cancelarla mientras siga en tránsito. Documento propio con PDF, <strong>' + escHtml(bsSerieTxt('DV')) + '</strong>.</div></div>' +
     '<div class="bs-row"><div style="flex:2 1 300px"><label class="ef-label">Motivo de la devolución *</label><input class="ef" id="bs-dv-mot" maxlength="200" placeholder="Sobrante, próximo a vencer, producto de más…"></div>' +
     '<div style="flex:0 0 160px"><label class="ef-label">Fecha</label><input class="ef" id="bs-dv-fecha" type="date" value="' + hoy + '" min="' + escHtml(b.fecha_corte) + '" max="' + hoy + '"></div></div>' +
     '<div id="bs-ln-dv">' + bsLineasHtml('dv', bsOptsLista('dv')) + '</div>' +
@@ -1073,6 +1088,25 @@ function bsCntPrecargar() {
   showToast('Precargado con las existencias del sistema: corrige lo que difiera del conteo físico.', '#1a5276', 5000);
 }
 
+// Resumen que se muestra antes de aplicar el conteo INICIAL: producto por producto, para revisar la presentación
+// (X LITRO / X GALON / X BIDON…) antes de que quede fijo. Hallazgo de la prueba del 2026-11-26: se eligió otra
+// presentación del mismo producto y solo se pudo corregir después con un conteo periódico.
+function bsResumenInicialHtml(lista, fecha) {
+  var conCant = lista.filter(function (l) { return Number(l.cantidad) > 0; });
+  var total = conCant.reduce(function (s, l) { return s + Number(l.cantidad); }, 0);
+  var filas = lista.slice().sort(function (a, b) { return String(a.producto).localeCompare(String(b.producto)); }).map(function (l) {
+    var n = Number(l.cantidad);
+    return '<tr' + (n > 0 ? '' : ' style="color:#a0aec0"') + '><td>' + escHtml(l.producto) + '</td><td class="bs-num"><strong>' + bsN(n) + '</strong>' +
+           (n > 0 ? '' : ' <span class="bs-muted">(no se registra)</span>') + '</td></tr>';
+  }).join('');
+  return '<p>Se registrará el <strong>saldo inicial</strong> de la bodega al <strong>' + escHtml(fmtDate(fecha)) + '</strong>: ' +
+         bsN(conCant.length) + ' producto(s), ' + bsN(total) + ' unidades.</p>' +
+         '<div class="bs-banner" style="margin:10px 0">⚠️ <div><strong>Revisa cada producto y su presentación</strong> (X LITRO, X GALON, X BIDON…). ' +
+         'Después de aplicarlo no se puede editar: un error solo se corrige con un conteo periódico.</div></div>' +
+         '<div class="bs-tblwrap" style="max-height:45vh;overflow:auto"><table><thead><tr><th>Producto</th><th class="bs-num">Cantidad</th></tr></thead><tbody>' +
+         filas + '</tbody></table></div>';
+}
+
 async function bsCntGuardar(aplicar) {
   var c = BS.cnt;
   if (BS.busy) return;
@@ -1088,11 +1122,11 @@ async function bsCntGuardar(aplicar) {
   c.fecha = fecha; c.obs = obs;   // lo escrito en el formulario sobrevive si se cancela la confirmación
   if (aplicar) {
     var difs = lista.filter(function (l) { return Number(l.cantidad) !== Number(l.sistema || 0); }).length;
-    var ok = await bsConfirmar('Aplicar conteo',
+    var ok = await bsConfirmar(c.tipo === 'INICIAL' ? 'Revisa el conteo inicial antes de aplicarlo' : 'Aplicar conteo',
       c.tipo === 'INICIAL'
-        ? '<p>Se registrará el <strong>saldo inicial</strong> de la bodega con ' + lista.filter(function (l) { return Number(l.cantidad) > 0; }).length + ' producto(s). Después no se puede editar (se corrige con conteos periódicos y ajustes).</p>'
+        ? bsResumenInicialHtml(lista, fecha)
         : '<p>Se aplicarán ajustes de <strong>' + difs + '</strong> producto(s) con diferencia contra el sistema. Los demás productos no se tocan.</p>',
-      'Aplicar');
+      c.tipo === 'INICIAL' ? 'Está correcto: aplicar' : 'Aplicar');
     if (!ok) { bsCntModal(); return; }   // cancelar la confirmación vuelve al editor (el modal es uno solo)
   }
   BS.busy = true;
