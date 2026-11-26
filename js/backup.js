@@ -125,6 +125,26 @@ function filasParaExcel(data) {
   });
 }
 
+// Nombre de hoja válido para Excel: sin : \ / ? * [ ], máx. 31 caracteres, sin
+// apóstrofo al inicio/fin y sin repetir (Excel no distingue mayúsculas). SheetJS
+// lanza un error con un nombre inválido: con «Bodegas Satélite: Configuración»
+// el backup se detenía al 48 % sin descargar nada.
+function nombreHoja(label, usados) {
+  var base = String(label || 'Hoja')
+    .replace(/[:\\\/?*\[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^'+|'+$/g, '') || 'Hoja';
+  var nombre = base.substring(0, 31).trim();
+  var n = 2;
+  while (usados[nombre.toLowerCase()]) {
+    var suf = ' (' + n++ + ')';
+    nombre = base.substring(0, 31 - suf.length).trim() + suf;
+  }
+  usados[nombre.toLowerCase()] = true;
+  return nombre;
+}
+
 async function startBackup() {
   var btn = document.getElementById('btn-backup');
   var progressEl = document.getElementById('backup-progress');
@@ -136,7 +156,7 @@ async function startBackup() {
   btn.textContent = 'Descargando...';
   progressEl.style.display = 'block';
   resultEl.className = 'backup-result';
-  resultEl.style.display = 'none';
+  resultEl.style.display = '';  // lo oculta la clase; un 'none' en línea taparía el resultado
 
   BACKUP_TABLES.forEach(function(t) {
     var item = document.getElementById('bt-' + t.name);
@@ -149,7 +169,9 @@ async function startBackup() {
   var total = BACKUP_TABLES.length;
   var errors = [];
   var totalRows = 0;
+  var hojasUsadas = {};
 
+  try {
   for (var i = 0; i < total; i++) {
     var t = BACKUP_TABLES[i];
     var pct = Math.round(((i) / total) * 100);
@@ -159,25 +181,24 @@ async function startBackup() {
 
     var item = document.getElementById('bt-' + t.name);
     var ct = document.getElementById('tc-' + t.name);
+    var sheetName = nombreHoja(t.label, hojasUsadas);
 
     try {
       var data = await fetchAllRows(t.name, t.sinId);
+      var ws = XLSX.utils.json_to_sheet(data.length ? filasParaExcel(data) : [{}]);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
       totalRows += data.length;
 
       if (ct) ct.textContent = data.length + ' registros';
       if (item) { item.className = 'backup-table-item done'; }
-
-      var sheetName = t.label.substring(0, 31);
-      var ws = XLSX.utils.json_to_sheet(data.length ? filasParaExcel(data) : [{}]);
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
     } catch (err) {
       errors.push(t.label + ': ' + err.message);
       if (ct) ct.textContent = 'Error';
       if (item) { item.className = 'backup-table-item error'; }
 
-      var ws = XLSX.utils.json_to_sheet([{ error: err.message }]);
-      var sheetName = t.label.substring(0, 31);
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      try {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ error: err.message }]), sheetName);
+      } catch (e2) { /* la hoja ya existe o no se pudo crear: el error queda en el resumen */ }
     }
   }
 
@@ -188,6 +209,16 @@ async function startBackup() {
   var fecha = today();
   var filename = 'backup_panel_' + fecha + '.xlsx';
   XLSX.writeFile(wb, filename);
+  } catch (errFatal) {
+    // Antes un fallo aquí dejaba la barra congelada y el botón deshabilitado sin aviso.
+    resultEl.className = 'backup-result error';
+    resultEl.innerHTML = '⚠️ No se pudo generar el backup: ' + escHtml(errFatal && errFatal.message || String(errFatal)) +
+      (errors.length ? '<br>' + errors.map(function(e) { return '• ' + escHtml(e); }).join('<br>') : '');
+    barLabel.textContent = 'Falló';
+    btn.disabled = false;
+    btn.textContent = '💾 Descargar Backup Completo';
+    return;
+  }
 
   if (errors.length) {
     resultEl.className = 'backup-result error';
@@ -214,7 +245,7 @@ async function descargarEstructura() {
   btn.disabled = true;
   btn.textContent = 'Generando...';
   resultEl.className = 'backup-result';
-  resultEl.style.display = 'none';
+  resultEl.style.display = '';  // lo oculta la clase; un 'none' en línea taparía el resultado
 
   try {
     var res = await _sb.rpc('exportar_estructura_bd');
