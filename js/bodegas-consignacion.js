@@ -755,6 +755,7 @@ function bcSolAbrir(id) {
   var s = bcSol.lista.filter(function(x) { return x.id === id; })[0];
   if (!s) return;
   bcSol.sel = s;
+  bcSol.accion = null;   // la acción se elige en el formulario (bcSolAccion)
   var t = BC_SOL_TIPO[s.tipo] || { txt: s.tipo, ico: '' };
   var pares = [['Documento', '<strong>' + escHtml(s.consecutivo) + '</strong>'], ['Tipo', escHtml(t.ico + ' ' + t.txt)], ['Fecha', escHtml(fmtDate(s.fecha))],
                ['Bodega', escHtml(bcSolNombreBodega(s))], ['Estado', bcSolBadgeEstado(s.estado)]];
@@ -793,28 +794,23 @@ function bcSolAbrir(id) {
   var abierta = BC_SOL_ABIERTAS.indexOf(s.estado) >= 0;
   var botones = '<button class="btn-cancel" onclick="bcSolCerrar()">Cerrar</button>';
   if (abierta && s.puede_atender) {
-    var guia = s.tipo === 'MUESTRA'
-      ? (s.origen_stock === 'BODEGA'
-          ? 'Esta muestra ya salió del stock de la bodega. Regístrala en <a href="muestras.html" target="_blank" rel="noopener">Muestras</a> si corresponde y anota su consecutivo. <strong>Si la rechazas, las unidades vuelven al inventario de la bodega.</strong>'
-          : 'Despáchala desde <a href="muestras.html" target="_blank" rel="noopener">Muestras</a> (con su aprobación) y anota aquí su consecutivo.')
-      : s.tipo === 'CAMBIO'
-        ? 'Gestiona el cambio en <a href="devoluciones.html" target="_blank" rel="noopener">Devoluciones y Cambios</a> y anota aquí su consecutivo.'
-        : 'Cuando llegue la mercancía, regístrala en <a href="ingresos.html" target="_blank" rel="noopener">Ingresos</a> y anota aquí la remisión de entrada. Si llegó distinto a lo que dice el documento, marca «Recibida con diferencia» y descríbela.';
-    h += '<div style="margin-top:14px;padding:10px 12px;border:1px solid #bee3f8;background:#ebf8ff;border-radius:8px">' +
-      '<div style="font-weight:700;color:#2a4365;margin-bottom:4px">Atender esta solicitud</div>' +
-      '<div style="font-size:0.8rem;color:#2a4365;margin-bottom:8px">' + guia + '</div>' +
-      '<div style="margin-bottom:8px"><label class="ef-label">' + (s.tipo === 'DEVOLUCION' ? 'Remisión de entrada en la principal' : 'Referencia en la principal') + ' <span style="font-weight:400;color:#718096">(obligatoria al marcar atendida / recibida)</span></label>' +
-      '<input class="ef" id="bq-ref" maxlength="120" placeholder="' + (s.tipo === 'DEVOLUCION' ? 'Ej: IASO-RE-0100' : s.tipo === 'MUESTRA' ? 'Consecutivo de la muestra' : 'Consecutivo del cambio') + '"></div>' +
-      '<div><label class="ef-label">Respuesta para la bodega <span style="font-weight:400;color:#718096">(obligatoria al rechazar o si hay diferencia)</span></label>' +
+    // Primero se elige QUÉ hacer; después solo aparece el dato que esa acción necesita (bcSolAccion).
+    var acciones = s.tipo === 'DEVOLUCION'
+      ? [['RECIBIDA', '✅ Llegó completa'], ['RECIBIDA_DIF', '⚠️ Llegó con diferencia']]
+      : (s.estado === 'Pendiente' ? [['EN_PROCESO', '▶ La estoy gestionando']] : [])
+          .concat([['ATENDIDA', '✅ Ya la atendí'], ['RECHAZADA', '✖ Rechazarla']]);
+    h += '<div id="bq-acc-form" style="margin-top:14px;padding:10px 12px;border:1px solid #bee3f8;background:#ebf8ff;border-radius:8px">' +
+      '<div style="font-weight:700;color:#2a4365;margin-bottom:6px">' + (s.tipo === 'DEVOLUCION' ? '¿Cómo llegó la devolución?' : '¿Qué vas a hacer con esta solicitud?') + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:8px">' +
+      acciones.map(function(a) {
+        return '<label style="font-size:0.86rem;cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="bq-acc" value="' + a[0] + '" onchange="bcSolAccion(this.value)"> ' + a[1] + '</label>';
+      }).join('') + '</div>' +
+      '<div id="bq-acc-nota" style="font-size:0.8rem;color:#2a4365;margin-bottom:8px;display:none"></div>' +
+      '<div id="bq-ref-box" style="margin-bottom:8px;display:none"><label class="ef-label" id="bq-ref-lbl"></label>' +
+      '<input class="ef" id="bq-ref" maxlength="120"></div>' +
+      '<div id="bq-resp-box" style="display:none"><label class="ef-label" id="bq-resp-lbl"></label>' +
       '<textarea class="ef" id="bq-resp" maxlength="500" style="min-height:60px"></textarea></div></div>';
-    if (s.tipo === 'DEVOLUCION') {
-      botones += '<button class="btn-cancel" style="border-color:#c05621;color:#c05621" onclick="bcSolAtender(\'RECIBIDA_DIF\')">⚠️ Recibida con diferencia</button>' +
-                 '<button class="btn-confirm" onclick="bcSolAtender(\'RECIBIDA\')">✅ Confirmar recepción</button>';
-    } else {
-      if (s.estado === 'Pendiente') botones += '<button class="btn-cancel" onclick="bcSolAtender(\'EN_PROCESO\')">▶ Marcar en proceso</button>';
-      botones += '<button class="btn-cancel" style="border-color:#c0392b;color:#c0392b" onclick="bcSolAtender(\'RECHAZADA\')">✖ Rechazar</button>' +
-                 '<button class="btn-confirm" onclick="bcSolAtender(\'ATENDIDA\')">✅ Marcar atendida</button>';
-    }
+    botones += '<button class="btn-confirm" id="bq-btn-ok" style="display:none" onclick="bcSolAtender()"></button>';
   } else if (abierta) {
     h += '<div style="margin-top:14px;font-size:0.8rem;color:#718096">Solo lectura: esta solicitud la atienden el administrador y quienes manejan Muestras / Devoluciones (aprobadores de muestras) de la empresa.</div>';
   }
@@ -824,13 +820,58 @@ function bcSolAbrir(id) {
   document.getElementById('bq-modal-overlay').classList.add('show');
 }
 
+// Muestra solo los campos de la acción elegida, con rótulos que dicen exactamente qué escribir.
+// ref: obligatoria en ATENDIDA / RECIBIDA, opcional en RECIBIDA_DIF, no se pide en EN_PROCESO / RECHAZADA.
+// resp: obligatoria en RECHAZADA / RECIBIDA_DIF, comentario opcional en las demás (la bodega lo ve). Mismas reglas que la RPC.
+function bcSolAccion(accion) {
+  var s = bcSol.sel;
+  if (!s) return;
+  var stock = s.tipo === 'MUESTRA' && s.origen_stock === 'BODEGA';
+  var lnkMu = '<a href="muestras.html" target="_blank" rel="noopener">Muestras</a>';
+  var lnkDc = '<a href="devoluciones.html" target="_blank" rel="noopener">Devoluciones y Cambios</a>';
+  var lnkIn = '<a href="ingresos.html" target="_blank" rel="noopener">Ingresos</a>';
+  var opc = ' <span style="font-weight:400;text-transform:none;color:#718096">(opcional, la bodega lo verá)</span>';
+  var obl = ' <span style="font-weight:400;text-transform:none;color:#c0392b">* obligatorio</span>';
+  var cfg = {
+    EN_PROCESO: { nota: 'La bodega verá su solicitud «En proceso». No hace falta ningún dato.', ref: null,
+                  resp: 'Comentario para la bodega' + opc, btn: '▶ Marcar en proceso' },
+    ATENDIDA: { nota: s.tipo === 'MUESTRA'
+                  ? (stock ? 'Esta muestra ya salió del stock de la bodega. Regístrala en ' + lnkMu + ' si corresponde y escribe aquí su consecutivo.'
+                           : 'Despáchala desde ' + lnkMu + ' (con su aprobación) y escribe aquí el consecutivo de esa muestra.')
+                  : 'Gestiona el cambio en ' + lnkDc + ' y escribe aquí el consecutivo de ese cambio.',
+                ref: (s.tipo === 'MUESTRA' ? 'Consecutivo de la muestra en Muestras' : 'Consecutivo del cambio en Devoluciones y Cambios') + obl,
+                ph: 'Ej: 245', resp: 'Comentario para la bodega' + opc, btn: '✅ Marcar atendida' },
+    RECHAZADA: { nota: stock ? '<strong>Al rechazarla, las unidades vuelven al inventario de la bodega.</strong>' : 'La bodega verá el motivo del rechazo.',
+                 ref: null, resp: 'Motivo del rechazo' + obl, btn: '✖ Rechazar', rojo: true },
+    RECIBIDA: { nota: 'Registra la mercancía en ' + lnkIn + ' y escribe aquí la remisión de entrada.',
+                ref: 'Remisión de entrada registrada en Ingresos' + obl, ph: 'Ej: IASO-RE-0100', resp: 'Comentario para la bodega' + opc, btn: '✅ Confirmar recepción' },
+    RECIBIDA_DIF: { nota: 'Describe qué llegó distinto a lo que dice el documento. Si ya registraste la mercancía en ' + lnkIn + ', escribe también la remisión de entrada.',
+                    ref: 'Remisión de entrada en Ingresos <span style="font-weight:400;text-transform:none;color:#718096">(opcional)</span>', ph: 'Ej: IASO-RE-0100',
+                    resp: '¿Qué diferencia encontraste?' + obl, btn: '⚠️ Registrar con diferencia', naranja: true }
+  }[accion];
+  if (!cfg) return;
+  bcSol.accion = accion;
+  var nota = document.getElementById('bq-acc-nota');
+  nota.innerHTML = cfg.nota; nota.style.display = '';
+  document.getElementById('bq-ref-box').style.display = cfg.ref ? '' : 'none';
+  if (cfg.ref) { document.getElementById('bq-ref-lbl').innerHTML = cfg.ref; document.getElementById('bq-ref').placeholder = cfg.ph || ''; }
+  document.getElementById('bq-resp-box').style.display = '';
+  document.getElementById('bq-resp-lbl').innerHTML = cfg.resp;
+  var b = document.getElementById('bq-btn-ok');
+  b.textContent = cfg.btn; b.style.display = '';
+  b.style.background = cfg.rojo ? '#c0392b' : (cfg.naranja ? '#c05621' : '');
+}
+
 async function bcSolAtender(accion) {
   var s = bcSol.sel;
-  if (!s || !document.getElementById('bq-ref') || !document.getElementById('bq-resp')) return;   // sin formulario = solo lectura
-  var ref = document.getElementById('bq-ref').value.trim();
-  var resp = document.getElementById('bq-resp').value.trim();
-  if ((accion === 'ATENDIDA' || accion === 'RECIBIDA') && ref.length < 2) { showToast('Escribe la referencia del documento en la principal.', '#e67e22', 5000); document.getElementById('bq-ref').focus(); return; }
-  if ((accion === 'RECHAZADA' || accion === 'RECIBIDA_DIF') && resp.length < 5) { showToast(accion === 'RECHAZADA' ? 'Escribe el motivo del rechazo (mínimo 5 caracteres).' : 'Describe la diferencia encontrada (mínimo 5 caracteres).', '#e67e22', 5000); document.getElementById('bq-resp').focus(); return; }
+  accion = accion || bcSol.accion;
+  if (!s || !document.getElementById('bq-acc-form') || !accion) return;   // sin formulario = solo lectura
+  var refEl = document.getElementById('bq-ref'), respEl = document.getElementById('bq-resp');
+  // Solo se envía lo que la acción pide (un texto escrito antes en un campo que ahora está oculto no viaja).
+  var ref = (refEl && document.getElementById('bq-ref-box').style.display !== 'none') ? refEl.value.trim() : '';
+  var resp = respEl ? respEl.value.trim() : '';
+  if ((accion === 'ATENDIDA' || accion === 'RECIBIDA') && ref.length < 2) { showToast(accion === 'RECIBIDA' ? 'Escribe la remisión de entrada registrada en Ingresos.' : 'Escribe el consecutivo ' + (s.tipo === 'MUESTRA' ? 'de la muestra en Muestras.' : 'del cambio en Devoluciones y Cambios.'), '#e67e22', 5000); refEl.focus(); return; }
+  if ((accion === 'RECHAZADA' || accion === 'RECIBIDA_DIF') && resp.length < 5) { showToast(accion === 'RECHAZADA' ? 'Escribe el motivo del rechazo (mínimo 5 caracteres).' : 'Describe la diferencia encontrada (mínimo 5 caracteres).', '#e67e22', 5000); respEl.focus(); return; }
   if (accion === 'RECHAZADA' && s.origen_stock === 'BODEGA' && !window.confirm('Esta muestra salió del stock de la bodega. Al rechazarla las unidades VUELVEN al inventario de la bodega. ¿Rechazar?')) return;
   var btns = document.querySelectorAll('#bq-modal-btns button');
   Array.prototype.forEach.call(btns, function(b) { b.disabled = true; });
