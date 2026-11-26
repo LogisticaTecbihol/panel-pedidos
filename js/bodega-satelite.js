@@ -377,7 +377,11 @@ function bsLineasHtml(k, opts) {
   var lista = BS.listas[k];
   var dl = opts.soloStock ? 'bs-dl-stock' : 'bs-dl-all';
   var ex = opts.extra;
-  var h = '<div class="bs-row"><div style="flex:3 1 240px"><label class="ef-label">Producto</label><input class="ef" id="bs-' + k + '-prod" list="' + dl + '" autocomplete="off" placeholder="Escribe unas letras y elige de la lista"></div>' +
+  // En los que sacan de la existencia, el rótulo muestra el disponible del producto elegido (bsDispHint).
+  var h = '<div class="bs-row"><div style="flex:3 1 240px"><label class="ef-label">Producto' +
+          (opts.soloStock ? ' <span class="bs-disp" id="bs-' + k + '-disp" aria-live="polite"></span>' : '') + '</label>' +
+          '<input class="ef" id="bs-' + k + '-prod" list="' + dl + '" autocomplete="off" placeholder="Escribe unas letras y elige de la lista"' +
+          (opts.soloStock ? ' data-act-input="ln-prod" data-k="' + k + '"' : '') + '></div>' +
           '<div style="flex:0 0 110px"><label class="ef-label">' + (opts.conteo ? 'Cantidad física' : 'Cantidad') + '</label><input class="ef" id="bs-' + k + '-qty" type="number" min="' + (opts.conteo ? 0 : 1) + '" step="1" placeholder="0"></div>' +
           (ex ? '<div style="flex:1 1 170px"><label class="ef-label">' + escHtml(ex.label) + '</label><input class="ef" id="bs-' + k + '-ext" maxlength="80" placeholder="' + escHtml(ex.ph || '') + '"></div>' : '') +
           '<div style="flex:0 0 auto"><button class="bs-btn" type="button" data-act="ln-add" data-k="' + k + '">➕ Agregar</button></div>' +
@@ -412,6 +416,15 @@ function bsLineasAgregar(k, opts) {
   if (!prod) { showToast('Elige un producto de la lista (' + (opts.soloStock ? 'solo productos con existencia' : 'maestro de productos') + ').', '#e67e22', 5000); inp.focus(); return false; }
   var v = qty.value.trim(), n = Number(v);
   if (v === '' || !isFinite(n) || Math.floor(n) !== n || n < (opts.conteo ? 0 : 1)) { showToast('La cantidad debe ser un número entero' + (opts.conteo ? ' (0 o más).' : ' mayor que 0.'), '#e67e22'); qty.focus(); return false; }
+  if (opts.soloStock) {   // no deja agregar más de lo disponible (existencia − lo ya puesto en esta lista)
+    var dsp = bsDisponibleLista(k, prod.producto);
+    if (n > dsp.disponible) {
+      showToast(dsp.disponible > 0
+        ? 'Solo hay ' + bsN(dsp.disponible) + ' ud disponibles de ' + prod.producto + (dsp.enLista ? ' (ya agregaste ' + bsN(dsp.enLista) + ' a esta lista).' : '.')
+        : 'No queda existencia disponible de ' + prod.producto + (dsp.enLista ? ': ya está toda en esta lista.' : '.'), '#e67e22', 6000);
+      qty.focus(); return false;
+    }
+  }
   var lista = BS.listas[k];
   var extEl = opts.extra ? bsEl('bs-' + k + '-ext') : null;
   var extV = extEl ? extEl.value.trim() : '';
@@ -428,6 +441,31 @@ function bsLineasAgregar(k, opts) {
   inp.value = ''; qty.value = '';
   if (extEl) extEl.value = '';
   return true;
+}
+
+// Lo que aún se puede agregar de un producto a la lista k: existencia − lo que ya tiene la lista.
+function bsDisponibleLista(k, producto) {
+  var key = bsNorm(producto);
+  var enLista = (BS.listas[k] || []).reduce(function (s, l) {
+    return s + (bsNorm(l.producto) === key ? (Number(l.cantidad) || 0) : 0);
+  }, 0);
+  var existencia = bsStockDe(producto);
+  return { existencia: existencia, enLista: enLista, disponible: existencia - enLista };
+}
+
+// Muestra junto a «Producto» el disponible del producto escrito/elegido y lo pone como tope de la cantidad.
+function bsDispHint(k) {
+  var inp = bsEl('bs-' + k + '-prod'), box = bsEl('bs-' + k + '-disp'), qty = bsEl('bs-' + k + '-qty');
+  if (!inp || !box) return;
+  var nombre = bsNorm(inp.value);
+  var it = nombre ? ((BS.exist && BS.exist.items) || []).filter(function (i) { return bsNorm(i.producto) === nombre; })[0] : null;
+  if (!it) { box.innerHTML = ''; if (qty) qty.removeAttribute('max'); return; }
+  var d = bsDisponibleLista(k, it.producto);
+  var disp = Math.max(d.disponible, 0);
+  box.className = 'bs-disp ' + (disp > 0 ? 'bs-disp-ok' : 'bs-disp-0');
+  box.innerHTML = '· Disponible: <strong>' + bsN(disp) + '</strong> ud' +
+    (d.enLista ? ' <span class="bs-muted">(existencia ' + bsN(d.existencia) + ', ya agregaste ' + bsN(d.enLista) + ')</span>' : '');
+  if (qty) qty.max = String(disp);
 }
 
 // Revisa líneas contra la existencia; devuelve texto de error o ''.
@@ -1184,6 +1222,7 @@ document.addEventListener('input', function (e) {
   if (t.id === 'bs-ex-q') { bsFiltrarExist(); return; }
   if (t.id === 'bs-kx-prod' || t.id === 'bs-kx-desde' || t.id === 'bs-kx-hasta') { bsFiltrarKardex(); return; }
   if (t.classList && t.classList.contains('bs-rec-in')) { bsRevisarDiferencia(t.closest('.bs-rem')); return; }
+  if (t.dataset && t.dataset.actInput === 'ln-prod') { bsDispHint(t.dataset.k); return; }
   if (t.dataset && t.dataset.actInput === 'ln-qty') {
     var k = t.dataset.k, i = Number(t.dataset.i);
     if (BS.listas[k][i]) BS.listas[k][i].cantidad = t.value === '' ? '' : Number(t.value);
