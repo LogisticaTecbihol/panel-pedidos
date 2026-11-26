@@ -15,7 +15,8 @@ var NOTIF = (function() {
     reenvases:    '🔃 Reenvase',
     reportes:     '📈 Reporte',
     solicitudes_mercadeo: '📣 Solicitud a Mercadeo',
-    kardex:       '📊 Kardex'
+    kardex:       '📊 Kardex',
+    vehiculos:    '🚗 Vencimientos de vehículos'
   };
 
   var _uid = null;
@@ -505,7 +506,7 @@ var NOTIF = (function() {
         var mod = MOD_LABEL[r.modulo] || r.modulo;
         var ref = r.referencia ? (' <span style="color:#718096;font-weight:500">#' + escHtml(r.referencia) + '</span>') : '';
         var msg = r.mensaje ? escHtml(r.mensaje) : '';
-        var sub = 'De ' + escHtml(r._de_nombre || '—') + (msg ? ' · ' + msg : '');
+        var sub = (r.de_usuario_id ? 'De ' + escHtml(r._de_nombre || '—') : 'Aviso automático') + (msg ? ' · ' + msg : '');
         return '<li>' +
           '<button class="item ' + (r.leida ? '' : 'unread') + '" data-i="' + i + '">' +
             '<div class="row1 ' + (r.leida ? '' : 'unread') + '">' +
@@ -591,6 +592,7 @@ var NOTIF = (function() {
     reabastecimiento:    'reabastecimiento.html',
     legalizacion_gastos: 'legalizacion-gastos.html',
     solicitudes_mercadeo: 'solicitudes-mercadeo.html',
+    vehiculos:    'vehiculos-vencimientos.html',   // avisos de vencimientos (vehiculos_vencimientos_campana.sql)
     bodegas:      'bodegas-consignacion.html'   // avisos de las bodegas satélite (bodega_satelite_avisos.sql)
   };
 

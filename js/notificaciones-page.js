@@ -29,7 +29,8 @@
     ordenes:      '🛒 Órdenes',
     ingresos:     '📦 Ingresos',
     reenvases:    '🔃 Reenvases',
-    kardex:       '📋 Kardex'
+    kardex:       '📋 Kardex',
+    vehiculos:    '🚗 Vencimientos de vehículos'
   };
 
   // ── Sorting ──
@@ -241,7 +242,7 @@
 
     tbody.innerHTML = slice.map(function(r) {
       var sender = _senders[r.de_usuario_id];
-      var senderName = sender ? escHtml(sender.nombre || sender.email || '—') : '—';
+      var senderName = sender ? escHtml(sender.nombre || sender.email || '—') : (r.de_usuario_id ? '—' : 'Aviso automático');
       var recipient = _senders[r.para_usuario_id];
       var recipientName = recipient ? escHtml(recipient.nombre || recipient.email || '—') : '—';
       var modLbl = MOD_LABEL[r.modulo] || r.modulo;
